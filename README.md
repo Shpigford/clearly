@@ -1,8 +1,22 @@
-# Clearly Markdown
+<p align="center">
+  <img src="website/icon.png" width="128" height="128" alt="Clearly icon" />
+</p>
 
-A clean, native markdown editor for macOS.
+<h1 align="center">Clearly Markdown</h1>
 
-![Screenshot](website/screenshot.jpg)
+<p align="center">A clean, native markdown editor for macOS.</p>
+
+<p align="center">
+  <a href="https://github.com/Shpigford/clearly/releases/latest/download/Clearly.dmg">Download</a> &middot;
+  <a href="https://clearly.md">Website</a> &middot;
+  <a href="https://x.com/Shpigford">@Shpigford</a>
+</p>
+
+<p align="center">
+  <img src="website/screenshot.jpg" width="720" alt="Clearly screenshot" />
+</p>
+
+Write with syntax highlighting, preview instantly, and get back to what matters. No Electron, no subscriptions, no bloat.
 
 ## Features
 
@@ -12,22 +26,24 @@ A clean, native markdown editor for macOS.
 - **QuickLook** — preview .md files right in Finder
 - **Light & Dark** — follows system appearance or set manually
 
-## Download
+## Requirements
 
-Grab the latest DMG from [Releases](https://github.com/Shpigford/clearly/releases/latest) or from [clearly.md](https://clearly.md).
+- macOS 14 (Sonoma) or later
 
-Requires macOS Sonoma (14.0) or later.
-
-## Build from source
+## Development
 
 ```bash
-# Install XcodeGen if you don't have it
 brew install xcodegen
-
-# Generate the Xcode project and build
 xcodegen generate
 xcodebuild -scheme Clearly -configuration Debug build
 ```
+
+## Architecture
+
+- **SwiftUI** + **AppKit** — NSTextView bridged via NSViewRepresentable for undo, find panel, and syntax highlighting
+- **Sparkle** — auto-updates via GitHub Releases
+- **cmark-gfm** — GitHub Flavored Markdown rendering (tables, task lists, strikethrough, autolinks)
+- **Sandboxed** — runs in App Sandbox with user-selected file access
 
 ## License
 
