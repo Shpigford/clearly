@@ -2,6 +2,7 @@ import SwiftUI
 
 enum ViewMode: String, CaseIterable {
     case edit
+    case sideBySide
     case preview
 }
 
@@ -30,6 +31,7 @@ struct ContentView: View {
     @Binding var document: MarkdownDocument
     @State private var mode: ViewMode = .edit
     @AppStorage("editorFontSize") private var fontSize: Double = 16
+    @State private var widthBeforeSplit: CGFloat?
 
     private var wordCount: Int {
         document.text.split { $0.isWhitespace || $0.isNewline }.count
@@ -39,19 +41,60 @@ struct ContentView: View {
         document.text.count
     }
 
+    private func animateWindowFrame(_ window: NSWindow, to newFrame: NSRect) {
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = 0.35
+            context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+            window.animator().setFrame(newFrame, display: true)
+        }
+    }
+
     var body: some View {
         Group {
             switch mode {
             case .edit:
                 EditorView(text: $document.text)
+            case .sideBySide:
+                HSplitView {
+                    EditorView(text: $document.text)
+                    PreviewView(markdown: document.text)
+                }
             case .preview:
                 PreviewView(markdown: document.text)
             }
         }
-        .frame(minWidth: 500, minHeight: 400)
+        .frame(minWidth: mode == .sideBySide ? 1000 : 500, minHeight: 400)
         .background(Theme.backgroundColorSwiftUI)
+        .onChange(of: mode) { _, newMode in
+            guard let window = NSApp.keyWindow else { return }
+            let frame = window.frame
+            if newMode == .sideBySide {
+                if frame.width < 1200 {
+                    widthBeforeSplit = frame.width
+                    let newWidth: CGFloat = 1200
+                    let delta = newWidth - frame.width
+                    let newFrame = NSRect(
+                        x: frame.origin.x - delta / 2,
+                        y: frame.origin.y,
+                        width: newWidth,
+                        height: frame.height
+                    )
+                    animateWindowFrame(window, to: newFrame)
+                }
+            } else if let restored = widthBeforeSplit {
+                widthBeforeSplit = nil
+                let delta = frame.width - restored
+                let newFrame = NSRect(
+                    x: frame.origin.x + delta / 2,
+                    y: frame.origin.y,
+                    width: restored,
+                    height: frame.height
+                )
+                animateWindowFrame(window, to: newFrame)
+            }
+        }
         .safeAreaInset(edge: .bottom, spacing: 0) {
-            if mode == .edit {
+            if mode != .preview {
                 HStack(spacing: 12) {
                     Text("\(wordCount) words")
                     Text("\(characterCount) characters")
@@ -68,14 +111,16 @@ struct ContentView: View {
                 Picker("Mode", selection: $mode) {
                     Image(systemName: "pencil")
                         .tag(ViewMode.edit)
+                    Image(systemName: "rectangle.split.2x1")
+                        .tag(ViewMode.sideBySide)
                     Image(systemName: "eye")
                         .tag(ViewMode.preview)
                 }
                 .pickerStyle(.segmented)
-                .frame(width: 100)
+                .frame(width: 150)
             }
             ToolbarItem(placement: .automatic) {
-                if mode == .edit {
+                if mode != .preview {
                     Button {
                         NSApp.sendAction(#selector(ClearlyTextView.showFindPanel(_:)), to: nil, from: nil)
                     } label: {
@@ -86,6 +131,7 @@ struct ContentView: View {
             }
         }
         .modifier(HiddenToolbarBackground())
+        .animation(nil, value: mode)
         .focusedSceneValue(\.viewMode, $mode)
     }
 }
