@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="icon" type="image/png" href="/favicon-96x96.png" sizes="96x96" />
+    <link rel="shortcut icon" href="/favicon.ico" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
+    <meta name="apple-mobile-web-app-title" content="Clearly Markdown" />
+    <link rel="manifest" href="/site.webmanifest" />
+    <title>Clearly Markdown — A clean, native markdown editor for Mac</title>
+    <meta name="description" content="A focused markdown editor built for macOS. Syntax highlighting, instant preview, and nothing else.">
+    <meta property="og:title" content="Clearly Markdown">
+    <meta property="og:description" content="A clean, native markdown editor for Mac.">
+    <meta property="og:image" content="https://clearly.md/icon.png">
+    <meta property="og:url" content="https://clearly.md">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif;
+            background: #0a0a0a;
+            color: #e0e0e0;
+            -webkit-font-smoothing: antialiased;
+        }
+
+        .container {
+            max-width: 680px;
+            margin: 0 auto;
+            padding: 80px 24px 60px;
+            text-align: center;
+        }
+
+        .icon {
+            width: 160px;
+            height: 160px;
+            border-radius: 36px;
+            margin-bottom: 40px;
+        }
+
+        h1 {
+            font-size: 2.4em;
+            font-weight: 700;
+            letter-spacing: -0.02em;
+            margin-bottom: 12px;
+        }
+
+        .subtitle {
+            font-size: 1.2em;
+            color: #999;
+            line-height: 1.5;
+            margin-bottom: 40px;
+        }
+
+        .cta {
+            display: inline-block;
+            background: #fff;
+            color: #0a0a0a;
+            font-size: 1em;
+            font-weight: 600;
+            padding: 14px 32px;
+            border-radius: 10px;
+            text-decoration: none;
+            transition: opacity 0.2s;
+        }
+
+        .cta:hover { opacity: 0.85; }
+
+        .features {
+            margin-top: 80px;
+            text-align: left;
+        }
+
+        .features h2 {
+            font-size: 1.1em;
+            font-weight: 600;
+            color: #666;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            margin-bottom: 24px;
+            text-align: center;
+        }
+
+        .feature-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+        }
+
+        .feature {
+            background: #141414;
+            border: 1px solid #222;
+            border-radius: 12px;
+            padding: 24px;
+        }
+
+        .feature h3 {
+            font-size: 1em;
+            font-weight: 600;
+            margin-bottom: 6px;
+            color: #f0f0f0;
+        }
+
+        .feature p {
+            font-size: 0.9em;
+            color: #888;
+            line-height: 1.5;
+        }
+
+        footer {
+            margin-top: 80px;
+            padding-top: 24px;
+            border-top: 1px solid #1a1a1a;
+            text-align: center;
+            color: #444;
+            font-size: 0.85em;
+        }
+
+        footer a {
+            color: #666;
+            text-decoration: none;
+        }
+
+        footer a:hover { color: #999; }
+
+        @media (max-width: 500px) {
+            .container { padding: 48px 20px 40px; }
+            h1 { font-size: 1.8em; }
+            .icon { width: 120px; height: 120px; border-radius: 28px; }
+            .feature-grid { grid-template-columns: 1fr; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <img src="icon.png" alt="Clearly Markdown" class="icon">
+        <h1>Clearly Markdown</h1>
+        <p class="subtitle">A clean, native markdown editor for Mac. Write with syntax highlighting, preview instantly, and get back to what matters.</p>
+        <a href="https://apps.apple.com/app/clearly-markdown/id0000000000" class="cta">Download on the Mac App Store</a>
+
+        <div class="features">
+            <h2>Features</h2>
+            <div class="feature-grid">
+                <div class="feature">
+                    <h3>Native macOS</h3>
+                    <p>Built with SwiftUI and AppKit. Fast launch, low memory, feels right at home on your Mac.</p>
+                </div>
+                <div class="feature">
+                    <h3>Syntax Highlighting</h3>
+                    <p>Headings, bold, italic, links, code blocks, and more — highlighted as you type.</p>
+                </div>
+                <div class="feature">
+                    <h3>Instant Preview</h3>
+                    <p>Switch to a rendered preview with Cmd+2. Full GitHub Flavored Markdown support.</p>
+                </div>
+                <div class="feature">
+                    <h3>Format Shortcuts</h3>
+                    <p>Cmd+B for bold, Cmd+I for italic, Cmd+K for links. The keyboard shortcuts you expect.</p>
+                </div>
+                <div class="feature">
+                    <h3>QuickLook</h3>
+                    <p>Preview markdown files right in Finder. Press Space on any .md file.</p>
+                </div>
+                <div class="feature">
+                    <h3>Light &amp; Dark</h3>
+                    <p>Follows your system appearance or set it manually. Looks great either way.</p>
+                </div>
+            </div>
+        </div>
+
+        <footer>
+            <p>&copy; 2026 Sabotage Media, LLC &middot; <a href="/privacy">Privacy Policy</a></p>
+        </footer>
+    </div>
+</body>
+</html>
