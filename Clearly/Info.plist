@@ -26,6 +26,7 @@
 			<string>Default</string>
 			<key>LSItemContentTypes</key>
 			<array>
+				<string>public.markdown</string>
 				<string>net.daringfireball.markdown</string>
 				<string>public.plain-text</string>
 			</array>
