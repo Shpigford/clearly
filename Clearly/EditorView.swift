@@ -3,6 +3,8 @@ import AppKit
 
 struct EditorView: NSViewRepresentable {
     @Binding var text: String
+    var fontSize: CGFloat = 16
+    var scrollSync: ScrollSync?
     @Environment(\.colorScheme) private var colorScheme
 
     func makeCoordinator() -> Coordinator {
@@ -49,6 +51,7 @@ struct EditorView: NSViewRepresentable {
         textView.isHorizontallyResizable = false
         textView.autoresizingMask = [.width]
         textView.textContainer?.widthTracksTextView = true
+        textView.layoutManager?.allowsNonContiguousLayout = true
 
         // Insertion point color
         textView.insertionPointColor = Theme.textColor
@@ -67,6 +70,17 @@ struct EditorView: NSViewRepresentable {
 
         scrollView.documentView = textView
         context.coordinator.textView = textView
+        context.coordinator.scrollSync = scrollSync
+        scrollSync?.editorScrollView = scrollView
+
+        // Observe scroll position for sync
+        scrollView.contentView.postsBoundsChangedNotifications = true
+        NotificationCenter.default.addObserver(
+            context.coordinator,
+            selector: #selector(Coordinator.scrollViewDidScroll(_:)),
+            name: NSView.boundsDidChangeNotification,
+            object: scrollView.contentView
+        )
 
         return scrollView
     }
@@ -87,8 +101,15 @@ struct EditorView: NSViewRepresentable {
             .paragraphStyle: paragraph
         ]
 
-        // Re-highlight to pick up new colors
-        context.coordinator.highlighter?.highlightAll(textView.textStorage!)
+        // Re-highlight when appearance or font size changes
+        let currentScheme = colorScheme
+        let currentFontSize = fontSize
+        if context.coordinator.lastColorScheme != currentScheme || context.coordinator.lastFontSize != currentFontSize {
+            context.coordinator.lastColorScheme = currentScheme
+            context.coordinator.lastFontSize = currentFontSize
+            textView.font = Theme.editorFont
+            context.coordinator.highlighter?.highlightAll(textView.textStorage!)
+        }
 
         // Only update text if it changed externally (not from user typing)
         if !context.coordinator.isUpdating && textView.string != text {
@@ -106,6 +127,10 @@ struct EditorView: NSViewRepresentable {
         var isUpdating = false
         var highlighter: MarkdownSyntaxHighlighter?
         weak var textView: NSTextView?
+        var scrollSync: ScrollSync?
+        var lastColorScheme: ColorScheme?
+        var lastFontSize: CGFloat?
+        private var lastScrollTime: TimeInterval = 0
 
         init(_ parent: EditorView) {
             self.parent = parent
@@ -116,6 +141,43 @@ struct EditorView: NSViewRepresentable {
             isUpdating = true
             parent.text = textView.string
             isUpdating = false
+        }
+
+        @objc func scrollViewDidScroll(_ notification: Notification) {
+            guard let clipView = notification.object as? NSClipView,
+                  let scrollView = clipView.enclosingScrollView,
+                  let textView = scrollView.documentView as? NSTextView,
+                  let layoutManager = textView.layoutManager,
+                  let textContainer = textView.textContainer else { return }
+
+            // Throttle to ~60fps
+            let now = CACurrentMediaTime()
+            guard now - lastScrollTime >= 0.016 else { return }
+            lastScrollTime = now
+
+            // Find the character at the CENTER of the visible area
+            let centerY = clipView.bounds.origin.y + clipView.bounds.height / 2
+            let adjustedY = centerY + textView.textContainerInset.height
+            let glyphIndex = layoutManager.glyphIndex(for: NSPoint(x: 0, y: adjustedY), in: textContainer)
+            let charIndex = layoutManager.characterIndexForGlyph(at: glyphIndex)
+
+            // Count line number at that character position
+            let text = textView.string
+            var line = 1
+            var i = text.startIndex
+            let limit = text.index(text.startIndex, offsetBy: min(charIndex, text.count))
+            while i < limit {
+                if text[i] == "\n" { line += 1 }
+                i = text.index(after: i)
+            }
+
+            // Compute fractional progress within the current line's visual height
+            let lineRect = layoutManager.lineFragmentRect(forGlyphAt: glyphIndex, effectiveRange: nil)
+            let lineTop = lineRect.origin.y - textView.textContainerInset.height
+            let lineHeight = lineRect.height
+            let frac = lineHeight > 0 ? min(1, max(0, (centerY - lineTop) / lineHeight)) : 0
+
+            scrollSync?.editorDidScroll(line: Double(line) + frac)
         }
     }
 }

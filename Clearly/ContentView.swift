@@ -32,6 +32,7 @@ struct ContentView: View {
     @State private var mode: ViewMode = .edit
     @AppStorage("editorFontSize") private var fontSize: Double = 16
     @State private var widthBeforeSplit: CGFloat?
+    @StateObject private var scrollSync = ScrollSync()
 
     private var wordCount: Int {
         document.text.split { $0.isWhitespace || $0.isNewline }.count
@@ -53,14 +54,14 @@ struct ContentView: View {
         Group {
             switch mode {
             case .edit:
-                EditorView(text: $document.text)
+                EditorView(text: $document.text, fontSize: CGFloat(fontSize))
             case .sideBySide:
                 HSplitView {
-                    EditorView(text: $document.text)
-                    PreviewView(markdown: document.text)
+                    EditorView(text: $document.text, fontSize: CGFloat(fontSize), scrollSync: scrollSync)
+                    PreviewView(markdown: document.text, fontSize: CGFloat(fontSize), scrollSync: scrollSync)
                 }
             case .preview:
-                PreviewView(markdown: document.text)
+                PreviewView(markdown: document.text, fontSize: CGFloat(fontSize))
             }
         }
         .frame(minWidth: mode == .sideBySide ? 1000 : 500, minHeight: 400)

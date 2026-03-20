@@ -1,7 +1,8 @@
 import Foundation
 
 enum PreviewCSS {
-    static let css = """
+    static func css(fontSize: CGFloat = 18) -> String {
+    """
     * {
         margin: 0;
         padding: 0;
@@ -10,7 +11,7 @@ enum PreviewCSS {
 
     body {
         font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif;
-        font-size: 18px;
+        font-size: \(Int(fontSize))px;
         line-height: 1.6;
         max-width: 42em;
         margin: 0 auto;
@@ -223,4 +224,5 @@ enum PreviewCSS {
         }
     }
     """
+    }
 }

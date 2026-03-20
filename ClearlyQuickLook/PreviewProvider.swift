@@ -20,7 +20,7 @@ class PreviewViewController: NSViewController, QLPreviewingController {
             <html>
             <head>
             <meta charset="utf-8">
-            <style>\(PreviewCSS.css)</style>
+            <style>\(PreviewCSS.css())</style>
             </head>
             <body>\(htmlBody)</body>
             </html>
