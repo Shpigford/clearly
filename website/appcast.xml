@@ -3,6 +3,20 @@
   <channel>
     <title>Clearly</title>
     <item>
+      <title>Version 1.2.0</title>
+      <sparkle:version>1.2.0</sparkle:version>
+      <sparkle:shortVersionString>1.2.0</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+      <pubDate>Fri, 20 Mar 2026 00:57:34 +0000</pubDate>
+      <description><![CDATA[<ul><li>Your preferred view mode (editor, preview, or side-by-side) is now remembered across sessions</li><li>Editor and preview scroll together so you always see what you're editing</li><li>Dark mode app icon no longer shows white corners</li><li>Adjust font size with Cmd+ and Cmd- keyboard shortcuts</li><li>Automatic update support via Sparkle</li></ul>]]></description>
+      <enclosure
+        url="https://github.com/Shpigford/clearly/releases/download/v1.2.0/Clearly.dmg"
+        sparkle:edSignature="MfJRkf16+V6n/3aT8RGHhjvf3W36wXr/QfycHwxviR4uIU0U5MGJroVD0zkK6SEcBg9wmjsSf7L3key31vhcCA=="
+        length="3876300"
+        type="application/octet-stream"
+      />
+    </item>
+    <item>
       <title>Version 1.1.2</title>
       <sparkle:version>1.1.2</sparkle:version>
       <sparkle:shortVersionString>1.1.2</sparkle:shortVersionString>
@@ -14,6 +28,5 @@
         length="2806993"
         type="application/octet-stream"
       />
-    </item>
-  </channel>
+    </item>  </channel>
 </rss>
