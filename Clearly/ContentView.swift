@@ -29,10 +29,16 @@ struct HiddenToolbarBackground: ViewModifier {
 
 struct ContentView: View {
     @Binding var document: MarkdownDocument
-    @State private var mode: ViewMode = .edit
+    @State private var mode: ViewMode
     @AppStorage("editorFontSize") private var fontSize: Double = 16
     @State private var widthBeforeSplit: CGFloat?
     @StateObject private var scrollSync = ScrollSync()
+
+    init(document: Binding<MarkdownDocument>) {
+        self._document = document
+        let storedMode = UserDefaults.standard.string(forKey: "viewMode")
+        self._mode = State(initialValue: ViewMode(rawValue: storedMode ?? "") ?? .edit)
+    }
 
     private var wordCount: Int {
         document.text.split { $0.isWhitespace || $0.isNewline }.count
@@ -67,6 +73,7 @@ struct ContentView: View {
         .frame(minWidth: mode == .sideBySide ? 1000 : 500, minHeight: 400)
         .background(Theme.backgroundColorSwiftUI)
         .onChange(of: mode) { _, newMode in
+            UserDefaults.standard.set(newMode.rawValue, forKey: "viewMode")
             guard let window = NSApp.keyWindow else { return }
             let frame = window.frame
             if newMode == .sideBySide {
