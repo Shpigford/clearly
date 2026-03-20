@@ -162,13 +162,15 @@ struct EditorView: NSViewRepresentable {
             let charIndex = layoutManager.characterIndexForGlyph(at: glyphIndex)
 
             // Count line number at that character position
-            let text = textView.string
+            let text = textView.string as NSString
+            let safeCharIndex = min(charIndex, text.length)
             var line = 1
-            var i = text.startIndex
-            let limit = text.index(text.startIndex, offsetBy: min(charIndex, text.count))
-            while i < limit {
-                if text[i] == "\n" { line += 1 }
-                i = text.index(after: i)
+            var position = 0
+            while position < safeCharIndex {
+                let lineRange = text.lineRange(for: NSRange(location: position, length: 0))
+                if NSMaxRange(lineRange) > safeCharIndex { break }
+                line += 1
+                position = NSMaxRange(lineRange)
             }
 
             // Compute fractional progress within the current line's visual height

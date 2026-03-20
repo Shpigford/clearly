@@ -27,6 +27,9 @@ struct ClearlyApp: App {
             CommandGroup(after: .textEditing) {
                 ViewModeCommands()
             }
+            CommandGroup(after: .textFormatting) {
+                FontSizeCommands()
+            }
             CommandMenu("Format") {
                 Button("Bold") {
                     NSApp.sendAction(#selector(ClearlyTextView.toggleBold(_:)), to: nil, from: nil)
@@ -76,6 +79,24 @@ struct ViewModeCommands: View {
             mode?.wrappedValue = .preview
         }
         .keyboardShortcut("3", modifiers: .command)
+    }
+}
+
+// MARK: - Font Size Commands
+
+struct FontSizeCommands: View {
+    @AppStorage("editorFontSize") private var fontSize: Double = 16
+
+    var body: some View {
+        Button("Increase Font Size") {
+            fontSize = min(fontSize + 1, 24)
+        }
+        .keyboardShortcut("+", modifiers: .command)
+
+        Button("Decrease Font Size") {
+            fontSize = max(fontSize - 1, 12)
+        }
+        .keyboardShortcut("-", modifiers: .command)
     }
 }
 

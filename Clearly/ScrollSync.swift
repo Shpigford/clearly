@@ -56,6 +56,8 @@ class ScrollSync: ObservableObject {
             var c = window._spCache;
             if (!c || !c.length) return;
             var current = c[0], next = null;
+            var wholeLine = Math.floor(\(line));
+            var fractional = Math.max(0, Math.min(1, \(line) - wholeLine));
             for (var i = 0; i < c.length; i++) {
                 if (c[i].startLine <= \(line)) {
                     current = c[i];
@@ -68,6 +70,8 @@ class ScrollSync: ObservableObject {
             if (\(line) >= current.startLine && \(line) <= current.endLine && current.endLine > current.startLine) {
                 var blockFrac = (\(line) - current.startLine) / (current.endLine - current.startLine);
                 y = current.top + blockFrac * (current.bottom - current.top);
+            } else if (current.startLine === current.endLine && wholeLine === current.startLine) {
+                y = current.top + fractional * (current.bottom - current.top);
             } else if (next) {
                 var currentEnd = Math.max(current.startLine, current.endLine);
                 if (next.startLine > currentEnd && \(line) > currentEnd) {
@@ -109,6 +113,8 @@ class ScrollSync: ObservableObject {
             } else {
                 var line = \(anchor.approximateLine);
                 var current = c[0], next = null;
+                var wholeLine = Math.floor(line);
+                var fractional = Math.max(0, Math.min(1, line - wholeLine));
                 for (var i = 0; i < c.length; i++) {
                     if (c[i].startLine <= line) {
                         current = c[i];
@@ -120,6 +126,8 @@ class ScrollSync: ObservableObject {
                 if (line >= current.startLine && line <= current.endLine && current.endLine > current.startLine) {
                     var blockFrac = (line - current.startLine) / (current.endLine - current.startLine);
                     y = current.top + blockFrac * (current.bottom - current.top);
+                } else if (current.startLine === current.endLine && wholeLine === current.startLine) {
+                    y = current.top + fractional * (current.bottom - current.top);
                 } else if (next) {
                     var currentEnd = Math.max(current.startLine, current.endLine);
                     if (next.startLine > currentEnd && line > currentEnd) {
