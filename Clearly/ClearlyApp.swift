@@ -24,6 +24,12 @@ struct ClearlyApp: App {
             CommandGroup(after: .appInfo) {
                 CheckForUpdatesView(updater: updaterController.updater)
             }
+            CommandGroup(after: .importExport) {
+                ExportPDFCommand()
+            }
+            CommandGroup(replacing: .printItem) {
+                PrintCommand()
+            }
             CommandGroup(after: .textEditing) {
                 ViewModeCommands()
             }
@@ -52,6 +58,12 @@ struct ClearlyApp: App {
                     NSApp.sendAction(#selector(ClearlyTextView.insertLink(_:)), to: nil, from: nil)
                 }
                 .keyboardShortcut("k", modifiers: .command)
+
+                Divider()
+
+                Button("Page Break") {
+                    NSApp.sendAction(#selector(ClearlyTextView.insertPageBreak(_:)), to: nil, from: nil)
+                }
             }
         }
 
@@ -116,6 +128,36 @@ struct CheckForUpdatesView: View {
             updater.checkForUpdates()
         }
         .disabled(!checkForUpdatesViewModel.canCheckForUpdates)
+    }
+}
+
+// MARK: - Export / Print Commands
+
+struct ExportPDFCommand: View {
+    @FocusedValue(\.documentText) var text
+    @AppStorage("editorFontSize") private var fontSize: Double = 16
+
+    var body: some View {
+        Button("Export as PDF…") {
+            guard let text else { return }
+            PDFExporter().exportPDF(markdown: text, fontSize: CGFloat(fontSize))
+        }
+        .disabled(text == nil)
+        .keyboardShortcut("e", modifiers: [.command, .shift])
+    }
+}
+
+struct PrintCommand: View {
+    @FocusedValue(\.documentText) var text
+    @AppStorage("editorFontSize") private var fontSize: Double = 16
+
+    var body: some View {
+        Button("Print…") {
+            guard let text else { return }
+            PDFExporter().printHTML(markdown: text, fontSize: CGFloat(fontSize))
+        }
+        .disabled(text == nil)
+        .keyboardShortcut("p", modifiers: .command)
     }
 }
 

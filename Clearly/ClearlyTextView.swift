@@ -2,6 +2,13 @@ import AppKit
 
 final class ClearlyTextView: NSTextView {
 
+    // MARK: - Print
+
+    override func printView(_ sender: Any?) {
+        let fontSize = UserDefaults.standard.double(forKey: "editorFontSize")
+        PDFExporter().printHTML(markdown: string, fontSize: CGFloat(fontSize > 0 ? fontSize : 16))
+    }
+
     // MARK: - Find
 
     @objc func showFindPanel(_ sender: Any?) {
@@ -63,6 +70,12 @@ final class ClearlyTextView: NSTextView {
         }
 
         insertText(newLine, replacementRange: lineRange)
+    }
+
+    @objc func insertPageBreak(_ sender: Any?) {
+        let range = selectedRange()
+        let snippet = "\n\n<div class=\"page-break\"></div>\n\n"
+        insertText(snippet, replacementRange: range)
     }
 
     // MARK: - Helpers

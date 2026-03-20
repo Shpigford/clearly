@@ -10,10 +10,18 @@ struct ViewModeKey: FocusedValueKey {
     typealias Value = Binding<ViewMode>
 }
 
+struct DocumentTextKey: FocusedValueKey {
+    typealias Value = String
+}
+
 extension FocusedValues {
     var viewMode: Binding<ViewMode>? {
         get { self[ViewModeKey.self] }
         set { self[ViewModeKey.self] = newValue }
+    }
+    var documentText: String? {
+        get { self[DocumentTextKey.self] }
+        set { self[DocumentTextKey.self] = newValue }
     }
 }
 
@@ -141,5 +149,6 @@ struct ContentView: View {
         .modifier(HiddenToolbarBackground())
         .animation(nil, value: mode)
         .focusedSceneValue(\.viewMode, $mode)
+        .focusedSceneValue(\.documentText, document.text)
     }
 }
