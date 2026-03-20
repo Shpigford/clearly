@@ -11,8 +11,12 @@ Cut a new release of Clearly. Determines the version from git history, updates t
 
 1. Confirm `.env` exists in the project root. If it does not, stop and tell the user:
    "Missing `.env` file. Copy `.env.example` to `.env` and fill in APPLE_TEAM_ID, APPLE_ID, and SIGNING_IDENTITY_NAME."
-2. Confirm the working tree is clean (`git status --porcelain`). If there are uncommitted changes, stop and tell the user to commit or stash first.
-3. Confirm you are on the `main` branch. If not, stop and tell the user to switch to `main` first.
+2. Confirm the notarytool keychain profile `AC_PASSWORD` works. If it does not, stop and tell the user to run:
+   ```bash
+   xcrun notarytool store-credentials "AC_PASSWORD" --apple-id "$APPLE_ID" --team-id "$APPLE_TEAM_ID" --password "<app-specific-password>"
+   ```
+3. Confirm the working tree is clean (`git status --porcelain`). If there are uncommitted changes, stop and tell the user to commit or stash first.
+4. Confirm you are on the `main` branch. If not, stop and tell the user to switch to `main` first.
 
 ### Step 2: Determine the next version
 
@@ -48,6 +52,18 @@ Always confirm the version before proceeding. Use `mcp__conductor__AskUserQuesti
 
 If the user picks "Use a different version", ask them for the version number. If they pick "Cancel", stop.
 
+### Step 3.5: Update CHANGELOG.md
+
+1. Check if `CHANGELOG.md` has an `## [Unreleased]` section with content (bullet points).
+2. If the `## [Unreleased]` section is empty or missing, draft entries from commits since the last tag:
+   - **Rewrite each entry to be user-facing.** Don't echo commit messages. Describe what changed from the user's perspective — what it enables, fixes, or improves.
+   - Bad: "feat: synchronized scroll and fix editor font size"
+   - Good: "Editor and preview scroll together so you always see what you're editing"
+   - Keep entries succinct (one line each). No technical jargon, no commit prefixes.
+   - Confirm the drafted entries with the user using `mcp__conductor__AskUserQuestion`.
+3. Rename `## [Unreleased]` to `## [VERSION] - YYYY-MM-DD` (today's date).
+4. Add a new empty `## [Unreleased]` section above it.
+
 ### Step 4: Update version strings
 
 1. Edit `project.yml`. Update BOTH `MARKETING_VERSION` entries (main app target and QuickLook extension target) to the new version.
@@ -57,7 +73,7 @@ If the user picks "Use a different version", ask them for the version number. If
    ```
 3. Commit these changes:
    ```bash
-   git add project.yml website/index.html
+   git add project.yml website/index.html CHANGELOG.md
    git commit -m "Update marketing site version to v<VERSION>"
    git push
    ```

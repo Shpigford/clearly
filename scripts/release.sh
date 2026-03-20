@@ -17,10 +17,68 @@ if [ -f "$SCRIPT_DIR/../.env" ]; then
 fi
 
 VERSION="${1:?Usage: ./scripts/release.sh <version>}"
+
+# Extract changelog entries for a version and convert to HTML <ul>
+extract_changelog() {
+  local version="$1"
+  local changelog="$2"
+  local in_section=false
+  local html="<ul>"
+
+  while IFS= read -r line; do
+    if [[ "$line" =~ ^##\ \[${version}\] ]]; then
+      in_section=true
+      continue
+    fi
+    if $in_section && [[ "$line" =~ ^##\  ]]; then
+      break
+    fi
+    if $in_section && [[ "$line" =~ ^-\ (.+) ]]; then
+      html+="<li>${BASH_REMATCH[1]}</li>"
+    fi
+  done < "$changelog"
+
+  html+="</ul>"
+  if [ "$html" = "<ul></ul>" ]; then
+    echo ""
+  else
+    echo "$html"
+  fi
+}
+
+# Extract raw markdown changelog entries for a version
+extract_changelog_markdown() {
+  local version="$1"
+  local changelog="$2"
+  local in_section=false
+  local md=""
+
+  while IFS= read -r line; do
+    if [[ "$line" =~ ^##\ \[${version}\] ]]; then
+      in_section=true
+      continue
+    fi
+    if $in_section && [[ "$line" =~ ^##\  ]]; then
+      break
+    fi
+    if $in_section && [[ "$line" =~ ^-\ (.+) ]]; then
+      md+="- ${BASH_REMATCH[1]}"$'\n'
+    fi
+  done < "$changelog"
+
+  echo "$md"
+}
 TEAM_ID="${APPLE_TEAM_ID:?Set APPLE_TEAM_ID in .env}"
 SIGNING_IDENTITY="Developer ID Application: ${SIGNING_IDENTITY_NAME:?Set SIGNING_IDENTITY_NAME in .env} ($TEAM_ID)"
 APPLE_ID="${APPLE_ID:?Set APPLE_ID in .env}"
 BUNDLE_ID="com.sabotage.clearly"
+
+if ! xcrun notarytool history --keychain-profile "AC_PASSWORD" >/dev/null 2>&1; then
+  echo "❌ Unable to use notarytool keychain profile \"AC_PASSWORD\"."
+  echo "Create or refresh it with:"
+  echo "  xcrun notarytool store-credentials \"AC_PASSWORD\" --apple-id \"$APPLE_ID\" --team-id \"$TEAM_ID\" --password \"<app-specific-password>\""
+  exit 1
+fi
 
 echo "🔨 Building Clearly v$VERSION..."
 
@@ -80,6 +138,31 @@ ED_SIG=$(echo "$SIGNATURE" | grep -o 'sparkle:edSignature="[^"]*"' | cut -d'"' -
 LENGTH=$(echo "$SIGNATURE" | grep -o 'length="[^"]*"' | cut -d'"' -f2)
 PUB_DATE=$(date -u +"%a, %d %b %Y %H:%M:%S +0000")
 
+# Extract release notes from CHANGELOG.md
+RELEASE_NOTES=$(extract_changelog "$VERSION" "CHANGELOG.md")
+if [ -z "$RELEASE_NOTES" ]; then
+  echo "⚠️  No changelog entry for v$VERSION in CHANGELOG.md. Appcast will have no release notes."
+fi
+
+# Preserve existing items from current appcast (exclude current version if re-releasing)
+EXISTING_ITEMS=""
+if [ -f website/appcast.xml ]; then
+  EXISTING_ITEMS=$(awk '
+    /<item>/ { buf=""; capture=1 }
+    capture { buf = buf $0 "\n" }
+    /<\/item>/ {
+      capture=0
+      if (buf !~ /<sparkle:version>'"$VERSION"'</) printf "%s", buf
+    }
+  ' website/appcast.xml)
+fi
+
+# Build description element if we have release notes
+DESC_ELEMENT=""
+if [ -n "$RELEASE_NOTES" ]; then
+  DESC_ELEMENT="      <description><![CDATA[$RELEASE_NOTES]]></description>"
+fi
+
 cat > build/appcast.xml << APPCAST
 <?xml version="1.0" standalone="yes"?>
 <rss xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle" xmlns:dc="http://purl.org/dc/elements/1.1/" version="2.0">
@@ -91,6 +174,7 @@ cat > build/appcast.xml << APPCAST
       <sparkle:shortVersionString>$VERSION</sparkle:shortVersionString>
       <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
       <pubDate>$PUB_DATE</pubDate>
+$DESC_ELEMENT
       <enclosure
         url="https://github.com/Shpigford/clearly/releases/download/v$VERSION/Clearly.dmg"
         sparkle:edSignature="$ED_SIG"
@@ -98,7 +182,7 @@ cat > build/appcast.xml << APPCAST
         type="application/octet-stream"
       />
     </item>
-  </channel>
+$EXISTING_ITEMS  </channel>
 </rss>
 APPCAST
 
@@ -109,8 +193,15 @@ git commit -m "chore: update appcast for v$VERSION" || true
 git push
 
 echo "🚀 Creating GitHub Release..."
-gh release create "v$VERSION" build/Clearly.dmg \
-  --title "Clearly v$VERSION" \
-  --generate-notes
+CHANGELOG_MD=$(extract_changelog_markdown "$VERSION" "CHANGELOG.md")
+if [ -n "$CHANGELOG_MD" ]; then
+  gh release create "v$VERSION" build/Clearly.dmg \
+    --title "Clearly v$VERSION" \
+    --notes "$CHANGELOG_MD"
+else
+  gh release create "v$VERSION" build/Clearly.dmg \
+    --title "Clearly v$VERSION" \
+    --generate-notes
+fi
 
 echo "✅ Done! Release: https://github.com/Shpigford/clearly/releases/tag/v$VERSION"
