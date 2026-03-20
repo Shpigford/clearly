@@ -1,8 +1,59 @@
 import Foundation
 
 enum PreviewCSS {
-    static func css(fontSize: CGFloat = 18) -> String {
-    """
+    static func css(fontSize: CGFloat = 18, forExport: Bool = false) -> String {
+    let exportOverrides = forExport ? """
+    body {
+        color: #222222 !important;
+        background: white !important;
+        max-width: none !important;
+        margin: 0 !important;
+        padding: 0 !important;
+    }
+    a { color: #3366AA !important; }
+    code {
+        background-color: #F0F0F0 !important;
+        color: #CC3333 !important;
+    }
+    pre {
+        background-color: #F5F5F5 !important;
+        border-color: #E0E0E0 !important;
+        color: #222222 !important;
+    }
+    pre code {
+        background: none !important;
+        color: #222222 !important;
+    }
+    blockquote {
+        border-left-color: #CCCCCC !important;
+        color: #666666 !important;
+    }
+    table th {
+        background-color: #F5F5F5 !important;
+        border-color: #DDDDDD !important;
+    }
+    table td {
+        border-color: #EEEEEE !important;
+    }
+    table tr:nth-child(even) {
+        background-color: #FAFAFA !important;
+    }
+    hr {
+        border-color: #DDDDDD !important;
+    }
+    .img-placeholder {
+        background-color: #F0F0F0 !important;
+        border-color: #CCCCCC !important;
+        color: #999999 !important;
+    }
+    .page-break {
+        height: 0 !important;
+        border: none !important;
+        margin: 0 !important;
+    }
+    """ : ""
+
+    return """
     * {
         margin: 0;
         padding: 0;
@@ -185,6 +236,19 @@ enum PreviewCSS {
         margin: 2em 0;
     }
 
+    .page-break {
+        display: block;
+        height: 0;
+        border-top: 2px dashed #CCCCCC;
+        margin: 2em 0;
+    }
+
+    @media (prefers-color-scheme: dark) {
+        .page-break {
+            border-top-color: #444444;
+        }
+    }
+
     img {
         max-width: 100%;
         height: auto;
@@ -241,6 +305,59 @@ enum PreviewCSS {
             color: #777777;
         }
     }
+
+    @media print {
+        body {
+            color: #222222 !important;
+            background-color: #FFFFFF !important;
+            max-width: none;
+            padding: 0;
+            margin: 0;
+        }
+        a { color: #3366AA !important; }
+        code {
+            background-color: #F0F0F0 !important;
+            color: #CC3333 !important;
+        }
+        pre {
+            background-color: #F5F5F5 !important;
+            border-color: #E0E0E0 !important;
+            color: #222222 !important;
+        }
+        pre code {
+            background: none !important;
+            color: #222222 !important;
+        }
+        blockquote {
+            border-left-color: #CCCCCC !important;
+            color: #666666 !important;
+        }
+        th {
+            background-color: #F5F5F5 !important;
+            border-color: #DDDDDD !important;
+        }
+        td {
+            border-color: #EEEEEE !important;
+        }
+        tr:nth-child(even) {
+            background-color: #FAFAFA !important;
+        }
+        hr {
+            border-color: #DDDDDD !important;
+        }
+        .img-placeholder {
+            background-color: #F0F0F0 !important;
+            border-color: #CCCCCC !important;
+            color: #999999 !important;
+        }
+        .page-break {
+            page-break-after: always;
+            break-after: page;
+            height: 0;
+            border: none;
+        }
+    }
+    \(exportOverrides)
     """
     }
 }
