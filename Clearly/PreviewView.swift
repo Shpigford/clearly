@@ -7,6 +7,10 @@ struct PreviewView: NSViewRepresentable {
     var scrollSync: ScrollSync?
     @Environment(\.colorScheme) private var colorScheme
 
+    private var contentKey: String {
+        "\(markdown)__\(fontSize)__\(colorScheme == .dark ? "dark" : "light")"
+    }
+
     func makeCoordinator() -> Coordinator {
         Coordinator()
     }
@@ -31,8 +35,7 @@ struct PreviewView: NSViewRepresentable {
         context.coordinator.scrollSync = scrollSync
         scrollSync?.previewWebView = webView
 
-        let key = "\(markdown)__\(fontSize)"
-        if context.coordinator.lastContentKey != key {
+        if context.coordinator.lastContentKey != contentKey {
             loadHTML(in: webView, context: context)
         }
     }
@@ -44,7 +47,7 @@ struct PreviewView: NSViewRepresentable {
     }
 
     private func loadHTML(in webView: WKWebView, context: Context) {
-        context.coordinator.lastContentKey = "\(markdown)__\(fontSize)"
+        context.coordinator.lastContentKey = contentKey
         let htmlBody = MarkdownRenderer.renderHTML(markdown)
         let scrollJS = scrollSync != nil ? """
         // Keep block positions fresh when the preview reflows.
@@ -180,9 +183,10 @@ struct PreviewView: NSViewRepresentable {
         });
         \(scrollJS)
         </script>
+        \(MermaidSupport.scriptHTML)
         </html>
         """
-        webView.loadHTMLString(html, baseURL: nil)
+        webView.loadHTMLString(html, baseURL: MermaidSupport.resourceBaseURL)
     }
 
     final class Coordinator: NSObject, WKNavigationDelegate, WKScriptMessageHandler {

@@ -23,10 +23,11 @@ class PreviewViewController: NSViewController, QLPreviewingController {
             <style>\(PreviewCSS.css())</style>
             </head>
             <body>\(htmlBody)</body>
+            \(MermaidSupport.scriptHTML)
             </html>
             """
 
-            webView.loadHTMLString(html, baseURL: nil)
+            webView.loadHTMLString(html, baseURL: MermaidSupport.resourceBaseURL)
             handler(nil)
         } catch {
             handler(error)

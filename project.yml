@@ -21,6 +21,8 @@ targets:
     sources:
       - path: Clearly
       - path: Shared
+      - path: Shared/Resources/mermaid.min.js
+        buildPhase: resources
     dependencies:
       - package: cmark-gfm
         product: cmark
@@ -46,6 +48,8 @@ targets:
     sources:
       - path: ClearlyQuickLook
       - path: Shared
+      - path: Shared/Resources/mermaid.min.js
+        buildPhase: resources
     dependencies:
       - package: cmark-gfm
         product: cmark

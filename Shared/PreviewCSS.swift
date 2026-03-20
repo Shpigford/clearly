@@ -216,6 +216,24 @@ enum PreviewCSS {
         opacity: 0.5;
     }
 
+    /* Mermaid diagrams */
+    .mermaid {
+        text-align: center;
+        margin-bottom: 1em;
+        overflow-x: auto;
+    }
+
+    .mermaid svg {
+        max-width: 100%;
+        height: auto;
+    }
+
+    @media (prefers-color-scheme: dark) {
+        .mermaid {
+            color: #E0E0E0;
+        }
+    }
+
     @media (prefers-color-scheme: dark) {
         .img-placeholder {
             background-color: #2A2A2A;
