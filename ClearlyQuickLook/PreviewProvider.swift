@@ -23,6 +23,7 @@ class PreviewViewController: NSViewController, QLPreviewingController {
             <style>\(PreviewCSS.css())</style>
             </head>
             <body>\(htmlBody)</body>
+            \(MathSupport.scriptHTML(for: htmlBody))
             \(MermaidSupport.scriptHTML)
             </html>
             """

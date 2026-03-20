@@ -57,6 +57,7 @@ final class PDFExporter: NSObject, WKNavigationDelegate {
         <style>\(PreviewCSS.css(fontSize: fontSize, forExport: !isPrint))</style>
         </head>
         <body>\(htmlBody)</body>
+        \(MathSupport.scriptHTML(for: htmlBody))
         </html>
         """
         wv.loadHTMLString(html, baseURL: nil)

@@ -249,6 +249,16 @@ enum PreviewCSS {
         }
     }
 
+    .math-block {
+        text-align: center;
+        margin: 1em 0;
+        overflow-x: auto;
+    }
+
+    .math-inline {
+        display: inline;
+    }
+
     img {
         max-width: 100%;
         height: auto;

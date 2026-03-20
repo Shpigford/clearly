@@ -183,6 +183,7 @@ struct PreviewView: NSViewRepresentable {
         });
         \(scrollJS)
         </script>
+        \(MathSupport.scriptHTML(for: htmlBody))
         \(MermaidSupport.scriptHTML)
         </html>
         """

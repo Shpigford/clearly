@@ -47,6 +47,11 @@ struct ClearlyApp: App {
                 }
                 .keyboardShortcut("i", modifiers: .command)
 
+                Button("Strikethrough") {
+                    NSApp.sendAction(#selector(ClearlyTextView.toggleStrikethrough(_:)), to: nil, from: nil)
+                }
+                .keyboardShortcut("x", modifiers: [.command, .shift])
+
                 Button("Heading") {
                     NSApp.sendAction(#selector(ClearlyTextView.insertHeading(_:)), to: nil, from: nil)
                 }
@@ -58,6 +63,58 @@ struct ClearlyApp: App {
                     NSApp.sendAction(#selector(ClearlyTextView.insertLink(_:)), to: nil, from: nil)
                 }
                 .keyboardShortcut("k", modifiers: .command)
+
+                Button("Image...") {
+                    NSApp.sendAction(#selector(ClearlyTextView.insertImage(_:)), to: nil, from: nil)
+                }
+
+                Divider()
+
+                Button("Bullet List") {
+                    NSApp.sendAction(#selector(ClearlyTextView.toggleBulletList(_:)), to: nil, from: nil)
+                }
+
+                Button("Numbered List") {
+                    NSApp.sendAction(#selector(ClearlyTextView.toggleNumberedList(_:)), to: nil, from: nil)
+                }
+
+                Button("Todo") {
+                    NSApp.sendAction(#selector(ClearlyTextView.toggleTodoList(_:)), to: nil, from: nil)
+                }
+
+                Divider()
+
+                Button("Quote") {
+                    NSApp.sendAction(#selector(ClearlyTextView.toggleBlockquote(_:)), to: nil, from: nil)
+                }
+
+                Button("Horizontal Rule") {
+                    NSApp.sendAction(#selector(ClearlyTextView.insertHorizontalRule(_:)), to: nil, from: nil)
+                }
+
+                Button("Table") {
+                    NSApp.sendAction(#selector(ClearlyTextView.insertMarkdownTable(_:)), to: nil, from: nil)
+                }
+
+                Divider()
+
+                Button("Code") {
+                    NSApp.sendAction(#selector(ClearlyTextView.toggleInlineCode(_:)), to: nil, from: nil)
+                }
+
+                Button("Code Block") {
+                    NSApp.sendAction(#selector(ClearlyTextView.insertCodeBlock(_:)), to: nil, from: nil)
+                }
+
+                Divider()
+
+                Button("Math") {
+                    NSApp.sendAction(#selector(ClearlyTextView.toggleInlineMath(_:)), to: nil, from: nil)
+                }
+
+                Button("Math Block") {
+                    NSApp.sendAction(#selector(ClearlyTextView.insertMathBlock(_:)), to: nil, from: nil)
+                }
 
                 Divider()
 
