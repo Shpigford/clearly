@@ -19,7 +19,7 @@ Open in Xcode: `open Clearly.xcodeproj` (gitignored, so regenerate with xcodegen
 
 - Deployment target: macOS 14.0
 - Swift 5.9, Xcode 16+
-- Single external dependency: `cmark-gfm` (GFM markdown → HTML via Swift Package Manager)
+- Dependencies: `cmark-gfm` (GFM markdown → HTML), `Sparkle` (auto-updates) via Swift Package Manager
 
 ## Architecture
 
@@ -42,6 +42,15 @@ Open in Xcode: `open Clearly.xcodeproj` (gitignored, so regenerate with xcodegen
 - `Theme.swift` — Centralized colors (dynamic light/dark via `NSColor(name:)`) and font/spacing constants
 
 **Key pattern**: The editor uses AppKit (`NSTextView`) bridged to SwiftUI via `NSViewRepresentable`, not SwiftUI's `TextEditor`. This is intentional — it provides undo support, find panel, and `NSTextStorageDelegate`-based syntax highlighting.
+
+## Sparkle & Sandboxing
+
+The app is sandboxed and uses Sparkle 2.x for auto-updates. This combination has a critical gotcha:
+
+- **Xcode strips `temporary-exception` entitlements during `xcodebuild archive` + export.** The mach-lookup entitlements in `Clearly.entitlements` (needed for Sparkle's XPC installer service) will be present in local builds but silently removed from archived/exported builds. The release script (`scripts/release.sh`) works around this by re-signing the exported app with the resolved entitlements and verifying they're present before creating the DMG.
+- If you ever change entitlements, verify them on the **exported** app (`codesign -d --entitlements :- build/export/Clearly.app`), not just the local build.
+- `SUEnableInstallerLauncherService` in Info.plist must stay `YES` — without it, Sparkle can't launch the installer in a sandboxed app.
+- Do NOT copy Sparkle's XPC services to `Contents/XPCServices/` — that's the old Sparkle 1.x approach. Sparkle 2.x bundles them inside the framework.
 
 ## Conventions
 
