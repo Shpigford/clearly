@@ -2,12 +2,11 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 extension UTType {
-    static let publicMarkdown = UTType(importedAs: "public.markdown", conformingTo: .plainText)
     static let daringFireballMarkdown = UTType(importedAs: "net.daringfireball.markdown", conformingTo: .plainText)
 }
 
 struct MarkdownDocument: FileDocument {
-    static var readableContentTypes: [UTType] { [.publicMarkdown, .daringFireballMarkdown, .plainText] }
+    static var readableContentTypes: [UTType] { [.daringFireballMarkdown, .plainText] }
     static var writableContentTypes: [UTType] { [.daringFireballMarkdown] }
 
     var text: String
