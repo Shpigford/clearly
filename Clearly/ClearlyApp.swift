@@ -4,6 +4,7 @@ import Sparkle
 @main
 struct ClearlyApp: App {
     @AppStorage("themePreference") private var themePreference = "system"
+    private let recentMenuHelper = RecentMenuHelper()
     private let updaterController: SPUStandardUpdaterController
 
     init() {
