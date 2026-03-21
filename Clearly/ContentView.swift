@@ -14,6 +14,10 @@ struct DocumentTextKey: FocusedValueKey {
     typealias Value = String
 }
 
+struct DocumentFileURLKey: FocusedValueKey {
+    typealias Value = URL
+}
+
 extension FocusedValues {
     var viewMode: Binding<ViewMode>? {
         get { self[ViewModeKey.self] }
@@ -22,6 +26,10 @@ extension FocusedValues {
     var documentText: String? {
         get { self[DocumentTextKey.self] }
         set { self[DocumentTextKey.self] = newValue }
+    }
+    var documentFileURL: URL? {
+        get { self[DocumentFileURLKey.self] }
+        set { self[DocumentFileURLKey.self] = newValue }
     }
 }
 
@@ -37,13 +45,15 @@ struct HiddenToolbarBackground: ViewModifier {
 
 struct ContentView: View {
     @Binding var document: MarkdownDocument
+    let fileURL: URL?
     @State private var mode: ViewMode
     @AppStorage("editorFontSize") private var fontSize: Double = 16
     @State private var widthBeforeSplit: CGFloat?
     @StateObject private var scrollSync = ScrollSync()
 
-    init(document: Binding<MarkdownDocument>) {
+    init(document: Binding<MarkdownDocument>, fileURL: URL? = nil) {
         self._document = document
+        self.fileURL = fileURL
         let storedMode = UserDefaults.standard.string(forKey: "viewMode")
         self._mode = State(initialValue: ViewMode(rawValue: storedMode ?? "") ?? .edit)
     }
@@ -68,14 +78,14 @@ struct ContentView: View {
         Group {
             switch mode {
             case .edit:
-                EditorView(text: $document.text, fontSize: CGFloat(fontSize))
+                EditorView(text: $document.text, fontSize: CGFloat(fontSize), fileURL: fileURL)
             case .sideBySide:
                 HSplitView {
-                    EditorView(text: $document.text, fontSize: CGFloat(fontSize), scrollSync: scrollSync)
-                    PreviewView(markdown: document.text, fontSize: CGFloat(fontSize), scrollSync: scrollSync)
+                    EditorView(text: $document.text, fontSize: CGFloat(fontSize), fileURL: fileURL, scrollSync: scrollSync)
+                    PreviewView(markdown: document.text, fontSize: CGFloat(fontSize), scrollSync: scrollSync, fileURL: fileURL)
                 }
             case .preview:
-                PreviewView(markdown: document.text, fontSize: CGFloat(fontSize))
+                PreviewView(markdown: document.text, fontSize: CGFloat(fontSize), fileURL: fileURL)
             }
         }
         .frame(minWidth: mode == .sideBySide ? 1000 : 500, minHeight: 400)
@@ -150,5 +160,6 @@ struct ContentView: View {
         .animation(nil, value: mode)
         .focusedSceneValue(\.viewMode, $mode)
         .focusedSceneValue(\.documentText, document.text)
+        .focusedSceneValue(\.documentFileURL, fileURL)
     }
 }

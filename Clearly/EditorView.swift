@@ -4,6 +4,7 @@ import AppKit
 struct EditorView: NSViewRepresentable {
     @Binding var text: String
     var fontSize: CGFloat = 16
+    var fileURL: URL?
     var scrollSync: ScrollSync?
     @Environment(\.colorScheme) private var colorScheme
 
@@ -55,6 +56,7 @@ struct EditorView: NSViewRepresentable {
 
         // Insertion point color
         textView.insertionPointColor = Theme.textColor
+        textView.documentURL = fileURL
 
         // Delegate
         textView.delegate = context.coordinator
@@ -86,11 +88,12 @@ struct EditorView: NSViewRepresentable {
     }
 
     func updateNSView(_ scrollView: NSScrollView, context: Context) {
-        guard let textView = scrollView.documentView as? NSTextView else { return }
+        guard let textView = scrollView.documentView as? ClearlyTextView else { return }
 
         // Always refresh colors (handles appearance changes via @Environment colorScheme)
         textView.backgroundColor = Theme.backgroundColor
         textView.insertionPointColor = Theme.textColor
+        textView.documentURL = fileURL
 
         // Update typing attributes for new text
         let paragraph = NSMutableParagraphStyle()

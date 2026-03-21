@@ -1,12 +1,52 @@
 import AppKit
 
 final class ClearlyTextView: NSTextView {
+    var documentURL: URL?
 
     // MARK: - Print
 
     override func printView(_ sender: Any?) {
         let fontSize = UserDefaults.standard.double(forKey: "editorFontSize")
-        PDFExporter().printHTML(markdown: string, fontSize: CGFloat(fontSize > 0 ? fontSize : 16))
+        PDFExporter().printHTML(
+            markdown: string,
+            fontSize: CGFloat(fontSize > 0 ? fontSize : 16),
+            fileURL: documentURL
+        )
+    }
+
+    // MARK: - Paste
+
+    private static let imageExtensions: Set<String> = ["png", "jpg", "jpeg", "gif", "webp", "svg", "tiff", "tif", "bmp", "heic"]
+
+    private static func encodeImagePath(_ path: String) -> String {
+        path.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? path
+    }
+
+    override func paste(_ sender: Any?) {
+        let pasteboard = NSPasteboard.general
+
+        // Check for file URLs on the pasteboard
+        if let urls = pasteboard.readObjects(forClasses: [NSURL.self], options: [
+            .urlReadingFileURLsOnly: true
+        ]) as? [URL], !urls.isEmpty {
+            let imageURLs = urls.filter { Self.imageExtensions.contains($0.pathExtension.lowercased()) }
+            if !imageURLs.isEmpty {
+                let markdown = imageURLs.map { "![](\(Self.encodeImagePath($0.path)))" }.joined(separator: "\n")
+                insertText(markdown, replacementRange: selectedRange())
+                return
+            }
+        }
+
+        // Fallback: check if pasted string looks like an image file path
+        if let text = pasteboard.string(forType: .string)?.trimmingCharacters(in: .whitespacesAndNewlines),
+           text.hasPrefix("/"),
+           !text.contains("\n"),
+           Self.imageExtensions.contains((text as NSString).pathExtension.lowercased()) {
+            insertText("![](\(Self.encodeImagePath(text)))", replacementRange: selectedRange())
+            return
+        }
+
+        super.paste(sender)
     }
 
     // MARK: - Find

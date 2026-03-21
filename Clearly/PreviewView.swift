@@ -5,10 +5,11 @@ struct PreviewView: NSViewRepresentable {
     let markdown: String
     var fontSize: CGFloat = 18
     var scrollSync: ScrollSync?
+    var fileURL: URL?
     @Environment(\.colorScheme) private var colorScheme
 
     private var contentKey: String {
-        "\(markdown)__\(fontSize)__\(colorScheme == .dark ? "dark" : "light")"
+        "\(markdown)__\(fontSize)__\(colorScheme == .dark ? "dark" : "light")__\(LocalImageSupport.fileURLKeyFragment(fileURL))"
     }
 
     func makeCoordinator() -> Coordinator {
@@ -17,6 +18,7 @@ struct PreviewView: NSViewRepresentable {
 
     func makeNSView(context: Context) -> WKWebView {
         let config = WKWebViewConfiguration()
+        config.setURLSchemeHandler(LocalImageSchemeHandler(), forURLScheme: LocalImageSupport.scheme)
         if scrollSync != nil {
             config.userContentController.add(context.coordinator, name: "scrollSync")
         }
@@ -48,7 +50,8 @@ struct PreviewView: NSViewRepresentable {
 
     private func loadHTML(in webView: WKWebView, context: Context) {
         context.coordinator.lastContentKey = contentKey
-        let htmlBody = MarkdownRenderer.renderHTML(markdown)
+        let rawBody = MarkdownRenderer.renderHTML(markdown)
+        let htmlBody = LocalImageSupport.resolveImageSources(in: rawBody, relativeTo: fileURL)
         let scrollJS = scrollSync != nil ? """
         // Keep block positions fresh when the preview reflows.
         window._spCache = [];

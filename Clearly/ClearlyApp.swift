@@ -16,7 +16,7 @@ struct ClearlyApp: App {
 
     var body: some Scene {
         DocumentGroup(newDocument: MarkdownDocument()) { file in
-            ContentView(document: file.$document)
+            ContentView(document: file.$document, fileURL: file.fileURL)
         }
         .windowToolbarStyle(.unified(showsTitle: true))
         .defaultSize(width: 720, height: 900)
@@ -192,12 +192,13 @@ struct CheckForUpdatesView: View {
 
 struct ExportPDFCommand: View {
     @FocusedValue(\.documentText) var text
+    @FocusedValue(\.documentFileURL) var fileURL
     @AppStorage("editorFontSize") private var fontSize: Double = 16
 
     var body: some View {
         Button("Export as PDF…") {
             guard let text else { return }
-            PDFExporter().exportPDF(markdown: text, fontSize: CGFloat(fontSize))
+            PDFExporter().exportPDF(markdown: text, fontSize: CGFloat(fontSize), fileURL: fileURL)
         }
         .disabled(text == nil)
         .keyboardShortcut("e", modifiers: [.command, .shift])
@@ -206,12 +207,13 @@ struct ExportPDFCommand: View {
 
 struct PrintCommand: View {
     @FocusedValue(\.documentText) var text
+    @FocusedValue(\.documentFileURL) var fileURL
     @AppStorage("editorFontSize") private var fontSize: Double = 16
 
     var body: some View {
         Button("Print…") {
             guard let text else { return }
-            PDFExporter().printHTML(markdown: text, fontSize: CGFloat(fontSize))
+            PDFExporter().printHTML(markdown: text, fontSize: CGFloat(fontSize), fileURL: fileURL)
         }
         .disabled(text == nil)
         .keyboardShortcut("p", modifiers: .command)

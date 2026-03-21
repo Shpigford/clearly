@@ -10,9 +10,10 @@ final class PDFExporter: NSObject, WKNavigationDelegate {
     private var webView: WKWebView?
     private var hiddenWindow: NSWindow?
     private var exportURL: URL?
+    private var documentURL: URL?
     private var isPrint = false
 
-    func exportPDF(markdown: String, fontSize: CGFloat) {
+    func exportPDF(markdown: String, fontSize: CGFloat, fileURL: URL? = nil) {
         let panel = NSSavePanel()
         panel.allowedContentTypes = [.pdf]
         panel.nameFieldStringValue = "Untitled.pdf"
@@ -20,13 +21,15 @@ final class PDFExporter: NSObject, WKNavigationDelegate {
 
         PDFExporter.current = self
         exportURL = url
+        documentURL = fileURL
         isPrint = false
         loadHTML(markdown: markdown, fontSize: fontSize)
     }
 
-    func printHTML(markdown: String, fontSize: CGFloat) {
+    func printHTML(markdown: String, fontSize: CGFloat, fileURL: URL? = nil) {
         PDFExporter.current = self
         exportURL = nil
+        documentURL = fileURL
         isPrint = true
         loadHTML(markdown: markdown, fontSize: fontSize)
     }
@@ -34,6 +37,7 @@ final class PDFExporter: NSObject, WKNavigationDelegate {
     private func loadHTML(markdown: String, fontSize: CGFloat) {
         let renderWidth = isPrint ? Self.pageSize.width : Self.contentWidth
         let config = WKWebViewConfiguration()
+        config.setURLSchemeHandler(LocalImageSchemeHandler(), forURLScheme: LocalImageSupport.scheme)
         let wv = WKWebView(frame: NSRect(x: 0, y: 0, width: renderWidth, height: Self.pageSize.height), configuration: config)
         wv.navigationDelegate = self
         self.webView = wv
@@ -48,7 +52,8 @@ final class PDFExporter: NSObject, WKNavigationDelegate {
         window.orderBack(nil)
         self.hiddenWindow = window
 
-        let htmlBody = MarkdownRenderer.renderHTML(markdown)
+        let rawBody = MarkdownRenderer.renderHTML(markdown)
+        let htmlBody = LocalImageSupport.resolveImageSources(in: rawBody, relativeTo: documentURL)
         let html = """
         <!DOCTYPE html>
         <html>
@@ -60,25 +65,31 @@ final class PDFExporter: NSObject, WKNavigationDelegate {
         \(MathSupport.scriptHTML(for: htmlBody))
         </html>
         """
-        wv.loadHTMLString(html, baseURL: nil)
+        wv.loadHTMLString(html, baseURL: documentURL?.deletingLastPathComponent())
     }
 
     // MARK: - WKNavigationDelegate
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
-        if isPrint {
-            let printInfo = makePrintInfo()
-            let op = webView.printOperation(with: printInfo)
-            op.showsPrintPanel = true
-            op.showsProgressPanel = true
-            if let window = NSApp.mainWindow {
-                op.runModal(for: window, delegate: self, didRun: #selector(operationDidRun(_:success:contextInfo:)), contextInfo: nil)
-            } else {
-                _ = op.run()
-                cleanup()
+        Task { @MainActor in
+            do {
+                try await waitForImages(in: webView)
+            } catch {
+                // If image waiting JS fails, continue with export/print instead of blocking.
             }
-        } else {
-            Task { @MainActor in
+
+            if isPrint {
+                let printInfo = makePrintInfo()
+                let op = webView.printOperation(with: printInfo)
+                op.showsPrintPanel = true
+                op.showsProgressPanel = true
+                if let window = NSApp.mainWindow {
+                    op.runModal(for: window, delegate: self, didRun: #selector(operationDidRun(_:success:contextInfo:)), contextInfo: nil)
+                } else {
+                    _ = op.run()
+                    cleanup()
+                }
+            } else {
                 do {
                     guard let exportURL else {
                         cleanup()
@@ -105,6 +116,7 @@ final class PDFExporter: NSObject, WKNavigationDelegate {
         webView = nil
         hiddenWindow = nil
         exportURL = nil
+        documentURL = nil
         PDFExporter.current = nil
     }
 
@@ -143,6 +155,35 @@ final class PDFExporter: NSObject, WKNavigationDelegate {
         let value = try await webView.evaluateJavaScript(js)
         guard let positions = value as? [NSNumber] else { return [] }
         return positions.map { CGFloat($0.doubleValue) }
+    }
+
+    private func waitForImages(in webView: WKWebView) async throws {
+        _ = try await webView.callAsyncJavaScript(
+            """
+            const pendingImages = Array.from(document.images).filter(img => !img.complete);
+            if (pendingImages.length) {
+                await Promise.all(
+                    pendingImages.map(img => new Promise(resolve => {
+                        let settled = false;
+                        const finish = () => {
+                            if (settled) return;
+                            settled = true;
+                            clearTimeout(timeout);
+                            resolve(null);
+                        };
+                        const timeout = setTimeout(finish, 1000);
+                        img.addEventListener('load', finish, { once: true });
+                        img.addEventListener('error', finish, { once: true });
+                    }))
+                );
+            }
+            await new Promise(resolve => setTimeout(resolve, 50));
+            return true;
+            """,
+            arguments: [:],
+            in: nil,
+            contentWorld: .page
+        )
     }
 
     private func tallPDFData(in webView: WKWebView, height: CGFloat) async throws -> Data {
