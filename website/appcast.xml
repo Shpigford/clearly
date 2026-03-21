@@ -3,6 +3,20 @@
   <channel>
     <title>Clearly</title>
     <item>
+      <title>Version 1.5.0</title>
+      <sparkle:version>1.5.0</sparkle:version>
+      <sparkle:shortVersionString>1.5.0</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+      <pubDate>Sat, 21 Mar 2026 10:45:04 +0000</pubDate>
+      <description><![CDATA[<ul><li>Paste images directly into the editor — they're saved alongside your document and render in preview</li><li>Fixed markdown files not opening correctly from some apps due to a non-standard file type declaration</li></ul>]]></description>
+      <enclosure
+        url="https://github.com/Shpigford/clearly/releases/download/v1.5.0/Clearly.dmg"
+        sparkle:edSignature="C5YsZRH45xsexdvz96ZIPdnOjjRiR6dN5u/+Jz0CfjMaaOtvgh/wn/AhlCmfPuNO8R80nlyNunfKNVukvKouBA=="
+        length="5833901"
+        type="application/octet-stream"
+      />
+    </item>
+    <item>
       <title>Version 1.4.0</title>
       <sparkle:version>1.4.0</sparkle:version>
       <sparkle:shortVersionString>1.4.0</sparkle:shortVersionString>
