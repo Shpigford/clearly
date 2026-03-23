@@ -68,6 +68,12 @@ enum Theme {
             : NSColor(red: 0.2, green: 0.4, blue: 0.7, alpha: 1)
     }
 
+    static let mathColor = NSColor(name: "themeMath") { appearance in
+        appearance.isDark
+            ? NSColor(red: 0.7, green: 0.5, blue: 0.9, alpha: 1)
+            : NSColor(red: 0.5, green: 0.25, blue: 0.7, alpha: 1)
+    }
+
     static let blockquoteColor = NSColor(name: "themeBlockquote") { appearance in
         appearance.isDark
             ? NSColor(red: 0.6, green: 0.6, blue: 0.6, alpha: 1)

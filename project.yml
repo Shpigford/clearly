@@ -23,6 +23,13 @@ targets:
       - path: Shared
       - path: Shared/Resources/mermaid.min.js
         buildPhase: resources
+      - path: Shared/Resources/katex.min.js
+        buildPhase: resources
+      - path: Shared/Resources/katex.min.css
+        buildPhase: resources
+      - path: Shared/Resources/fonts
+        buildPhase: resources
+        type: folder
     dependencies:
       - package: cmark-gfm
         product: cmark
@@ -50,6 +57,13 @@ targets:
       - path: Shared
       - path: Shared/Resources/mermaid.min.js
         buildPhase: resources
+      - path: Shared/Resources/katex.min.js
+        buildPhase: resources
+      - path: Shared/Resources/katex.min.css
+        buildPhase: resources
+      - path: Shared/Resources/fonts
+        buildPhase: resources
+        type: folder
     dependencies:
       - package: cmark-gfm
         product: cmark

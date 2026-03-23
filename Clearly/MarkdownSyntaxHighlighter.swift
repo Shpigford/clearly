@@ -16,6 +16,12 @@ final class MarkdownSyntaxHighlighter: NSObject, NSTextStorageDelegate {
         // Fenced code blocks (``` ... ```) — must come first to prevent inner highlighting
         add("^(`{3,})(.*?)\\n([\\s\\S]*?)^\\1\\s*$", .codeBlock, options: .anchorsMatchLines)
 
+        // Display math blocks: $$...$$ (multiline)
+        add("^\\$\\$\\n([\\s\\S]*?)^\\$\\$\\s*$", .mathBlock, options: .anchorsMatchLines)
+
+        // Inline math: $...$
+        add("(?<!\\$)\\$(?!\\$)(.+?)(?<!\\$)\\$(?!\\$)", .mathInline)
+
         // Headings: # Heading
         add("^(#{1,6}\\s+)(.+)$", .heading, options: .anchorsMatchLines)
 
@@ -65,6 +71,8 @@ final class MarkdownSyntaxHighlighter: NSObject, NSTextStorageDelegate {
         case blockquote
         case listMarker
         case syntax
+        case mathBlock
+        case mathInline
     }
 
     // MARK: - NSTextStorageDelegate
@@ -102,8 +110,8 @@ final class MarkdownSyntaxHighlighter: NSObject, NSTextStorageDelegate {
             regex.enumerateMatches(in: text, range: fullRange) { match, _, _ in
                 guard let match = match else { return }
 
-                // If this isn't a code block pattern, skip if inside a code block
-                if style != .codeBlock {
+                // If this isn't a code/math block pattern, skip if inside a protected block
+                if style != .codeBlock && style != .mathBlock {
                     let matchRange = match.range
                     if codeBlockRanges.contains(where: { NSIntersectionRange($0, matchRange).length > 0 }) {
                         return
@@ -209,6 +217,31 @@ final class MarkdownSyntaxHighlighter: NSObject, NSTextStorageDelegate {
 
                 case .syntax:
                     textStorage.addAttribute(.foregroundColor, value: Theme.syntaxColor, range: match.range)
+
+                case .mathBlock:
+                    codeBlockRanges.append(match.range)
+                    textStorage.addAttribute(.foregroundColor, value: Theme.mathColor, range: match.range)
+                    // Fade the opening $$ delimiter
+                    let openRange = NSRange(location: match.range.location, length: 2)
+                    if openRange.upperBound <= textStorage.length {
+                        textStorage.addAttribute(.foregroundColor, value: Theme.syntaxColor, range: openRange)
+                    }
+                    // Fade the closing $$ delimiter
+                    let closeStart = match.range.location + match.range.length - 2
+                    let closeRange = NSRange(location: closeStart, length: 2)
+                    if closeRange.upperBound <= textStorage.length && closeStart >= match.range.location {
+                        textStorage.addAttribute(.foregroundColor, value: Theme.syntaxColor, range: closeRange)
+                    }
+
+                case .mathInline:
+                    if match.numberOfRanges >= 2 {
+                        let contentRange = match.range(at: 1)
+                        let openRange = NSRange(location: match.range.location, length: 1)
+                        let closeRange = NSRange(location: match.range.location + match.range.length - 1, length: 1)
+                        textStorage.addAttribute(.foregroundColor, value: Theme.syntaxColor, range: openRange)
+                        textStorage.addAttribute(.foregroundColor, value: Theme.syntaxColor, range: closeRange)
+                        textStorage.addAttribute(.foregroundColor, value: Theme.mathColor, range: contentRange)
+                    }
                 }
             }
         }

@@ -45,8 +45,8 @@ enum MathSupport {
         }
 
         return """
-        <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
-        <script src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+        <link rel="stylesheet" href="katex.min.css">
+        <script src="katex.min.js"></script>
         <script>
         if (window.katex) {
             document.querySelectorAll('.math-block').forEach(function(el) {
