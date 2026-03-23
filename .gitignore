@@ -7,3 +7,4 @@ build/
 .DS_Store
 .env
 .context/
+__pycache__/

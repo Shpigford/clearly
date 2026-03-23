@@ -68,10 +68,38 @@ extract_changelog_markdown() {
 
   echo "$md"
 }
+# Create a styled DMG with app icon and Applications drop link
+create_clearly_dmg() {
+  local output_path="$1"
+  rm -f "$output_path"
+
+  create-dmg \
+    --volname "Clearly" \
+    --background "$SCRIPT_DIR/dmg-background@2x.png" \
+    --window-pos 200 120 \
+    --window-size 660 400 \
+    --icon-size 160 \
+    --text-size 14 \
+    --icon "Clearly.app" 170 180 \
+    --hide-extension "Clearly.app" \
+    --app-drop-link 490 180 \
+    --no-internet-enable \
+    --format UDZO \
+    "$output_path" \
+    build/export/Clearly.app || true
+
+  [ -f "$output_path" ] || { echo "❌ DMG creation failed"; exit 1; }
+}
+
 TEAM_ID="${APPLE_TEAM_ID:?Set APPLE_TEAM_ID in .env}"
 SIGNING_IDENTITY="Developer ID Application: ${SIGNING_IDENTITY_NAME:?Set SIGNING_IDENTITY_NAME in .env} ($TEAM_ID)"
 APPLE_ID="${APPLE_ID:?Set APPLE_ID in .env}"
 BUNDLE_ID="com.sabotage.clearly"
+
+if ! command -v create-dmg &>/dev/null; then
+  echo "❌ create-dmg not found. Install with: brew install create-dmg"
+  exit 1
+fi
 
 if ! xcrun notarytool history --keychain-profile "AC_PASSWORD" >/dev/null 2>&1; then
   echo "❌ Unable to use notarytool keychain profile \"AC_PASSWORD\"."
@@ -121,10 +149,7 @@ fi
 echo "✅ Entitlements verified."
 
 echo "📦 Creating DMG..."
-hdiutil create -volname "Clearly" \
-  -srcfolder build/export/Clearly.app \
-  -ov -format UDZO \
-  build/Clearly.dmg
+create_clearly_dmg build/Clearly.dmg
 
 echo "🔏 Notarizing..."
 xcrun notarytool submit build/Clearly.dmg \
@@ -134,10 +159,7 @@ xcrun notarytool submit build/Clearly.dmg \
 echo "📎 Stapling..."
 xcrun stapler staple build/export/Clearly.app
 rm build/Clearly.dmg
-hdiutil create -volname "Clearly" \
-  -srcfolder build/export/Clearly.app \
-  -ov -format UDZO \
-  build/Clearly.dmg
+create_clearly_dmg build/Clearly.dmg
 xcrun stapler staple build/Clearly.dmg || echo "⚠️  DMG staple failed (normal — CDN propagation delay). App inside is stapled."
 
 echo "🏷️  Tagging v$VERSION..."
