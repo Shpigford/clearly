@@ -18,6 +18,19 @@ enum Theme {
     // MARK: - Line Spacing
     static let lineSpacing: CGFloat = 8
 
+    /// Desired line height = font natural height + lineSpacing
+    static var editorLineHeight: CGFloat {
+        let font = editorFont
+        return ceil(font.ascender - font.descender + font.leading) + lineSpacing
+    }
+
+    /// Baseline offset to vertically center text within the line height
+    static var editorBaselineOffset: CGFloat {
+        let font = editorFont
+        let naturalHeight = ceil(font.ascender - font.descender + font.leading)
+        return (editorLineHeight - naturalHeight) / 2
+    }
+
     // MARK: - Dynamic Colors (auto-resolve for light/dark)
 
     static let backgroundColor = NSColor(name: "themeBackground") { appearance in

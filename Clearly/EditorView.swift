@@ -33,14 +33,17 @@ struct EditorView: NSViewRepresentable {
         textView.textColor = Theme.textColor
         textView.backgroundColor = Theme.backgroundColor
 
-        // Paragraph style with line height
+        // Paragraph style with line height — use min/max line height + baselineOffset
+        // so text is vertically centered in each line (not top-aligned like lineSpacing)
         let paragraph = NSMutableParagraphStyle()
-        paragraph.lineSpacing = Theme.lineSpacing
+        paragraph.minimumLineHeight = Theme.editorLineHeight
+        paragraph.maximumLineHeight = Theme.editorLineHeight
         textView.defaultParagraphStyle = paragraph
         textView.typingAttributes = [
             .font: Theme.editorFont,
             .foregroundColor: Theme.textColor,
-            .paragraphStyle: paragraph
+            .paragraphStyle: paragraph,
+            .baselineOffset: Theme.editorBaselineOffset
         ]
 
         // Insets
@@ -97,11 +100,13 @@ struct EditorView: NSViewRepresentable {
 
         // Update typing attributes for new text
         let paragraph = NSMutableParagraphStyle()
-        paragraph.lineSpacing = Theme.lineSpacing
+        paragraph.minimumLineHeight = Theme.editorLineHeight
+        paragraph.maximumLineHeight = Theme.editorLineHeight
         textView.typingAttributes = [
             .font: Theme.editorFont,
             .foregroundColor: Theme.textColor,
-            .paragraphStyle: paragraph
+            .paragraphStyle: paragraph,
+            .baselineOffset: Theme.editorBaselineOffset
         ]
 
         // Re-highlight when appearance or font size changes

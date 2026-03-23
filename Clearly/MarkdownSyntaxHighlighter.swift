@@ -95,12 +95,14 @@ final class MarkdownSyntaxHighlighter: NSObject, NSTextStorageDelegate {
 
         // Reset to default style
         let paragraph = NSMutableParagraphStyle()
-        paragraph.lineSpacing = Theme.lineSpacing
+        paragraph.minimumLineHeight = Theme.editorLineHeight
+        paragraph.maximumLineHeight = Theme.editorLineHeight
 
         textStorage.addAttributes([
             .font: Theme.editorFont,
             .foregroundColor: Theme.textColor,
-            .paragraphStyle: paragraph
+            .paragraphStyle: paragraph,
+            .baselineOffset: Theme.editorBaselineOffset
         ], range: fullRange)
 
         // Track code block ranges to skip inner highlighting

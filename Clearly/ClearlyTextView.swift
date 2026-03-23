@@ -3,6 +3,28 @@ import AppKit
 final class ClearlyTextView: NSTextView {
     var documentURL: URL?
 
+    // MARK: - Cursor
+
+    // Hide the macOS 14+ system insertion indicator so our custom drawInsertionPoint is visible
+    override func didAddSubview(_ subview: NSView) {
+        super.didAddSubview(subview)
+        if let indicator = subview as? NSTextInsertionIndicator {
+            indicator.displayMode = .hidden
+        }
+    }
+
+    override func drawInsertionPoint(in rect: NSRect, color: NSColor, turnedOn flag: Bool) {
+        var adjusted = rect
+        adjusted.size.width = 2
+        super.drawInsertionPoint(in: adjusted, color: color, turnedOn: flag)
+    }
+
+    override func setNeedsDisplay(_ rect: NSRect, avoidAdditionalLayout flag: Bool) {
+        var rect = rect
+        rect.size.width += 2
+        super.setNeedsDisplay(rect, avoidAdditionalLayout: flag)
+    }
+
     // MARK: - Print
 
     override func printView(_ sender: Any?) {
