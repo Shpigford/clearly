@@ -21,7 +21,8 @@ Write with syntax highlighting, preview instantly, and get back to what matters.
 ## Features
 
 - **Syntax highlighting** — headings, bold, italic, links, code blocks, and more
-- **Instant preview** — rendered GitHub Flavored Markdown, including Mermaid diagrams
+- **Instant preview** — rendered GitHub Flavored Markdown, including Mermaid diagrams and KaTeX math
+- **Frontmatter support** — YAML frontmatter is formatted cleanly in both editor and preview
 - **Side-by-side** — edit and preview simultaneously with synchronized scrolling
 - **PDF export** — export to PDF or print directly from the app
 - **Format shortcuts** — Cmd+B, Cmd+I, Cmd+K for bold, italic, and links
