@@ -19,6 +19,7 @@ struct PreviewView: NSViewRepresentable {
     func makeNSView(context: Context) -> WKWebView {
         let config = WKWebViewConfiguration()
         config.setURLSchemeHandler(LocalImageSchemeHandler(), forURLScheme: LocalImageSupport.scheme)
+        config.userContentController.add(context.coordinator, name: "linkClicked")
         if scrollSync != nil {
             config.userContentController.add(context.coordinator, name: "scrollSync")
         }
@@ -27,6 +28,7 @@ struct PreviewView: NSViewRepresentable {
         webView.underPageBackgroundColor = Theme.backgroundColor
         webView.alphaValue = 0 // hidden until content loads
         context.coordinator.scrollSync = scrollSync
+        context.coordinator.fileURL = fileURL
         scrollSync?.previewWebView = webView
         loadHTML(in: webView, context: context)
         return webView
@@ -35,6 +37,7 @@ struct PreviewView: NSViewRepresentable {
     func updateNSView(_ webView: WKWebView, context: Context) {
         webView.underPageBackgroundColor = Theme.backgroundColor
         context.coordinator.scrollSync = scrollSync
+        context.coordinator.fileURL = fileURL
         scrollSync?.previewWebView = webView
 
         if context.coordinator.lastContentKey != contentKey {
@@ -43,6 +46,7 @@ struct PreviewView: NSViewRepresentable {
     }
 
     static func dismantleNSView(_ webView: WKWebView, coordinator: Coordinator) {
+        webView.configuration.userContentController.removeScriptMessageHandler(forName: "linkClicked")
         if coordinator.scrollSync != nil {
             webView.configuration.userContentController.removeScriptMessageHandler(forName: "scrollSync")
         }
@@ -184,6 +188,17 @@ struct PreviewView: NSViewRepresentable {
                 window._scheduleCacheRebuild && window._scheduleCacheRebuild();
             });
         });
+        // Intercept link clicks and forward to native
+        document.addEventListener('click', function(e) {
+            var a = e.target.closest('a[href]');
+            if (!a) return;
+            var href = a.getAttribute('href');
+            if (!href) return;
+            // Allow pure anchor links for in-page scrolling
+            if (href.startsWith('#')) return;
+            e.preventDefault();
+            window.webkit.messageHandlers.linkClicked.postMessage(href);
+        });
         \(scrollJS)
         </script>
         \(MathSupport.scriptHTML(for: htmlBody))
@@ -197,6 +212,7 @@ struct PreviewView: NSViewRepresentable {
         var scrollSync: ScrollSync?
         var lastContentKey: String?
         var didInitialLoad = false
+        var fileURL: URL?
 
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
             if !didInitialLoad {
@@ -206,7 +222,31 @@ struct PreviewView: NSViewRepresentable {
             scrollSync?.syncPreview()
         }
 
+        private func resolvedLinkURL(for href: String) -> URL? {
+            if let url = URL(string: href),
+               url.scheme != nil {
+                return url
+            }
+
+            if href.hasPrefix("/") {
+                return URL(fileURLWithPath: href)
+            }
+
+            guard let fileURL else { return nil }
+            return URL(string: href, relativeTo: fileURL)?.absoluteURL
+        }
+
+        private func handleLinkClick(_ href: String) {
+            guard let targetURL = resolvedLinkURL(for: href) else { return }
+            NSWorkspace.shared.open(targetURL)
+        }
+
         func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
+            if message.name == "linkClicked", let href = message.body as? String {
+                handleLinkClick(href)
+                return
+            }
+
             guard message.name == "scrollSync",
                   let body = message.body as? [String: Any],
                   let startLine = (body["startLine"] as? NSNumber)?.intValue,
