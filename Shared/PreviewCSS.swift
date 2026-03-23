@@ -46,6 +46,15 @@ enum PreviewCSS {
         border-color: #CCCCCC !important;
         color: #999999 !important;
     }
+    .frontmatter {
+        background-color: #F0F0F0 !important;
+    }
+    .frontmatter dt {
+        color: #555555 !important;
+    }
+    .frontmatter dd {
+        color: #333333 !important;
+    }
     .page-break {
         height: 0 !important;
         border: none !important;
@@ -108,6 +117,16 @@ enum PreviewCSS {
         hr {
             border-color: #333333;
         }
+        .frontmatter {
+            background-color: #222222 !important;
+            border: 1px solid #333333 !important;
+        }
+        .frontmatter dt {
+            color: #777777 !important;
+        }
+        .frontmatter dd {
+            color: #999999 !important;
+        }
     }
 
     h1, h2, h3, h4, h5, h6 {
@@ -120,6 +139,57 @@ enum PreviewCSS {
 
     body > *:first-child {
         margin-top: 0;
+    }
+
+    /* Frontmatter metadata */
+    .frontmatter {
+        margin-bottom: 1.5em;
+        padding: 0.75em 1em;
+        background-color: #F0F0F0;
+        border-radius: 6px;
+        font-size: 0.85em;
+    }
+
+    .frontmatter-anchor {
+        height: 0;
+        margin: 0;
+        padding: 0;
+    }
+
+    .frontmatter dl {
+        margin: 0;
+    }
+
+    .frontmatter .frontmatter-row {
+        display: flex;
+        gap: 0.5em;
+        padding: 0.15em 0;
+    }
+
+    .frontmatter dt {
+        font-weight: 600;
+        color: #555555;
+        min-width: 6em;
+    }
+
+    .frontmatter dt::after {
+        content: ":";
+    }
+
+    .frontmatter dd {
+        margin: 0;
+        color: #333333;
+        white-space: pre-wrap;
+    }
+
+    .frontmatter pre {
+        margin: 0;
+        padding: 0 !important;
+        background: none !important;
+        border: 0 !important;
+        color: inherit !important;
+        white-space: pre-wrap;
+        font-size: 0.95em;
     }
 
     h1 { font-size: 2em; }
@@ -359,6 +429,15 @@ enum PreviewCSS {
             background-color: #F0F0F0 !important;
             border-color: #CCCCCC !important;
             color: #999999 !important;
+        }
+        .frontmatter {
+            background-color: #F0F0F0 !important;
+        }
+        .frontmatter dt {
+            color: #555555 !important;
+        }
+        .frontmatter dd {
+            color: #333333 !important;
         }
         .page-break {
             page-break-after: always;

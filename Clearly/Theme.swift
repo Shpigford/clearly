@@ -93,6 +93,12 @@ enum Theme {
             : NSColor(red: 0.4, green: 0.4, blue: 0.4, alpha: 1)
     }
 
+    static let frontmatterColor = NSColor(name: "themeFrontmatter") { appearance in
+        appearance.isDark
+            ? NSColor(red: 0.55, green: 0.55, blue: 0.65, alpha: 1)
+            : NSColor(red: 0.35, green: 0.35, blue: 0.5, alpha: 1)
+    }
+
     static var backgroundColorSwiftUI: Color { Color(nsColor: backgroundColor) }
 }
 

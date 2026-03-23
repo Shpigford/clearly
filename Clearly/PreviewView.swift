@@ -205,7 +205,7 @@ struct PreviewView: NSViewRepresentable {
         \(MermaidSupport.scriptHTML)
         </html>
         """
-        webView.loadHTMLString(html, baseURL: MermaidSupport.resourceBaseURL)
+        webView.loadHTMLString(html, baseURL: fileURL?.deletingLastPathComponent() ?? MermaidSupport.resourceBaseURL)
     }
 
     final class Coordinator: NSObject, WKNavigationDelegate, WKScriptMessageHandler {

@@ -13,6 +13,9 @@ final class MarkdownSyntaxHighlighter: NSObject, NSTextStorageDelegate {
             }
         }
 
+        // Frontmatter (--- ... ---) at very start of file — must come before everything
+        add("\\A---[ \\t]*\\n([\\s\\S]*?)\\n---[ \\t]*(?:\\n|\\z)", .frontmatter)
+
         // Fenced code blocks (``` ... ```) — must come first to prevent inner highlighting
         add("^(`{3,})(.*?)\\n([\\s\\S]*?)^\\1\\s*$", .codeBlock, options: .anchorsMatchLines)
 
@@ -73,6 +76,7 @@ final class MarkdownSyntaxHighlighter: NSObject, NSTextStorageDelegate {
         case syntax
         case mathBlock
         case mathInline
+        case frontmatter
     }
 
     // MARK: - NSTextStorageDelegate
@@ -112,8 +116,8 @@ final class MarkdownSyntaxHighlighter: NSObject, NSTextStorageDelegate {
             regex.enumerateMatches(in: text, range: fullRange) { match, _, _ in
                 guard let match = match else { return }
 
-                // If this isn't a code/math block pattern, skip if inside a protected block
-                if style != .codeBlock && style != .mathBlock {
+                // If this isn't a code/math/frontmatter block pattern, skip if inside a protected block
+                if style != .codeBlock && style != .mathBlock && style != .frontmatter {
                     let matchRange = match.range
                     if codeBlockRanges.contains(where: { NSIntersectionRange($0, matchRange).length > 0 }) {
                         return
@@ -243,6 +247,42 @@ final class MarkdownSyntaxHighlighter: NSObject, NSTextStorageDelegate {
                         textStorage.addAttribute(.foregroundColor, value: Theme.syntaxColor, range: openRange)
                         textStorage.addAttribute(.foregroundColor, value: Theme.syntaxColor, range: closeRange)
                         textStorage.addAttribute(.foregroundColor, value: Theme.mathColor, range: contentRange)
+                    }
+
+                case .frontmatter:
+                    let matchedText = (text as NSString).substring(with: match.range)
+                    guard FrontmatterSupport.extract(from: matchedText) != nil else { return }
+                    codeBlockRanges.append(match.range)
+                    let nsText = text as NSString
+                    // Base color for the whole block
+                    textStorage.addAttribute(.foregroundColor, value: Theme.frontmatterColor, range: match.range)
+                    // Color the opening --- delimiter line
+                    let openLineEnd = nsText.range(of: "\n", range: NSRange(location: match.range.location, length: match.range.length))
+                    if openLineEnd.location != NSNotFound {
+                        let openRange = NSRange(location: match.range.location, length: openLineEnd.location - match.range.location)
+                        textStorage.addAttribute(.foregroundColor, value: Theme.syntaxColor, range: openRange)
+                    }
+                    // Color the closing --- delimiter (last line of match)
+                    let matchStr = nsText.substring(with: match.range) as NSString
+                    let lastNewline = matchStr.range(of: "\n", options: .backwards)
+                    if lastNewline.location != NSNotFound {
+                        let closeStart = match.range.location + lastNewline.location + 1
+                        let closeLen = match.range.location + match.range.length - closeStart
+                        if closeLen > 0 {
+                            let closeRange = NSRange(location: closeStart, length: closeLen)
+                            textStorage.addAttribute(.foregroundColor, value: Theme.syntaxColor, range: closeRange)
+                        }
+                    }
+                    // Color YAML keys within the body (group 1)
+                    if match.numberOfRanges >= 2 {
+                        let bodyRange = match.range(at: 1)
+                        if bodyRange.location != NSNotFound, let keyRegex = try? NSRegularExpression(pattern: "^([\\w][\\w\\s.-]*)(:)", options: .anchorsMatchLines) {
+                            keyRegex.enumerateMatches(in: text, range: bodyRange) { keyMatch, _, _ in
+                                guard let keyMatch = keyMatch, keyMatch.numberOfRanges >= 3 else { return }
+                                textStorage.addAttribute(.foregroundColor, value: Theme.headingColor, range: keyMatch.range(at: 1))
+                                textStorage.addAttribute(.foregroundColor, value: Theme.syntaxColor, range: keyMatch.range(at: 2))
+                            }
+                        }
                     }
                 }
             }
