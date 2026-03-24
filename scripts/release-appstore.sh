@@ -26,20 +26,19 @@ echo "🍎 Building Clearly v$VERSION (build $BUILD_NUMBER) for App Store..."
 rm -rf build
 mkdir -p build
 
-# ── 1. Generate Info.plist without Sparkle keys ─────────────────────────────
-cp Clearly/Info.plist build/Info-AppStore.plist
+# ── 1. Strip Sparkle keys from Info.plist (in place, restored later) ─────────
+cp Clearly/Info.plist build/Info-Original.plist
 /usr/libexec/PlistBuddy \
   -c "Delete :SUFeedURL" \
   -c "Delete :SUPublicEDKey" \
   -c "Delete :SUEnableInstallerLauncherService" \
-  build/Info-AppStore.plist
+  Clearly/Info.plist
 
 # ── 2. Generate project.yml without Sparkle ─────────────────────────────────
 sed \
   -e '/^  Sparkle:$/,/from:/d' \
   -e '/- package: Sparkle/d' \
   -e 's|Clearly/Clearly.entitlements|Clearly/Clearly-AppStore.entitlements|' \
-  -e 's|INFOPLIST_FILE: Clearly/Info.plist|INFOPLIST_FILE: build/Info-AppStore.plist|' \
   project.yml > build/project-appstore.yml
 
 # ── 3. Generate Xcode project from modified spec ────────────────────────────
@@ -72,8 +71,9 @@ xcodebuild -exportArchive \
   -exportPath build/export-appstore \
   -allowProvisioningUpdates
 
-# ── 6. Restore normal Xcode project (with Sparkle) ─────────────────────────
+# ── 6. Restore Info.plist and Xcode project (with Sparkle) ──────────────────
 echo "🔄 Restoring Sparkle project..."
+mv build/Info-Original.plist Clearly/Info.plist
 xcodegen generate
 
 echo "✅ Uploaded Clearly v$VERSION (build $BUILD_NUMBER) to App Store Connect."
