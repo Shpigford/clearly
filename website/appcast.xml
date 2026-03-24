@@ -3,6 +3,20 @@
   <channel>
     <title>Clearly</title>
     <item>
+      <title>Version 1.7.0</title>
+      <sparkle:version>1.7.0</sparkle:version>
+      <sparkle:shortVersionString>1.7.0</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+      <pubDate>Tue, 24 Mar 2026 15:05:24 +0000</pubDate>
+      <description><![CDATA[<ul><li>Fixed a Gatekeeper warning when opening markdown files by double-clicking</li><li>Now available on the App Store in addition to direct download</li></ul>]]></description>
+      <enclosure
+        url="https://github.com/Shpigford/clearly/releases/download/v1.7.0/Clearly.dmg"
+        sparkle:edSignature="ks0RFNy/rIf9abH1dCl8BnanUvm+PVBenLJZnbfesnfHMV1MlzScKmK89VMY2MiYw+FyqBPULGwZlxH9+wRtBQ=="
+        length="6455604"
+        type="application/octet-stream"
+      />
+    </item>
+    <item>
       <title>Version 1.6.1</title>
       <sparkle:version>1.6.1</sparkle:version>
       <sparkle:shortVersionString>1.6.1</sparkle:shortVersionString>
