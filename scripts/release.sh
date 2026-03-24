@@ -1,7 +1,10 @@
 #!/bin/bash
 set -euo pipefail
 
-# Usage: ./scripts/release.sh 1.0.0
+# Usage: ./scripts/release.sh [--dry-run] 1.0.0
+#
+# Options:
+#   --dry-run  Build, sign, and verify only. Skips notarization, GitHub, and appcast.
 #
 # Reads credentials from .env in the project root.
 # See .env.example for required variables:
@@ -16,7 +19,13 @@ if [ -f "$SCRIPT_DIR/../.env" ]; then
   set +a
 fi
 
-VERSION="${1:?Usage: ./scripts/release.sh <version>}"
+DRY_RUN=false
+if [ "${1:-}" = "--dry-run" ]; then
+  DRY_RUN=true
+  shift
+fi
+
+VERSION="${1:?Usage: ./scripts/release.sh [--dry-run] <version>}"
 
 # Extract changelog entries for a version and convert to HTML <ul>
 extract_changelog() {
@@ -96,16 +105,18 @@ SIGNING_IDENTITY="Developer ID Application: ${SIGNING_IDENTITY_NAME:?Set SIGNING
 APPLE_ID="${APPLE_ID:?Set APPLE_ID in .env}"
 BUNDLE_ID="com.sabotage.clearly"
 
-if ! command -v create-dmg &>/dev/null; then
-  echo "❌ create-dmg not found. Install with: brew install create-dmg"
-  exit 1
-fi
+if ! $DRY_RUN; then
+  if ! command -v create-dmg &>/dev/null; then
+    echo "❌ create-dmg not found. Install with: brew install create-dmg"
+    exit 1
+  fi
 
-if ! xcrun notarytool history --keychain-profile "AC_PASSWORD" >/dev/null 2>&1; then
-  echo "❌ Unable to use notarytool keychain profile \"AC_PASSWORD\"."
-  echo "Create or refresh it with:"
-  echo "  xcrun notarytool store-credentials \"AC_PASSWORD\" --apple-id \"$APPLE_ID\" --team-id \"$TEAM_ID\" --password \"<app-specific-password>\""
-  exit 1
+  if ! xcrun notarytool history --keychain-profile "AC_PASSWORD" >/dev/null 2>&1; then
+    echo "❌ Unable to use notarytool keychain profile \"AC_PASSWORD\"."
+    echo "Create or refresh it with:"
+    echo "  xcrun notarytool store-credentials \"AC_PASSWORD\" --apple-id \"$APPLE_ID\" --team-id \"$TEAM_ID\" --password \"<app-specific-password>\""
+    exit 1
+  fi
 fi
 
 echo "🔨 Building Clearly v$VERSION..."
@@ -135,9 +146,35 @@ xcodebuild -exportArchive \
   -exportOptionsPlist build/ExportOptions.plist \
   -exportPath build/export
 
-echo "🔑 Re-signing with sandbox entitlements..."
+echo "🔑 Re-signing with sandbox entitlements (inside-out)..."
 sed "s/\$(PRODUCT_BUNDLE_IDENTIFIER)/$BUNDLE_ID/g" Clearly/Clearly.entitlements > build/Clearly.entitlements
-codesign -f -s "$SIGNING_IDENTITY" -o runtime \
+cp ClearlyQuickLook/ClearlyQuickLook.entitlements build/ClearlyQuickLook.entitlements
+
+SPARKLE_FRAMEWORK="build/export/Clearly.app/Contents/Frameworks/Sparkle.framework"
+if [ ! -d "$SPARKLE_FRAMEWORK" ]; then
+  echo "❌ Sparkle.framework not found at expected path. Check export output."
+  exit 1
+fi
+
+# 1. Sparkle XPC services (innermost)
+for xpc in "$SPARKLE_FRAMEWORK"/Versions/B/XPCServices/*.xpc; do
+  echo "  Signing $(basename "$xpc")..."
+  codesign -f -s "$SIGNING_IDENTITY" -o runtime --timestamp "$xpc"
+done
+
+# 2. Sparkle.framework
+echo "  Signing Sparkle.framework..."
+codesign -f -s "$SIGNING_IDENTITY" -o runtime --timestamp "$SPARKLE_FRAMEWORK"
+
+# 3. QuickLook extension (with its own entitlements)
+echo "  Signing ClearlyQuickLook.appex..."
+codesign -f -s "$SIGNING_IDENTITY" -o runtime --timestamp \
+  --entitlements build/ClearlyQuickLook.entitlements \
+  "build/export/Clearly.app/Contents/PlugIns/ClearlyQuickLook.appex"
+
+# 4. Main app (outermost)
+echo "  Signing Clearly.app..."
+codesign -f -s "$SIGNING_IDENTITY" -o runtime --timestamp \
   --entitlements build/Clearly.entitlements \
   build/export/Clearly.app
 
@@ -146,7 +183,17 @@ if ! codesign -d --entitlements :- build/export/Clearly.app 2>/dev/null | grep -
   echo "❌ mach-lookup entitlements missing after re-sign. Aborting."
   exit 1
 fi
-echo "✅ Entitlements verified."
+
+# Deep signature chain verification
+codesign --verify --deep --strict build/export/Clearly.app
+echo "✅ Code signature verified (deep + strict)."
+
+if $DRY_RUN; then
+  echo "🏁 Dry run complete. Signed app at: build/export/Clearly.app"
+  echo "   To inspect: codesign -d --entitlements :- build/export/Clearly.app"
+  echo "   Note: spctl --assess will fail until notarized (expected in dry-run)."
+  exit 0
+fi
 
 echo "📦 Creating DMG..."
 create_clearly_dmg build/Clearly.dmg
@@ -161,6 +208,10 @@ xcrun stapler staple build/export/Clearly.app
 rm build/Clearly.dmg
 create_clearly_dmg build/Clearly.dmg
 xcrun stapler staple build/Clearly.dmg || echo "⚠️  DMG staple failed (normal — CDN propagation delay). App inside is stapled."
+
+# Gatekeeper assessment (must run after notarization + stapling)
+spctl --assess --type execute --verbose build/export/Clearly.app
+echo "✅ Gatekeeper assessment passed."
 
 echo "🏷️  Tagging v$VERSION..."
 git tag "v$VERSION"
