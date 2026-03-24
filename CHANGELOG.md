@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+## [1.7.0] - 2026-03-24
+- Fixed a Gatekeeper warning when opening markdown files by double-clicking
+- Now available on the App Store in addition to direct download
+
 ## [1.6.1] - 2026-03-23
 - Markdown files are no longer greyed out in the Open panel on some systems
 
