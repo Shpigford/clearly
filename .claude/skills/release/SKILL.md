@@ -98,7 +98,27 @@ After the Sparkle release succeeds, ask the user if they also want to submit to 
   - "Yes, submit to App Store"
   - "No, skip App Store"
 
-If yes, run:
+If yes:
+
+#### 6a: Generate App Store copy
+
+Before running the release script, generate and output three blocks of text for App Store Connect. Output as **raw, unformatted plain text** (no markdown formatting, no code fences) so the user can copy/paste directly into App Store Connect.
+
+1. **What's New in This Version** — Read all entries from CHANGELOG.md from v1.0.0 through the current release version. Consolidate into a single list using `•` bullets. Each entry: feature name em-dashed with a short description. Keep it punchy and user-facing. This is the cumulative view for the App Store listing (the release script sets the per-version "What's New" automatically — this cumulative version is for the user to paste if they prefer it).
+
+2. **Promotional Text** (170 characters max) — One sentence that captures what makes Clearly different. Tone: confident, no fluff.
+
+3. **Description** — Full App Store description. Structure:
+   - Opening one-liner about what Clearly is
+   - "No Electron. No bloat. No subscription." positioning line
+   - 4-5 short paragraphs, each with a leading phrase, covering: editing, preview, media/diagrams/math, export, and native macOS integration
+   - Bullet list of all current features
+   - Close with "One-time purchase. No subscription."
+
+Label each block clearly so the user knows which field to paste into.
+
+#### 6b: Run the App Store release script
+
 ```bash
 ./scripts/release-appstore.sh <VERSION>
 ```
