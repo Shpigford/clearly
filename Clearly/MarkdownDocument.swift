@@ -2,11 +2,16 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 extension UTType {
-    static let daringFireballMarkdown = UTType(importedAs: "net.daringfireball.markdown", conformingTo: .plainText)
+    /// Resolve the markdown UTType from the system rather than using `importedAs`,
+    /// which can return a different app's claimed type (e.g. app.markedit.md).
+    static let daringFireballMarkdown: UTType = UTType("net.daringfireball.markdown") ?? UTType(filenameExtension: "md") ?? .plainText
 }
 
 struct MarkdownDocument: FileDocument {
-    static var readableContentTypes: [UTType] { [.daringFireballMarkdown, .plainText] }
+    // Include .text because on some systems net.daringfireball.markdown conforms
+    // to public.text rather than public.plain-text, and the Open panel needs an
+    // ancestor type that actually matches.
+    static var readableContentTypes: [UTType] { [.daringFireballMarkdown, .plainText, .text] }
     static var writableContentTypes: [UTType] { [.daringFireballMarkdown] }
 
     var text: String
