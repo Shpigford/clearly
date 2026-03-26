@@ -45,6 +45,25 @@ struct ClearlyApp: App {
             CommandGroup(after: .textFormatting) {
                 FontSizeCommands()
             }
+            CommandGroup(replacing: .help) {
+                Button("Clearly Help") {
+                    NSWorkspace.shared.open(URL(string: "https://github.com/Shpigford/clearly/issues")!)
+                }
+                Divider()
+                Button("Export Diagnostic Log…") {
+                    do {
+                        let logText = try DiagnosticLog.exportRecentLogs()
+                        let panel = NSSavePanel()
+                        panel.allowedContentTypes = [.plainText]
+                        panel.nameFieldStringValue = "Clearly-Diagnostic-Log.txt"
+                        guard panel.runModal() == .OK, let url = panel.url else { return }
+                        try logText.write(to: url, atomically: true, encoding: .utf8)
+                    } catch {
+                        let alert = NSAlert(error: error)
+                        alert.runModal()
+                    }
+                }
+            }
             CommandMenu("Format") {
                 Button("Bold") {
                     NSApp.sendAction(#selector(ClearlyTextView.toggleBold(_:)), to: nil, from: nil)

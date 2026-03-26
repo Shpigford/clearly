@@ -1,4 +1,5 @@
 import AppKit
+import os
 
 final class MarkdownSyntaxHighlighter: NSObject, NSTextStorageDelegate {
 
@@ -94,6 +95,7 @@ final class MarkdownSyntaxHighlighter: NSObject, NSTextStorageDelegate {
     // MARK: - Highlighting
 
     func highlightAll(_ textStorage: NSTextStorage) {
+        let startTime = CACurrentMediaTime()
         let fullRange = NSRange(location: 0, length: textStorage.length)
         let text = textStorage.string
 
@@ -286,6 +288,11 @@ final class MarkdownSyntaxHighlighter: NSObject, NSTextStorageDelegate {
                     }
                 }
             }
+        }
+
+        let elapsed = (CACurrentMediaTime() - startTime) * 1000
+        if elapsed > 50 {
+            DiagnosticLog.logger.warning("highlightAll took \(Int(elapsed))ms for \(textStorage.length) chars")
         }
     }
 }

@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import os
 
 struct EditorView: NSViewRepresentable {
     @Binding var text: String
@@ -13,6 +14,7 @@ struct EditorView: NSViewRepresentable {
     }
 
     func makeNSView(context: Context) -> NSScrollView {
+        DiagnosticLog.logger.info("makeNSView: creating EditorView")
         let scrollView = NSScrollView()
         scrollView.hasVerticalScroller = true
         scrollView.hasHorizontalScroller = false
@@ -69,9 +71,8 @@ struct EditorView: NSViewRepresentable {
         textView.textStorage?.delegate = highlighter
         context.coordinator.highlighter = highlighter
 
-        // Set initial text
+        // Set initial text (highlightAll fires via NSTextStorageDelegate)
         textView.string = text
-        highlighter.highlightAll(textView.textStorage!)
 
         scrollView.documentView = textView
         context.coordinator.textView = textView
@@ -87,7 +88,13 @@ struct EditorView: NSViewRepresentable {
             object: scrollView.contentView
         )
 
+        DiagnosticLog.logger.info("makeNSView: EditorView ready")
         return scrollView
+    }
+
+    static func dismantleNSView(_ scrollView: NSScrollView, coordinator: Coordinator) {
+        NotificationCenter.default.removeObserver(coordinator)
+        DiagnosticLog.logger.info("dismantleNSView: EditorView torn down")
     }
 
     func updateNSView(_ scrollView: NSScrollView, context: Context) {
