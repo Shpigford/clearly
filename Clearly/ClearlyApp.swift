@@ -12,6 +12,8 @@ struct ClearlyApp: App {
     #endif
 
     init() {
+        DiagnosticLog.trimIfNeeded()
+        DiagnosticLog.log("App launched")
         #if canImport(Sparkle)
         updaterController = SPUStandardUpdaterController(
             startingUpdater: true,

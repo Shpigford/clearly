@@ -56,6 +56,7 @@ struct ContentView: View {
         self.fileURL = fileURL
         let storedMode = UserDefaults.standard.string(forKey: "viewMode")
         self._mode = State(initialValue: ViewMode(rawValue: storedMode ?? "") ?? .edit)
+        DiagnosticLog.log("Document opened: \(fileURL?.lastPathComponent ?? "untitled")")
     }
 
     private var wordCount: Int {

@@ -1,6 +1,5 @@
 import SwiftUI
 import AppKit
-import os
 
 struct EditorView: NSViewRepresentable {
     @Binding var text: String
@@ -14,7 +13,7 @@ struct EditorView: NSViewRepresentable {
     }
 
     func makeNSView(context: Context) -> NSScrollView {
-        DiagnosticLog.logger.info("makeNSView: creating EditorView")
+        DiagnosticLog.log("makeNSView: creating EditorView (\(text.count) chars)")
         let scrollView = NSScrollView()
         scrollView.hasVerticalScroller = true
         scrollView.hasHorizontalScroller = false
@@ -66,13 +65,13 @@ struct EditorView: NSViewRepresentable {
         // Delegate
         textView.delegate = context.coordinator
 
-        // Syntax highlighter on text storage
+        // Set initial text BEFORE attaching the syntax highlighter delegate.
+        // This avoids triggering highlightAll during makeNSView — the first
+        // updateNSView call handles initial highlighting via the color-scheme check.
         let highlighter = MarkdownSyntaxHighlighter()
-        textView.textStorage?.delegate = highlighter
         context.coordinator.highlighter = highlighter
-
-        // Set initial text (highlightAll fires via NSTextStorageDelegate)
         textView.string = text
+        textView.textStorage?.delegate = highlighter
 
         scrollView.documentView = textView
         context.coordinator.textView = textView
@@ -88,13 +87,13 @@ struct EditorView: NSViewRepresentable {
             object: scrollView.contentView
         )
 
-        DiagnosticLog.logger.info("makeNSView: EditorView ready")
+        DiagnosticLog.log("makeNSView: EditorView ready")
         return scrollView
     }
 
     static func dismantleNSView(_ scrollView: NSScrollView, coordinator: Coordinator) {
         NotificationCenter.default.removeObserver(coordinator)
-        DiagnosticLog.logger.info("dismantleNSView: EditorView torn down")
+        DiagnosticLog.log("dismantleNSView: EditorView torn down")
     }
 
     func updateNSView(_ scrollView: NSScrollView, context: Context) {
@@ -126,12 +125,13 @@ struct EditorView: NSViewRepresentable {
             context.coordinator.highlighter?.highlightAll(textView.textStorage!)
         }
 
-        // Only update text if it changed externally (not from user typing)
+        // Only update text if it changed externally (not from user typing).
+        // highlightAll fires automatically via NSTextStorageDelegate.
         if !context.coordinator.isUpdating && textView.string != text {
+            DiagnosticLog.log("updateNSView: external text change (\(text.count) chars)")
             let selectedRanges = textView.selectedRanges
             textView.string = text
             textView.selectedRanges = selectedRanges
-            context.coordinator.highlighter?.highlightAll(textView.textStorage!)
         }
     }
 
