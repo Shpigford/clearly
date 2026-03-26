@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+## [1.7.1] - 2026-03-25
+- Fixed a hang that could occur when opening multiple documents at once
+- Export diagnostic logs from the Help menu for easier troubleshooting
+
 ## [1.7.0] - 2026-03-24
 - Fixed a Gatekeeper warning when opening markdown files by double-clicking
 - Now available on the App Store in addition to direct download

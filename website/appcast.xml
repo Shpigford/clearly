@@ -3,6 +3,20 @@
   <channel>
     <title>Clearly</title>
     <item>
+      <title>Version 1.7.1</title>
+      <sparkle:version>1.7.1</sparkle:version>
+      <sparkle:shortVersionString>1.7.1</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+      <pubDate>Thu, 26 Mar 2026 01:10:44 +0000</pubDate>
+      <description><![CDATA[<ul><li>Fixed a hang that could occur when opening multiple documents at once</li><li>Export diagnostic logs from the Help menu for easier troubleshooting</li></ul>]]></description>
+      <enclosure
+        url="https://github.com/Shpigford/clearly/releases/download/v1.7.1/Clearly.dmg"
+        sparkle:edSignature="THtJ10P6bKGE0lA2vqbj7Gd26A/HrQWWPbx92+V4ENx3s5ovw0VTcE062Ij7U6j5jBPTQMeWN7KxLKB6offZCA=="
+        length="6466255"
+        type="application/octet-stream"
+      />
+    </item>
+    <item>
       <title>Version 1.7.0</title>
       <sparkle:version>1.7.0</sparkle:version>
       <sparkle:shortVersionString>1.7.0</sparkle:shortVersionString>

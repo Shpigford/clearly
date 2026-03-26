@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import os
 
 struct EditorView: NSViewRepresentable {
     @Binding var text: String

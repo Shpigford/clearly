@@ -1,4 +1,5 @@
 import AppKit
+import os
 
 final class MarkdownSyntaxHighlighter: NSObject, NSTextStorageDelegate {
 
