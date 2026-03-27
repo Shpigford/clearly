@@ -7,6 +7,11 @@ final class MarkdownSyntaxHighlighter: NSObject, NSTextStorageDelegate {
 
     // MARK: - Regex Patterns
 
+    private static let frontmatterKeyRegex: NSRegularExpression? = try? NSRegularExpression(
+        pattern: "^([\\w][\\w\\s.-]*)(:)",
+        options: .anchorsMatchLines
+    )
+
     private static let patterns: [(NSRegularExpression, HighlightStyle)] = {
         var result: [(NSRegularExpression, HighlightStyle)] = []
 
@@ -285,7 +290,7 @@ final class MarkdownSyntaxHighlighter: NSObject, NSTextStorageDelegate {
                     // Color YAML keys within the body (group 1)
                     if match.numberOfRanges >= 2 {
                         let bodyRange = match.range(at: 1)
-                        if bodyRange.location != NSNotFound, let keyRegex = try? NSRegularExpression(pattern: "^([\\w][\\w\\s.-]*)(:)", options: .anchorsMatchLines) {
+                        if bodyRange.location != NSNotFound, let keyRegex = Self.frontmatterKeyRegex {
                             keyRegex.enumerateMatches(in: text, range: bodyRange) { keyMatch, _, _ in
                                 guard let keyMatch = keyMatch, keyMatch.numberOfRanges >= 3 else { return }
                                 textStorage.addAttribute(.foregroundColor, value: Theme.headingColor, range: keyMatch.range(at: 1))
