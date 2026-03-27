@@ -23,9 +23,18 @@ struct ClearlyApp: App {
         #endif
     }
 
+    private var resolvedColorScheme: ColorScheme? {
+        switch themePreference {
+        case "light": return .light
+        case "dark": return .dark
+        default: return nil
+        }
+    }
+
     var body: some Scene {
         DocumentGroup(newDocument: MarkdownDocument()) { file in
             ContentView(document: file.$document, fileURL: file.fileURL)
+                .preferredColorScheme(resolvedColorScheme)
         }
         .windowToolbarStyle(.unified(showsTitle: true))
         .defaultSize(width: 720, height: 900)
@@ -157,8 +166,10 @@ struct ClearlyApp: App {
         Settings {
             #if canImport(Sparkle)
             SettingsView(updater: updaterController.updater)
+                .preferredColorScheme(resolvedColorScheme)
             #else
             SettingsView()
+                .preferredColorScheme(resolvedColorScheme)
             #endif
         }
     }
