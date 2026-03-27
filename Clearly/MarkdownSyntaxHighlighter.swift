@@ -1,7 +1,7 @@
 import AppKit
 import os
 
-final class MarkdownSyntaxHighlighter: NSObject, NSTextStorageDelegate {
+final class MarkdownSyntaxHighlighter: NSObject {
 
     private var isHighlighting = false
 
@@ -87,21 +87,9 @@ final class MarkdownSyntaxHighlighter: NSObject, NSTextStorageDelegate {
         case frontmatter
     }
 
-    // MARK: - NSTextStorageDelegate
-
-    func textStorage(
-        _ textStorage: NSTextStorage,
-        didProcessEditing editedMask: NSTextStorageEditActions,
-        range editedRange: NSRange,
-        changeInLength delta: Int
-    ) {
-        guard editedMask.contains(.editedCharacters) else { return }
-        highlightAll(textStorage)
-    }
-
     // MARK: - Highlighting
 
-    func highlightAll(_ textStorage: NSTextStorage) {
+    func highlightAll(_ textStorage: NSTextStorage, caller: String = "") {
         guard !isHighlighting else { return }
         isHighlighting = true
         defer { isHighlighting = false }
@@ -305,6 +293,7 @@ final class MarkdownSyntaxHighlighter: NSObject, NSTextStorageDelegate {
         textStorage.endEditing()
 
         let elapsed = (CACurrentMediaTime() - startTime) * 1000
-        DiagnosticLog.log("highlightAll: \(textStorage.length) chars in \(Int(elapsed))ms")
+        let tag = caller.isEmpty ? "" : "(\(caller))"
+        DiagnosticLog.log("highlightAll\(tag): \(textStorage.length) chars in \(Int(elapsed))ms")
     }
 }

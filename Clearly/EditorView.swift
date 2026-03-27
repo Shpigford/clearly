@@ -63,13 +63,14 @@ struct EditorView: NSViewRepresentable {
         textView.insertionPointColor = Theme.textColor
         textView.documentURL = fileURL
 
-        // Set initial text BEFORE attaching any delegates.
-        // This avoids triggering highlightAll or textDidChange during makeNSView —
+        // Set initial text BEFORE attaching the text view delegate.
+        // This avoids triggering textDidChange during makeNSView —
         // the first updateNSView call handles initial highlighting via the color-scheme check.
+        // Note: we do NOT set textStorage.delegate — highlighting is driven explicitly
+        // from textDidChange and updateNSView to avoid re-entrant layout manager access.
         let highlighter = MarkdownSyntaxHighlighter()
         context.coordinator.highlighter = highlighter
         textView.string = text
-        textView.textStorage?.delegate = highlighter
         textView.delegate = context.coordinator
 
         scrollView.documentView = textView
@@ -98,6 +99,9 @@ struct EditorView: NSViewRepresentable {
     func updateNSView(_ scrollView: NSScrollView, context: Context) {
         guard let textView = scrollView.documentView as? ClearlyTextView else { return }
 
+        // Keep coordinator's parent fresh so the binding never goes stale
+        context.coordinator.parent = self
+
         context.coordinator.updateCount += 1
         let count = context.coordinator.updateCount
         if count <= 5 || count % 100 == 0 {
@@ -112,7 +116,11 @@ struct EditorView: NSViewRepresentable {
         // Re-highlight and update typing attributes when appearance or font size changes
         let currentScheme = colorScheme
         let currentFontSize = fontSize
-        if context.coordinator.lastColorScheme != currentScheme || context.coordinator.lastFontSize != currentFontSize {
+        let appearanceChanged = context.coordinator.lastColorScheme != currentScheme || context.coordinator.lastFontSize != currentFontSize
+        if appearanceChanged {
+            if count <= 5 {
+                DiagnosticLog.log("updateNSView #\(count): appearance changed (scheme=\(currentScheme), fontSize=\(currentFontSize))")
+            }
             context.coordinator.lastColorScheme = currentScheme
             context.coordinator.lastFontSize = currentFontSize
             textView.font = Theme.editorFont
@@ -127,24 +135,39 @@ struct EditorView: NSViewRepresentable {
                 .baselineOffset: Theme.editorBaselineOffset
             ]
 
-            context.coordinator.highlighter?.highlightAll(textView.textStorage!)
+            // Suppress scroll handler during highlighting to prevent layout manager deadlock
+            context.coordinator.isHighlightingInProgress = true
+            context.coordinator.highlighter?.highlightAll(textView.textStorage!, caller: "appearance")
+            context.coordinator.isHighlightingInProgress = false
         }
 
         // Only update text if it changed externally (not from user typing).
-        // highlightAll fires automatically via NSTextStorageDelegate.
-        if !context.coordinator.isUpdating && textView.string != text {
-            DiagnosticLog.log("updateNSView: external text change (\(text.count) chars)")
+        let textMismatch = textView.string != text
+        if !context.coordinator.isUpdating && textMismatch {
+            DiagnosticLog.log("updateNSView #\(count): external text change (\(text.count) chars)")
+            context.coordinator.isUpdating = true
             let selectedRanges = textView.selectedRanges
             textView.string = text
             textView.selectedRanges = selectedRanges
+            context.coordinator.isHighlightingInProgress = true
+            context.coordinator.highlighter?.highlightAll(textView.textStorage!, caller: "externalText")
+            context.coordinator.isHighlightingInProgress = false
+            context.coordinator.isUpdating = false
+        } else if context.coordinator.isUpdating && count <= 5 {
+            DiagnosticLog.log("updateNSView #\(count): skipped text check (isUpdating)")
+        }
+
+        if count <= 5 || count % 100 == 0 {
+            DiagnosticLog.log("updateNSView #\(count) done")
         }
     }
 
     // MARK: - Coordinator
 
     final class Coordinator: NSObject, NSTextViewDelegate {
-        let parent: EditorView
+        var parent: EditorView
         var isUpdating = false
+        var isHighlightingInProgress = false
         var highlighter: MarkdownSyntaxHighlighter?
         weak var textView: NSTextView?
         var scrollSync: ScrollSync?
@@ -159,13 +182,48 @@ struct EditorView: NSViewRepresentable {
 
         func textDidChange(_ notification: Notification) {
             guard let textView = notification.object as? NSTextView else { return }
+
+            // Skip if we're the ones setting text programmatically (from updateNSView)
+            if isUpdating {
+                DiagnosticLog.log("textDidChange skipped (isUpdating)")
+                return
+            }
+
             DiagnosticLog.log("textDidChange (\(textView.string.count) chars)")
-            isUpdating = true
-            parent.text = textView.string
-            isUpdating = false
+
+            // Highlight synchronously so colors appear on the same frame as the keystroke
+            isHighlightingInProgress = true
+            highlighter?.highlightAll(textView.textStorage!, caller: "textDidChange")
+            isHighlightingInProgress = false
+
+            // Update SwiftUI binding asynchronously to prevent re-entrant updateNSView
+            let newText = textView.string
+            DispatchQueue.main.async { [weak self] in
+                guard let self else {
+                    DiagnosticLog.log("textDidChange async: coordinator deallocated")
+                    return
+                }
+                DiagnosticLog.log("textDidChange async: updating binding (\(newText.count) chars)")
+                self.isUpdating = true
+                self.parent.text = newText
+                self.isUpdating = false
+            }
         }
 
+        private var scrollSuppressCount = 0
+
         @objc func scrollViewDidScroll(_ notification: Notification) {
+            // Suppress during highlighting — the layout manager may be mid-update
+            // and querying it here would deadlock the main thread
+            guard !isHighlightingInProgress else {
+                scrollSuppressCount += 1
+                // Log first occurrence and every 100th to avoid flooding
+                if scrollSuppressCount == 1 || scrollSuppressCount % 100 == 0 {
+                    DiagnosticLog.log("scrollViewDidScroll suppressed ×\(scrollSuppressCount)")
+                }
+                return
+            }
+
             guard let clipView = notification.object as? NSClipView,
                   let scrollView = clipView.enclosingScrollView,
                   let textView = scrollView.documentView as? NSTextView,
