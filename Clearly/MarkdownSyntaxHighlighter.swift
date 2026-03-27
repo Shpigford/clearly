@@ -101,6 +101,8 @@ final class MarkdownSyntaxHighlighter: NSObject, NSTextStorageDelegate {
         isHighlighting = true
         defer { isHighlighting = false }
         let startTime = CACurrentMediaTime()
+
+        textStorage.beginEditing()
         let fullRange = NSRange(location: 0, length: textStorage.length)
         let text = textStorage.string
 
@@ -295,9 +297,9 @@ final class MarkdownSyntaxHighlighter: NSObject, NSTextStorageDelegate {
             }
         }
 
+        textStorage.endEditing()
+
         let elapsed = (CACurrentMediaTime() - startTime) * 1000
-        if elapsed > 50 {
-            DiagnosticLog.log("highlightAll took \(Int(elapsed))ms for \(textStorage.length) chars")
-        }
+        DiagnosticLog.log("highlightAll: \(textStorage.length) chars in \(Int(elapsed))ms")
     }
 }

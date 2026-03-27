@@ -63,16 +63,14 @@ struct EditorView: NSViewRepresentable {
         textView.insertionPointColor = Theme.textColor
         textView.documentURL = fileURL
 
-        // Delegate
-        textView.delegate = context.coordinator
-
-        // Set initial text BEFORE attaching the syntax highlighter delegate.
-        // This avoids triggering highlightAll during makeNSView — the first
-        // updateNSView call handles initial highlighting via the color-scheme check.
+        // Set initial text BEFORE attaching any delegates.
+        // This avoids triggering highlightAll or textDidChange during makeNSView —
+        // the first updateNSView call handles initial highlighting via the color-scheme check.
         let highlighter = MarkdownSyntaxHighlighter()
         context.coordinator.highlighter = highlighter
         textView.string = text
         textView.textStorage?.delegate = highlighter
+        textView.delegate = context.coordinator
 
         scrollView.documentView = textView
         context.coordinator.textView = textView
@@ -100,29 +98,35 @@ struct EditorView: NSViewRepresentable {
     func updateNSView(_ scrollView: NSScrollView, context: Context) {
         guard let textView = scrollView.documentView as? ClearlyTextView else { return }
 
+        context.coordinator.updateCount += 1
+        let count = context.coordinator.updateCount
+        if count <= 5 || count % 100 == 0 {
+            DiagnosticLog.log("updateNSView #\(count)")
+        }
+
         // Always refresh colors (handles appearance changes via @Environment colorScheme)
         textView.backgroundColor = Theme.backgroundColor
         textView.insertionPointColor = Theme.textColor
         textView.documentURL = fileURL
 
-        // Update typing attributes for new text
-        let paragraph = NSMutableParagraphStyle()
-        paragraph.minimumLineHeight = Theme.editorLineHeight
-        paragraph.maximumLineHeight = Theme.editorLineHeight
-        textView.typingAttributes = [
-            .font: Theme.editorFont,
-            .foregroundColor: Theme.textColor,
-            .paragraphStyle: paragraph,
-            .baselineOffset: Theme.editorBaselineOffset
-        ]
-
-        // Re-highlight when appearance or font size changes
+        // Re-highlight and update typing attributes when appearance or font size changes
         let currentScheme = colorScheme
         let currentFontSize = fontSize
         if context.coordinator.lastColorScheme != currentScheme || context.coordinator.lastFontSize != currentFontSize {
             context.coordinator.lastColorScheme = currentScheme
             context.coordinator.lastFontSize = currentFontSize
             textView.font = Theme.editorFont
+
+            let paragraph = NSMutableParagraphStyle()
+            paragraph.minimumLineHeight = Theme.editorLineHeight
+            paragraph.maximumLineHeight = Theme.editorLineHeight
+            textView.typingAttributes = [
+                .font: Theme.editorFont,
+                .foregroundColor: Theme.textColor,
+                .paragraphStyle: paragraph,
+                .baselineOffset: Theme.editorBaselineOffset
+            ]
+
             context.coordinator.highlighter?.highlightAll(textView.textStorage!)
         }
 
@@ -146,6 +150,7 @@ struct EditorView: NSViewRepresentable {
         var scrollSync: ScrollSync?
         var lastColorScheme: ColorScheme?
         var lastFontSize: CGFloat?
+        var updateCount = 0
         private var lastScrollTime: TimeInterval = 0
 
         init(_ parent: EditorView) {
@@ -154,6 +159,7 @@ struct EditorView: NSViewRepresentable {
 
         func textDidChange(_ notification: Notification) {
             guard let textView = notification.object as? NSTextView else { return }
+            DiagnosticLog.log("textDidChange (\(textView.string.count) chars)")
             isUpdating = true
             parent.text = textView.string
             isUpdating = false
