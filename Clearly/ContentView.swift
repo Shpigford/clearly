@@ -50,6 +50,7 @@ struct ContentView: View {
     @AppStorage("editorFontSize") private var fontSize: Double = 16
     @State private var widthBeforeSplit: CGFloat?
     @StateObject private var scrollSync = ScrollSync()
+    @StateObject private var fileWatcher = FileWatcher()
 
     init(document: Binding<MarkdownDocument>, fileURL: URL? = nil) {
         self._document = document
@@ -162,5 +163,17 @@ struct ContentView: View {
         .focusedSceneValue(\.viewMode, $mode)
         .focusedSceneValue(\.documentText, document.text)
         .focusedSceneValue(\.documentFileURL, fileURL)
+        .onAppear {
+            fileWatcher.onChange = { [self] newText in
+                document.text = newText
+            }
+            fileWatcher.watch(fileURL, currentText: document.text)
+        }
+        .onChange(of: fileURL) { _, newURL in
+            fileWatcher.watch(newURL, currentText: document.text)
+        }
+        .onChange(of: document.text) { _, newText in
+            fileWatcher.updateCurrentText(newText)
+        }
     }
 }
