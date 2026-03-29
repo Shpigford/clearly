@@ -73,7 +73,7 @@ enum PreviewCSS {
         font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif;
         font-size: \(Int(fontSize))px;
         line-height: 1.6;
-        max-width: 42em;
+        max-width: 61em;
         margin: 0 auto;
         padding: 10px 60px 40px;
         color: #222222;
