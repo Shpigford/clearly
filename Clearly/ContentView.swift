@@ -33,6 +33,27 @@ extension FocusedValues {
     }
 }
 
+// MARK: - Window Frame Persistence
+
+/// Sets NSWindow.frameAutosaveName so macOS automatically saves/restores window size and position.
+/// Uses a per-file autosave name so each document remembers its own window frame.
+struct WindowFrameSaver: NSViewRepresentable {
+    let fileURL: URL?
+
+    func makeNSView(context: Context) -> NSView {
+        let view = NSView()
+        DispatchQueue.main.async {
+            if let window = view.window {
+                let name = fileURL?.absoluteString ?? "ClearlyUntitledWindow"
+                window.setFrameAutosaveName(name)
+            }
+        }
+        return view
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {}
+}
+
 struct HiddenToolbarBackground: ViewModifier {
     func body(content: Content) -> some View {
         if #available(macOS 15.0, *) {
@@ -159,6 +180,7 @@ struct ContentView: View {
             }
         }
         .modifier(HiddenToolbarBackground())
+        .background(WindowFrameSaver(fileURL: fileURL))
         .animation(nil, value: mode)
         .focusedSceneValue(\.viewMode, $mode)
         .focusedSceneValue(\.documentText, document.text)
