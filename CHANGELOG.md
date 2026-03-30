@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+## [1.9.0] - 2026-03-30
+- Scratchpad: a menubar app with a global hotkey for capturing quick notes without opening a full document
+- Inline Find bar replaces the broken system Find panel for searching within documents
+- Window size and position are remembered per document
+- Pasting rich text no longer mangles your markdown
+- Opening multiple documents no longer hangs when scroll sync is active
+
 ## [1.8.0] - 2026-03-29
 - Preview content uses the full window width for easier reading
 - Documents automatically refresh when modified by another app
