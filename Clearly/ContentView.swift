@@ -40,18 +40,53 @@ extension FocusedValues {
 struct WindowFrameSaver: NSViewRepresentable {
     let fileURL: URL?
 
+    final class Coordinator {
+        var autosaveName: String?
+    }
+
+    private var autosaveName: String {
+        fileURL?.absoluteString ?? "ClearlyUntitledWindow"
+    }
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator()
+    }
+
+    private func applyAutosaveName(
+        to window: NSWindow,
+        coordinator: Coordinator,
+        persistCurrentFrame: Bool
+    ) {
+        guard coordinator.autosaveName != autosaveName else { return }
+        coordinator.autosaveName = autosaveName
+        window.setFrameAutosaveName(autosaveName)
+        if persistCurrentFrame {
+            window.saveFrame(usingName: autosaveName)
+        }
+    }
+
     func makeNSView(context: Context) -> NSView {
         let view = NSView()
         DispatchQueue.main.async {
             if let window = view.window {
-                let name = fileURL?.absoluteString ?? "ClearlyUntitledWindow"
-                window.setFrameAutosaveName(name)
+                applyAutosaveName(
+                    to: window,
+                    coordinator: context.coordinator,
+                    persistCurrentFrame: false
+                )
             }
         }
         return view
     }
 
-    func updateNSView(_ nsView: NSView, context: Context) {}
+    func updateNSView(_ nsView: NSView, context: Context) {
+        guard let window = nsView.window else { return }
+        applyAutosaveName(
+            to: window,
+            coordinator: context.coordinator,
+            persistCurrentFrame: context.coordinator.autosaveName != nil
+        )
+    }
 }
 
 struct HiddenToolbarBackground: ViewModifier {
