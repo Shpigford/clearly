@@ -51,6 +51,7 @@ struct ClearlyApp: App {
                 PrintCommand()
             }
             CommandGroup(after: .textEditing) {
+                FindCommand()
                 ViewModeCommands()
             }
             CommandGroup(after: .textFormatting) {
@@ -172,6 +173,17 @@ struct ClearlyApp: App {
                 .preferredColorScheme(resolvedColorScheme)
             #endif
         }
+    }
+}
+
+struct FindCommand: View {
+    @FocusedValue(\.findState) var findState
+
+    var body: some View {
+        Button("Find…") {
+            findState?.present()
+        }
+        .keyboardShortcut("f", modifiers: .command)
     }
 }
 

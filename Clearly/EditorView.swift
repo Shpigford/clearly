@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import Combine
 import os
 
 struct EditorView: NSViewRepresentable {
@@ -7,6 +8,7 @@ struct EditorView: NSViewRepresentable {
     var fontSize: CGFloat = 16
     var fileURL: URL?
     var scrollSync: ScrollSync?
+    var findState: FindState?
     @Environment(\.colorScheme) private var colorScheme
 
     func makeCoordinator() -> Coordinator {
@@ -24,7 +26,7 @@ struct EditorView: NSViewRepresentable {
         let textView = ClearlyTextView()
         textView.isRichText = false
         textView.allowsUndo = true
-        textView.usesFindPanel = true
+        textView.usesFindPanel = false
         textView.isAutomaticQuoteSubstitutionEnabled = false
         textView.isAutomaticDashSubstitutionEnabled = false
         textView.isAutomaticTextReplacementEnabled = false
@@ -76,7 +78,28 @@ struct EditorView: NSViewRepresentable {
         scrollView.documentView = textView
         context.coordinator.textView = textView
         context.coordinator.scrollSync = scrollSync
+        context.coordinator.findState = findState
+        if let findState {
+            context.coordinator.observeFindState(findState)
+        }
         scrollSync?.editorScrollView = scrollView
+
+        // Wire up find bar presentation
+        textView.onShowFind = { [weak findState] in
+            guard let findState else { return }
+            DispatchQueue.main.async {
+                findState.present()
+            }
+        }
+
+        // Wire up find navigation
+        let coordinator = context.coordinator
+        findState?.navigateToNext = { [weak coordinator] in
+            coordinator?.navigateToNextMatch()
+        }
+        findState?.navigateToPrevious = { [weak coordinator] in
+            coordinator?.navigateToPreviousMatch()
+        }
 
         // Observe scroll position for sync
         scrollView.contentView.postsBoundsChangedNotifications = true
@@ -139,6 +162,7 @@ struct EditorView: NSViewRepresentable {
             context.coordinator.isHighlightingInProgress = true
             context.coordinator.highlighter?.highlightAll(textView.textStorage!, caller: "appearance")
             context.coordinator.isHighlightingInProgress = false
+            context.coordinator.restoreFindHighlightsIfNeeded()
         }
 
         // Only update text if it changed externally (not from user typing).
@@ -152,6 +176,7 @@ struct EditorView: NSViewRepresentable {
             context.coordinator.isHighlightingInProgress = true
             context.coordinator.highlighter?.highlightAll(textView.textStorage!, caller: "externalText")
             context.coordinator.isHighlightingInProgress = false
+            context.coordinator.restoreFindHighlightsIfNeeded()
             context.coordinator.isUpdating = false
         } else if context.coordinator.isUpdating && count <= 5 {
             DiagnosticLog.log("updateNSView #\(count): skipped text check (isUpdating)")
@@ -171,13 +196,43 @@ struct EditorView: NSViewRepresentable {
         var highlighter: MarkdownSyntaxHighlighter?
         weak var textView: NSTextView?
         var scrollSync: ScrollSync?
+        var findState: FindState?
         var lastColorScheme: ColorScheme?
         var lastFontSize: CGFloat?
         var updateCount = 0
         private var lastScrollTime: TimeInterval = 0
 
+        // Find state tracking
+        var matchRanges: [NSRange] = []
+        private var currentMatchIdx = 0 // 0-based internal index
+        private var findCancellables = Set<AnyCancellable>()
+
         init(_ parent: EditorView) {
             self.parent = parent
+        }
+
+        func observeFindState(_ state: FindState) {
+            findCancellables.removeAll()
+
+            state.$query
+                .removeDuplicates()
+                .sink { [weak self] _ in
+                    guard let self, self.findState?.isVisible == true else { return }
+                    self.performFind()
+                }
+                .store(in: &findCancellables)
+
+            state.$isVisible
+                .removeDuplicates()
+                .sink { [weak self] visible in
+                    guard let self else { return }
+                    if visible {
+                        self.performFind()
+                    } else {
+                        self.clearFindHighlights()
+                    }
+                }
+                .store(in: &findCancellables)
         }
 
         func textDidChange(_ notification: Notification) {
@@ -195,6 +250,9 @@ struct EditorView: NSViewRepresentable {
             isHighlightingInProgress = true
             highlighter?.highlightAll(textView.textStorage!, caller: "textDidChange")
             isHighlightingInProgress = false
+
+            // Re-apply find highlights after syntax highlighting (text may have changed match positions)
+            restoreFindHighlightsIfNeeded()
 
             // Update SwiftUI binding asynchronously to prevent re-entrant updateNSView
             let newText = textView.string
@@ -260,6 +318,106 @@ struct EditorView: NSViewRepresentable {
             let frac = lineHeight > 0 ? min(1, max(0, (centerY - lineTop) / lineHeight)) : 0
 
             scrollSync?.editorDidScroll(line: Double(line) + frac)
+        }
+
+        // MARK: - Find
+
+        func restoreFindHighlightsIfNeeded() {
+            guard findState?.isVisible == true, !(findState?.query.isEmpty ?? true) else { return }
+            performFind()
+        }
+
+        func performFind() {
+            guard let textView, let findState else { return }
+            let query = findState.query
+            clearFindHighlights()
+
+            guard !query.isEmpty else {
+                matchRanges = []
+                currentMatchIdx = 0
+                DispatchQueue.main.async {
+                    findState.matchCount = 0
+                    findState.currentIndex = 0
+                }
+                return
+            }
+
+            // Find all matches (case-insensitive)
+            let nsText = textView.string as NSString
+            var ranges: [NSRange] = []
+            var searchRange = NSRange(location: 0, length: nsText.length)
+            while searchRange.location < nsText.length {
+                let found = nsText.range(of: query, options: .caseInsensitive, range: searchRange)
+                if found.location == NSNotFound { break }
+                ranges.append(found)
+                searchRange.location = found.upperBound
+                searchRange.length = nsText.length - searchRange.location
+            }
+
+            matchRanges = ranges
+            currentMatchIdx = ranges.isEmpty ? 0 : 0
+
+            applyFindHighlights()
+
+            DispatchQueue.main.async {
+                findState.matchCount = ranges.count
+                findState.currentIndex = ranges.isEmpty ? 0 : 1
+            }
+
+            if !ranges.isEmpty {
+                textView.scrollRangeToVisible(ranges[0])
+            }
+        }
+
+        func navigateToNextMatch() {
+            guard !matchRanges.isEmpty else { return }
+            currentMatchIdx = (currentMatchIdx + 1) % matchRanges.count
+            applyFindHighlights()
+            textView?.scrollRangeToVisible(matchRanges[currentMatchIdx])
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
+                self.findState?.currentIndex = self.currentMatchIdx + 1
+            }
+        }
+
+        func navigateToPreviousMatch() {
+            guard !matchRanges.isEmpty else { return }
+            currentMatchIdx = (currentMatchIdx - 1 + matchRanges.count) % matchRanges.count
+            applyFindHighlights()
+            textView?.scrollRangeToVisible(matchRanges[currentMatchIdx])
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
+                self.findState?.currentIndex = self.currentMatchIdx + 1
+            }
+        }
+
+        private func applyFindHighlights() {
+            guard let textView else { return }
+            let storage = textView.textStorage!
+
+            // Clear existing find highlights first
+            let fullRange = NSRange(location: 0, length: storage.length)
+            storage.beginEditing()
+            storage.removeAttribute(.backgroundColor, range: fullRange)
+
+            // Apply highlight to all matches
+            for (i, range) in matchRanges.enumerated() {
+                guard range.upperBound <= storage.length else { continue }
+                let color = (i == currentMatchIdx) ? Theme.findCurrentHighlightColor : Theme.findHighlightColor
+                storage.addAttribute(.backgroundColor, value: color, range: range)
+            }
+            storage.endEditing()
+        }
+
+        func clearFindHighlights() {
+            guard let textView else { return }
+            let storage = textView.textStorage!
+            let fullRange = NSRange(location: 0, length: storage.length)
+            storage.beginEditing()
+            storage.removeAttribute(.backgroundColor, range: fullRange)
+            storage.endEditing()
+            matchRanges = []
+            currentMatchIdx = 0
         }
     }
 }

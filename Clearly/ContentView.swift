@@ -18,6 +18,10 @@ struct DocumentFileURLKey: FocusedValueKey {
     typealias Value = URL
 }
 
+struct FindStateKey: FocusedValueKey {
+    typealias Value = FindState
+}
+
 extension FocusedValues {
     var viewMode: Binding<ViewMode>? {
         get { self[ViewModeKey.self] }
@@ -30,6 +34,10 @@ extension FocusedValues {
     var documentFileURL: URL? {
         get { self[DocumentFileURLKey.self] }
         set { self[DocumentFileURLKey.self] = newValue }
+    }
+    var findState: FindState? {
+        get { self[FindStateKey.self] }
+        set { self[FindStateKey.self] = newValue }
     }
 }
 
@@ -106,6 +114,7 @@ struct ContentView: View {
     @AppStorage("editorFontSize") private var fontSize: Double = 16
     @State private var widthBeforeSplit: CGFloat?
     @StateObject private var scrollSync = ScrollSync()
+    @StateObject private var findState = FindState()
     @StateObject private var fileWatcher = FileWatcher()
 
     init(document: Binding<MarkdownDocument>, fileURL: URL? = nil) {
@@ -133,17 +142,23 @@ struct ContentView: View {
     }
 
     var body: some View {
-        Group {
-            switch mode {
-            case .edit:
-                EditorView(text: $document.text, fontSize: CGFloat(fontSize), fileURL: fileURL)
-            case .sideBySide:
-                HSplitView {
-                    EditorView(text: $document.text, fontSize: CGFloat(fontSize), fileURL: fileURL, scrollSync: scrollSync)
-                    PreviewView(markdown: document.text, fontSize: CGFloat(fontSize), scrollSync: scrollSync, fileURL: fileURL)
+        VStack(spacing: 0) {
+            if findState.isVisible {
+                FindBarView(findState: findState)
+                Divider()
+            }
+            Group {
+                switch mode {
+                case .edit:
+                    EditorView(text: $document.text, fontSize: CGFloat(fontSize), fileURL: fileURL, findState: findState)
+                case .sideBySide:
+                    HSplitView {
+                        EditorView(text: $document.text, fontSize: CGFloat(fontSize), fileURL: fileURL, scrollSync: scrollSync, findState: findState)
+                        PreviewView(markdown: document.text, fontSize: CGFloat(fontSize), scrollSync: scrollSync, fileURL: fileURL)
+                    }
+                case .preview:
+                    PreviewView(markdown: document.text, fontSize: CGFloat(fontSize), fileURL: fileURL, findState: findState)
                 }
-            case .preview:
-                PreviewView(markdown: document.text, fontSize: CGFloat(fontSize), fileURL: fileURL)
             }
         }
         .frame(minWidth: mode == .sideBySide ? 1000 : 500, minHeight: 400)
@@ -204,14 +219,12 @@ struct ContentView: View {
                 .frame(width: 150)
             }
             ToolbarItem(placement: .automatic) {
-                if mode != .preview {
-                    Button {
-                        NSApp.sendAction(#selector(ClearlyTextView.showFindPanel(_:)), to: nil, from: nil)
-                    } label: {
-                        Image(systemName: "magnifyingglass")
-                    }
-                    .help("Find (Cmd+F)")
+                Button {
+                    findState.present()
+                } label: {
+                    Image(systemName: "magnifyingglass")
                 }
+                .help("Find (Cmd+F)")
             }
         }
         .modifier(HiddenToolbarBackground())
@@ -220,6 +233,7 @@ struct ContentView: View {
         .focusedSceneValue(\.viewMode, $mode)
         .focusedSceneValue(\.documentText, document.text)
         .focusedSceneValue(\.documentFileURL, fileURL)
+        .focusedSceneValue(\.findState, findState)
         .onAppear {
             fileWatcher.onChange = { [self] newText in
                 document.text = newText

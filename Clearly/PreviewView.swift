@@ -1,11 +1,13 @@
 import SwiftUI
 import WebKit
+import Combine
 
 struct PreviewView: NSViewRepresentable {
     let markdown: String
     var fontSize: CGFloat = 18
     var scrollSync: ScrollSync?
     var fileURL: URL?
+    var findState: FindState?
     @Environment(\.colorScheme) private var colorScheme
 
     private var contentKey: String {
@@ -29,7 +31,11 @@ struct PreviewView: NSViewRepresentable {
         webView.alphaValue = 0 // hidden until content loads
         context.coordinator.scrollSync = scrollSync
         context.coordinator.fileURL = fileURL
+        context.coordinator.findState = findState
         scrollSync?.previewWebView = webView
+        if let findState {
+            context.coordinator.observeFindState(findState, webView: webView)
+        }
         loadHTML(in: webView, context: context)
         return webView
     }
@@ -168,7 +174,14 @@ struct PreviewView: NSViewRepresentable {
         <head>
         <meta charset="utf-8">
         <meta name="viewport" content="width=device-width, initial-scale=1">
-        <style>\(PreviewCSS.css(fontSize: fontSize))</style>
+        <style>\(PreviewCSS.css(fontSize: fontSize))
+        mark.clearly-find { background-color: rgba(255, 230, 0, 0.4); border-radius: 2px; padding: 0 1px; }
+        mark.clearly-find.current { background-color: rgba(255, 165, 0, 0.6); }
+        @media (prefers-color-scheme: dark) {
+            mark.clearly-find { background-color: rgba(180, 150, 0, 0.4); }
+            mark.clearly-find.current { background-color: rgba(200, 150, 0, 0.6); }
+        }
+        </style>
         </head>
         <body>\(htmlBody)</body>
         <script>
@@ -213,6 +226,159 @@ struct PreviewView: NSViewRepresentable {
         var lastContentKey: String?
         var didInitialLoad = false
         var fileURL: URL?
+        var findState: FindState?
+        weak var webView: WKWebView?
+        private var findCancellables = Set<AnyCancellable>()
+        private var matchCount = 0
+        private var currentMatchIdx = 0
+
+        func observeFindState(_ state: FindState, webView: WKWebView) {
+            self.webView = webView
+            findCancellables.removeAll()
+
+            state.$query
+                .removeDuplicates()
+                .sink { [weak self] query in
+                    guard let self, self.findState?.isVisible == true else { return }
+                    self.performFind(query: query)
+                }
+                .store(in: &findCancellables)
+
+            state.$isVisible
+                .removeDuplicates()
+                .sink { [weak self] visible in
+                    guard let self else { return }
+                    if visible {
+                        self.setNavigationClosures()
+                        self.performFind(query: self.findState?.query ?? "")
+                    } else {
+                        self.clearFindHighlights()
+                    }
+                }
+                .store(in: &findCancellables)
+        }
+
+        private func setNavigationClosures() {
+            findState?.navigateToNext = { [weak self] in
+                self?.navigateToNextMatch()
+            }
+            findState?.navigateToPrevious = { [weak self] in
+                self?.navigateToPreviousMatch()
+            }
+        }
+
+        private func performFind(query: String) {
+            guard let webView, didInitialLoad else { return }
+            guard !query.isEmpty else {
+                clearFindHighlights()
+                return
+            }
+
+            let escaped = query
+                .replacingOccurrences(of: "\\", with: "\\\\")
+                .replacingOccurrences(of: "'", with: "\\'")
+                .replacingOccurrences(of: "\n", with: "\\n")
+
+            let js = """
+            (function() {
+                document.querySelectorAll('mark.clearly-find').forEach(function(m) {
+                    var p = m.parentNode;
+                    p.replaceChild(document.createTextNode(m.textContent), m);
+                    p.normalize();
+                });
+                var query = '\(escaped)';
+                var count = 0;
+                var walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, null);
+                var nodes = [];
+                while (walker.nextNode()) {
+                    if (walker.currentNode.parentElement.closest('script,style')) continue;
+                    nodes.push(walker.currentNode);
+                }
+                nodes.forEach(function(node) {
+                    var text = node.textContent;
+                    var lower = text.toLowerCase();
+                    var lq = query.toLowerCase();
+                    if (lower.indexOf(lq) === -1) return;
+                    var frag = document.createDocumentFragment();
+                    var last = 0, idx;
+                    while ((idx = lower.indexOf(lq, last)) !== -1) {
+                        if (idx > last) frag.appendChild(document.createTextNode(text.substring(last, idx)));
+                        var mark = document.createElement('mark');
+                        mark.className = 'clearly-find';
+                        mark.dataset.idx = count;
+                        mark.textContent = text.substring(idx, idx + query.length);
+                        frag.appendChild(mark);
+                        count++;
+                        last = idx + query.length;
+                    }
+                    if (last < text.length) frag.appendChild(document.createTextNode(text.substring(last)));
+                    node.parentNode.replaceChild(frag, node);
+                });
+                var first = document.querySelector('mark.clearly-find');
+                if (first) { first.classList.add('current'); first.scrollIntoView({block:'center'}); }
+                return count;
+            })();
+            """
+
+            webView.evaluateJavaScript(js) { [weak self] result, _ in
+                guard let self else { return }
+                let count = (result as? Int) ?? 0
+                self.matchCount = count
+                self.currentMatchIdx = 0
+                DispatchQueue.main.async {
+                    self.findState?.matchCount = count
+                    self.findState?.currentIndex = count > 0 ? 1 : 0
+                }
+            }
+        }
+
+        private func navigateToNextMatch() {
+            guard matchCount > 0 else { return }
+            currentMatchIdx = (currentMatchIdx + 1) % matchCount
+            navigateToMatch(currentMatchIdx)
+        }
+
+        private func navigateToPreviousMatch() {
+            guard matchCount > 0 else { return }
+            currentMatchIdx = (currentMatchIdx - 1 + matchCount) % matchCount
+            navigateToMatch(currentMatchIdx)
+        }
+
+        private func navigateToMatch(_ index: Int) {
+            let js = """
+            (function() {
+                var marks = document.querySelectorAll('mark.clearly-find');
+                marks.forEach(function(m) { m.classList.remove('current'); });
+                if (marks[\(index)]) {
+                    marks[\(index)].classList.add('current');
+                    marks[\(index)].scrollIntoView({block:'center'});
+                }
+            })();
+            """
+            webView?.evaluateJavaScript(js)
+            DispatchQueue.main.async { [weak self] in
+                self?.findState?.currentIndex = index + 1
+            }
+        }
+
+        private func clearFindHighlights() {
+            let js = """
+            (function() {
+                document.querySelectorAll('mark.clearly-find').forEach(function(m) {
+                    var p = m.parentNode;
+                    p.replaceChild(document.createTextNode(m.textContent), m);
+                    p.normalize();
+                });
+            })();
+            """
+            webView?.evaluateJavaScript(js)
+            matchCount = 0
+            currentMatchIdx = 0
+            DispatchQueue.main.async { [weak self] in
+                self?.findState?.matchCount = 0
+                self?.findState?.currentIndex = 0
+            }
+        }
 
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
             if !didInitialLoad {
@@ -220,6 +386,10 @@ struct PreviewView: NSViewRepresentable {
                 didInitialLoad = true
             }
             scrollSync?.syncPreview()
+            // Re-apply find highlights after page reload
+            if let query = findState?.query, findState?.isVisible == true, !query.isEmpty {
+                performFind(query: query)
+            }
         }
 
         private func resolvedLinkURL(for href: String) -> URL? {

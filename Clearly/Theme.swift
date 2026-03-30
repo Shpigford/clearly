@@ -99,6 +99,18 @@ enum Theme {
             : NSColor(red: 0.35, green: 0.35, blue: 0.5, alpha: 1)
     }
 
+    static let findHighlightColor = NSColor(name: "themeFindHighlight") { appearance in
+        appearance.isDark
+            ? NSColor(red: 0.6, green: 0.5, blue: 0.0, alpha: 0.3)
+            : NSColor(red: 1.0, green: 0.9, blue: 0.0, alpha: 0.4)
+    }
+
+    static let findCurrentHighlightColor = NSColor(name: "themeFindCurrentHighlight") { appearance in
+        appearance.isDark
+            ? NSColor(red: 0.8, green: 0.6, blue: 0.0, alpha: 0.5)
+            : NSColor(red: 1.0, green: 0.7, blue: 0.0, alpha: 0.6)
+    }
+
     static var backgroundColorSwiftUI: Color { Color(nsColor: backgroundColor) }
 }
 

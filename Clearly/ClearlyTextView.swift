@@ -2,6 +2,7 @@ import AppKit
 
 final class ClearlyTextView: NSTextView {
     var documentURL: URL?
+    var onShowFind: (() -> Void)?
 
     // MARK: - Cursor
 
@@ -74,9 +75,7 @@ final class ClearlyTextView: NSTextView {
     // MARK: - Find
 
     @objc func showFindPanel(_ sender: Any?) {
-        let item = NSMenuItem()
-        item.tag = Int(NSFindPanelAction.showFindPanel.rawValue)
-        performFindPanelAction(item)
+        onShowFind?()
     }
 
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
@@ -84,7 +83,7 @@ final class ClearlyTextView: NSTextView {
             return super.performKeyEquivalent(with: event)
         }
         if event.charactersIgnoringModifiers == "f" {
-            showFindPanel(nil)
+            onShowFind?()
             return true
         }
         return super.performKeyEquivalent(with: event)
