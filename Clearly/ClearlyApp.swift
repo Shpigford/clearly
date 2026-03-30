@@ -3,10 +3,73 @@ import SwiftUI
 import Sparkle
 #endif
 
+// MARK: - App Delegate (dock icon management)
+
+final class ClearlyAppDelegate: NSObject, NSApplicationDelegate {
+    private var observers: [Any] = []
+
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        // A normal Launch Services open activates the app and opens a document window.
+        // Login-item launch stays inactive with no document windows, so collapse to
+        // menubar-only only in that state instead of guessing from parent PID.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+            guard let self else { return }
+            if !NSApp.isActive && !self.hasDocumentWindows() {
+                NSApp.setActivationPolicy(.accessory)
+            }
+        }
+
+        // Watch multiple signals — window close, app deactivate, main window change
+        let nc = NotificationCenter.default
+        observers.append(nc.addObserver(forName: NSWindow.willCloseNotification, object: nil, queue: .main) { [weak self] _ in
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { self?.updateActivationPolicy() }
+        })
+        observers.append(nc.addObserver(forName: NSApplication.didResignActiveNotification, object: nil, queue: .main) { [weak self] _ in
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { self?.updateActivationPolicy() }
+        })
+        observers.append(nc.addObserver(forName: NSWindow.didResignMainNotification, object: nil, queue: .main) { [weak self] _ in
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { self?.updateActivationPolicy() }
+        })
+    }
+
+    func applicationWillBecomeActive(_ notification: Notification) {
+        if hasDocumentWindows() && NSApp.activationPolicy() != .regular {
+            NSApp.setActivationPolicy(.regular)
+        }
+    }
+
+    private func updateActivationPolicy() {
+        if hasDocumentWindows() {
+            if NSApp.activationPolicy() != .regular {
+                NSApp.setActivationPolicy(.regular)
+            }
+        } else {
+            if NSApp.activationPolicy() != .accessory {
+                NSApp.setActivationPolicy(.accessory)
+            }
+        }
+    }
+
+    /// A "document window" is any user-facing window that isn't a scratchpad,
+    /// MenuBarExtra panel, sheet, or internal SwiftUI bookkeeping window.
+    private func hasDocumentWindows() -> Bool {
+        NSApp.windows.contains { window in
+            guard window.isVisible || window.isMiniaturized else { return false }
+            if window.level == .floating { return false }
+            if window.isSheet { return false }
+            if window is NSPanel { return false }
+            if window.frame.width < 50 || window.frame.height < 50 { return false }
+            return true
+        }
+    }
+}
+
 @main
 struct ClearlyApp: App {
+    @NSApplicationDelegateAdaptor(ClearlyAppDelegate.self) var appDelegate
     @AppStorage("themePreference") private var themePreference = "system"
     private let recentMenuHelper = RecentMenuHelper()
+    @State private var scratchpadManager = ScratchpadManager.shared
     #if canImport(Sparkle)
     private let updaterController: SPUStandardUpdaterController
     #endif
@@ -172,6 +235,10 @@ struct ClearlyApp: App {
             SettingsView()
                 .preferredColorScheme(resolvedColorScheme)
             #endif
+        }
+
+        MenuBarExtra("Scratchpads", image: "ScratchpadMenuBarIcon") {
+            ScratchpadMenuBar(manager: scratchpadManager)
         }
     }
 }

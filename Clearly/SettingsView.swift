@@ -1,4 +1,6 @@
 import SwiftUI
+import KeyboardShortcuts
+import ServiceManagement
 #if canImport(Sparkle)
 import Sparkle
 #endif
@@ -22,8 +24,10 @@ struct SettingsView: View {
                     Label("About", systemImage: "info.circle")
                 }
         }
-        .frame(width: 400, height: 280)
+        .frame(width: 400, height: 340)
     }
+
+    @State private var launchAtLogin = SMAppService.mainApp.status == .enabled
 
     private var generalSettings: some View {
         Form {
@@ -39,6 +43,19 @@ struct SettingsView: View {
                     .monospacedDigit()
                     .frame(width: 24, alignment: .trailing)
             }
+            KeyboardShortcuts.Recorder("New Scratchpad:", name: .newScratchpad)
+            Toggle("Launch at Login", isOn: $launchAtLogin)
+                .onChange(of: launchAtLogin) { _, newValue in
+                    do {
+                        if newValue {
+                            try SMAppService.mainApp.register()
+                        } else {
+                            try SMAppService.mainApp.unregister()
+                        }
+                    } catch {
+                        launchAtLogin = SMAppService.mainApp.status == .enabled
+                    }
+                }
         }
         .formStyle(.grouped)
     }
