@@ -13,6 +13,9 @@ packages:
   Sparkle:
     url: https://github.com/sparkle-project/Sparkle
     from: "2.6.0"
+  KeyboardShortcuts:
+    url: https://github.com/sindresorhus/KeyboardShortcuts
+    from: "2.1.0"
 
 targets:
   Clearly:
@@ -34,6 +37,7 @@ targets:
       - package: cmark-gfm
         product: cmark
       - package: Sparkle
+      - package: KeyboardShortcuts
       - target: ClearlyQuickLook
         embed: true
     settings:
