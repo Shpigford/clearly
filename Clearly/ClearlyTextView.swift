@@ -69,7 +69,11 @@ final class ClearlyTextView: NSTextView {
             return
         }
 
-        super.paste(sender)
+        if let plainText = pasteboard.string(forType: .string) {
+            insertText(plainText, replacementRange: selectedRange())
+        } else {
+            super.paste(sender)
+        }
     }
 
     // MARK: - Find
