@@ -271,19 +271,27 @@ struct EditorView: NSViewRepresentable {
         private var scrollSuppressCount = 0
 
         @objc func scrollViewDidScroll(_ notification: Notification) {
-            // Suppress during highlighting — the layout manager may be mid-update
-            // and querying it here would deadlock the main thread
+            // Suppress during highlighting to avoid scheduling unnecessary async blocks
             guard !isHighlightingInProgress else {
                 scrollSuppressCount += 1
-                // Log first occurrence and every 100th to avoid flooding
                 if scrollSuppressCount == 1 || scrollSuppressCount % 100 == 0 {
                     DiagnosticLog.log("scrollViewDidScroll suppressed ×\(scrollSuppressCount)")
                 }
                 return
             }
 
-            guard let clipView = notification.object as? NSClipView,
-                  let scrollView = clipView.enclosingScrollView,
+            guard let clipView = notification.object as? NSClipView else { return }
+
+            // Defer layout manager queries to the next run loop iteration.
+            // boundsDidChangeNotification fires synchronously during layout passes;
+            // querying the layout manager in that same call stack deadlocks the main thread.
+            DispatchQueue.main.async { [weak self] in
+                self?.computeScrollPosition(clipView)
+            }
+        }
+
+        private func computeScrollPosition(_ clipView: NSClipView) {
+            guard let scrollView = clipView.enclosingScrollView,
                   let textView = scrollView.documentView as? NSTextView,
                   let layoutManager = textView.layoutManager,
                   let textContainer = textView.textContainer else { return }
