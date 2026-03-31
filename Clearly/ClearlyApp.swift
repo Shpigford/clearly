@@ -7,6 +7,7 @@ import Sparkle
 
 final class ClearlyAppDelegate: NSObject, NSApplicationDelegate {
     private var observers: [Any] = []
+    private var commandQMonitor: Any?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         // A normal Launch Services open activates the app and opens a document window.
@@ -30,11 +31,38 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate {
         observers.append(nc.addObserver(forName: NSWindow.didResignMainNotification, object: nil, queue: .main) { [weak self] _ in
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { self?.updateActivationPolicy() }
         })
+
+        commandQMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            guard let self else { return event }
+            guard self.shouldCloseToMenuBar(for: event) else { return event }
+            self.closeDocumentWindowsToMenuBar()
+            return nil
+        }
     }
 
     func applicationWillBecomeActive(_ notification: Notification) {
         if hasDocumentWindows() && NSApp.activationPolicy() != .regular {
             NSApp.setActivationPolicy(.regular)
+        }
+    }
+
+    func closeDocumentWindowsToMenuBar() {
+        let documentWindows = NSApp.windows.filter { window in
+            guard window.isVisible || window.isMiniaturized else { return false }
+            if window.level == .floating { return false }
+            if window.isSheet { return false }
+            if window is NSPanel { return false }
+            if window.frame.width < 50 || window.frame.height < 50 { return false }
+            return true
+        }
+
+        guard !documentWindows.isEmpty else {
+            updateActivationPolicy()
+            return
+        }
+
+        for window in documentWindows {
+            window.performClose(nil)
         }
     }
 
@@ -60,6 +88,22 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate {
             if window is NSPanel { return false }
             if window.frame.width < 50 || window.frame.height < 50 { return false }
             return true
+        }
+    }
+
+    func shouldCloseToMenuBar(for event: NSEvent) -> Bool {
+        guard hasDocumentWindows() else { return false }
+        guard event.type == .keyDown else { return false }
+        guard event.charactersIgnoringModifiers?.lowercased() == "q" else { return false }
+
+        let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+        return modifiers == [.command]
+    }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        if let commandQMonitor {
+            NSEvent.removeMonitor(commandQMonitor)
+            self.commandQMonitor = nil
         }
     }
 }
