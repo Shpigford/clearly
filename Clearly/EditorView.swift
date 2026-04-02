@@ -60,7 +60,7 @@ struct EditorView: NSViewRepresentable {
         textView.isHorizontallyResizable = false
         textView.autoresizingMask = [.width]
         textView.textContainer?.widthTracksTextView = true
-        textView.layoutManager?.allowsNonContiguousLayout = true
+        textView.layoutManager?.allowsNonContiguousLayout = false
 
         // Insertion point color
         textView.insertionPointColor = Theme.textColor
@@ -260,10 +260,24 @@ struct EditorView: NSViewRepresentable {
 
             DiagnosticLog.log("textDidChange (\(textView.string.count) chars)")
 
+            // Save scroll position before highlighting — NSTextView already scrolled to
+            // show the cursor before textDidChange fires, so highlighting should not move it.
+            let scrollView = textView.enclosingScrollView
+            let savedOrigin = scrollView?.contentView.bounds.origin
+
             // Highlight synchronously so colors appear on the same frame as the keystroke
             isHighlightingInProgress = true
             highlighter?.highlightAll(textView.textStorage!, caller: "textDidChange")
             isHighlightingInProgress = false
+
+            // Restore scroll position that highlighting may have disturbed,
+            // then let NSTextView make minimal adjustment to keep cursor visible
+            // (handles line wrapping / new lines without the big jump).
+            if let scrollView, let savedOrigin {
+                scrollView.contentView.scroll(to: savedOrigin)
+                scrollView.reflectScrolledClipView(scrollView.contentView)
+                textView.scrollRangeToVisible(textView.selectedRange())
+            }
 
             // Re-apply find highlights after syntax highlighting (text may have changed match positions)
             restoreFindHighlightsIfNeeded()
