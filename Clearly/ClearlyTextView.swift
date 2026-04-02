@@ -1,6 +1,41 @@
 import AppKit
 
-final class ClearlyTextView: NSTextView {
+enum TextCheckingPreferences {
+    private static let continuousSpellCheckingKey = "continuousSpellCheckingEnabled"
+    private static let grammarCheckingKey = "grammarCheckingEnabled"
+    private static let automaticSpellingCorrectionKey = "automaticSpellingCorrectionEnabled"
+
+    static func apply(to textView: NSTextView) {
+        textView.isContinuousSpellCheckingEnabled = UserDefaults.standard.object(forKey: continuousSpellCheckingKey) as? Bool ?? true
+        textView.isGrammarCheckingEnabled = UserDefaults.standard.object(forKey: grammarCheckingKey) as? Bool ?? true
+        textView.isAutomaticSpellingCorrectionEnabled = UserDefaults.standard.object(forKey: automaticSpellingCorrectionKey) as? Bool ?? false
+    }
+
+    static func persist(from textView: NSTextView) {
+        UserDefaults.standard.set(textView.isContinuousSpellCheckingEnabled, forKey: continuousSpellCheckingKey)
+        UserDefaults.standard.set(textView.isGrammarCheckingEnabled, forKey: grammarCheckingKey)
+        UserDefaults.standard.set(textView.isAutomaticSpellingCorrectionEnabled, forKey: automaticSpellingCorrectionKey)
+    }
+}
+
+class PersistentTextCheckingTextView: NSTextView {
+    @objc override func toggleContinuousSpellChecking(_ sender: Any?) {
+        super.toggleContinuousSpellChecking(sender)
+        TextCheckingPreferences.persist(from: self)
+    }
+
+    @objc override func toggleGrammarChecking(_ sender: Any?) {
+        super.toggleGrammarChecking(sender)
+        TextCheckingPreferences.persist(from: self)
+    }
+
+    @objc override func toggleAutomaticSpellingCorrection(_ sender: Any?) {
+        super.toggleAutomaticSpellingCorrection(sender)
+        TextCheckingPreferences.persist(from: self)
+    }
+}
+
+final class ClearlyTextView: PersistentTextCheckingTextView {
     var documentURL: URL?
     var onShowFind: (() -> Void)?
 

@@ -38,6 +38,53 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate {
             self.closeDocumentWindowsToMenuBar()
             return nil
         }
+
+    }
+
+    // MARK: - Spelling and Grammar menu injection
+
+    /// SwiftUI owns the Edit menu and regenerates its items on every update cycle.
+    /// `applicationWillUpdate` fires on every run-loop iteration just before the
+    /// UI refreshes, so we can re-inject our submenu after SwiftUI wipes it.
+    /// The guard on `contains(where:)` makes this a no-op in the common case.
+    func applicationWillUpdate(_ notification: Notification) {
+        injectSpellingMenuIfNeeded()
+    }
+
+    private func injectSpellingMenuIfNeeded() {
+        guard let editMenu = NSApp.mainMenu?.item(withTitle: "Edit")?.submenu else { return }
+        guard !editMenu.items.contains(where: { $0.title == "Spelling and Grammar" }) else { return }
+
+        let spellingItem = NSMenuItem(title: "Spelling and Grammar", action: nil, keyEquivalent: "")
+        let spellingMenu = NSMenu(title: "Spelling and Grammar")
+
+        let showItem = NSMenuItem(title: "Show Spelling and Grammar", action: #selector(NSText.showGuessPanel(_:)), keyEquivalent: ":")
+        showItem.keyEquivalentModifierMask = [.command]
+        spellingMenu.addItem(showItem)
+
+        let checkItem = NSMenuItem(title: "Check Document Now", action: #selector(NSText.checkSpelling(_:)), keyEquivalent: ";")
+        checkItem.keyEquivalentModifierMask = [.command]
+        spellingMenu.addItem(checkItem)
+
+        spellingMenu.addItem(.separator())
+        spellingMenu.addItem(NSMenuItem(title: "Check Spelling While Typing", action: #selector(NSTextView.toggleContinuousSpellChecking(_:)), keyEquivalent: ""))
+        spellingMenu.addItem(NSMenuItem(title: "Check Grammar With Spelling", action: #selector(NSTextView.toggleGrammarChecking(_:)), keyEquivalent: ""))
+        spellingMenu.addItem(NSMenuItem(title: "Correct Spelling Automatically", action: #selector(NSTextView.toggleAutomaticSpellingCorrection(_:)), keyEquivalent: ""))
+
+        spellingItem.submenu = spellingMenu
+
+        // Place before Writing Tools (and its preceding separator) if present.
+        if let writingToolsIndex = editMenu.items.firstIndex(where: { $0.title == "Writing Tools" }) {
+            // Insert before the separator that precedes Writing Tools
+            let insertIndex = (writingToolsIndex > 0 && editMenu.items[writingToolsIndex - 1].isSeparatorItem)
+                ? writingToolsIndex - 1
+                : writingToolsIndex
+            editMenu.insertItem(spellingItem, at: insertIndex)
+            editMenu.insertItem(.separator(), at: insertIndex)
+        } else {
+            editMenu.addItem(.separator())
+            editMenu.addItem(spellingItem)
+        }
     }
 
     func applicationWillBecomeActive(_ notification: Notification) {

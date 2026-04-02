@@ -17,14 +17,14 @@ struct ScratchpadEditorView: NSViewRepresentable {
         scrollView.drawsBackground = false
         scrollView.autohidesScrollers = true
 
-        let textView = NSTextView()
+        let textView = PersistentTextCheckingTextView()
         textView.isRichText = false
         textView.allowsUndo = true
         textView.usesFindPanel = true
         textView.isAutomaticQuoteSubstitutionEnabled = false
         textView.isAutomaticDashSubstitutionEnabled = false
         textView.isAutomaticTextReplacementEnabled = false
-        textView.isAutomaticSpellingCorrectionEnabled = false
+        TextCheckingPreferences.apply(to: textView)
 
         textView.font = Theme.editorFont
         textView.textColor = Theme.textColor
