@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+## [1.10.0] - 2026-04-02
+- Document outline panel lets you jump to any heading with a click
+- Native spell checking with persistent preferences for each document
+- PDF export handles page breaks correctly instead of slicing content mid-line
+- Cmd+Q closes all windows instead of force-quitting, so unsaved work isn't lost
+- Editor no longer jumps when typing near the bottom of the window
+
 ## [1.9.0] - 2026-03-30
 - Scratchpad: a menubar app with a global hotkey for capturing quick notes without opening a full document
 - Inline Find bar replaces the broken system Find panel for searching within documents
