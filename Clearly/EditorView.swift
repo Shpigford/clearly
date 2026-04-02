@@ -31,7 +31,7 @@ struct EditorView: NSViewRepresentable {
         textView.isAutomaticQuoteSubstitutionEnabled = false
         textView.isAutomaticDashSubstitutionEnabled = false
         textView.isAutomaticTextReplacementEnabled = false
-        textView.isAutomaticSpellingCorrectionEnabled = false
+        TextCheckingPreferences.apply(to: textView)
 
         // Font
         textView.font = Theme.editorFont

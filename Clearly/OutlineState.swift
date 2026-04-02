@@ -28,7 +28,7 @@ final class OutlineState: ObservableObject {
         options: .anchorsMatchLines
     )
     private static let codeBlockRegex = try! NSRegularExpression(
-        pattern: "^(`{3,})(.*?)\\n([\\s\\S]*?)^\\1\\s*$",
+        pattern: "^((?:`{3,}|~{3,}))[^\n]*\\n([\\s\\S]*?)^\\1[ \\t]*$",
         options: [.anchorsMatchLines]
     )
     private static let frontmatterRegex = try! NSRegularExpression(
