@@ -5,7 +5,6 @@ final class PDFExporter: NSObject, WKNavigationDelegate {
     private static var current: PDFExporter?
     private static let pageSize = NSSize(width: 612, height: 792)
     private static let margin: CGFloat = 54 // 0.75 inch
-    private static let contentWidth = pageSize.width - (margin * 2)
 
     private var webView: WKWebView?
     private var hiddenWindow: NSWindow?
@@ -35,7 +34,8 @@ final class PDFExporter: NSObject, WKNavigationDelegate {
     }
 
     private func loadHTML(markdown: String, fontSize: CGFloat) {
-        let renderWidth = isPrint ? Self.pageSize.width : Self.contentWidth
+        // Both print and export use full page width — NSPrintOperation handles margins
+        let renderWidth = Self.pageSize.width
         let config = WKWebViewConfiguration()
         config.setURLSchemeHandler(LocalImageSchemeHandler(), forURLScheme: LocalImageSupport.scheme)
         let wv = WKWebView(frame: NSRect(x: 0, y: 0, width: renderWidth, height: Self.pageSize.height), configuration: config)
@@ -54,12 +54,13 @@ final class PDFExporter: NSObject, WKNavigationDelegate {
 
         let rawBody = MarkdownRenderer.renderHTML(markdown)
         let htmlBody = LocalImageSupport.resolveImageSources(in: rawBody, relativeTo: documentURL)
+        // Both paths use forExport: false so @media print rules (including page-break) apply
         let html = """
         <!DOCTYPE html>
         <html>
         <head>
         <meta charset="utf-8">
-        <style>\(PreviewCSS.css(fontSize: fontSize, forExport: !isPrint))</style>
+        <style>\(PreviewCSS.css(fontSize: fontSize, forExport: false))</style>
         </head>
         <body>\(htmlBody)</body>
         \(MathSupport.scriptHTML(for: htmlBody))
@@ -71,48 +72,62 @@ final class PDFExporter: NSObject, WKNavigationDelegate {
     // MARK: - WKNavigationDelegate
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        // Detach delegate immediately to prevent re-entrancy from print operations
+        webView.navigationDelegate = nil
+
         Task { @MainActor in
             do {
                 try await waitForImages(in: webView)
             } catch {
-                // If image waiting JS fails, continue with export/print instead of blocking.
+                // If image waiting JS fails, continue instead of blocking.
+            }
+
+            let isExport = !isPrint
+            let printInfo = makePrintInfo(forExport: isExport)
+
+            guard let window = NSApp.mainWindow ?? self.hiddenWindow else {
+                cleanup()
+                return
             }
 
             if isPrint {
-                let printInfo = makePrintInfo()
                 let op = webView.printOperation(with: printInfo)
                 op.showsPrintPanel = true
                 op.showsProgressPanel = true
-                if let window = NSApp.mainWindow {
-                    op.runModal(for: window, delegate: self, didRun: #selector(operationDidRun(_:success:contextInfo:)), contextInfo: nil)
-                } else {
-                    _ = op.run()
-                    cleanup()
-                }
+                op.runModal(for: window, delegate: self, didRun: #selector(operationDidRun(_:success:contextInfo:)), contextInfo: nil)
             } else {
-                do {
-                    guard let exportURL else {
-                        cleanup()
-                        return
-                    }
-                    let scrollHeight = try await documentHeight(in: webView)
-                    let breakPoints = try await pageBreakPositions(in: webView)
-                    let data = try await tallPDFData(in: webView, height: scrollHeight)
-                    try writePaginatedPDF(sourceData: data, breakPoints: breakPoints, to: exportURL)
-                } catch {
-                    showExportError(error)
+                guard let exportURL else {
+                    cleanup()
+                    return
                 }
-                cleanup()
+                // Use WebKit's native print pagination engine via NSPrintOperation.
+                // This is the only way to get proper page breaks that never cut through
+                // text lines. CSS @media print rules (page-break-inside: avoid) are
+                // respected by this codepath.
+                printInfo.jobDisposition = .save
+                printInfo.dictionary()[NSPrintInfo.AttributeKey.jobSavingURL] = exportURL
+
+                let op = webView.printOperation(with: printInfo)
+                op.showsPrintPanel = false
+                op.showsProgressPanel = false
+                op.runModal(for: window, delegate: self, didRun: #selector(operationDidRun(_:success:contextInfo:)), contextInfo: nil)
             }
         }
     }
 
     @objc private func operationDidRun(_ op: NSPrintOperation, success: Bool, contextInfo: UnsafeMutableRawPointer?) {
-        cleanup()
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            if !success && !self.isPrint {
+                self.showExportError(ExportError.exportFailed)
+            }
+            self.cleanup()
+        }
     }
 
     private func cleanup() {
         hiddenWindow?.orderOut(nil)
+        webView?.navigationDelegate = nil
         webView = nil
         hiddenWindow = nil
         exportURL = nil
@@ -122,8 +137,17 @@ final class PDFExporter: NSObject, WKNavigationDelegate {
 
     // MARK: - Print
 
-    private func makePrintInfo() -> NSPrintInfo {
-        let printInfo = NSPrintInfo.shared.copy() as! NSPrintInfo
+    private func makePrintInfo(forExport: Bool) -> NSPrintInfo {
+        let printInfo: NSPrintInfo
+        if forExport {
+            printInfo = NSPrintInfo(dictionary: [:])
+            printInfo.scalingFactor = 1.0
+            printInfo.orientation = .portrait
+            printInfo.isSelectionOnly = false
+        } else {
+            printInfo = NSPrintInfo.shared.copy() as! NSPrintInfo
+        }
+
         printInfo.paperSize = Self.pageSize
         printInfo.topMargin = Self.margin
         printInfo.bottomMargin = Self.margin
@@ -136,26 +160,7 @@ final class PDFExporter: NSObject, WKNavigationDelegate {
         return printInfo
     }
 
-    // MARK: - Export helpers
-
-    private func documentHeight(in webView: WKWebView) async throws -> CGFloat {
-        let value = try await webView.evaluateJavaScript("document.documentElement.scrollHeight")
-        guard let number = value as? NSNumber else {
-            throw ExportError.invalidDocumentHeight
-        }
-        return CGFloat(number.doubleValue)
-    }
-
-    private func pageBreakPositions(in webView: WKWebView) async throws -> [CGFloat] {
-        let js = """
-        Array.from(document.querySelectorAll('.page-break, [style*=\"page-break\"]')).map(
-            el => el.getBoundingClientRect().top + window.scrollY
-        )
-        """
-        let value = try await webView.evaluateJavaScript(js)
-        guard let positions = value as? [NSNumber] else { return [] }
-        return positions.map { CGFloat($0.doubleValue) }
-    }
+    // MARK: - Helpers
 
     private func waitForImages(in webView: WKWebView) async throws {
         _ = try await webView.callAsyncJavaScript(
@@ -186,75 +191,6 @@ final class PDFExporter: NSObject, WKNavigationDelegate {
         )
     }
 
-    private func tallPDFData(in webView: WKWebView, height: CGFloat) async throws -> Data {
-        let config = WKPDFConfiguration()
-        config.rect = CGRect(x: 0, y: 0, width: Self.contentWidth, height: height)
-        return try await webView.pdf(configuration: config)
-    }
-
-    private func writePaginatedPDF(sourceData: Data, breakPoints: [CGFloat], to url: URL) throws {
-        guard let provider = CGDataProvider(data: sourceData as CFData),
-              let source = CGPDFDocument(provider),
-              let sourcePage = source.page(at: 1) else {
-            throw ExportError.invalidSourcePDF
-        }
-
-        let sourceBox = sourcePage.getBoxRect(.mediaBox)
-        let sourceHeight = sourceBox.height
-        let contentHeight = Self.pageSize.height - (Self.margin * 2)
-        let sortedBreaks = breakPoints.sorted()
-
-        // Build slice boundaries (Y offsets from top of source)
-        var sliceStarts: [CGFloat] = [0]
-        var y: CGFloat = 0
-        while y < sourceHeight {
-            var nextY = y + contentHeight
-
-            // Honor forced page breaks within this slice
-            for bp in sortedBreaks {
-                if bp > y && bp < nextY {
-                    nextY = bp
-                    break
-                }
-            }
-
-            nextY = min(nextY, sourceHeight)
-            if nextY <= y { break }
-            if nextY < sourceHeight {
-                sliceStarts.append(nextY)
-            }
-            y = nextY
-        }
-
-        // Create output PDF
-        var mediaBox = CGRect(origin: .zero, size: Self.pageSize)
-        guard let ctx = CGContext(url as CFURL, mediaBox: &mediaBox, nil) else {
-            throw ExportError.cannotCreateOutput
-        }
-
-        for (i, sliceY) in sliceStarts.enumerated() {
-            let nextSliceY = (i + 1 < sliceStarts.count) ? sliceStarts[i + 1] : sourceHeight
-
-            ctx.beginPage(mediaBox: &mediaBox)
-            ctx.saveGState()
-
-            // Clip to the content area (inside margins)
-            ctx.clip(to: CGRect(x: Self.margin, y: Self.margin, width: Self.contentWidth, height: contentHeight))
-
-            // Translate so this slice's top aligns with the top of the content area.
-            // In PDF coords (origin bottom-left): source top = sourceHeight.
-            // We want source Y = (sourceHeight - sliceY) to land at output Y = (margin + contentHeight).
-            let translateY = Self.margin + contentHeight - sourceHeight + sliceY
-            ctx.translateBy(x: Self.margin, y: translateY)
-            ctx.drawPDFPage(sourcePage)
-
-            ctx.restoreGState()
-            ctx.endPage()
-        }
-
-        ctx.closePDF()
-    }
-
     private func showExportError(_ error: Error) {
         let alert = NSAlert(error: error)
         alert.runModal()
@@ -262,18 +198,12 @@ final class PDFExporter: NSObject, WKNavigationDelegate {
 }
 
 private enum ExportError: LocalizedError {
-    case invalidDocumentHeight
-    case invalidSourcePDF
-    case cannotCreateOutput
+    case exportFailed
 
     var errorDescription: String? {
         switch self {
-        case .invalidDocumentHeight:
-            return "Could not measure the document for PDF export."
-        case .invalidSourcePDF:
-            return "Could not generate the intermediate PDF for export."
-        case .cannotCreateOutput:
-            return "Could not create the exported PDF file."
+        case .exportFailed:
+            return "Could not export the PDF file."
         }
     }
 }

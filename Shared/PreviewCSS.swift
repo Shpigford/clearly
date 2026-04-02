@@ -60,6 +60,23 @@ enum PreviewCSS {
         border: none !important;
         margin: 0 !important;
     }
+    h1, h2, h3, h4, h5, h6 {
+        page-break-after: avoid;
+        break-after: avoid;
+        page-break-inside: avoid;
+        break-inside: avoid;
+    }
+    p, pre, blockquote, table, .frontmatter, .math-block, .mermaid, img, ul, ol {
+        page-break-inside: avoid;
+        break-inside: avoid;
+    }
+    tr {
+        page-break-inside: avoid;
+        break-inside: avoid;
+    }
+    img {
+        display: block;
+    }
     """ : ""
 
     return """
@@ -444,6 +461,23 @@ enum PreviewCSS {
             break-after: page;
             height: 0;
             border: none;
+        }
+        h1, h2, h3, h4, h5, h6 {
+            page-break-after: avoid;
+            break-after: avoid;
+            page-break-inside: avoid;
+            break-inside: avoid;
+        }
+        p, pre, blockquote, table, .frontmatter, .math-block, .mermaid, img, ul, ol {
+            page-break-inside: avoid;
+            break-inside: avoid;
+        }
+        tr {
+            page-break-inside: avoid;
+            break-inside: avoid;
+        }
+        img {
+            display: block;
         }
     }
     \(exportOverrides)
