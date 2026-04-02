@@ -9,6 +9,7 @@ struct EditorView: NSViewRepresentable {
     var fileURL: URL?
     var scrollSync: ScrollSync?
     var findState: FindState?
+    var outlineState: OutlineState?
     @Environment(\.colorScheme) private var colorScheme
 
     func makeCoordinator() -> Coordinator {
@@ -79,6 +80,7 @@ struct EditorView: NSViewRepresentable {
         context.coordinator.textView = textView
         context.coordinator.scrollSync = scrollSync
         context.coordinator.findState = findState
+        context.coordinator.outlineState = outlineState
         if let findState {
             context.coordinator.observeFindState(findState)
         }
@@ -99,6 +101,11 @@ struct EditorView: NSViewRepresentable {
         }
         findState?.navigateToPrevious = { [weak coordinator] in
             coordinator?.navigateToPreviousMatch()
+        }
+
+        // Wire up outline scroll-to
+        outlineState?.scrollToRange = { [weak coordinator] range in
+            coordinator?.scrollToHeading(range)
         }
 
         // Observe scroll position for sync
@@ -197,6 +204,7 @@ struct EditorView: NSViewRepresentable {
         weak var textView: NSTextView?
         var scrollSync: ScrollSync?
         var findState: FindState?
+        var outlineState: OutlineState?
         var lastColorScheme: ColorScheme?
         var lastFontSize: CGFloat?
         var updateCount = 0
@@ -209,6 +217,12 @@ struct EditorView: NSViewRepresentable {
 
         init(_ parent: EditorView) {
             self.parent = parent
+        }
+
+        func scrollToHeading(_ range: NSRange) {
+            guard let textView else { return }
+            textView.scrollRangeToVisible(range)
+            textView.showFindIndicator(for: range)
         }
 
         func observeFindState(_ state: FindState) {

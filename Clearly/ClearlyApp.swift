@@ -159,6 +159,7 @@ struct ClearlyApp: App {
             }
             CommandGroup(after: .textEditing) {
                 FindCommand()
+                OutlineToggleCommand()
                 ViewModeCommands()
             }
             CommandGroup(after: .textFormatting) {
@@ -295,6 +296,17 @@ struct FindCommand: View {
             findState?.present()
         }
         .keyboardShortcut("f", modifiers: .command)
+    }
+}
+
+struct OutlineToggleCommand: View {
+    @FocusedValue(\.outlineState) var outlineState
+
+    var body: some View {
+        Button("Toggle Outline") {
+            outlineState?.toggle()
+        }
+        .keyboardShortcut("o", modifiers: [.command, .shift])
     }
 }
 

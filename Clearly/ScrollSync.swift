@@ -1,7 +1,7 @@
 import Foundation
 import WebKit
 
-struct PreviewSourceAnchor {
+struct PreviewSourceAnchor: Hashable {
     let startLine: Int
     let startColumn: Int
     let endLine: Int

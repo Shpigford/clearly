@@ -8,6 +8,7 @@ struct PreviewView: NSViewRepresentable {
     var scrollSync: ScrollSync?
     var fileURL: URL?
     var findState: FindState?
+    var outlineState: OutlineState?
     @Environment(\.colorScheme) private var colorScheme
 
     private var contentKey: String {
@@ -32,10 +33,15 @@ struct PreviewView: NSViewRepresentable {
         context.coordinator.scrollSync = scrollSync
         context.coordinator.fileURL = fileURL
         context.coordinator.findState = findState
+        context.coordinator.outlineState = outlineState
         scrollSync?.previewWebView = webView
         if let findState {
             context.coordinator.observeFindState(findState, webView: webView)
         }
+        outlineState?.scrollToPreviewAnchor = { [weak coordinator = context.coordinator] anchor in
+            coordinator?.scrollToHeading(anchor: anchor)
+        }
+
         loadHTML(in: webView, context: context)
         return webView
     }
@@ -227,6 +233,7 @@ struct PreviewView: NSViewRepresentable {
         var didInitialLoad = false
         var fileURL: URL?
         var findState: FindState?
+        var outlineState: OutlineState?
         weak var webView: WKWebView?
         private var findCancellables = Set<AnyCancellable>()
         private var matchCount = 0
@@ -265,6 +272,28 @@ struct PreviewView: NSViewRepresentable {
             findState?.navigateToPrevious = { [weak self] in
                 self?.navigateToPreviousMatch()
             }
+        }
+
+        func scrollToHeading(anchor: PreviewSourceAnchor) {
+            let js = """
+            (function() {
+                var headings = document.querySelectorAll('h1,h2,h3,h4,h5,h6');
+                for (var i = 0; i < headings.length; i++) {
+                    var sp = headings[i].getAttribute('data-sourcepos');
+                    if (!sp) continue;
+                    var match = /^(\\d+):(\\d+)-(\\d+):(\\d+)$/.exec(sp);
+                    if (!match) continue;
+                    if (
+                        parseInt(match[1], 10) === \(anchor.startLine) &&
+                        parseInt(match[2], 10) === \(anchor.startColumn)
+                    ) {
+                        headings[i].scrollIntoView({behavior:'smooth', block:'start'});
+                        return;
+                    }
+                }
+            })();
+            """
+            webView?.evaluateJavaScript(js)
         }
 
         private func performFind(query: String) {

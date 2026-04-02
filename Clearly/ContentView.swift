@@ -22,6 +22,10 @@ struct FindStateKey: FocusedValueKey {
     typealias Value = FindState
 }
 
+struct OutlineStateKey: FocusedValueKey {
+    typealias Value = OutlineState
+}
+
 extension FocusedValues {
     var viewMode: Binding<ViewMode>? {
         get { self[ViewModeKey.self] }
@@ -38,6 +42,10 @@ extension FocusedValues {
     var findState: FindState? {
         get { self[FindStateKey.self] }
         set { self[FindStateKey.self] = newValue }
+    }
+    var outlineState: OutlineState? {
+        get { self[OutlineStateKey.self] }
+        set { self[OutlineStateKey.self] = newValue }
     }
 }
 
@@ -116,6 +124,7 @@ struct ContentView: View {
     @StateObject private var scrollSync = ScrollSync()
     @StateObject private var findState = FindState()
     @StateObject private var fileWatcher = FileWatcher()
+    @StateObject private var outlineState = OutlineState()
 
     init(document: Binding<MarkdownDocument>, fileURL: URL? = nil) {
         self._document = document
@@ -150,14 +159,14 @@ struct ContentView: View {
             Group {
                 switch mode {
                 case .edit:
-                    EditorView(text: $document.text, fontSize: CGFloat(fontSize), fileURL: fileURL, findState: findState)
+                    EditorView(text: $document.text, fontSize: CGFloat(fontSize), fileURL: fileURL, findState: findState, outlineState: outlineState)
                 case .sideBySide:
                     HSplitView {
-                        EditorView(text: $document.text, fontSize: CGFloat(fontSize), fileURL: fileURL, scrollSync: scrollSync, findState: findState)
-                        PreviewView(markdown: document.text, fontSize: CGFloat(fontSize), scrollSync: scrollSync, fileURL: fileURL)
+                        EditorView(text: $document.text, fontSize: CGFloat(fontSize), fileURL: fileURL, scrollSync: scrollSync, findState: findState, outlineState: outlineState)
+                        PreviewView(markdown: document.text, fontSize: CGFloat(fontSize), scrollSync: scrollSync, fileURL: fileURL, outlineState: outlineState)
                     }
                 case .preview:
-                    PreviewView(markdown: document.text, fontSize: CGFloat(fontSize), fileURL: fileURL, findState: findState)
+                    PreviewView(markdown: document.text, fontSize: CGFloat(fontSize), fileURL: fileURL, findState: findState, outlineState: outlineState)
                 }
             }
         }
@@ -192,6 +201,11 @@ struct ContentView: View {
                 animateWindowFrame(window, to: newFrame)
             }
         }
+        .safeAreaInset(edge: .trailing, spacing: 0) {
+            if outlineState.isVisible {
+                OutlineView(outlineState: outlineState)
+            }
+        }
         .safeAreaInset(edge: .bottom, spacing: 0) {
             if mode != .preview {
                 HStack(spacing: 12) {
@@ -220,6 +234,16 @@ struct ContentView: View {
             }
             ToolbarItem(placement: .automatic) {
                 Button {
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        outlineState.toggle()
+                    }
+                } label: {
+                    Image(systemName: "list.bullet.indent")
+                }
+                .help("Document Outline (Shift+Cmd+O)")
+            }
+            ToolbarItem(placement: .automatic) {
+                Button {
                     findState.present()
                 } label: {
                     Image(systemName: "magnifyingglass")
@@ -234,17 +258,20 @@ struct ContentView: View {
         .focusedSceneValue(\.documentText, document.text)
         .focusedSceneValue(\.documentFileURL, fileURL)
         .focusedSceneValue(\.findState, findState)
+        .focusedSceneValue(\.outlineState, outlineState)
         .onAppear {
             fileWatcher.onChange = { [self] newText in
                 document.text = newText
             }
             fileWatcher.watch(fileURL, currentText: document.text)
+            outlineState.parseHeadings(from: document.text)
         }
         .onChange(of: fileURL) { _, newURL in
             fileWatcher.watch(newURL, currentText: document.text)
         }
         .onChange(of: document.text) { _, newText in
             fileWatcher.updateCurrentText(newText)
+            outlineState.parseHeadings(from: newText)
         }
     }
 }
