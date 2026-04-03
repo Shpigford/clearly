@@ -151,23 +151,43 @@ struct ContentView: View {
     }
 
     var body: some View {
-        VStack(spacing: 0) {
-            if findState.isVisible {
-                FindBarView(findState: findState)
-                Divider()
-            }
-            Group {
-                switch mode {
-                case .edit:
-                    EditorView(text: $document.text, fontSize: CGFloat(fontSize), fileURL: fileURL, findState: findState, outlineState: outlineState)
-                case .sideBySide:
-                    HSplitView {
-                        EditorView(text: $document.text, fontSize: CGFloat(fontSize), fileURL: fileURL, scrollSync: scrollSync, findState: findState, outlineState: outlineState)
-                        PreviewView(markdown: document.text, fontSize: CGFloat(fontSize), scrollSync: scrollSync, fileURL: fileURL, outlineState: outlineState)
-                    }
-                case .preview:
-                    PreviewView(markdown: document.text, fontSize: CGFloat(fontSize), fileURL: fileURL, findState: findState, outlineState: outlineState)
+        HStack(spacing: 0) {
+            VStack(spacing: 0) {
+                if findState.isVisible {
+                    FindBarView(findState: findState)
+                    Divider()
                 }
+                Group {
+                    switch mode {
+                    case .edit:
+                        EditorView(text: $document.text, fontSize: CGFloat(fontSize), fileURL: fileURL, findState: findState, outlineState: outlineState)
+                    case .sideBySide:
+                        HSplitView {
+                            EditorView(text: $document.text, fontSize: CGFloat(fontSize), fileURL: fileURL, scrollSync: scrollSync, findState: findState, outlineState: outlineState)
+                            PreviewView(markdown: document.text, fontSize: CGFloat(fontSize), scrollSync: scrollSync, fileURL: fileURL, outlineState: outlineState)
+                        }
+                    case .preview:
+                        PreviewView(markdown: document.text, fontSize: CGFloat(fontSize), fileURL: fileURL, findState: findState, outlineState: outlineState)
+                    }
+                }
+            }
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                if mode != .preview {
+                    HStack(spacing: 12) {
+                        Text("\(wordCount) words")
+                        Text("\(characterCount) characters")
+                    }
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 6)
+                    .background(Theme.backgroundColorSwiftUI)
+                }
+            }
+
+            if outlineState.isVisible {
+                Divider()
+                OutlineView(outlineState: outlineState)
             }
         }
         .frame(minWidth: mode == .sideBySide ? 1000 : 500, minHeight: 400)
@@ -199,24 +219,6 @@ struct ContentView: View {
                     height: frame.height
                 )
                 animateWindowFrame(window, to: newFrame)
-            }
-        }
-        .safeAreaInset(edge: .trailing, spacing: 0) {
-            if outlineState.isVisible {
-                OutlineView(outlineState: outlineState)
-            }
-        }
-        .safeAreaInset(edge: .bottom, spacing: 0) {
-            if mode != .preview {
-                HStack(spacing: 12) {
-                    Text("\(wordCount) words")
-                    Text("\(characterCount) characters")
-                }
-                .font(.caption)
-                .foregroundStyle(.tertiary)
-                .padding(.horizontal, 16)
-                .padding(.vertical, 6)
-                .background(Theme.backgroundColorSwiftUI)
             }
         }
         .toolbar {
