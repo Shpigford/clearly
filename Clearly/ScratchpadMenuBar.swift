@@ -27,19 +27,25 @@ struct ScratchpadMenuBar: View {
         }
 
         Button("New Document") {
-            NSApp.setActivationPolicy(.regular)
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                NSApp.activate(ignoringOtherApps: true)
+                activateDocumentApp()
                 NSDocumentController.shared.newDocument(nil)
             }
         }
         .keyboardShortcut("n", modifiers: [.command])
 
         Button("Open Document") {
-            NSApp.setActivationPolicy(.regular)
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                NSApp.activate(ignoringOtherApps: true)
-                NSDocumentController.shared.openDocument(nil)
+                activateDocumentApp()
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                    NSDocumentController.shared.openDocument(nil)
+                    // Ensure the open panel is frontmost
+                    DispatchQueue.main.async {
+                        for window in NSApp.windows where window is NSOpenPanel {
+                            window.orderFrontRegardless()
+                        }
+                    }
+                }
             }
         }
         .keyboardShortcut("o", modifiers: [.command])

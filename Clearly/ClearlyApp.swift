@@ -3,6 +3,14 @@ import SwiftUI
 import Sparkle
 #endif
 
+func activateDocumentApp() {
+    if NSApp.activationPolicy() != .regular {
+        NSApp.setActivationPolicy(.regular)
+    }
+    // Document opens from the menu bar must steal focus from the current app.
+    NSApp.activate(ignoringOtherApps: true)
+}
+
 // MARK: - App Delegate (dock icon management)
 
 final class ClearlyAppDelegate: NSObject, NSApplicationDelegate {
@@ -30,6 +38,14 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate {
         })
         observers.append(nc.addObserver(forName: NSWindow.didResignMainNotification, object: nil, queue: .main) { [weak self] _ in
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { self?.updateActivationPolicy() }
+        })
+        observers.append(nc.addObserver(forName: NSWindow.didBecomeMainNotification, object: nil, queue: .main) { notification in
+            guard let window = notification.object as? NSWindow else { return }
+            // Only for document windows, not panels/sheets/scratchpads
+            guard !(window is NSPanel), !window.isSheet, window.level != .floating else { return }
+            guard window.frame.width >= 50 && window.frame.height >= 50 else { return }
+            activateDocumentApp()
+            window.orderFrontRegardless()
         })
 
         commandQMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in

@@ -90,6 +90,9 @@ struct WindowFrameSaver: NSViewRepresentable {
                     coordinator: context.coordinator,
                     persistCurrentFrame: false
                 )
+                // Ensure the document window comes to front after opening.
+                activateDocumentApp()
+                window.makeKeyAndOrderFront(nil)
             }
         }
         return view
