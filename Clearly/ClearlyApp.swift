@@ -119,14 +119,12 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate {
             return true
         }
 
-        guard !documentWindows.isEmpty else {
-            updateActivationPolicy()
-            return
-        }
-
         for window in documentWindows {
             window.performClose(nil)
         }
+
+        Task { @MainActor in ScratchpadManager.shared.closeAll() }
+        updateActivationPolicy()
     }
 
     private func updateActivationPolicy() {
@@ -155,7 +153,6 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func shouldCloseToMenuBar(for event: NSEvent) -> Bool {
-        guard hasDocumentWindows() else { return false }
         guard event.type == .keyDown else { return false }
         guard event.charactersIgnoringModifiers?.lowercased() == "q" else { return false }
 

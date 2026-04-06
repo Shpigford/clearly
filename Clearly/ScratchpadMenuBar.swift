@@ -60,6 +60,5 @@ struct ScratchpadMenuBar: View {
         Button("Quit Clearly") {
             NSApp.terminate(nil)
         }
-        .keyboardShortcut("q", modifiers: [.command])
     }
 }
