@@ -173,8 +173,12 @@ struct EditorView: NSViewRepresentable {
         }
 
         // Only update text if it changed externally (not from user typing).
+        // When the user types, textDidChange increments pendingBindingUpdates
+        // synchronously, then the async block decrements it after updating the
+        // binding. While updates are pending, the text view is authoritative —
+        // any mismatch is just the binding lagging behind, not an external change.
         let textMismatch = textView.string != text
-        if !context.coordinator.isUpdating && textMismatch {
+        if !context.coordinator.isUpdating && context.coordinator.pendingBindingUpdates == 0 && textMismatch {
             DiagnosticLog.log("updateNSView #\(count): external text change (\(text.count) chars)")
             context.coordinator.isUpdating = true
             let selectedRanges = textView.selectedRanges
@@ -209,6 +213,11 @@ struct EditorView: NSViewRepresentable {
         var lastFontSize: CGFloat?
         var updateCount = 0
         private var lastScrollTime: TimeInterval = 0
+        private var editGeneration: UInt = 0
+        /// Tracks how many async binding updates are in-flight. While > 0,
+        /// updateNSView must not replace the text view's content — the text
+        /// view is authoritative and the binding will catch up.
+        var pendingBindingUpdates = 0
 
         // Find state tracking
         var matchRanges: [NSRange] = []
@@ -260,8 +269,14 @@ struct EditorView: NSViewRepresentable {
 
             DiagnosticLog.log("textDidChange (\(textView.string.count) chars)")
 
-            // Save scroll position before highlighting — NSTextView already scrolled to
-            // show the cursor before textDidChange fires, so highlighting should not move it.
+            // Block updateNSView from replacing text while binding update is pending.
+            // Without this, SwiftUI can call updateNSView (e.g., from a layout pass
+            // triggered by the text view growing) BEFORE the async binding update fires,
+            // see a mismatch between the old binding and the new text, and overwrite
+            // the text view with the stale binding value — causing the cursor to jump.
+            pendingBindingUpdates += 1
+
+            // Save scroll position before highlighting
             let scrollView = textView.enclosingScrollView
             let savedOrigin = scrollView?.contentView.bounds.origin
 
@@ -270,29 +285,25 @@ struct EditorView: NSViewRepresentable {
             highlighter?.highlightAll(textView.textStorage!, caller: "textDidChange")
             isHighlightingInProgress = false
 
-            // Restore scroll position that highlighting may have disturbed,
-            // then let NSTextView make minimal adjustment to keep cursor visible
-            // (handles line wrapping / new lines without the big jump).
+            // Restore scroll position that highlighting may have disturbed
             if let scrollView, let savedOrigin {
                 scrollView.contentView.scroll(to: savedOrigin)
                 scrollView.reflectScrolledClipView(scrollView.contentView)
-                textView.scrollRangeToVisible(textView.selectedRange())
             }
 
-            // Re-apply find highlights after syntax highlighting (text may have changed match positions)
+            // Re-apply find highlights after syntax highlighting
             restoreFindHighlightsIfNeeded()
 
-            // Update SwiftUI binding asynchronously to prevent re-entrant updateNSView
-            let newText = textView.string
+            // Update SwiftUI binding asynchronously to prevent re-entrant updateNSView.
+            // Use a generation counter to coalesce rapid updates.
+            editGeneration += 1
+            let gen = editGeneration
             DispatchQueue.main.async { [weak self] in
-                guard let self else {
-                    DiagnosticLog.log("textDidChange async: coordinator deallocated")
-                    return
-                }
-                DiagnosticLog.log("textDidChange async: updating binding (\(newText.count) chars)")
-                self.isUpdating = true
-                self.parent.text = newText
-                self.isUpdating = false
+                guard let self else { return }
+                self.pendingBindingUpdates -= 1
+                guard gen == self.editGeneration else { return }
+                guard let textView = self.textView else { return }
+                self.parent.text = textView.string
             }
         }
 
@@ -360,7 +371,10 @@ struct EditorView: NSViewRepresentable {
 
         func restoreFindHighlightsIfNeeded() {
             guard findState?.isVisible == true, !(findState?.query.isEmpty ?? true) else { return }
-            performFind()
+            // Re-apply cached highlight colors without re-running the full find
+            // (which would scroll to the first match on every keystroke).
+            guard !matchRanges.isEmpty else { return }
+            applyFindHighlights()
         }
 
         func performFind() {
