@@ -1,5 +1,6 @@
 import AppKit
 import SwiftUI
+import UniformTypeIdentifiers
 import KeyboardShortcuts
 
 struct Scratchpad: Identifiable {
@@ -68,7 +69,9 @@ final class ScratchpadManager {
             }
         )
 
-        let contentView = ScratchpadContentView(text: binding)
+        let contentView = ScratchpadContentView(text: binding, onSave: { [weak self] in
+            self?.saveAsDocument(id: padID)
+        })
         window.contentView = NSHostingView(rootView: contentView)
 
         // Add hover tracking for traffic light buttons (above content so it receives events)
@@ -120,6 +123,46 @@ final class ScratchpadManager {
         guard let window = windows[id] else { return }
         window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
+    }
+
+    func saveAsDocument(id: UUID) {
+        guard let pad = scratchpads.first(where: { $0.id == id }),
+              !pad.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              let window = windows[id] else {
+            return
+        }
+
+        let panel = NSSavePanel()
+        panel.allowedContentTypes = [.daringFireballMarkdown]
+        let name = pad.displayTitle
+        panel.nameFieldStringValue = name.hasSuffix(".md") ? name : "\(name).md"
+
+        panel.beginSheetModal(for: window) { [weak self] response in
+            guard response == .OK, let url = panel.url else { return }
+
+            do {
+                try pad.text.write(to: url, atomically: true, encoding: .utf8)
+            } catch {
+                let alert = NSAlert(error: error)
+                alert.runModal()
+                return
+            }
+
+            activateDocumentApp()
+            NSDocumentController.shared.openDocument(
+                withContentsOf: url,
+                display: true
+            ) { [weak self] _, _, error in
+                if let error {
+                    let alert = NSAlert(error: error)
+                    alert.runModal()
+                    return
+                }
+                Task { @MainActor in
+                    self?.windows[id]?.close()
+                }
+            }
+        }
     }
 
     func closeAll() {

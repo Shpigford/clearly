@@ -1,9 +1,25 @@
 import SwiftUI
 import AppKit
 
+final class ScratchpadTextView: PersistentTextCheckingTextView {
+    var onSave: (() -> Void)?
+
+    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        guard event.modifierFlags.contains(.command) else {
+            return super.performKeyEquivalent(with: event)
+        }
+        if event.charactersIgnoringModifiers == "s" {
+            onSave?()
+            return true
+        }
+        return super.performKeyEquivalent(with: event)
+    }
+}
+
 struct ScratchpadEditorView: NSViewRepresentable {
     @Binding var text: String
     var fontSize: CGFloat = 16
+    var onSave: (() -> Void)?
     @Environment(\.colorScheme) private var colorScheme
 
     func makeCoordinator() -> Coordinator {
@@ -17,7 +33,7 @@ struct ScratchpadEditorView: NSViewRepresentable {
         scrollView.drawsBackground = false
         scrollView.autohidesScrollers = true
 
-        let textView = PersistentTextCheckingTextView()
+        let textView = ScratchpadTextView()
         textView.isRichText = false
         textView.allowsUndo = true
         textView.usesFindPanel = true
@@ -58,8 +74,14 @@ struct ScratchpadEditorView: NSViewRepresentable {
         textView.string = text
         textView.delegate = context.coordinator
 
+        let coordinator = context.coordinator
+        textView.onSave = { [weak coordinator] in
+            coordinator?.onSave?()
+        }
+        coordinator.onSave = onSave
+
         scrollView.documentView = textView
-        context.coordinator.textView = textView
+        coordinator.textView = textView
 
         return scrollView
     }
@@ -68,6 +90,7 @@ struct ScratchpadEditorView: NSViewRepresentable {
         guard let textView = scrollView.documentView as? NSTextView else { return }
 
         context.coordinator.parent = self
+        context.coordinator.onSave = onSave
 
         textView.insertionPointColor = Theme.textColor
 
@@ -116,6 +139,7 @@ struct ScratchpadEditorView: NSViewRepresentable {
         weak var textView: NSTextView?
         var lastColorScheme: ColorScheme?
         var lastFontSize: CGFloat?
+        var onSave: (() -> Void)?
 
         init(_ parent: ScratchpadEditorView) {
             self.parent = parent
