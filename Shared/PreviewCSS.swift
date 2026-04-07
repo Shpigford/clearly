@@ -3,6 +3,7 @@ import Foundation
 enum PreviewCSS {
     static func css(fontSize: CGFloat = 18, forExport: Bool = false) -> String {
     let exportOverrides = forExport ? """
+    .code-copy-btn { display: none !important; }
     body {
         color: #222222 !important;
         background: white !important;
@@ -116,6 +117,19 @@ enum PreviewCSS {
         pre code {
             background: none !important;
             color: #E0E0E0 !important;
+        }
+        .code-copy-btn {
+            background: rgba(255, 255, 255, 0.06);
+            color: #999999;
+        }
+        .code-copy-btn:hover {
+            background: rgba(255, 255, 255, 0.1);
+        }
+        .code-copy-btn:active {
+            background: rgba(255, 255, 255, 0.14);
+        }
+        .code-copy-btn.copied {
+            color: #3fb950;
         }
         blockquote {
             border-left-color: #444444;
@@ -236,12 +250,57 @@ enum PreviewCSS {
     }
 
     pre {
+        position: relative;
         background-color: #F5F5F5;
         border: 1px solid #E0E0E0;
         border-radius: 4px;
         padding: 1em;
         margin-bottom: 1em;
         overflow-x: auto;
+    }
+
+    .code-copy-btn {
+        position: absolute;
+        top: 6px;
+        right: 6px;
+        width: 28px;
+        height: 28px;
+        padding: 0;
+        margin: 0;
+        border: none;
+        border-radius: 4px;
+        background: rgba(0, 0, 0, 0.04);
+        color: #666666;
+        cursor: pointer;
+        opacity: 0;
+        transition: opacity 0.15s ease;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+
+    .code-copy-btn svg {
+        display: block;
+    }
+
+    .code-copy-btn.copied {
+        color: #2ea043;
+    }
+
+    pre:hover .code-copy-btn {
+        opacity: 1;
+    }
+
+    .code-copy-btn:hover {
+        background: rgba(0, 0, 0, 0.08);
+    }
+
+    .code-copy-btn:active {
+        background: rgba(0, 0, 0, 0.12);
+    }
+
+    .frontmatter .code-copy-btn {
+        display: none;
     }
 
     pre code {
@@ -404,6 +463,7 @@ enum PreviewCSS {
     }
 
     @media print {
+        .code-copy-btn { display: none !important; }
         body {
             color: #222222 !important;
             background-color: #FFFFFF !important;

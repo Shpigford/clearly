@@ -3,6 +3,8 @@ import WebKit
 import Combine
 
 struct PreviewView: NSViewRepresentable {
+    private static let copyButtonContentWorld = WKContentWorld.world(name: "ClearlyCopyButtons")
+
     let markdown: String
     var fontSize: CGFloat = 18
     var mode: ViewMode
@@ -25,6 +27,8 @@ struct PreviewView: NSViewRepresentable {
         config.setURLSchemeHandler(LocalImageSchemeHandler(), forURLScheme: LocalImageSupport.scheme)
         config.userContentController.add(context.coordinator, name: "linkClicked")
         config.userContentController.add(context.coordinator, name: "scrollSync")
+        config.userContentController.add(context.coordinator, contentWorld: Self.copyButtonContentWorld, name: "copyToClipboard")
+        config.userContentController.addUserScript(Self.copyButtonUserScript())
         let webView = WKWebView(frame: .zero, configuration: config)
         webView.navigationDelegate = context.coordinator
         webView.underPageBackgroundColor = Theme.backgroundColor
@@ -77,6 +81,7 @@ struct PreviewView: NSViewRepresentable {
     static func dismantleNSView(_ webView: WKWebView, coordinator: Coordinator) {
         webView.configuration.userContentController.removeScriptMessageHandler(forName: "linkClicked")
         webView.configuration.userContentController.removeScriptMessageHandler(forName: "scrollSync")
+        webView.configuration.userContentController.removeScriptMessageHandler(forName: "copyToClipboard", contentWorld: Self.copyButtonContentWorld)
     }
 
     private func loadHTML(in webView: WKWebView, context: Context) {
@@ -370,6 +375,12 @@ struct PreviewView: NSViewRepresentable {
         }
 
         func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
+            if message.name == "copyToClipboard", let text = message.body as? String {
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(text, forType: .string)
+                return
+            }
+
             if message.name == "linkClicked", let href = message.body as? String {
                 handleLinkClick(href)
                 return
@@ -382,5 +393,44 @@ struct PreviewView: NSViewRepresentable {
             scrollFraction = fraction
             ScrollBridge.setFraction(fraction, for: self.positionSyncID)
         }
+    }
+
+    private static func copyButtonUserScript() -> WKUserScript {
+        let copyIcon = #"<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"18\" height=\"18\" viewBox=\"0 0 18 18\"><g fill=\"none\" stroke-linecap=\"round\" stroke-linejoin=\"round\" stroke-width=\"1.5\" stroke=\"currentColor\"><path d=\"M12.25 5.75H13.75C14.8546 5.75 15.75 6.6454 15.75 7.75V13.75C15.75 14.8546 14.8546 15.75 13.75 15.75H7.75C6.6454 15.75 5.75 14.8546 5.75 13.75V12.25\"></path><path d=\"M10.25 2.25H4.25C3.14543 2.25 2.25 3.14543 2.25 4.25V10.25C2.25 11.3546 3.14543 12.25 4.25 12.25H10.25C11.3546 12.25 12.25 11.3546 12.25 10.25V4.25C12.25 3.14543 11.3546 2.25 10.25 2.25Z\"></path></g></svg>"#
+        let checkIcon = #"<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"12\" height=\"12\" viewBox=\"0 0 12 12\"><g fill=\"none\" stroke-linecap=\"round\" stroke-linejoin=\"round\" stroke-width=\"1.5\" stroke=\"currentColor\"><path d=\"m1.76,7.004l2.25,3L10.24,1.746\"></path></g></svg>"#
+        let source = """
+        (function() {
+            var copyIcon = '\(copyIcon)';
+            var checkIcon = '\(checkIcon)';
+            document.querySelectorAll('pre').forEach(function(pre) {
+                if (pre.closest('.frontmatter') || pre.querySelector('.code-copy-btn')) return;
+                var btn = document.createElement('button');
+                btn.className = 'code-copy-btn';
+                btn.type = 'button';
+                btn.setAttribute('aria-label', 'Copy code');
+                btn.innerHTML = copyIcon;
+                btn.addEventListener('click', function(e) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    var code = pre.querySelector('code');
+                    var text = code ? code.textContent : pre.textContent;
+                    window.webkit.messageHandlers.copyToClipboard.postMessage(text);
+                    btn.classList.add('copied');
+                    btn.innerHTML = checkIcon;
+                    setTimeout(function() {
+                        btn.classList.remove('copied');
+                        btn.innerHTML = copyIcon;
+                    }, 1500);
+                });
+                pre.appendChild(btn);
+            });
+        })();
+        """
+        return WKUserScript(
+            source: source,
+            injectionTime: .atDocumentEnd,
+            forMainFrameOnly: true,
+            in: copyButtonContentWorld
+        )
     }
 }
