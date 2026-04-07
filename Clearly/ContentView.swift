@@ -2,7 +2,6 @@ import SwiftUI
 
 enum ViewMode: String, CaseIterable {
     case edit
-    case sideBySide
     case preview
 }
 
@@ -122,9 +121,8 @@ struct ContentView: View {
     @Binding var document: MarkdownDocument
     let fileURL: URL?
     @State private var mode: ViewMode
+    @State private var positionSyncID = UUID().uuidString
     @AppStorage("editorFontSize") private var fontSize: Double = 16
-    @State private var widthBeforeSplit: CGFloat?
-    @StateObject private var scrollSync = ScrollSync()
     @StateObject private var findState = FindState()
     @StateObject private var fileWatcher = FileWatcher()
     @StateObject private var outlineState = OutlineState()
@@ -145,14 +143,6 @@ struct ContentView: View {
         document.text.count
     }
 
-    private func animateWindowFrame(_ window: NSWindow, to newFrame: NSRect) {
-        NSAnimationContext.runAnimationGroup { context in
-            context.duration = 0.35
-            context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-            window.animator().setFrame(newFrame, display: true)
-        }
-    }
-
     var body: some View {
         HStack(spacing: 0) {
             VStack(spacing: 0) {
@@ -160,18 +150,13 @@ struct ContentView: View {
                     FindBarView(findState: findState)
                     Divider()
                 }
-                Group {
-                    switch mode {
-                    case .edit:
-                        EditorView(text: $document.text, fontSize: CGFloat(fontSize), fileURL: fileURL, findState: findState, outlineState: outlineState)
-                    case .sideBySide:
-                        HSplitView {
-                            EditorView(text: $document.text, fontSize: CGFloat(fontSize), fileURL: fileURL, scrollSync: scrollSync, findState: findState, outlineState: outlineState)
-                            PreviewView(markdown: document.text, fontSize: CGFloat(fontSize), scrollSync: scrollSync, fileURL: fileURL, outlineState: outlineState)
-                        }
-                    case .preview:
-                        PreviewView(markdown: document.text, fontSize: CGFloat(fontSize), fileURL: fileURL, findState: findState, outlineState: outlineState)
-                    }
+                ZStack {
+                    EditorView(text: $document.text, fontSize: CGFloat(fontSize), fileURL: fileURL, mode: mode, positionSyncID: positionSyncID, findState: findState, outlineState: outlineState)
+                        .opacity(mode == .edit ? 1 : 0)
+                        .allowsHitTesting(mode == .edit)
+                    PreviewView(markdown: document.text, fontSize: CGFloat(fontSize), mode: mode, positionSyncID: positionSyncID, fileURL: fileURL, findState: findState, outlineState: outlineState)
+                        .opacity(mode == .preview ? 1 : 0)
+                        .allowsHitTesting(mode == .preview)
                 }
             }
             .safeAreaInset(edge: .bottom, spacing: 0) {
@@ -193,49 +178,22 @@ struct ContentView: View {
                 OutlineView(outlineState: outlineState)
             }
         }
-        .frame(minWidth: mode == .sideBySide ? 1000 : 500, minHeight: 400)
+        .frame(minWidth: 500, minHeight: 400)
         .background(Theme.backgroundColorSwiftUI)
         .onChange(of: mode) { _, newMode in
             UserDefaults.standard.set(newMode.rawValue, forKey: "viewMode")
-            guard let window = NSApp.keyWindow else { return }
-            let frame = window.frame
-            if newMode == .sideBySide {
-                if frame.width < 1200 {
-                    widthBeforeSplit = frame.width
-                    let newWidth: CGFloat = 1200
-                    let delta = newWidth - frame.width
-                    let newFrame = NSRect(
-                        x: frame.origin.x - delta / 2,
-                        y: frame.origin.y,
-                        width: newWidth,
-                        height: frame.height
-                    )
-                    animateWindowFrame(window, to: newFrame)
-                }
-            } else if let restored = widthBeforeSplit {
-                widthBeforeSplit = nil
-                let delta = frame.width - restored
-                let newFrame = NSRect(
-                    x: frame.origin.x + delta / 2,
-                    y: frame.origin.y,
-                    width: restored,
-                    height: frame.height
-                )
-                animateWindowFrame(window, to: newFrame)
-            }
         }
         .toolbar {
             ToolbarItem(placement: .principal) {
                 Picker("Mode", selection: $mode) {
                     Image(systemName: "pencil")
                         .tag(ViewMode.edit)
-                    Image(systemName: "rectangle.split.2x1")
-                        .tag(ViewMode.sideBySide)
                     Image(systemName: "eye")
                         .tag(ViewMode.preview)
                 }
                 .pickerStyle(.segmented)
-                .frame(width: 150)
+                .frame(width: 100)
+                .help("Toggle Editor/Preview (Cmd+1/Cmd+2)")
             }
             ToolbarItem(placement: .automatic) {
                 Button {
@@ -258,7 +216,7 @@ struct ContentView: View {
         }
         .modifier(HiddenToolbarBackground())
         .background(WindowFrameSaver(fileURL: fileURL))
-        .animation(nil, value: mode)
+        .animation(.easeInOut(duration: 0.15), value: mode)
         .focusedSceneValue(\.viewMode, $mode)
         .focusedSceneValue(\.documentText, document.text)
         .focusedSceneValue(\.documentFileURL, fileURL)

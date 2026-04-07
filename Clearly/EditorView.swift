@@ -7,7 +7,8 @@ struct EditorView: NSViewRepresentable {
     @Binding var text: String
     var fontSize: CGFloat = 16
     var fileURL: URL?
-    var scrollSync: ScrollSync?
+    var mode: ViewMode
+    var positionSyncID: String
     var findState: FindState?
     var outlineState: OutlineState?
     @Environment(\.colorScheme) private var colorScheme
@@ -78,14 +79,11 @@ struct EditorView: NSViewRepresentable {
 
         scrollView.documentView = textView
         context.coordinator.textView = textView
-        context.coordinator.scrollSync = scrollSync
         context.coordinator.findState = findState
         context.coordinator.outlineState = outlineState
         if let findState {
             context.coordinator.observeFindState(findState)
         }
-        scrollSync?.editorScrollView = scrollView
-
         // Wire up find bar presentation
         textView.onShowFind = { [weak findState] in
             guard let findState else { return }
@@ -96,10 +94,10 @@ struct EditorView: NSViewRepresentable {
 
         // Wire up find navigation
         let coordinator = context.coordinator
-        findState?.navigateToNext = { [weak coordinator] in
+        findState?.editorNavigateToNext = { [weak coordinator] in
             coordinator?.navigateToNextMatch()
         }
-        findState?.navigateToPrevious = { [weak coordinator] in
+        findState?.editorNavigateToPrevious = { [weak coordinator] in
             coordinator?.navigateToPreviousMatch()
         }
 
@@ -131,6 +129,21 @@ struct EditorView: NSViewRepresentable {
 
         // Keep coordinator's parent fresh so the binding never goes stale
         context.coordinator.parent = self
+
+        // Detect mode change: restore scroll position when becoming visible
+        if mode == .edit && context.coordinator.lastMode != .edit {
+            findState?.activeMode = .edit
+            let fraction = ScrollBridge.fraction(for: positionSyncID)
+            let docHeight = scrollView.documentView?.frame.height ?? 1
+            let viewportHeight = scrollView.contentView.bounds.height
+            let maxScroll = max(1, docHeight - viewportHeight)
+            scrollView.contentView.setBoundsOrigin(NSPoint(x: 0, y: fraction * maxScroll))
+            scrollView.reflectScrolledClipView(scrollView.contentView)
+            if findState?.isVisible == true {
+                context.coordinator.performFind()
+            }
+        }
+        context.coordinator.lastMode = mode
 
         context.coordinator.updateCount += 1
         let count = context.coordinator.updateCount
@@ -206,7 +219,7 @@ struct EditorView: NSViewRepresentable {
         var isHighlightingInProgress = false
         var highlighter: MarkdownSyntaxHighlighter?
         weak var textView: NSTextView?
-        var scrollSync: ScrollSync?
+        var lastMode: ViewMode?
         var findState: FindState?
         var outlineState: OutlineState?
         var lastColorScheme: ColorScheme?
@@ -240,7 +253,10 @@ struct EditorView: NSViewRepresentable {
             state.$query
                 .removeDuplicates()
                 .sink { [weak self] _ in
-                    guard let self, self.findState?.isVisible == true else { return }
+                    guard let self,
+                          let findState = self.findState,
+                          findState.isVisible,
+                          findState.activeMode == .edit else { return }
                     self.performFind()
                 }
                 .store(in: &findCancellables)
@@ -250,6 +266,7 @@ struct EditorView: NSViewRepresentable {
                 .sink { [weak self] visible in
                     guard let self else { return }
                     if visible {
+                        guard self.findState?.activeMode == .edit else { return }
                         self.performFind()
                     } else {
                         self.clearFindHighlights()
@@ -325,46 +342,20 @@ struct EditorView: NSViewRepresentable {
             // boundsDidChangeNotification fires synchronously during layout passes;
             // querying the layout manager in that same call stack deadlocks the main thread.
             DispatchQueue.main.async { [weak self] in
-                self?.computeScrollPosition(clipView)
+                self?.computeScrollFraction(clipView)
             }
         }
 
-        private func computeScrollPosition(_ clipView: NSClipView) {
-            guard let scrollView = clipView.enclosingScrollView,
-                  let textView = scrollView.documentView as? NSTextView,
-                  let layoutManager = textView.layoutManager,
-                  let textContainer = textView.textContainer else { return }
-
-            // Throttle to ~60fps
+        private func computeScrollFraction(_ clipView: NSClipView) {
+            guard let scrollView = clipView.enclosingScrollView else { return }
             let now = CACurrentMediaTime()
             guard now - lastScrollTime >= 0.016 else { return }
             lastScrollTime = now
 
-            // Find the character at the CENTER of the visible area
-            let centerY = clipView.bounds.origin.y + clipView.bounds.height / 2
-            let adjustedY = centerY + textView.textContainerInset.height
-            let glyphIndex = layoutManager.glyphIndex(for: NSPoint(x: 0, y: adjustedY), in: textContainer)
-            let charIndex = layoutManager.characterIndexForGlyph(at: glyphIndex)
-
-            // Count line number at that character position
-            let text = textView.string as NSString
-            let safeCharIndex = min(charIndex, text.length)
-            var line = 1
-            var position = 0
-            while position < safeCharIndex {
-                let lineRange = text.lineRange(for: NSRange(location: position, length: 0))
-                if NSMaxRange(lineRange) > safeCharIndex { break }
-                line += 1
-                position = NSMaxRange(lineRange)
-            }
-
-            // Compute fractional progress within the current line's visual height
-            let lineRect = layoutManager.lineFragmentRect(forGlyphAt: glyphIndex, effectiveRange: nil)
-            let lineTop = lineRect.origin.y - textView.textContainerInset.height
-            let lineHeight = lineRect.height
-            let frac = lineHeight > 0 ? min(1, max(0, (centerY - lineTop) / lineHeight)) : 0
-
-            scrollSync?.editorDidScroll(line: Double(line) + frac)
+            let docHeight = scrollView.documentView?.frame.height ?? 1
+            let viewportHeight = clipView.bounds.height
+            let maxScroll = max(1, docHeight - viewportHeight)
+            ScrollBridge.setFraction(clipView.bounds.origin.y / maxScroll, for: parent.positionSyncID)
         }
 
         // MARK: - Find
@@ -385,7 +376,10 @@ struct EditorView: NSViewRepresentable {
             guard !query.isEmpty else {
                 matchRanges = []
                 currentMatchIdx = 0
-                DispatchQueue.main.async {
+                DispatchQueue.main.async { [weak self] in
+                    guard let self,
+                          let findState = self.findState,
+                          findState.activeMode == .edit else { return }
                     findState.matchCount = 0
                     findState.currentIndex = 0
                 }
@@ -409,7 +403,10 @@ struct EditorView: NSViewRepresentable {
 
             applyFindHighlights()
 
-            DispatchQueue.main.async {
+            DispatchQueue.main.async { [weak self] in
+                guard let self,
+                      let findState = self.findState,
+                      findState.activeMode == .edit else { return }
                 findState.matchCount = ranges.count
                 findState.currentIndex = ranges.isEmpty ? 0 : 1
             }
@@ -425,8 +422,10 @@ struct EditorView: NSViewRepresentable {
             applyFindHighlights()
             textView?.scrollRangeToVisible(matchRanges[currentMatchIdx])
             DispatchQueue.main.async { [weak self] in
-                guard let self else { return }
-                self.findState?.currentIndex = self.currentMatchIdx + 1
+                guard let self,
+                      let findState = self.findState,
+                      findState.activeMode == .edit else { return }
+                findState.currentIndex = self.currentMatchIdx + 1
             }
         }
 
@@ -436,8 +435,10 @@ struct EditorView: NSViewRepresentable {
             applyFindHighlights()
             textView?.scrollRangeToVisible(matchRanges[currentMatchIdx])
             DispatchQueue.main.async { [weak self] in
-                guard let self else { return }
-                self.findState?.currentIndex = self.currentMatchIdx + 1
+                guard let self,
+                      let findState = self.findState,
+                      findState.activeMode == .edit else { return }
+                findState.currentIndex = self.currentMatchIdx + 1
             }
         }
 

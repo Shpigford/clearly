@@ -5,7 +5,8 @@ import Combine
 struct PreviewView: NSViewRepresentable {
     let markdown: String
     var fontSize: CGFloat = 18
-    var scrollSync: ScrollSync?
+    var mode: ViewMode
+    var positionSyncID: String
     var fileURL: URL?
     var findState: FindState?
     var outlineState: OutlineState?
@@ -23,18 +24,22 @@ struct PreviewView: NSViewRepresentable {
         let config = WKWebViewConfiguration()
         config.setURLSchemeHandler(LocalImageSchemeHandler(), forURLScheme: LocalImageSupport.scheme)
         config.userContentController.add(context.coordinator, name: "linkClicked")
-        if scrollSync != nil {
-            config.userContentController.add(context.coordinator, name: "scrollSync")
-        }
+        config.userContentController.add(context.coordinator, name: "scrollSync")
         let webView = WKWebView(frame: .zero, configuration: config)
         webView.navigationDelegate = context.coordinator
         webView.underPageBackgroundColor = Theme.backgroundColor
         webView.alphaValue = 0 // hidden until content loads
-        context.coordinator.scrollSync = scrollSync
         context.coordinator.fileURL = fileURL
+        context.coordinator.positionSyncID = positionSyncID
         context.coordinator.findState = findState
         context.coordinator.outlineState = outlineState
-        scrollSync?.previewWebView = webView
+        let coordinator = context.coordinator
+        findState?.previewNavigateToNext = { [weak coordinator] in
+            coordinator?.navigateToNextMatch()
+        }
+        findState?.previewNavigateToPrevious = { [weak coordinator] in
+            coordinator?.navigateToPreviousMatch()
+        }
         if let findState {
             context.coordinator.observeFindState(findState, webView: webView)
         }
@@ -48,9 +53,21 @@ struct PreviewView: NSViewRepresentable {
 
     func updateNSView(_ webView: WKWebView, context: Context) {
         webView.underPageBackgroundColor = Theme.backgroundColor
-        context.coordinator.scrollSync = scrollSync
         context.coordinator.fileURL = fileURL
-        scrollSync?.previewWebView = webView
+        context.coordinator.positionSyncID = positionSyncID
+
+        // Detect mode change: restore scroll position when becoming visible
+        if mode == .preview && context.coordinator.lastMode != .preview {
+            findState?.activeMode = .preview
+            let fraction = ScrollBridge.fraction(for: positionSyncID)
+            context.coordinator.scrollFraction = fraction
+            let js = "var ms=Math.max(1,document.body.scrollHeight-window.innerHeight);window.scrollTo(0,\(fraction)*ms);"
+            webView.evaluateJavaScript(js)
+            if findState?.isVisible == true {
+                context.coordinator.performFind(query: findState?.query ?? "")
+            }
+        }
+        context.coordinator.lastMode = mode
 
         if context.coordinator.lastContentKey != contentKey {
             loadHTML(in: webView, context: context)
@@ -59,121 +76,27 @@ struct PreviewView: NSViewRepresentable {
 
     static func dismantleNSView(_ webView: WKWebView, coordinator: Coordinator) {
         webView.configuration.userContentController.removeScriptMessageHandler(forName: "linkClicked")
-        if coordinator.scrollSync != nil {
-            webView.configuration.userContentController.removeScriptMessageHandler(forName: "scrollSync")
-        }
+        webView.configuration.userContentController.removeScriptMessageHandler(forName: "scrollSync")
     }
 
     private func loadHTML(in webView: WKWebView, context: Context) {
         context.coordinator.lastContentKey = contentKey
         let rawBody = MarkdownRenderer.renderHTML(markdown)
         let htmlBody = LocalImageSupport.resolveImageSources(in: rawBody, relativeTo: fileURL)
-        let scrollJS = scrollSync != nil ? """
-        // Keep block positions fresh when the preview reflows.
-        window._spCache = [];
-        window._cacheRebuildPending = false;
-        window._parseSourcePos = function(sp) {
-            var match = /^(\\d+):(\\d+)-(\\d+):(\\d+)$/.exec(sp || '');
-            if (!match) return null;
-            return {
-                startLine: parseInt(match[1], 10),
-                startColumn: parseInt(match[2], 10),
-                endLine: parseInt(match[3], 10),
-                endColumn: parseInt(match[4], 10)
-            };
-        };
-        window._rebuildSpCache = function() {
-            window._spCache = [];
-            document.querySelectorAll('[data-sourcepos]').forEach(function(el) {
-                var pos = window._parseSourcePos(el.getAttribute('data-sourcepos'));
-                if (!pos) return;
-                var rect = el.getBoundingClientRect();
-                window._spCache.push({
-                    startLine: pos.startLine,
-                    startColumn: pos.startColumn,
-                    endLine: pos.endLine,
-                    endColumn: pos.endColumn,
-                    top: rect.top + window.scrollY,
-                    bottom: rect.bottom + window.scrollY
-                });
-            });
-        };
-        window._scheduleCacheRebuild = function() {
-            if (window._cacheRebuildPending) return;
-            window._cacheRebuildPending = true;
-            requestAnimationFrame(function() {
-                window._cacheRebuildPending = false;
-                window._rebuildSpCache();
-            });
-        };
-        window._rebuildSpCache();
-
-        if (window.ResizeObserver) {
-            window._resizeObserver = new ResizeObserver(function() {
-                window._scheduleCacheRebuild();
-            });
-            window._resizeObserver.observe(document.body);
-        }
-
-        // Smooth scroll loop — decouples async evaluateJavaScript from actual scrolling
-        window._targetScrollY = window.scrollY;
-        window._syncFromEditor = false;
-        (function syncLoop() {
-            if (window._syncFromEditor) {
-                var diff = window._targetScrollY - window.scrollY;
-                if (Math.abs(diff) > 0.5) {
-                    window.scrollTo(0, window.scrollY + diff * 0.45);
-                } else {
-                    window._syncFromEditor = false;
-                }
-            }
-            requestAnimationFrame(syncLoop);
-        })();
-
-        // Preview scroll listener for preview→editor sync
+        let scrollJS = """
+        // Track scroll fraction for position sync between editor and preview.
         var _scrollTicking = false;
         window.addEventListener('scroll', function() {
-            if (window._syncFromEditor) return;
             if (_scrollTicking) return;
             _scrollTicking = true;
             requestAnimationFrame(function() {
-                var c = window._spCache;
-                var sy = window.scrollY + window.innerHeight / 2;
-                if (!c || !c.length) {
-                    window.webkit.messageHandlers.scrollSync.postMessage({
-                        startLine: 1,
-                        startColumn: 1,
-                        endLine: 1,
-                        endColumn: 1,
-                        progress: 0
-                    });
-                    _scrollTicking = false;
-                    return;
-                }
-                var anchor = {
-                    startLine: 1,
-                    startColumn: 1,
-                    endLine: 1,
-                    endColumn: 1,
-                    progress: 0
-                };
-                for (var i = 0; i < c.length; i++) {
-                    if (c[i].top > sy) break;
-                    anchor = c[i];
-                }
-                var height = Math.max(1, anchor.bottom - anchor.top);
-                var progress = Math.max(0, Math.min(1, (sy - anchor.top) / height));
-                window.webkit.messageHandlers.scrollSync.postMessage({
-                    startLine: anchor.startLine,
-                    startColumn: anchor.startColumn,
-                    endLine: anchor.endLine,
-                    endColumn: anchor.endColumn,
-                    progress: progress
-                });
+                var maxScroll = Math.max(1, document.body.scrollHeight - window.innerHeight);
+                var fraction = window.scrollY / maxScroll;
+                window.webkit.messageHandlers.scrollSync.postMessage({ fraction: fraction });
                 _scrollTicking = false;
             });
         });
-        """ : ""
+        """
         let html = """
         <!DOCTYPE html>
         <html>
@@ -228,10 +151,12 @@ struct PreviewView: NSViewRepresentable {
     }
 
     final class Coordinator: NSObject, WKNavigationDelegate, WKScriptMessageHandler {
-        var scrollSync: ScrollSync?
         var lastContentKey: String?
+        var lastMode: ViewMode?
+        var scrollFraction: Double = 0
         var didInitialLoad = false
         var fileURL: URL?
+        var positionSyncID = ""
         var findState: FindState?
         var outlineState: OutlineState?
         weak var webView: WKWebView?
@@ -246,7 +171,10 @@ struct PreviewView: NSViewRepresentable {
             state.$query
                 .removeDuplicates()
                 .sink { [weak self] query in
-                    guard let self, self.findState?.isVisible == true else { return }
+                    guard let self,
+                          let findState = self.findState,
+                          findState.isVisible,
+                          findState.activeMode == .preview else { return }
                     self.performFind(query: query)
                 }
                 .store(in: &findCancellables)
@@ -256,22 +184,13 @@ struct PreviewView: NSViewRepresentable {
                 .sink { [weak self] visible in
                     guard let self else { return }
                     if visible {
-                        self.setNavigationClosures()
+                        guard self.findState?.activeMode == .preview else { return }
                         self.performFind(query: self.findState?.query ?? "")
                     } else {
                         self.clearFindHighlights()
                     }
                 }
                 .store(in: &findCancellables)
-        }
-
-        private func setNavigationClosures() {
-            findState?.navigateToNext = { [weak self] in
-                self?.navigateToNextMatch()
-            }
-            findState?.navigateToPrevious = { [weak self] in
-                self?.navigateToPreviousMatch()
-            }
         }
 
         func scrollToHeading(anchor: PreviewSourceAnchor) {
@@ -296,7 +215,7 @@ struct PreviewView: NSViewRepresentable {
             webView?.evaluateJavaScript(js)
         }
 
-        private func performFind(query: String) {
+        func performFind(query: String) {
             guard let webView, didInitialLoad else { return }
             guard !query.isEmpty else {
                 clearFindHighlights()
@@ -355,19 +274,20 @@ struct PreviewView: NSViewRepresentable {
                 self.matchCount = count
                 self.currentMatchIdx = 0
                 DispatchQueue.main.async {
+                    guard self.findState?.activeMode == .preview else { return }
                     self.findState?.matchCount = count
                     self.findState?.currentIndex = count > 0 ? 1 : 0
                 }
             }
         }
 
-        private func navigateToNextMatch() {
+        func navigateToNextMatch() {
             guard matchCount > 0 else { return }
             currentMatchIdx = (currentMatchIdx + 1) % matchCount
             navigateToMatch(currentMatchIdx)
         }
 
-        private func navigateToPreviousMatch() {
+        func navigateToPreviousMatch() {
             guard matchCount > 0 else { return }
             currentMatchIdx = (currentMatchIdx - 1 + matchCount) % matchCount
             navigateToMatch(currentMatchIdx)
@@ -386,6 +306,7 @@ struct PreviewView: NSViewRepresentable {
             """
             webView?.evaluateJavaScript(js)
             DispatchQueue.main.async { [weak self] in
+                guard self?.findState?.activeMode == .preview else { return }
                 self?.findState?.currentIndex = index + 1
             }
         }
@@ -404,6 +325,7 @@ struct PreviewView: NSViewRepresentable {
             matchCount = 0
             currentMatchIdx = 0
             DispatchQueue.main.async { [weak self] in
+                guard self?.findState?.activeMode == .preview || self?.findState?.isVisible == false else { return }
                 self?.findState?.matchCount = 0
                 self?.findState?.currentIndex = 0
             }
@@ -411,12 +333,19 @@ struct PreviewView: NSViewRepresentable {
 
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
             if !didInitialLoad {
-                webView.alphaValue = 1
                 didInitialLoad = true
             }
-            scrollSync?.syncPreview()
+            webView.alphaValue = 1
+            // Restore scroll position after HTML reload
+            if scrollFraction > 0.01 {
+                let js = "var ms=Math.max(1,document.body.scrollHeight-window.innerHeight);window.scrollTo(0,\(scrollFraction)*ms);"
+                webView.evaluateJavaScript(js)
+            }
             // Re-apply find highlights after page reload
-            if let query = findState?.query, findState?.isVisible == true, !query.isEmpty {
+            if let query = findState?.query,
+               findState?.isVisible == true,
+               findState?.activeMode == .preview,
+               !query.isEmpty {
                 performFind(query: query)
             }
         }
@@ -448,19 +377,10 @@ struct PreviewView: NSViewRepresentable {
 
             guard message.name == "scrollSync",
                   let body = message.body as? [String: Any],
-                  let startLine = (body["startLine"] as? NSNumber)?.intValue,
-                  let startColumn = (body["startColumn"] as? NSNumber)?.intValue,
-                  let endLine = (body["endLine"] as? NSNumber)?.intValue,
-                  let endColumn = (body["endColumn"] as? NSNumber)?.intValue,
-                  let progress = (body["progress"] as? NSNumber)?.doubleValue else { return }
+                  let fraction = (body["fraction"] as? NSNumber)?.doubleValue else { return }
 
-            scrollSync?.previewDidScroll(anchor: PreviewSourceAnchor(
-                startLine: startLine,
-                startColumn: startColumn,
-                endLine: endLine,
-                endColumn: endColumn,
-                progress: progress
-            ))
+            scrollFraction = fraction
+            ScrollBridge.setFraction(fraction, for: self.positionSyncID)
         }
     }
 }

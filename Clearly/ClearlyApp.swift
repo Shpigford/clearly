@@ -379,15 +379,10 @@ struct ViewModeCommands: View {
         }
         .keyboardShortcut("1", modifiers: .command)
 
-        Button("Side by Side") {
-            mode?.wrappedValue = .sideBySide
-        }
-        .keyboardShortcut("2", modifiers: .command)
-
         Button("Preview") {
             mode?.wrappedValue = .preview
         }
-        .keyboardShortcut("3", modifiers: .command)
+        .keyboardShortcut("2", modifiers: .command)
     }
 }
 
