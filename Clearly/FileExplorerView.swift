@@ -46,6 +46,33 @@ struct FileExplorerEmptyView: View {
     }
 }
 
+// MARK: - Row view that keeps blue selection when editor has focus
+
+class AlwaysEmphasizedRowView: NSTableRowView {
+    override var isEmphasized: Bool {
+        get { true }
+        set { }
+    }
+}
+
+// MARK: - Custom outline view (flatten indentation for leaf section children)
+
+class FlatSectionOutlineView: NSOutlineView {
+    override func frameOfCell(atColumn column: Int, row: Int) -> NSRect {
+        var frame = super.frameOfCell(atColumn: column, row: row)
+        let level = self.level(forRow: row)
+        // Only adjust level-1 items that are not expandable (recents, open docs)
+        let item = self.item(atRow: row)
+        let expandable = self.dataSource?.outlineView?(self, isItemExpandable: item!) ?? false
+        if level == 1 && !expandable {
+            let indent = CGFloat(level) * self.indentationPerLevel
+            frame.origin.x -= indent
+            frame.size.width += indent
+        }
+        return frame
+    }
+}
+
 // MARK: - NSOutlineView wrapper
 
 struct FileExplorerOutlineView: NSViewRepresentable {
@@ -61,11 +88,11 @@ struct FileExplorerOutlineView: NSViewRepresentable {
         scrollView.autohidesScrollers = true
         scrollView.drawsBackground = false
 
-        let outlineView = NSOutlineView()
+        let outlineView = FlatSectionOutlineView()
         outlineView.headerView = nil
         outlineView.style = .sourceList
-        outlineView.indentationPerLevel = 16
-        outlineView.rowSizeStyle = .default
+        outlineView.indentationPerLevel = 10
+        outlineView.rowSizeStyle = .small
         outlineView.selectionHighlightStyle = .sourceList
         outlineView.floatsGroupRows = false
 
@@ -401,9 +428,11 @@ struct FileExplorerOutlineView: NSViewRepresentable {
         // MARK: - Delegate
 
         func outlineView(_ outlineView: NSOutlineView, isGroupItem item: Any) -> Bool {
-            guard let item = item as? OutlineItem else { return false }
-            if case .section = item.kind { return true }
             return false
+        }
+
+        func outlineView(_ outlineView: NSOutlineView, rowViewForItem item: Any) -> NSTableRowView? {
+            return AlwaysEmphasizedRowView()
         }
 
         func outlineView(_ outlineView: NSOutlineView, shouldSelectItem item: Any) -> Bool {
@@ -420,18 +449,14 @@ struct FileExplorerOutlineView: NSViewRepresentable {
         func outlineView(_ outlineView: NSOutlineView, viewFor tableColumn: NSTableColumn?, item: Any) -> NSView? {
             guard let outlineItem = item as? OutlineItem else { return nil }
 
-            let cellID = NSUserInterfaceItemIdentifier("FileCell")
+            let isSection = { if case .section = outlineItem.kind { return true } else { return false } }()
+            let cellID = NSUserInterfaceItemIdentifier(isSection ? "SectionCell" : "FileCell")
             let cell: NSTableCellView
             if let reused = outlineView.makeView(withIdentifier: cellID, owner: nil) as? NSTableCellView {
                 cell = reused
             } else {
                 cell = NSTableCellView()
                 cell.identifier = cellID
-
-                let imageView = NSImageView()
-                imageView.translatesAutoresizingMaskIntoConstraints = false
-                cell.addSubview(imageView)
-                cell.imageView = imageView
 
                 let textField = NSTextField(labelWithString: "")
                 textField.translatesAutoresizingMaskIntoConstraints = false
@@ -441,15 +466,28 @@ struct FileExplorerOutlineView: NSViewRepresentable {
                 cell.addSubview(textField)
                 cell.textField = textField
 
-                NSLayoutConstraint.activate([
-                    imageView.leadingAnchor.constraint(equalTo: cell.leadingAnchor, constant: 2),
-                    imageView.centerYAnchor.constraint(equalTo: cell.centerYAnchor),
-                    imageView.widthAnchor.constraint(equalToConstant: 16),
-                    imageView.heightAnchor.constraint(equalToConstant: 16),
-                    textField.leadingAnchor.constraint(equalTo: imageView.trailingAnchor, constant: 4),
-                    textField.trailingAnchor.constraint(equalTo: cell.trailingAnchor, constant: -4),
-                    textField.centerYAnchor.constraint(equalTo: cell.centerYAnchor),
-                ])
+                if isSection {
+                    NSLayoutConstraint.activate([
+                        textField.leadingAnchor.constraint(equalTo: cell.leadingAnchor, constant: 2),
+                        textField.trailingAnchor.constraint(equalTo: cell.trailingAnchor, constant: -4),
+                        textField.centerYAnchor.constraint(equalTo: cell.centerYAnchor),
+                    ])
+                } else {
+                    let imageView = NSImageView()
+                    imageView.translatesAutoresizingMaskIntoConstraints = false
+                    cell.addSubview(imageView)
+                    cell.imageView = imageView
+
+                    NSLayoutConstraint.activate([
+                        imageView.leadingAnchor.constraint(equalTo: cell.leadingAnchor, constant: 2),
+                        imageView.centerYAnchor.constraint(equalTo: cell.centerYAnchor),
+                        imageView.widthAnchor.constraint(equalToConstant: 16),
+                        imageView.heightAnchor.constraint(equalToConstant: 16),
+                        textField.leadingAnchor.constraint(equalTo: imageView.trailingAnchor, constant: 4),
+                        textField.trailingAnchor.constraint(equalTo: cell.trailingAnchor, constant: -4),
+                        textField.centerYAnchor.constraint(equalTo: cell.centerYAnchor),
+                    ])
+                }
             }
 
             // Remove any previously added action button
@@ -460,8 +498,6 @@ struct FileExplorerOutlineView: NSViewRepresentable {
             case .section(let section):
                 cell.textField?.stringValue = section.rawValue
                 cell.textField?.font = .systemFont(ofSize: 11, weight: .semibold)
-                cell.imageView?.image = nil
-                cell.imageView?.isHidden = true
 
                 if section == .locations {
                     let addBtn = NSButton(frame: .zero)
@@ -515,7 +551,7 @@ struct FileExplorerOutlineView: NSViewRepresentable {
                     attributes: [.font: NSFont.systemFont(ofSize: 11), .foregroundColor: NSColor.tertiaryLabelColor]
                 ))
                 cell.textField?.attributedStringValue = attributed
-                cell.imageView?.image = NSImage(systemSymbolName: "clock", accessibilityDescription: "Recent")
+                cell.imageView?.image = NSImage(systemSymbolName: "doc.text", accessibilityDescription: "File")
                 cell.imageView?.contentTintColor = .tertiaryLabelColor
                 cell.imageView?.isHidden = false
 
