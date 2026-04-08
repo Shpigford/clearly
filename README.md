@@ -4,7 +4,7 @@
 
 <h1 align="center">Clearly Markdown</h1>
 
-<p align="center">A clean, native markdown editor for macOS.</p>
+<p align="center">A native markdown editor and document workspace for macOS.</p>
 
 <p align="center">
   <a href="https://github.com/Shpigford/clearly/releases/latest/download/Clearly.dmg">Download</a> &middot;
@@ -16,14 +16,16 @@
   <img src="website/screenshot.jpg" width="720" alt="Clearly screenshot" />
 </p>
 
-Write with syntax highlighting, preview instantly, and get back to what matters. No Electron, no subscriptions, no bloat.
+Open folders, browse your files, write with syntax highlighting, and preview instantly. No Electron, no subscriptions, no bloat.
 
 ## Features
 
+- **File explorer** — open folders, browse markdown files in a sidebar with bookmarked locations and recents
+- **Document outline** — navigable header outline panel for jumping between sections (⇧⌘O)
 - **Syntax highlighting** — headings, bold, italic, links, code blocks, and more
 - **Instant preview** — rendered GitHub Flavored Markdown, including Mermaid diagrams and KaTeX math
 - **Frontmatter support** — YAML frontmatter is formatted cleanly in both editor and preview
-- **Side-by-side** — edit and preview simultaneously with synchronized scrolling
+- **Editor/Preview toggle** — switch between editor (⌘1) and preview (⌘2) with scroll position preserved
 - **PDF export** — export to PDF or print directly from the app
 - **Format shortcuts** — Cmd+B, Cmd+I, Cmd+K for bold, italic, and links
 - **Scratchpad** — menubar app with a global hotkey for capturing quick notes without opening a document
