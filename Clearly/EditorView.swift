@@ -130,8 +130,11 @@ struct EditorView: NSViewRepresentable {
         // Keep coordinator's parent fresh so the binding never goes stale
         context.coordinator.parent = self
 
-        // Detect mode change: restore scroll position when becoming visible
-        if mode == .edit && context.coordinator.lastMode != .edit {
+        let didChangeDocument = context.coordinator.lastPositionSyncID != positionSyncID
+        context.coordinator.lastPositionSyncID = positionSyncID
+
+        // Restore scroll + focus when editing becomes visible or the document changes.
+        if mode == .edit && (context.coordinator.lastMode != .edit || didChangeDocument) {
             findState?.activeMode = .edit
             let fraction = ScrollBridge.fraction(for: positionSyncID)
             let docHeight = scrollView.documentView?.frame.height ?? 1
@@ -139,6 +142,9 @@ struct EditorView: NSViewRepresentable {
             let maxScroll = max(1, docHeight - viewportHeight)
             scrollView.contentView.setBoundsOrigin(NSPoint(x: 0, y: fraction * maxScroll))
             scrollView.reflectScrolledClipView(scrollView.contentView)
+            DispatchQueue.main.async {
+                textView.window?.makeFirstResponder(textView)
+            }
             if findState?.isVisible == true {
                 context.coordinator.performFind()
             }
@@ -220,6 +226,7 @@ struct EditorView: NSViewRepresentable {
         var highlighter: MarkdownSyntaxHighlighter?
         weak var textView: NSTextView?
         var lastMode: ViewMode?
+        var lastPositionSyncID: String?
         var findState: FindState?
         var outlineState: OutlineState?
         var lastColorScheme: ColorScheme?

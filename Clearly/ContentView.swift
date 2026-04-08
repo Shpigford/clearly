@@ -181,11 +181,18 @@ struct ContentView: View {
                 setupFileWatcher()
                 outlineState.parseHeadings(from: workspace.currentFileText)
             }
-            .onChange(of: workspace.currentFileURL) { _, _ in
+            .onChange(of: workspace.activeDocumentID) { _, newID in
                 positionSyncID = UUID().uuidString
                 findState.isVisible = false
                 setupFileWatcher()
                 outlineState.parseHeadings(from: workspace.currentFileText)
+                // New untitled docs always open in edit mode
+                if let newID, let doc = workspace.openDocuments.first(where: { $0.id == newID }), doc.isUntitled {
+                    mode = .edit
+                }
+            }
+            .onChange(of: workspace.currentFileURL) { _, _ in
+                setupFileWatcher()
             }
             .onChange(of: workspace.currentFileText) { _, newText in
                 workspace.contentDidChange()
@@ -207,9 +214,13 @@ struct ContentView: View {
     }
 
     private func setupFileWatcher() {
+        guard let url = workspace.currentFileURL else {
+            fileWatcher.watch(nil, currentText: nil)
+            return
+        }
         fileWatcher.onChange = { [workspace] newText in
             workspace.externalFileDidChange(newText)
         }
-        fileWatcher.watch(workspace.currentFileURL, currentText: workspace.currentFileText)
+        fileWatcher.watch(url, currentText: workspace.currentFileText)
     }
 }

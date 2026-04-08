@@ -17,11 +17,17 @@ final class WorkspaceManager {
     var recentFiles: [URL] = []
     private static let maxRecents = 5
 
-    // MARK: - Current File
+    // MARK: - Current File (active document buffer)
 
     var currentFileURL: URL?
     var currentFileText: String = ""
     var isDirty: Bool = false
+
+    // MARK: - Open Documents
+
+    var openDocuments: [OpenDocument] = []
+    var activeDocumentID: UUID?
+    private var nextUntitledNumber: Int = 1
 
     // MARK: - Sidebar
 
@@ -40,6 +46,13 @@ final class WorkspaceManager {
     private static let recentBookmarksKey = "recentBookmarks"
     private static let lastOpenFileKey = "lastOpenFileURL"
     private static let sidebarVisibleKey = "sidebarVisible"
+    private static let launchBehaviorKey = "launchBehavior"
+
+    private enum DirtyDocumentDisposition {
+        case save
+        case discard
+        case cancel
+    }
 
     // MARK: - Init
 
@@ -47,7 +60,13 @@ final class WorkspaceManager {
         isSidebarVisible = UserDefaults.standard.bool(forKey: Self.sidebarVisibleKey)
         restoreLocations()
         restoreRecents()
-        restoreLastFile()
+
+        let launchBehavior = UserDefaults.standard.string(forKey: Self.launchBehaviorKey) ?? "lastFile"
+        if launchBehavior == "newDocument" {
+            createUntitledDocument()
+        } else {
+            restoreLastFile()
+        }
     }
 
     deinit {
@@ -65,12 +84,123 @@ final class WorkspaceManager {
         UserDefaults.standard.set(isSidebarVisible, forKey: Self.sidebarVisibleKey)
     }
 
+    // MARK: - Open Documents
+
+    @discardableResult
+    func createUntitledDocument() -> Bool {
+        guard saveFileBacked() else { return false }
+        snapshotActiveDocument()
+        let doc = OpenDocument(
+            id: UUID(),
+            fileURL: nil,
+            text: "",
+            lastSavedText: "",
+            untitledNumber: nextUntitledNumber
+        )
+        nextUntitledNumber += 1
+        openDocuments.append(doc)
+        activateDocument(doc)
+        DiagnosticLog.log("Created untitled document: \(doc.displayName)")
+        presentMainWindow()
+        return true
+    }
+
+    @discardableResult
+    func switchToDocument(_ id: UUID) -> Bool {
+        guard id != activeDocumentID else { return true }
+        guard openDocuments.contains(where: { $0.id == id }) else { return false }
+        guard saveFileBacked() else { return false }
+        snapshotActiveDocument()
+        activeDocumentID = id
+        restoreActiveDocument()
+        return true
+    }
+
+    @discardableResult
+    func closeDocument(_ id: UUID) -> Bool {
+        guard openDocuments.contains(where: { $0.id == id }) else { return true }
+        let wasCurrent = (id == activeDocumentID)
+
+        if wasCurrent {
+            snapshotActiveDocument()
+            guard saveFileBacked() else { return false }
+        }
+
+        guard let idx = openDocuments.firstIndex(where: { $0.id == id }) else { return true }
+        let doc = openDocuments[idx]
+        if doc.isDirty {
+            switch promptToSaveChanges(for: doc) {
+            case .save:
+                guard saveDocument(at: idx, treatCancelAsFailure: true) else { return false }
+            case .discard:
+                break
+            case .cancel:
+                return false
+            }
+        }
+
+        removeDocument(id)
+        return true
+    }
+
+    @discardableResult
+    func prepareForAppTermination() -> Bool {
+        snapshotActiveDocument()
+        guard saveFileBacked() else { return false }
+
+        for docID in openDocuments.map(\.id) {
+            guard let idx = openDocuments.firstIndex(where: { $0.id == docID }) else { continue }
+            let doc = openDocuments[idx]
+            guard doc.isDirty else { continue }
+
+            switch promptToSaveChanges(for: doc) {
+            case .save:
+                guard saveDocument(at: idx, treatCancelAsFailure: true) else { return false }
+            case .discard:
+                break
+            case .cancel:
+                return false
+            }
+        }
+
+        return true
+    }
+
+    @discardableResult
+    func prepareForWindowClose() -> Bool {
+        snapshotActiveDocument()
+        guard saveFileBacked() else { return false }
+
+        let docIDs = openDocuments.map(\.id)
+        for docID in docIDs {
+            guard let idx = openDocuments.firstIndex(where: { $0.id == docID }) else { continue }
+            let doc = openDocuments[idx]
+            guard doc.isDirty else { continue }
+
+            switch promptToSaveChanges(for: doc) {
+            case .save:
+                guard saveDocument(at: idx, treatCancelAsFailure: true) else { return false }
+            case .discard:
+                discardChanges(to: docID)
+            case .cancel:
+                return false
+            }
+        }
+
+        return true
+    }
+
     // MARK: - Open File
 
     @discardableResult
     func openFile(at url: URL) -> Bool {
-        // Auto-save previous file
-        guard saveCurrentFileIfDirty() else { return false }
+        // If already open, just switch to it
+        if let existing = openDocuments.first(where: { $0.fileURL == url }) {
+            return switchToDocument(existing.id)
+        }
+
+        // Save current file-backed document before switching
+        guard saveFileBacked() else { return false }
 
         // Load new file
         guard let data = try? Data(contentsOf: url),
@@ -79,17 +209,20 @@ final class WorkspaceManager {
             return false
         }
 
-        currentFileURL = url
-        currentFileText = text
-        lastSavedText = text
-        isDirty = false
+        snapshotActiveDocument()
+
+        let doc = OpenDocument(
+            id: UUID(),
+            fileURL: url,
+            text: text,
+            lastSavedText: text,
+            untitledNumber: nil
+        )
+        openDocuments.append(doc)
+        activateDocument(doc)
 
         addToRecents(url)
-
-        // Persist last open file
-        if let bookmarkData = try? url.bookmarkData(options: .withSecurityScope, includingResourceValuesForKeys: nil, relativeTo: nil) {
-            UserDefaults.standard.set(bookmarkData, forKey: Self.lastOpenFileKey)
-        }
+        persistLastOpenFile(url)
 
         DiagnosticLog.log("Opened file: \(url.lastPathComponent)")
         presentMainWindow()
@@ -102,7 +235,14 @@ final class WorkspaceManager {
     /// Does NOT set currentFileText — the binding already did that.
     func contentDidChange() {
         isDirty = currentFileText != lastSavedText
-        if isDirty { scheduleAutoSave() }
+        // Sync text to the open document
+        if let idx = activeDocumentIndex {
+            openDocuments[idx].text = currentFileText
+        }
+        // Only auto-save file-backed documents
+        if isDirty, currentFileURL != nil {
+            scheduleAutoSave()
+        }
     }
 
     /// Called when FileWatcher detects an external modification.
@@ -110,21 +250,76 @@ final class WorkspaceManager {
         currentFileText = newText
         lastSavedText = newText
         isDirty = false
+        if let idx = activeDocumentIndex {
+            openDocuments[idx].text = newText
+            openDocuments[idx].lastSavedText = newText
+        }
     }
 
     // MARK: - Save
 
     @discardableResult
     func saveCurrentFile() -> Bool {
-        guard let url = currentFileURL else { return true }
-        guard isDirty else { return true }
+        guard activeDocumentIndex != nil else { return true }
+        snapshotActiveDocument()
+        guard let idx = activeDocumentIndex else { return true }
+        return saveDocument(at: idx, treatCancelAsFailure: false)
+    }
+
+    private func saveDocument(at index: Int, treatCancelAsFailure: Bool) -> Bool {
+        let doc = openDocuments[index]
+
+        if doc.isUntitled {
+            return saveUntitledDocument(at: index, treatCancelAsFailure: treatCancelAsFailure)
+        }
+
+        guard let url = doc.fileURL, doc.isDirty else { return true }
         do {
-            try currentFileText.write(to: url, atomically: true, encoding: .utf8)
-            lastSavedText = currentFileText
-            isDirty = false
+            try doc.text.write(to: url, atomically: true, encoding: .utf8)
+            openDocuments[index].lastSavedText = doc.text
+
+            if activeDocumentIndex == index {
+                currentFileURL = url
+                currentFileText = doc.text
+                lastSavedText = doc.text
+                isDirty = false
+            }
+
             return true
         } catch {
             DiagnosticLog.log("Failed to save file: \(error.localizedDescription)")
+            return false
+        }
+    }
+
+    private func saveUntitledDocument(at index: Int, treatCancelAsFailure: Bool) -> Bool {
+        let panel = NSSavePanel()
+        panel.allowedContentTypes = [.daringFireballMarkdown]
+        panel.nameFieldStringValue = openDocuments[index].displayName + ".md"
+        panel.prompt = "Save"
+
+        guard panel.runModal() == .OK, let url = panel.url else { return !treatCancelAsFailure }
+
+        do {
+            let text = openDocuments[index].text
+            try text.write(to: url, atomically: true, encoding: .utf8)
+            openDocuments[index].fileURL = url
+            openDocuments[index].lastSavedText = text
+            openDocuments[index].untitledNumber = nil
+
+            if activeDocumentIndex == index {
+                currentFileURL = url
+                currentFileText = text
+                lastSavedText = text
+                isDirty = false
+                persistLastOpenFile(url)
+            }
+
+            addToRecents(url)
+            DiagnosticLog.log("Saved untitled as: \(url.lastPathComponent)")
+            return true
+        } catch {
+            DiagnosticLog.log("Failed to save untitled: \(error.localizedDescription)")
             return false
         }
     }
@@ -133,8 +328,17 @@ final class WorkspaceManager {
     func saveCurrentFileIfDirty() -> Bool {
         autoSaveWork?.cancel()
         autoSaveWork = nil
-        if isDirty { return saveCurrentFile() }
-        return true
+        guard isDirty else { return true }
+        return saveCurrentFile()
+    }
+
+    /// Save only if the current doc is file-backed and dirty (used before switching).
+    @discardableResult
+    private func saveFileBacked() -> Bool {
+        autoSaveWork?.cancel()
+        autoSaveWork = nil
+        guard isDirty, currentFileURL != nil else { return true }
+        return saveCurrentFile()
     }
 
     private func scheduleAutoSave() {
@@ -244,7 +448,10 @@ final class WorkspaceManager {
         let newURL = url.deletingLastPathComponent().appendingPathComponent(newName)
         do {
             try FileManager.default.moveItem(at: url, to: newURL)
-            // If the renamed file was open, update the reference
+            // Update the open document reference if this file is open
+            if let idx = openDocuments.firstIndex(where: { $0.fileURL == url }) {
+                openDocuments[idx].fileURL = newURL
+            }
             if currentFileURL == url {
                 currentFileURL = newURL
             }
@@ -259,11 +466,9 @@ final class WorkspaceManager {
     func deleteItem(at url: URL) -> Bool {
         do {
             try FileManager.default.trashItem(at: url, resultingItemURL: nil)
-            if currentFileURL == url {
-                currentFileURL = nil
-                currentFileText = ""
-                lastSavedText = ""
-                isDirty = false
+            // Close the open document if this file was open
+            if let doc = openDocuments.first(where: { $0.fileURL == url }) {
+                removeDocument(doc.id)
             }
             DiagnosticLog.log("Trashed: \(url.lastPathComponent)")
             return true
@@ -280,20 +485,7 @@ final class WorkspaceManager {
     // MARK: - Open Panel (supports both files and folders)
 
     func showNewFilePanel(defaultFileName: String = "Untitled.md") {
-        let panel = NSSavePanel()
-        panel.allowedContentTypes = [.daringFireballMarkdown]
-        panel.nameFieldStringValue = defaultFileName
-        panel.prompt = "Create"
-        panel.message = "Create a new markdown file"
-
-        guard panel.runModal() == .OK, let url = panel.url else { return }
-
-        do {
-            try "".write(to: url, atomically: true, encoding: .utf8)
-            _ = openFile(at: url)
-        } catch {
-            DiagnosticLog.log("Failed to create new file: \(error.localizedDescription)")
-        }
+        createUntitledDocument()
     }
 
     func showOpenPanel() {
@@ -489,6 +681,106 @@ final class WorkspaceManager {
         let ids = Array(fsStreams.keys)
         for id in ids {
             stopFSStream(for: id)
+        }
+    }
+
+    // MARK: - Document Helpers
+
+    private var activeDocumentIndex: Int? {
+        openDocuments.firstIndex(where: { $0.id == activeDocumentID })
+    }
+
+    private func removeDocument(_ id: UUID) {
+        guard let idx = openDocuments.firstIndex(where: { $0.id == id }) else { return }
+        let wasCurrent = (id == activeDocumentID)
+
+        if wasCurrent {
+            autoSaveWork?.cancel()
+            autoSaveWork = nil
+        }
+
+        openDocuments.remove(at: idx)
+
+        if wasCurrent {
+            if openDocuments.isEmpty {
+                activeDocumentID = nil
+                currentFileURL = nil
+                currentFileText = ""
+                lastSavedText = ""
+                isDirty = false
+            } else {
+                let nextIndex = min(idx, openDocuments.count - 1)
+                activeDocumentID = openDocuments[nextIndex].id
+                restoreActiveDocument()
+            }
+        }
+    }
+
+    private func discardChanges(to id: UUID) {
+        guard let idx = openDocuments.firstIndex(where: { $0.id == id }) else { return }
+        let doc = openDocuments[idx]
+
+        if doc.isUntitled {
+            removeDocument(id)
+            return
+        }
+
+        openDocuments[idx].text = doc.lastSavedText
+        if activeDocumentID == id {
+            restoreActiveDocument()
+        }
+    }
+
+    /// Save current stored properties back into the openDocuments array.
+    private func snapshotActiveDocument() {
+        guard let idx = activeDocumentIndex else { return }
+        openDocuments[idx].text = currentFileText
+        openDocuments[idx].lastSavedText = lastSavedText
+    }
+
+    /// Restore stored properties from the active document in openDocuments.
+    private func restoreActiveDocument() {
+        guard let idx = activeDocumentIndex else { return }
+        let doc = openDocuments[idx]
+        currentFileURL = doc.fileURL
+        currentFileText = doc.text
+        lastSavedText = doc.lastSavedText
+        isDirty = doc.isDirty
+    }
+
+    /// Set the given document as active and sync stored properties.
+    private func activateDocument(_ doc: OpenDocument) {
+        activeDocumentID = doc.id
+        currentFileURL = doc.fileURL
+        currentFileText = doc.text
+        lastSavedText = doc.lastSavedText
+        isDirty = doc.isDirty
+    }
+
+    private func persistLastOpenFile(_ url: URL) {
+        if let bookmarkData = try? url.bookmarkData(options: .withSecurityScope, includingResourceValuesForKeys: nil, relativeTo: nil) {
+            UserDefaults.standard.set(bookmarkData, forKey: Self.lastOpenFileKey)
+        }
+    }
+
+    private func promptToSaveChanges(for doc: OpenDocument) -> DirtyDocumentDisposition {
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = "Do you want to save changes to \"\(doc.displayName)\"?"
+        alert.informativeText = doc.isUntitled
+            ? "This document exists only in memory. If you don't save, your changes will be lost."
+            : "If you don't save, your changes will be lost."
+        alert.addButton(withTitle: "Save")
+        alert.addButton(withTitle: "Cancel")
+        alert.addButton(withTitle: "Don't Save")
+
+        switch alert.runModal() {
+        case .alertFirstButtonReturn:
+            return .save
+        case .alertSecondButtonReturn:
+            return .cancel
+        default:
+            return .discard
         }
     }
 

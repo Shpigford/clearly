@@ -90,10 +90,15 @@ struct MainWindowBridge: View {
 }
 
 struct MainWindowMarker: NSViewRepresentable {
+    func makeCoordinator() -> Coordinator {
+        Coordinator()
+    }
+
     func makeNSView(context: Context) -> NSView {
         let view = NSView()
         DispatchQueue.main.async {
             view.window?.identifier = WindowRouter.mainWindowIdentifier
+            context.coordinator.attach(to: view.window)
         }
         return view
     }
@@ -101,6 +106,26 @@ struct MainWindowMarker: NSViewRepresentable {
     func updateNSView(_ nsView: NSView, context: Context) {
         DispatchQueue.main.async {
             nsView.window?.identifier = WindowRouter.mainWindowIdentifier
+            context.coordinator.attach(to: nsView.window)
+        }
+    }
+
+    final class Coordinator {
+        private let delegate = WindowDelegate()
+        private weak var window: NSWindow?
+
+        func attach(to window: NSWindow?) {
+            guard let window else { return }
+            guard self.window !== window else { return }
+            self.window = window
+            window.delegate = delegate
+        }
+    }
+
+    private final class WindowDelegate: NSObject, NSWindowDelegate {
+        func windowShouldClose(_ sender: NSWindow) -> Bool {
+            guard let appDelegate = NSApp.delegate as? ClearlyAppDelegate else { return true }
+            return appDelegate.shouldCloseMainWindow(sender)
         }
     }
 }
@@ -111,6 +136,7 @@ struct MainWindowMarker: NSViewRepresentable {
 final class ClearlyAppDelegate: NSObject, NSApplicationDelegate {
     private var observers: [Any] = []
     private var commandQMonitor: Any?
+    private var isProgrammaticallyClosingWindows = false
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         // A normal Launch Services open activates the app and opens a document window.
@@ -191,7 +217,7 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
-        WorkspaceManager.shared.saveCurrentFileIfDirty() ? .terminateNow : .terminateCancel
+        WorkspaceManager.shared.prepareForAppTermination() ? .terminateNow : .terminateCancel
     }
 
     // MARK: - Save on termination
@@ -256,14 +282,24 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func closeDocumentWindowsToMenuBar() {
+        guard WorkspaceManager.shared.prepareForWindowClose() else { return }
         let documentWindows = NSApp.windows.filter { WindowRouter.isVisibleUserFacingDocumentWindow($0) }
 
+        isProgrammaticallyClosingWindows = true
         for window in documentWindows {
             window.performClose(nil)
         }
+        isProgrammaticallyClosingWindows = false
 
         Task { @MainActor in ScratchpadManager.shared.closeAll() }
         updateActivationPolicy()
+    }
+
+    func shouldCloseMainWindow(_ window: NSWindow) -> Bool {
+        if isProgrammaticallyClosingWindows {
+            return true
+        }
+        return WorkspaceManager.shared.prepareForWindowClose()
     }
 
     private func updateActivationPolicy() {
@@ -304,17 +340,25 @@ struct MainView: View {
         _columnVisibility = State(initialValue: workspace.isSidebarVisible ? .all : .detailOnly)
     }
 
+    private var windowTitle: String {
+        if let doc = workspace.openDocuments.first(where: { $0.id == workspace.activeDocumentID }) {
+            return doc.displayName
+        }
+        return "Clearly"
+    }
+
     var body: some View {
         NavigationSplitView(columnVisibility: $columnVisibility) {
             FileExplorerView(workspace: workspace)
                 .navigationSplitViewColumnWidth(min: 180, ideal: 220, max: 300)
         } detail: {
-            if workspace.currentFileURL != nil {
+            if workspace.activeDocumentID != nil {
                 ContentView(workspace: workspace)
             } else {
                 NoFileView(workspace: workspace)
             }
         }
+        .navigationTitle(windowTitle)
         .onChange(of: columnVisibility) { _, newValue in
             let visible = (newValue != .detailOnly)
             workspace.isSidebarVisible = visible
@@ -341,13 +385,18 @@ struct NoFileView: View {
             Text("No File Open")
                 .font(.title2)
                 .foregroundStyle(.secondary)
-            Text("Open a file with ⌘O or select one from the sidebar")
+            Text("Create a new document with ⌘N or open a file with ⌘O")
                 .font(.body)
                 .foregroundStyle(.tertiary)
-            Button("Open…") {
-                workspace.showOpenPanel()
+            HStack(spacing: 12) {
+                Button("New Document") {
+                    workspace.createUntitledDocument()
+                }
+                .keyboardShortcut(.defaultAction)
+                Button("Open…") {
+                    workspace.showOpenPanel()
+                }
             }
-            .keyboardShortcut(.defaultAction)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Theme.backgroundColorSwiftUI)
@@ -395,8 +444,8 @@ struct ClearlyApp: App {
         .commands {
             // Replace New/Open with our own
             CommandGroup(replacing: .newItem) {
-                Button("New File…") {
-                    workspace.showNewFilePanel()
+                Button("New Document") {
+                    workspace.createUntitledDocument()
                 }
                 .keyboardShortcut("n", modifiers: .command)
 
@@ -409,10 +458,10 @@ struct ClearlyApp: App {
             // Save
             CommandGroup(replacing: .saveItem) {
                 Button("Save") {
-                    workspace.saveCurrentFileIfDirty()
+                    workspace.saveCurrentFile()
                 }
                 .keyboardShortcut("s", modifiers: .command)
-                .disabled(workspace.currentFileURL == nil)
+                .disabled(workspace.activeDocumentID == nil)
             }
 
             #if canImport(Sparkle)
