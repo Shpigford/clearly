@@ -36,11 +36,14 @@ final class MarkdownSyntaxHighlighter: NSObject {
         // Headings: # Heading
         add("^(#{1,6}\\s+)(.+)$", .heading, options: .anchorsMatchLines)
 
-        // Bold: **text** or __text__
-        add("(\\*\\*|__)(.+?)(\\1)", .bold)
+        // Bold italic: ***text*** or ___text___
+        add("(\\*\\*\\*|___)(.+?)(\\1)", .boldItalic)
+
+        // Bold: **text** or __text__ (not part of ***triple***)
+        add("(?<![*_])(\\*\\*(?!\\*)|__(?!_))(.+?)(\\1)(?![*_])", .bold)
 
         // Italic: *text* or _text_ (not inside words for _)
-        add("(?<![\\w*])(\\*|_)(?!\\s)(.+?)(?<!\\s)\\1(?![\\w*])", .italic)
+        add("(?<![\\w*])(\\*(?!\\*)|_(?!_))(?!\\s)(.+?)(?<!\\s)\\1(?![\\w*])", .italic)
 
         // Strikethrough: ~~text~~
         add("(~~)(.+?)(~~)", .strikethrough)
@@ -74,6 +77,7 @@ final class MarkdownSyntaxHighlighter: NSObject {
     private enum HighlightStyle {
         case heading
         case bold
+        case boldItalic
         case italic
         case strikethrough
         case inlineCode
@@ -149,6 +153,23 @@ final class MarkdownSyntaxHighlighter: NSObject {
                         textStorage.addAttributes([
                             .foregroundColor: Theme.boldColor,
                             .font: NSFont.monospacedSystemFont(ofSize: Theme.editorFontSize, weight: .bold)
+                        ], range: contentRange)
+                    }
+
+                case .boldItalic:
+                    if match.numberOfRanges >= 4 {
+                        let openRange = match.range(at: 1)
+                        let contentRange = match.range(at: 2)
+                        let closeRange = match.range(at: 3)
+                        textStorage.addAttribute(.foregroundColor, value: Theme.syntaxColor, range: openRange)
+                        textStorage.addAttribute(.foregroundColor, value: Theme.syntaxColor, range: closeRange)
+                        let boldItalicFont = NSFontManager.shared.convert(
+                            NSFont.monospacedSystemFont(ofSize: Theme.editorFontSize, weight: .bold),
+                            toHaveTrait: .italicFontMask
+                        )
+                        textStorage.addAttributes([
+                            .foregroundColor: Theme.boldColor,
+                            .font: boldItalicFont
                         ], range: contentRange)
                     }
 
