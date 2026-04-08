@@ -8,7 +8,7 @@ struct FileExplorerView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            if workspace.locations.isEmpty && workspace.recentFiles.isEmpty {
+            if workspace.locations.isEmpty && workspace.recentFiles.isEmpty && workspace.openDocuments.isEmpty {
                 FileExplorerEmptyView(workspace: workspace)
             } else {
                 FileExplorerOutlineView(workspace: workspace)
@@ -120,6 +120,7 @@ struct FileExplorerOutlineView: NSViewRepresentable {
             case location(BookmarkedLocation)
             case fileNode(FileNode)
             case recentFile(URL)
+            case openDocument(OpenDocument)
         }
         var kind: Kind
 
@@ -133,6 +134,7 @@ struct FileExplorerOutlineView: NSViewRepresentable {
             case .location(let loc): return loc.url
             case .fileNode(let node): return node.url
             case .recentFile(let url): return url
+            case .openDocument(let doc): return doc.fileURL
             }
         }
 
@@ -140,7 +142,7 @@ struct FileExplorerOutlineView: NSViewRepresentable {
             switch kind {
             case .fileNode(let node): return node.isDirectory
             case .location: return true
-            case .section, .recentFile: return false
+            case .section, .recentFile, .openDocument: return false
             }
         }
     }
@@ -156,12 +158,14 @@ struct FileExplorerOutlineView: NSViewRepresentable {
         private var locationItems: [UUID: OutlineItem] = [:]
         private var nodeItems: [URL: OutlineItem] = [:]
         private var recentItems: [URL: OutlineItem] = [:]
+        private var openDocItems: [UUID: OutlineItem] = [:]
 
         // Track state to avoid redundant reloads (updateNSView fires on every SwiftUI render)
         private var lastLocationCount = 0
         private var lastRecentCount = 0
+        private var lastOpenDocCount = 0
         private var lastLocationTreeHash = 0
-        private var lastCurrentFileURL: URL?
+        private var lastActiveDocumentID: UUID?
         private var hasLoadedOnce = false
 
         // Prevent re-entrant selection changes
@@ -208,23 +212,36 @@ struct FileExplorerOutlineView: NSViewRepresentable {
             return item
         }
 
+        func item(for doc: OpenDocument) -> OutlineItem {
+            if let existing = openDocItems[doc.id] {
+                existing.kind = .openDocument(doc)
+                return existing
+            }
+            let item = OutlineItem(.openDocument(doc))
+            openDocItems[doc.id] = item
+            return item
+        }
+
         // MARK: - Change Detection
 
         private func dataDidChange() -> Bool {
             let locCount = workspace.locations.count
             let recCount = workspace.recentFiles.count
+            let openCount = workspace.openDocuments.count
             let treeHash = workspace.locations.reduce(0) { $0 ^ $1.fileTree.hashValue }
-            let currentURL = workspace.currentFileURL
+            let activeID = workspace.activeDocumentID
 
             let changed = locCount != lastLocationCount
                 || recCount != lastRecentCount
+                || openCount != lastOpenDocCount
                 || treeHash != lastLocationTreeHash
-                || currentURL != lastCurrentFileURL
+                || activeID != lastActiveDocumentID
 
             lastLocationCount = locCount
             lastRecentCount = recCount
+            lastOpenDocCount = openCount
             lastLocationTreeHash = treeHash
-            lastCurrentFileURL = currentURL
+            lastActiveDocumentID = activeID
 
             return changed
         }
@@ -256,14 +273,27 @@ struct FileExplorerOutlineView: NSViewRepresentable {
         }
 
         func selectCurrentFile() {
-            guard let outlineView, let currentURL = workspace.currentFileURL else { return }
+            guard let outlineView, let activeID = workspace.activeDocumentID else {
+                outlineView?.deselectAll(nil)
+                return
+            }
+            let activeURL = workspace.currentFileURL
             isProgrammaticSelection = true
             defer { isProgrammaticSelection = false }
             for row in 0..<outlineView.numberOfRows {
                 guard let outlineItem = outlineView.item(atRow: row) as? OutlineItem else { continue }
-                if outlineItem.url == currentURL {
+                switch outlineItem.kind {
+                case .openDocument(let doc) where doc.id == activeID:
                     outlineView.selectRowIndexes(IndexSet(integer: row), byExtendingSelection: false)
                     return
+                case .recentFile(let url) where url == activeURL:
+                    outlineView.selectRowIndexes(IndexSet(integer: row), byExtendingSelection: false)
+                    return
+                case .fileNode(let node) where !node.isDirectory && node.url == activeURL:
+                    outlineView.selectRowIndexes(IndexSet(integer: row), byExtendingSelection: false)
+                    return
+                default:
+                    break
                 }
             }
         }
@@ -277,6 +307,7 @@ struct FileExplorerOutlineView: NSViewRepresentable {
             case .location(let loc): return "location:\(loc.url.path)"
             case .fileNode(let node): return "node:\(node.url.path)"
             case .recentFile(let url): return "recent:\(url.path)"
+            case .openDocument(let doc): return "openDoc:\(doc.id.uuidString)"
             }
         }
 
@@ -311,21 +342,25 @@ struct FileExplorerOutlineView: NSViewRepresentable {
 
         // MARK: - Data Source
 
+        /// Untitled open documents shown at the top of RECENTS.
+        private var untitledDocs: [OpenDocument] {
+            workspace.openDocuments.filter { $0.isUntitled }
+        }
+
         func outlineView(_ outlineView: NSOutlineView, numberOfChildrenOfItem item: Any?) -> Int {
             guard let item = item as? OutlineItem else {
-                // Root level: sections
                 return Section.allCases.count
             }
             switch item.kind {
             case .section(.locations):
                 return workspace.locations.count
             case .section(.recents):
-                return workspace.recentFiles.count
+                return untitledDocs.count + workspace.recentFiles.count
             case .location(let loc):
                 return loc.fileTree.count
             case .fileNode(let node):
                 return node.children?.count ?? 0
-            case .recentFile:
+            case .recentFile, .openDocument:
                 return 0
             }
         }
@@ -338,13 +373,17 @@ struct FileExplorerOutlineView: NSViewRepresentable {
             case .section(.locations):
                 return self.item(for: workspace.locations[index])
             case .section(.recents):
-                return self.item(for: workspace.recentFiles[index])
+                let untitled = untitledDocs
+                if index < untitled.count {
+                    return self.item(for: untitled[index])
+                }
+                return self.item(for: workspace.recentFiles[index - untitled.count])
             case .location(let loc):
                 return self.item(for: loc.fileTree[index])
             case .fileNode(let node):
                 return self.item(for: node.children![index])
-            case .recentFile:
-                fatalError("Recent files have no children")
+            case .recentFile, .openDocument:
+                fatalError("Leaf items have no children")
             }
         }
 
@@ -355,7 +394,7 @@ struct FileExplorerOutlineView: NSViewRepresentable {
             case .section(.recents): return true
             case .location: return true
             case .fileNode(let node): return node.isDirectory
-            case .recentFile: return false
+            case .recentFile, .openDocument: return false
             }
         }
 
@@ -370,10 +409,11 @@ struct FileExplorerOutlineView: NSViewRepresentable {
         func outlineView(_ outlineView: NSOutlineView, shouldSelectItem item: Any) -> Bool {
             guard let item = item as? OutlineItem else { return false }
             switch item.kind {
-            case .section: return false // Sections are not selectable
-            case .location: return false // Locations expand/collapse only
+            case .section: return false
+            case .location: return false
             case .fileNode(let node): return !node.isDirectory
             case .recentFile: return true
+            case .openDocument: return true
             }
         }
 
@@ -478,6 +518,15 @@ struct FileExplorerOutlineView: NSViewRepresentable {
                 cell.imageView?.image = NSImage(systemSymbolName: "clock", accessibilityDescription: "Recent")
                 cell.imageView?.contentTintColor = .tertiaryLabelColor
                 cell.imageView?.isHidden = false
+
+            case .openDocument(let doc):
+                let prefix = doc.isDirty ? "● " : ""
+                cell.textField?.stringValue = prefix + doc.displayName
+                cell.textField?.font = .systemFont(ofSize: 13)
+                let iconName = doc.isUntitled ? "doc.text" : "doc.text.fill"
+                cell.imageView?.image = NSImage(systemSymbolName: iconName, accessibilityDescription: "Document")
+                cell.imageView?.contentTintColor = doc.isUntitled ? .secondaryLabelColor : .tertiaryLabelColor
+                cell.imageView?.isHidden = false
             }
 
             return cell
@@ -491,6 +540,8 @@ struct FileExplorerOutlineView: NSViewRepresentable {
             guard row >= 0, let outlineItem = outlineView.item(atRow: row) as? OutlineItem else { return }
 
             switch outlineItem.kind {
+            case .openDocument(let doc):
+                workspace.switchToDocument(doc.id)
             case .fileNode(let node) where !node.isDirectory:
                 workspace.openFile(at: node.url)
             case .recentFile(let url):
@@ -591,6 +642,26 @@ struct FileExplorerOutlineView: NSViewRepresentable {
                 revealItem.target = self
                 menu.addItem(revealItem)
 
+            case .openDocument(let doc):
+                if doc.isUntitled {
+                    let saveItem = NSMenuItem(title: "Save As…", action: #selector(saveOpenDocAction(_:)), keyEquivalent: "")
+                    saveItem.representedObject = doc.id
+                    saveItem.target = self
+                    menu.addItem(saveItem)
+                    menu.addItem(.separator())
+                } else if let url = doc.fileURL {
+                    let revealItem = NSMenuItem(title: "Reveal in Finder", action: #selector(revealInFinderAction(_:)), keyEquivalent: "")
+                    revealItem.representedObject = url
+                    revealItem.target = self
+                    menu.addItem(revealItem)
+                    menu.addItem(.separator())
+                }
+
+                let closeItem = NSMenuItem(title: "Close", action: #selector(closeOpenDocAction(_:)), keyEquivalent: "")
+                closeItem.representedObject = doc.id
+                closeItem.target = self
+                menu.addItem(closeItem)
+
             case .section(.recents):
                 break
             }
@@ -686,6 +757,18 @@ struct FileExplorerOutlineView: NSViewRepresentable {
             guard let locationID = sender.representedObject as? UUID,
                   let location = workspace.locations.first(where: { $0.id == locationID }) else { return }
             workspace.removeLocation(location)
+        }
+
+        @objc func closeOpenDocAction(_ sender: NSMenuItem) {
+            guard let docID = sender.representedObject as? UUID else { return }
+            workspace.closeDocument(docID)
+        }
+
+        @objc func saveOpenDocAction(_ sender: NSMenuItem) {
+            guard let docID = sender.representedObject as? UUID else { return }
+            // Switch to the document first, then save (triggers NSSavePanel for untitled)
+            guard workspace.switchToDocument(docID) else { return }
+            workspace.saveCurrentFile()
         }
     }
 }

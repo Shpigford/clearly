@@ -11,6 +11,7 @@ struct SettingsView: View {
     #endif
     @AppStorage("editorFontSize") private var fontSize: Double = 16
     @AppStorage("themePreference") private var themePreference = "system"
+    @AppStorage("launchBehavior") private var launchBehavior = "lastFile"
 
     var body: some View {
         TabView {
@@ -35,6 +36,10 @@ struct SettingsView: View {
                 Text("System").tag("system")
                 Text("Light").tag("light")
                 Text("Dark").tag("dark")
+            }
+            Picker("On Launch", selection: $launchBehavior) {
+                Text("Open last file").tag("lastFile")
+                Text("Create new document").tag("newDocument")
             }
             HStack {
                 Text("Font Size")

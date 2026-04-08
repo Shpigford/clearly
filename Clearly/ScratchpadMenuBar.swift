@@ -28,10 +28,16 @@ struct ScratchpadMenuBar: View {
 
         Button("New Document") {
             performMenuBarAction {
-                WorkspaceManager.shared.showNewFilePanel()
+                WorkspaceManager.shared.createUntitledDocument()
             }
         }
         .keyboardShortcut("n", modifiers: [.command])
+
+        Button("Show Workspace") {
+            performMenuBarAction {
+                WindowRouter.shared.showMainWindow()
+            }
+        }
 
         Button("Open Document") {
             performMenuBarAction {
