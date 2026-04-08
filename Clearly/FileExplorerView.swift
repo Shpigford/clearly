@@ -490,9 +490,11 @@ struct FileExplorerOutlineView: NSViewRepresentable {
                 }
             }
 
-            // Remove any previously added action button
+            // Reset cell state for reuse
             let addButtonTag = 999
             cell.viewWithTag(addButtonTag)?.removeFromSuperview()
+            cell.textField?.font = .systemFont(ofSize: 12)
+            cell.textField?.textColor = .labelColor
 
             switch outlineItem.kind {
             case .section(let section):
@@ -521,17 +523,23 @@ struct FileExplorerOutlineView: NSViewRepresentable {
                 }
 
             case .location(let loc):
-                cell.textField?.stringValue = loc.name
-                cell.textField?.font = .systemFont(ofSize: 13, weight: .medium)
-                cell.imageView?.image = NSImage(systemSymbolName: "folder.fill", accessibilityDescription: "Folder")
+                cell.textField?.attributedStringValue = NSAttributedString(
+                    string: loc.name,
+                    attributes: [.font: NSFont.systemFont(ofSize: 12, weight: .medium), .foregroundColor: NSColor.labelColor]
+                )
+                let locIcon = workspace.folderIcons[loc.url.path] ?? "folder"
+                cell.imageView?.image = NSImage(systemSymbolName: locIcon, accessibilityDescription: "Folder")
                 cell.imageView?.contentTintColor = .secondaryLabelColor
                 cell.imageView?.isHidden = false
 
             case .fileNode(let node):
-                cell.textField?.stringValue = node.name
-                cell.textField?.font = .systemFont(ofSize: 13)
+                cell.textField?.attributedStringValue = NSAttributedString(
+                    string: node.name,
+                    attributes: [.font: NSFont.systemFont(ofSize: 12), .foregroundColor: NSColor.labelColor]
+                )
                 if node.isDirectory {
-                    cell.imageView?.image = NSImage(systemSymbolName: "folder", accessibilityDescription: "Folder")
+                    let nodeIcon = workspace.folderIcons[node.url.path] ?? "folder"
+                    cell.imageView?.image = NSImage(systemSymbolName: nodeIcon, accessibilityDescription: "Folder")
                     cell.imageView?.contentTintColor = .secondaryLabelColor
                 } else {
                     cell.imageView?.image = NSImage(systemSymbolName: "doc.text", accessibilityDescription: "File")
@@ -544,12 +552,13 @@ struct FileExplorerOutlineView: NSViewRepresentable {
                 let parentName = url.deletingLastPathComponent().lastPathComponent
                 let attributed = NSMutableAttributedString(
                     string: filename,
-                    attributes: [.font: NSFont.systemFont(ofSize: 13), .foregroundColor: NSColor.labelColor]
+                    attributes: [.font: NSFont.systemFont(ofSize: 12), .foregroundColor: NSColor.labelColor]
                 )
                 attributed.append(NSAttributedString(
                     string: "  \(parentName)",
-                    attributes: [.font: NSFont.systemFont(ofSize: 11), .foregroundColor: NSColor.tertiaryLabelColor]
+                    attributes: [.font: NSFont.systemFont(ofSize: 10), .foregroundColor: NSColor.tertiaryLabelColor]
                 ))
+                cell.textField?.font = .systemFont(ofSize: 12)
                 cell.textField?.attributedStringValue = attributed
                 cell.imageView?.image = NSImage(systemSymbolName: "doc.text", accessibilityDescription: "File")
                 cell.imageView?.contentTintColor = .tertiaryLabelColor
@@ -557,8 +566,10 @@ struct FileExplorerOutlineView: NSViewRepresentable {
 
             case .openDocument(let doc):
                 let prefix = doc.isDirty ? "● " : ""
-                cell.textField?.stringValue = prefix + doc.displayName
-                cell.textField?.font = .systemFont(ofSize: 13)
+                cell.textField?.attributedStringValue = NSAttributedString(
+                    string: prefix + doc.displayName,
+                    attributes: [.font: NSFont.systemFont(ofSize: 12), .foregroundColor: NSColor.labelColor]
+                )
                 let iconName = doc.isUntitled ? "doc.text" : "doc.text.fill"
                 cell.imageView?.image = NSImage(systemSymbolName: iconName, accessibilityDescription: "Document")
                 cell.imageView?.contentTintColor = doc.isUntitled ? .secondaryLabelColor : .tertiaryLabelColor
@@ -619,6 +630,20 @@ struct FileExplorerOutlineView: NSViewRepresentable {
 
                 menu.addItem(.separator())
 
+                let changeIconItem = NSMenuItem(title: "Change Icon…", action: #selector(changeIconAction(_:)), keyEquivalent: "")
+                changeIconItem.representedObject = loc.url
+                changeIconItem.target = self
+                menu.addItem(changeIconItem)
+
+                if workspace.folderIcons[loc.url.path] != nil {
+                    let resetIconItem = NSMenuItem(title: "Reset Icon", action: #selector(resetIconAction(_:)), keyEquivalent: "")
+                    resetIconItem.representedObject = loc.url
+                    resetIconItem.target = self
+                    menu.addItem(resetIconItem)
+                }
+
+                menu.addItem(.separator())
+
                 let revealItem = NSMenuItem(title: "Reveal in Finder", action: #selector(revealInFinderAction(_:)), keyEquivalent: "")
                 revealItem.representedObject = loc.url
                 revealItem.target = self
@@ -644,6 +669,20 @@ struct FileExplorerOutlineView: NSViewRepresentable {
                     newFolderItem.representedObject = node.url
                     newFolderItem.target = self
                     menu.addItem(newFolderItem)
+
+                    menu.addItem(.separator())
+
+                    let changeIconItem = NSMenuItem(title: "Change Icon…", action: #selector(changeIconAction(_:)), keyEquivalent: "")
+                    changeIconItem.representedObject = node.url
+                    changeIconItem.target = self
+                    menu.addItem(changeIconItem)
+
+                    if workspace.folderIcons[node.url.path] != nil {
+                        let resetIconItem = NSMenuItem(title: "Reset Icon", action: #selector(resetIconAction(_:)), keyEquivalent: "")
+                        resetIconItem.representedObject = node.url
+                        resetIconItem.target = self
+                        menu.addItem(resetIconItem)
+                    }
 
                     menu.addItem(.separator())
                 } else {
@@ -805,6 +844,47 @@ struct FileExplorerOutlineView: NSViewRepresentable {
             // Switch to the document first, then save (triggers NSSavePanel for untitled)
             guard workspace.switchToDocument(docID) else { return }
             workspace.saveCurrentFile()
+        }
+
+        // MARK: - Folder Icon Actions
+
+        private var iconPopover: NSPopover?
+
+        @objc func changeIconAction(_ sender: NSMenuItem) {
+            guard let url = sender.representedObject as? URL,
+                  let outlineView else { return }
+
+            let clickedRow = outlineView.clickedRow
+            guard clickedRow >= 0 else { return }
+
+            let rowRect = outlineView.rect(ofRow: clickedRow)
+            let currentIcon = workspace.folderIcons[url.path]
+
+            let picker = IconPickerView(currentIcon: currentIcon) { [weak self] selectedIcon in
+                guard let self else { return }
+                if let selectedIcon {
+                    self.workspace.setFolderIcon(selectedIcon, for: url.path)
+                } else {
+                    self.workspace.removeFolderIcon(for: url.path)
+                }
+                self.iconPopover?.close()
+                self.iconPopover = nil
+                outlineView.reloadData()
+            }
+
+            let hostingController = NSHostingController(rootView: picker)
+            let popover = NSPopover()
+            popover.contentViewController = hostingController
+            popover.behavior = .transient
+            iconPopover = popover
+            popover.show(relativeTo: rowRect, of: outlineView, preferredEdge: .maxX)
+        }
+
+        @objc func resetIconAction(_ sender: NSMenuItem) {
+            guard let url = sender.representedObject as? URL,
+                  let outlineView else { return }
+            workspace.removeFolderIcon(for: url.path)
+            outlineView.reloadData()
         }
     }
 }

@@ -47,6 +47,10 @@ final class WorkspaceManager {
     private static let lastOpenFileKey = "lastOpenFileURL"
     private static let sidebarVisibleKey = "sidebarVisible"
     private static let launchBehaviorKey = "launchBehavior"
+    private static let folderIconsKey = "folderIcons"
+
+    /// Custom folder icons keyed by folder path (URL.path → SF Symbol name).
+    var folderIcons: [String: String] = [:]
 
     private enum DirtyDocumentDisposition {
         case save
@@ -58,6 +62,7 @@ final class WorkspaceManager {
 
     init() {
         isSidebarVisible = UserDefaults.standard.bool(forKey: Self.sidebarVisibleKey)
+        folderIcons = UserDefaults.standard.dictionary(forKey: Self.folderIconsKey) as? [String: String] ?? [:]
         restoreLocations()
         restoreRecents()
 
@@ -512,6 +517,18 @@ final class WorkspaceManager {
         } else {
             _ = openFile(at: url)
         }
+    }
+
+    // MARK: - Folder Icons
+
+    func setFolderIcon(_ iconName: String, for folderPath: String) {
+        folderIcons[folderPath] = iconName
+        UserDefaults.standard.set(folderIcons, forKey: Self.folderIconsKey)
+    }
+
+    func removeFolderIcon(for folderPath: String) {
+        folderIcons.removeValue(forKey: folderPath)
+        UserDefaults.standard.set(folderIcons, forKey: Self.folderIconsKey)
     }
 
     // MARK: - Persistence: Locations
