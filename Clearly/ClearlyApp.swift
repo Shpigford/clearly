@@ -11,8 +11,103 @@ func activateDocumentApp() {
     NSApp.activate(ignoringOtherApps: true)
 }
 
-// MARK: - App Delegate (dock icon management)
+@MainActor
+final class WindowRouter {
+    static let shared = WindowRouter()
+    static let sceneID = "main"
+    static let mainWindowIdentifier = NSUserInterfaceItemIdentifier("ClearlyMainWindow")
+    private static let openRetryCount = 5
+    private static let openRetryDelay: TimeInterval = 0.05
 
+    var openMainWindow: (() -> Void)?
+
+    func showMainWindow() {
+        activateDocumentApp()
+
+        if let window = visibleDocumentWindows().first {
+            present(window)
+            return
+        }
+
+        openMainWindow?()
+
+        presentOpenedMainWindow(retriesRemaining: Self.openRetryCount)
+    }
+
+    private func present(_ window: NSWindow) {
+        if window.isMiniaturized {
+            window.deminiaturize(nil)
+        }
+        window.makeKeyAndOrderFront(nil)
+        window.orderFrontRegardless()
+    }
+
+    private func presentOpenedMainWindow(retriesRemaining: Int) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.openRetryDelay) { [weak self] in
+            guard let self else { return }
+            if let window = self.visibleDocumentWindows().first {
+                self.present(window)
+                return
+            }
+            guard retriesRemaining > 0 else { return }
+            self.presentOpenedMainWindow(retriesRemaining: retriesRemaining - 1)
+        }
+    }
+
+    private func visibleDocumentWindows() -> [NSWindow] {
+        NSApp.windows.filter { Self.isVisibleMainDocumentWindow($0) }
+    }
+
+    static func isUserFacingDocumentWindow(_ window: NSWindow) -> Bool {
+        guard !(window is NSPanel), !window.isSheet, window.level != .floating else { return false }
+        return window.frame.width >= 50 && window.frame.height >= 50
+    }
+
+    static func isVisibleUserFacingDocumentWindow(_ window: NSWindow) -> Bool {
+        isUserFacingDocumentWindow(window) && (window.isVisible || window.isMiniaturized)
+    }
+
+    static func isMainDocumentWindow(_ window: NSWindow) -> Bool {
+        window.identifier == Self.mainWindowIdentifier && isUserFacingDocumentWindow(window)
+    }
+
+    static func isVisibleMainDocumentWindow(_ window: NSWindow) -> Bool {
+        isMainDocumentWindow(window) && (window.isVisible || window.isMiniaturized)
+    }
+}
+
+struct MainWindowBridge: View {
+    @Environment(\.openWindow) private var openWindow
+
+    var body: some View {
+        MainWindowMarker()
+            .frame(width: 0, height: 0)
+            .allowsHitTesting(false)
+            .onAppear {
+                WindowRouter.shared.openMainWindow = { openWindow(id: WindowRouter.sceneID) }
+            }
+    }
+}
+
+struct MainWindowMarker: NSViewRepresentable {
+    func makeNSView(context: Context) -> NSView {
+        let view = NSView()
+        DispatchQueue.main.async {
+            view.window?.identifier = WindowRouter.mainWindowIdentifier
+        }
+        return view
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {
+        DispatchQueue.main.async {
+            nsView.window?.identifier = WindowRouter.mainWindowIdentifier
+        }
+    }
+}
+
+// MARK: - App Delegate (dock icon management + file open handling)
+
+@MainActor
 final class ClearlyAppDelegate: NSObject, NSApplicationDelegate {
     private var observers: [Any] = []
     private var commandQMonitor: Any?
@@ -40,12 +135,12 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { self?.updateActivationPolicy() }
         })
         observers.append(nc.addObserver(forName: NSWindow.didBecomeMainNotification, object: nil, queue: .main) { notification in
-            guard let window = notification.object as? NSWindow else { return }
-            // Only for document windows, not panels/sheets/scratchpads
-            guard !(window is NSPanel), !window.isSheet, window.level != .floating else { return }
-            guard window.frame.width >= 50 && window.frame.height >= 50 else { return }
-            activateDocumentApp()
-            window.orderFrontRegardless()
+            Task { @MainActor in
+                guard let window = notification.object as? NSWindow else { return }
+                guard WindowRouter.isUserFacingDocumentWindow(window) else { return }
+                activateDocumentApp()
+                window.orderFrontRegardless()
+            }
         })
 
         commandQMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
@@ -55,6 +150,57 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate {
             return nil
         }
 
+    }
+
+    // MARK: - Open files from Finder
+
+    func application(_ application: NSApplication, open urls: [URL]) {
+        let workspace = WorkspaceManager.shared
+        var openedDirectory = false
+        var openedFile = false
+        for url in urls {
+            var isDir: ObjCBool = false
+            FileManager.default.fileExists(atPath: url.path, isDirectory: &isDir)
+            if isDir.boolValue {
+                openedDirectory = true
+                if !workspace.locations.contains(where: { $0.url == url }) {
+                    workspace.addLocation(url: url)
+                }
+            } else {
+                openedFile = workspace.openFile(at: url) || openedFile
+            }
+        }
+        if openedDirectory {
+            workspace.isSidebarVisible = true
+            UserDefaults.standard.set(true, forKey: "sidebarVisible")
+        }
+        if openedDirectory || openedFile {
+            WindowRouter.shared.showMainWindow()
+        } else {
+            activateDocumentApp()
+        }
+    }
+
+    // MARK: - Prevent default new window on reactivation
+
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        if !flag {
+            WindowRouter.shared.showMainWindow()
+        }
+        return true
+    }
+
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        WorkspaceManager.shared.saveCurrentFileIfDirty() ? .terminateNow : .terminateCancel
+    }
+
+    // MARK: - Save on termination
+
+    func applicationWillTerminate(_ notification: Notification) {
+        if let commandQMonitor {
+            NSEvent.removeMonitor(commandQMonitor)
+            self.commandQMonitor = nil
+        }
     }
 
     // MARK: - Spelling and Grammar menu injection
@@ -110,14 +256,7 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func closeDocumentWindowsToMenuBar() {
-        let documentWindows = NSApp.windows.filter { window in
-            guard window.isVisible || window.isMiniaturized else { return false }
-            if window.level == .floating { return false }
-            if window.isSheet { return false }
-            if window is NSPanel { return false }
-            if window.frame.width < 50 || window.frame.height < 50 { return false }
-            return true
-        }
+        let documentWindows = NSApp.windows.filter { WindowRouter.isVisibleUserFacingDocumentWindow($0) }
 
         for window in documentWindows {
             window.performClose(nil)
@@ -142,14 +281,7 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate {
     /// A "document window" is any user-facing window that isn't a scratchpad,
     /// MenuBarExtra panel, sheet, or internal SwiftUI bookkeeping window.
     private func hasDocumentWindows() -> Bool {
-        NSApp.windows.contains { window in
-            guard window.isVisible || window.isMiniaturized else { return false }
-            if window.level == .floating { return false }
-            if window.isSheet { return false }
-            if window is NSPanel { return false }
-            if window.frame.width < 50 || window.frame.height < 50 { return false }
-            return true
-        }
+        NSApp.windows.contains { WindowRouter.isVisibleUserFacingDocumentWindow($0) }
     }
 
     func shouldCloseToMenuBar(for event: NSEvent) -> Bool {
@@ -159,12 +291,66 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate {
         let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
         return modifiers == [.command]
     }
+}
 
-    func applicationWillTerminate(_ notification: Notification) {
-        if let commandQMonitor {
-            NSEvent.removeMonitor(commandQMonitor)
-            self.commandQMonitor = nil
+// MARK: - Main View (NavigationSplitView: sidebar + detail)
+
+struct MainView: View {
+    @Bindable var workspace: WorkspaceManager
+    @State private var columnVisibility: NavigationSplitViewVisibility
+
+    init(workspace: WorkspaceManager) {
+        self.workspace = workspace
+        _columnVisibility = State(initialValue: workspace.isSidebarVisible ? .all : .detailOnly)
+    }
+
+    var body: some View {
+        NavigationSplitView(columnVisibility: $columnVisibility) {
+            FileExplorerView(workspace: workspace)
+                .navigationSplitViewColumnWidth(min: 180, ideal: 220, max: 300)
+        } detail: {
+            if workspace.currentFileURL != nil {
+                ContentView(workspace: workspace)
+            } else {
+                NoFileView(workspace: workspace)
+            }
         }
+        .onChange(of: columnVisibility) { _, newValue in
+            let visible = (newValue != .detailOnly)
+            workspace.isSidebarVisible = visible
+            UserDefaults.standard.set(visible, forKey: "sidebarVisible")
+        }
+        .onChange(of: workspace.isSidebarVisible) { _, visible in
+            withAnimation {
+                columnVisibility = visible ? .all : .detailOnly
+            }
+        }
+    }
+}
+
+// MARK: - Empty State (no file open)
+
+struct NoFileView: View {
+    var workspace: WorkspaceManager
+
+    var body: some View {
+        VStack(spacing: 16) {
+            Image(systemName: "doc.text")
+                .font(.system(size: 48))
+                .foregroundStyle(.quaternary)
+            Text("No File Open")
+                .font(.title2)
+                .foregroundStyle(.secondary)
+            Text("Open a file with ⌘O or select one from the sidebar")
+                .font(.body)
+                .foregroundStyle(.tertiary)
+            Button("Open…") {
+                workspace.showOpenPanel()
+            }
+            .keyboardShortcut(.defaultAction)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Theme.backgroundColorSwiftUI)
     }
 }
 
@@ -172,8 +358,8 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate {
 struct ClearlyApp: App {
     @NSApplicationDelegateAdaptor(ClearlyAppDelegate.self) var appDelegate
     @AppStorage("themePreference") private var themePreference = "system"
-    private let recentMenuHelper = RecentMenuHelper()
     @State private var scratchpadManager = ScratchpadManager.shared
+    private let workspace = WorkspaceManager.shared
     #if canImport(Sparkle)
     private let updaterController: SPUStandardUpdaterController
     #endif
@@ -199,13 +385,36 @@ struct ClearlyApp: App {
     }
 
     var body: some Scene {
-        DocumentGroup(newDocument: MarkdownDocument()) { file in
-            ContentView(document: file.$document, fileURL: file.fileURL)
+        Window("Clearly", id: WindowRouter.sceneID) {
+            MainView(workspace: workspace)
                 .preferredColorScheme(resolvedColorScheme)
+                .background(MainWindowBridge())
         }
         .windowToolbarStyle(.unified(showsTitle: true))
-        .defaultSize(width: 720, height: 900)
+        .defaultSize(width: 920, height: 900)
         .commands {
+            // Replace New/Open with our own
+            CommandGroup(replacing: .newItem) {
+                Button("New File…") {
+                    workspace.showNewFilePanel()
+                }
+                .keyboardShortcut("n", modifiers: .command)
+
+                Button("Open…") {
+                    workspace.showOpenPanel()
+                }
+                .keyboardShortcut("o", modifiers: .command)
+            }
+
+            // Save
+            CommandGroup(replacing: .saveItem) {
+                Button("Save") {
+                    workspace.saveCurrentFileIfDirty()
+                }
+                .keyboardShortcut("s", modifiers: .command)
+                .disabled(workspace.currentFileURL == nil)
+            }
+
             #if canImport(Sparkle)
             CommandGroup(after: .appInfo) {
                 CheckForUpdatesView(updater: updaterController.updater)
@@ -217,10 +426,24 @@ struct ClearlyApp: App {
             CommandGroup(replacing: .printItem) {
                 PrintCommand()
             }
+            // View menu — sidebar, editor/preview modes, outline
+            CommandGroup(before: .toolbar) {
+                Button("Toggle Sidebar") {
+                    NSApp.sendAction(#selector(NSSplitViewController.toggleSidebar(_:)), to: nil, from: nil)
+                }
+                .keyboardShortcut("l", modifiers: [.command, .shift])
+
+                Divider()
+
+                ViewModeCommands()
+
+                Divider()
+
+                OutlineToggleCommand()
+            }
+
             CommandGroup(after: .textEditing) {
                 FindCommand()
-                OutlineToggleCommand()
-                ViewModeCommands()
             }
             CommandGroup(after: .textFormatting) {
                 FontSizeCommands()
@@ -346,6 +569,7 @@ struct ClearlyApp: App {
             ScratchpadMenuBar(manager: scratchpadManager)
         }
     }
+
 }
 
 struct FindCommand: View {

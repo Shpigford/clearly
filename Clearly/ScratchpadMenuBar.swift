@@ -27,25 +27,15 @@ struct ScratchpadMenuBar: View {
         }
 
         Button("New Document") {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                activateDocumentApp()
-                NSDocumentController.shared.newDocument(nil)
+            performMenuBarAction {
+                WorkspaceManager.shared.showNewFilePanel()
             }
         }
         .keyboardShortcut("n", modifiers: [.command])
 
         Button("Open Document") {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                activateDocumentApp()
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                    NSDocumentController.shared.openDocument(nil)
-                    // Ensure the open panel is frontmost
-                    DispatchQueue.main.async {
-                        for window in NSApp.windows where window is NSOpenPanel {
-                            window.orderFrontRegardless()
-                        }
-                    }
-                }
+            performMenuBarAction {
+                WorkspaceManager.shared.showOpenPanel()
             }
         }
         .keyboardShortcut("o", modifiers: [.command])
@@ -59,6 +49,15 @@ struct ScratchpadMenuBar: View {
 
         Button("Quit Clearly") {
             NSApp.terminate(nil)
+        }
+    }
+
+    private func performMenuBarAction(_ action: @escaping () -> Void) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+            activateDocumentApp()
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+                action()
+            }
         }
     }
 }

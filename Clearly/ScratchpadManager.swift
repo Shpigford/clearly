@@ -149,15 +149,7 @@ final class ScratchpadManager {
             }
 
             activateDocumentApp()
-            NSDocumentController.shared.openDocument(
-                withContentsOf: url,
-                display: true
-            ) { [weak self] _, _, error in
-                if let error {
-                    let alert = NSAlert(error: error)
-                    alert.runModal()
-                    return
-                }
+            if WorkspaceManager.shared.openFile(at: url) {
                 Task { @MainActor in
                     self?.windows[id]?.close()
                 }

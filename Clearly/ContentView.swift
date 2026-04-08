@@ -48,62 +48,19 @@ extension FocusedValues {
     }
 }
 
-// MARK: - Window Frame Persistence
+struct FocusedValuesModifier: ViewModifier {
+    var workspace: WorkspaceManager
+    @Binding var mode: ViewMode
+    var findState: FindState
+    var outlineState: OutlineState
 
-/// Sets NSWindow.frameAutosaveName so macOS automatically saves/restores window size and position.
-/// Uses a per-file autosave name so each document remembers its own window frame.
-struct WindowFrameSaver: NSViewRepresentable {
-    let fileURL: URL?
-
-    final class Coordinator {
-        var autosaveName: String?
-    }
-
-    private var autosaveName: String {
-        fileURL?.absoluteString ?? "ClearlyUntitledWindow"
-    }
-
-    func makeCoordinator() -> Coordinator {
-        Coordinator()
-    }
-
-    private func applyAutosaveName(
-        to window: NSWindow,
-        coordinator: Coordinator,
-        persistCurrentFrame: Bool
-    ) {
-        guard coordinator.autosaveName != autosaveName else { return }
-        coordinator.autosaveName = autosaveName
-        window.setFrameAutosaveName(autosaveName)
-        if persistCurrentFrame {
-            window.saveFrame(usingName: autosaveName)
-        }
-    }
-
-    func makeNSView(context: Context) -> NSView {
-        let view = NSView()
-        DispatchQueue.main.async {
-            if let window = view.window {
-                applyAutosaveName(
-                    to: window,
-                    coordinator: context.coordinator,
-                    persistCurrentFrame: false
-                )
-                // Ensure the document window comes to front after opening.
-                activateDocumentApp()
-                window.makeKeyAndOrderFront(nil)
-            }
-        }
-        return view
-    }
-
-    func updateNSView(_ nsView: NSView, context: Context) {
-        guard let window = nsView.window else { return }
-        applyAutosaveName(
-            to: window,
-            coordinator: context.coordinator,
-            persistCurrentFrame: context.coordinator.autosaveName != nil
-        )
+    func body(content: Content) -> some View {
+        content
+            .focusedSceneValue(\.viewMode, $mode)
+            .focusedSceneValue(\.documentText, workspace.currentFileText)
+            .focusedSceneValue(\.documentFileURL, workspace.currentFileURL)
+            .focusedSceneValue(\.findState, findState)
+            .focusedSceneValue(\.outlineState, outlineState)
     }
 }
 
@@ -118,8 +75,7 @@ struct HiddenToolbarBackground: ViewModifier {
 }
 
 struct ContentView: View {
-    @Binding var document: MarkdownDocument
-    let fileURL: URL?
+    @Bindable var workspace: WorkspaceManager
     @State private var mode: ViewMode
     @State private var positionSyncID = UUID().uuidString
     @AppStorage("editorFontSize") private var fontSize: Double = 16
@@ -127,63 +83,59 @@ struct ContentView: View {
     @StateObject private var fileWatcher = FileWatcher()
     @StateObject private var outlineState = OutlineState()
 
-    init(document: Binding<MarkdownDocument>, fileURL: URL? = nil) {
-        self._document = document
-        self.fileURL = fileURL
+    init(workspace: WorkspaceManager) {
+        self.workspace = workspace
         let storedMode = UserDefaults.standard.string(forKey: "viewMode")
         self._mode = State(initialValue: ViewMode(rawValue: storedMode ?? "") ?? .edit)
-        DiagnosticLog.log("Document opened: \(fileURL?.lastPathComponent ?? "untitled")")
     }
 
-    private var wordCount: Int {
-        document.text.split { $0.isWhitespace || $0.isNewline }.count
+    private var editorPane: some View {
+        let editorFontSize = CGFloat(fontSize)
+        let fileURL = workspace.currentFileURL
+        return EditorView(text: $workspace.currentFileText, fontSize: editorFontSize, fileURL: fileURL, mode: mode, positionSyncID: positionSyncID, findState: findState, outlineState: outlineState)
     }
 
-    private var characterCount: Int {
-        document.text.count
+    private var previewPane: some View {
+        let editorFontSize = CGFloat(fontSize)
+        let fileURL = workspace.currentFileURL
+        return PreviewView(markdown: workspace.currentFileText, fontSize: editorFontSize, mode: mode, positionSyncID: positionSyncID, fileURL: fileURL, findState: findState, outlineState: outlineState)
     }
 
-    var body: some View {
-        HStack(spacing: 0) {
-            VStack(spacing: 0) {
-                if findState.isVisible {
-                    FindBarView(findState: findState)
-                    Divider()
-                }
-                ZStack {
-                    EditorView(text: $document.text, fontSize: CGFloat(fontSize), fileURL: fileURL, mode: mode, positionSyncID: positionSyncID, findState: findState, outlineState: outlineState)
-                        .opacity(mode == .edit ? 1 : 0)
-                        .allowsHitTesting(mode == .edit)
-                    PreviewView(markdown: document.text, fontSize: CGFloat(fontSize), mode: mode, positionSyncID: positionSyncID, fileURL: fileURL, findState: findState, outlineState: outlineState)
-                        .opacity(mode == .preview ? 1 : 0)
-                        .allowsHitTesting(mode == .preview)
-                }
-            }
-            .safeAreaInset(edge: .bottom, spacing: 0) {
-                if mode != .preview {
-                    HStack(spacing: 12) {
-                        Text("\(wordCount) words")
-                        Text("\(characterCount) characters")
-                    }
-                    .font(.caption)
-                    .foregroundStyle(.tertiary)
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 6)
-                    .background(Theme.backgroundColorSwiftUI)
-                }
-            }
+    private var mainContent: some View {
+        let text = workspace.currentFileText
+        let words = text.split { $0.isWhitespace || $0.isNewline }.count
+        let chars = text.count
 
-            if outlineState.isVisible {
+        return VStack(spacing: 0) {
+            if findState.isVisible {
+                FindBarView(findState: findState)
                 Divider()
-                OutlineView(outlineState: outlineState)
             }
+            ZStack {
+                editorPane
+                    .opacity(mode == .edit ? 1 : 0)
+                    .allowsHitTesting(mode == .edit)
+                previewPane
+                    .opacity(mode == .preview ? 1 : 0)
+                    .allowsHitTesting(mode == .preview)
+            }
+        }
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            if mode != .preview {
+                statusBar(words: words, chars: chars)
+            }
+        }
+        .inspector(isPresented: $outlineState.isVisible) {
+            OutlineView(outlineState: outlineState)
+                .inspectorColumnWidth(min: 180, ideal: 200, max: 280)
         }
         .frame(minWidth: 500, minHeight: 400)
         .background(Theme.backgroundColorSwiftUI)
-        .onChange(of: mode) { _, newMode in
-            UserDefaults.standard.set(newMode.rawValue, forKey: "viewMode")
-        }
-        .toolbar {
+    }
+
+    @ToolbarContentBuilder
+    private var contentToolbar: some ToolbarContent {
+        Group {
             ToolbarItem(placement: .principal) {
                 Picker("Mode", selection: $mode) {
                     Image(systemName: "pencil")
@@ -214,27 +166,50 @@ struct ContentView: View {
                 .help("Find (Cmd+F)")
             }
         }
-        .modifier(HiddenToolbarBackground())
-        .background(WindowFrameSaver(fileURL: fileURL))
-        .animation(.easeInOut(duration: 0.15), value: mode)
-        .focusedSceneValue(\.viewMode, $mode)
-        .focusedSceneValue(\.documentText, document.text)
-        .focusedSceneValue(\.documentFileURL, fileURL)
-        .focusedSceneValue(\.findState, findState)
-        .focusedSceneValue(\.outlineState, outlineState)
-        .onAppear {
-            fileWatcher.onChange = { [self] newText in
-                document.text = newText
+    }
+
+    var body: some View {
+        mainContent
+            .onChange(of: mode) { _, newMode in
+                UserDefaults.standard.set(newMode.rawValue, forKey: "viewMode")
             }
-            fileWatcher.watch(fileURL, currentText: document.text)
-            outlineState.parseHeadings(from: document.text)
+            .toolbar { contentToolbar }
+            .modifier(HiddenToolbarBackground())
+            .animation(.easeInOut(duration: 0.15), value: mode)
+            .modifier(FocusedValuesModifier(workspace: workspace, mode: $mode, findState: findState, outlineState: outlineState))
+            .onAppear {
+                setupFileWatcher()
+                outlineState.parseHeadings(from: workspace.currentFileText)
+            }
+            .onChange(of: workspace.currentFileURL) { _, _ in
+                positionSyncID = UUID().uuidString
+                findState.isVisible = false
+                setupFileWatcher()
+                outlineState.parseHeadings(from: workspace.currentFileText)
+            }
+            .onChange(of: workspace.currentFileText) { _, newText in
+                workspace.contentDidChange()
+                fileWatcher.updateCurrentText(newText)
+                outlineState.parseHeadings(from: newText)
+            }
+    }
+
+    private func statusBar(words: Int, chars: Int) -> some View {
+        HStack(spacing: 12) {
+            Text("\(words) words")
+            Text("\(chars) characters")
         }
-        .onChange(of: fileURL) { _, newURL in
-            fileWatcher.watch(newURL, currentText: document.text)
+        .font(.caption)
+        .foregroundStyle(.tertiary)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 6)
+        .background(Theme.backgroundColorSwiftUI)
+    }
+
+    private func setupFileWatcher() {
+        fileWatcher.onChange = { [workspace] newText in
+            workspace.externalFileDidChange(newText)
         }
-        .onChange(of: document.text) { _, newText in
-            fileWatcher.updateCurrentText(newText)
-            outlineState.parseHeadings(from: newText)
-        }
+        fileWatcher.watch(workspace.currentFileURL, currentText: workspace.currentFileText)
     }
 }

@@ -34,7 +34,7 @@ struct OutlineView: View {
                 }
             }
         }
-        .frame(width: 200)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }
 
