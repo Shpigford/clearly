@@ -32,6 +32,18 @@ body:
     validations:
       required: true
 
+  - type: dropdown
+    id: install-source
+    attributes:
+      label: Installation source
+      description: How did you install Clearly?
+      options:
+        - Direct download (from website or GitHub)
+        - Mac App Store
+        - Not sure
+    validations:
+      required: true
+
   - type: input
     id: macos-version
     attributes:
