@@ -704,6 +704,12 @@ struct FileExplorerOutlineView: NSViewRepresentable {
                 revealItem.target = self
                 menu.addItem(revealItem)
 
+                if !node.isDirectory {
+                    let copyItem = NSMenuItem(title: "Copy", action: nil, keyEquivalent: "")
+                    copyItem.submenu = CopyActions.copySubmenu(for: node.url, target: self)
+                    menu.addItem(copyItem)
+                }
+
                 menu.addItem(.separator())
 
                 let deleteItem = NSMenuItem(title: "Move to Trash", action: #selector(moveToTrashAction(_:)), keyEquivalent: "")
@@ -717,6 +723,10 @@ struct FileExplorerOutlineView: NSViewRepresentable {
                 revealItem.target = self
                 menu.addItem(revealItem)
 
+                let copyItem = NSMenuItem(title: "Copy", action: nil, keyEquivalent: "")
+                copyItem.submenu = CopyActions.copySubmenu(for: url, target: self)
+                menu.addItem(copyItem)
+
             case .openDocument(let doc):
                 if doc.isUntitled {
                     let saveItem = NSMenuItem(title: "Save As…", action: #selector(saveOpenDocAction(_:)), keyEquivalent: "")
@@ -729,6 +739,11 @@ struct FileExplorerOutlineView: NSViewRepresentable {
                     revealItem.representedObject = url
                     revealItem.target = self
                     menu.addItem(revealItem)
+
+                    let copyItem = NSMenuItem(title: "Copy", action: nil, keyEquivalent: "")
+                    copyItem.submenu = CopyActions.copySubmenu(for: url, target: self)
+                    menu.addItem(copyItem)
+
                     menu.addItem(.separator())
                 }
 
@@ -844,6 +859,42 @@ struct FileExplorerOutlineView: NSViewRepresentable {
             // Switch to the document first, then save (triggers NSSavePanel for untitled)
             guard workspace.switchToDocument(docID) else { return }
             workspace.saveCurrentFile()
+        }
+
+        // MARK: - Copy Actions
+
+        @objc func copyFilePathAction(_ sender: NSMenuItem) {
+            guard let url = sender.representedObject as? URL else { return }
+            CopyActions.copyFilePath(url)
+        }
+
+        @objc func copyFileNameAction(_ sender: NSMenuItem) {
+            guard let url = sender.representedObject as? URL else { return }
+            CopyActions.copyFileName(url)
+        }
+
+        @objc func copyMarkdownAction(_ sender: NSMenuItem) {
+            guard let url = sender.representedObject as? URL else { return }
+            guard let text = workspace.textForCopy(at: url) else { return }
+            CopyActions.copyMarkdown(text)
+        }
+
+        @objc func copyHTMLAction(_ sender: NSMenuItem) {
+            guard let url = sender.representedObject as? URL else { return }
+            guard let text = workspace.textForCopy(at: url) else { return }
+            CopyActions.copyHTML(text)
+        }
+
+        @objc func copyRichTextAction(_ sender: NSMenuItem) {
+            guard let url = sender.representedObject as? URL else { return }
+            guard let text = workspace.textForCopy(at: url) else { return }
+            CopyActions.copyRichText(text)
+        }
+
+        @objc func copyPlainTextAction(_ sender: NSMenuItem) {
+            guard let url = sender.representedObject as? URL else { return }
+            guard let text = workspace.textForCopy(at: url) else { return }
+            CopyActions.copyPlainText(text)
         }
 
         // MARK: - Folder Icon Actions

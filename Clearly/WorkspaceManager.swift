@@ -487,6 +487,18 @@ final class WorkspaceManager {
         NSWorkspace.shared.activateFileViewerSelecting([url])
     }
 
+    /// Returns the freshest available markdown for copy/export actions.
+    /// Prefer the in-memory buffer for open docs; fall back to disk for closed files.
+    func textForCopy(at url: URL) -> String? {
+        if currentFileURL == url {
+            return currentFileText
+        }
+        if let doc = openDocuments.first(where: { $0.fileURL == url }) {
+            return doc.text
+        }
+        return CopyActions.readMarkdown(from: url)
+    }
+
     // MARK: - Open Panel (supports both files and folders)
 
     func showNewFilePanel(defaultFileName: String = "Untitled.md") {
