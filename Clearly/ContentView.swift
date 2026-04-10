@@ -147,6 +147,24 @@ struct ContentView: View {
                 .frame(width: 100)
                 .help("Toggle Editor/Preview (Cmd+1/Cmd+2)")
             }
+            if workspace.activeDocumentID != nil {
+                ToolbarItem(placement: .automatic) {
+                    Menu {
+                        if let url = workspace.currentFileURL {
+                            Button("Copy File Path") { CopyActions.copyFilePath(url) }
+                            Button("Copy File Name") { CopyActions.copyFileName(url) }
+                            Divider()
+                        }
+                        Button("Copy Markdown") { CopyActions.copyMarkdown(workspace.currentFileText) }
+                        Button("Copy HTML") { CopyActions.copyHTML(workspace.currentFileText) }
+                        Button("Copy Rich Text") { CopyActions.copyRichText(workspace.currentFileText) }
+                        Button("Copy Plain Text") { CopyActions.copyPlainText(workspace.currentFileText) }
+                    } label: {
+                        Image(systemName: "doc.on.doc")
+                    }
+                    .help("Copy document content")
+                }
+            }
             ToolbarItem(placement: .automatic) {
                 Button {
                     withAnimation(.easeInOut(duration: 0.2)) {
