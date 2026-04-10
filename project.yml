@@ -5,6 +5,9 @@ options:
     macOS: "14.0"
   xcodeVersion: "16.0"
   createIntermediateGroups: true
+  fileTypes:
+    icon:
+      file: true
 
 packages:
   cmark-gfm:

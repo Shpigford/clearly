@@ -1,0 +1,292 @@
+{
+  "color-space-for-untagged-svg-colors" : "display-p3",
+  "fill" : {
+    "linear-gradient" : [
+      "display-p3:0.36019,0.51492,0.63852,1.00000",
+      "display-p3:0.05536,0.13405,0.50000,1.00000"
+    ]
+  },
+  "groups" : [
+    {
+      "blend-mode-specializations" : [
+        {
+          "appearance" : "dark",
+          "value" : "plus-lighter"
+        }
+      ],
+      "layers" : [
+        {
+          "blend-mode" : "normal",
+          "fill-specializations" : [
+            {
+              "value" : "automatic"
+            },
+            {
+              "appearance" : "dark",
+              "value" : "none"
+            }
+          ],
+          "glass" : true,
+          "hidden" : false,
+          "image-name" : "framefront.svg",
+          "name" : "framefront",
+          "opacity-specializations" : [
+            {
+              "value" : 0.5
+            },
+            {
+              "appearance" : "dark",
+              "value" : 0.3
+            }
+          ]
+        }
+      ],
+      "shadow" : {
+        "kind" : "neutral",
+        "opacity" : 0.5
+      },
+      "specular" : true,
+      "translucency" : {
+        "enabled" : false,
+        "value" : 0.5
+      }
+    },
+    {
+      "blend-mode" : "plus-lighter",
+      "blur-material" : null,
+      "layers" : [
+        {
+          "blend-mode" : "normal",
+          "glass" : true,
+          "image-name" : "front faces.svg",
+          "name" : "front faces",
+          "opacity-specializations" : [
+            {
+              "value" : 0.51
+            },
+            {
+              "appearance" : "dark",
+              "value" : 0.8
+            }
+          ]
+        }
+      ],
+      "name" : "Group",
+      "shadow" : {
+        "kind" : "neutral",
+        "opacity" : 0.5
+      },
+      "specular" : true,
+      "translucency" : {
+        "enabled" : true,
+        "value" : 0.7
+      }
+    },
+    {
+      "blend-mode" : "plus-lighter",
+      "blur-material" : null,
+      "layers" : [
+        {
+          "fill" : {
+            "solid" : "display-p3:0.79715,0.68382,0.67553,1.00000"
+          },
+          "glass" : false,
+          "hidden" : false,
+          "image-name" : "Ellipse 1.png",
+          "name" : "Ellipse 1",
+          "opacity-specializations" : [
+            {
+              "value" : 0.7
+            },
+            {
+              "appearance" : "dark",
+              "value" : 0.76
+            }
+          ],
+          "position" : {
+            "scale" : 0.19,
+            "translation-in-points" : [
+              -70.96062296580376,
+              -115.4437419986356
+            ]
+          }
+        },
+        {
+          "glass" : false,
+          "hidden" : false,
+          "image-name" : "Line 2.png",
+          "name" : "Line 2",
+          "opacity-specializations" : [
+            {
+              "value" : 0.7
+            },
+            {
+              "appearance" : "dark",
+              "value" : 0.76
+            }
+          ],
+          "position" : {
+            "scale" : 0.27,
+            "translation-in-points" : [
+              4.676481162648302,
+              -119.37780729649717
+            ]
+          }
+        },
+        {
+          "glass" : true,
+          "hidden" : false,
+          "image-name" : "frameback.svg",
+          "name" : "frameback",
+          "opacity-specializations" : [
+            {
+              "value" : 0.14
+            },
+            {
+              "appearance" : "dark",
+              "value" : 0.13
+            }
+          ]
+        },
+        {
+          "hidden" : false,
+          "image-name" : "Rectangle 67.png",
+          "name" : "Rectangle 67",
+          "position" : {
+            "scale" : 0.11,
+            "translation-in-points" : [
+              3.4781422082353854,
+              -100.08339973718893
+            ]
+          }
+        },
+        {
+          "fill-specializations" : [
+            {
+              "appearance" : "dark",
+              "value" : {
+                "solid" : "display-p3:0.96375,1.00000,0.99022,1.00000"
+              }
+            }
+          ],
+          "glass" : true,
+          "image-name" : "Line 1.svg",
+          "name" : "Line 1",
+          "position" : {
+            "scale" : 1,
+            "translation-in-points" : [
+              -506.34375,
+              -5.609375
+            ]
+          }
+        },
+        {
+          "glass" : false,
+          "image-name" : "Rectangle 6.png",
+          "name" : "Rectangle 6",
+          "position" : {
+            "scale" : 0.34,
+            "translation-in-points" : [
+              579.6640625,
+              33.3359375
+            ]
+          }
+        },
+        {
+          "glass" : false,
+          "hidden" : false,
+          "image-name" : "Rectangle 4.png",
+          "name" : "Rectangle 4",
+          "position" : {
+            "scale" : 0.25,
+            "translation-in-points" : [
+              -7.8828125,
+              208.4921875
+            ]
+          }
+        }
+      ],
+      "name" : "Group",
+      "shadow" : {
+        "kind" : "neutral",
+        "opacity" : 0.5
+      },
+      "specular" : true,
+      "translucency" : {
+        "enabled" : true,
+        "value" : 0.5
+      }
+    },
+    {
+      "blend-mode-specializations" : [
+        {
+          "value" : "overlay"
+        },
+        {
+          "appearance" : "dark",
+          "value" : "plus-lighter"
+        },
+        {
+          "appearance" : "tinted",
+          "value" : "normal"
+        }
+      ],
+      "blur-material" : null,
+      "layers" : [
+        {
+          "fill" : "none",
+          "glass" : false,
+          "hidden" : false,
+          "image-name" : "refractions.svg",
+          "name" : "refractions",
+          "opacity-specializations" : [
+            {
+              "value" : 0.2
+            },
+            {
+              "appearance" : "dark",
+              "value" : 0.040000000000000015
+            },
+            {
+              "appearance" : "tinted",
+              "value" : 0.12
+            }
+          ]
+        },
+        {
+          "glass" : true,
+          "hidden" : false,
+          "image-name" : "backfaces.svg",
+          "name" : "backfaces",
+          "opacity-specializations" : [
+            {
+              "value" : 0.5
+            },
+            {
+              "appearance" : "dark",
+              "value" : 0.16000000000000003
+            },
+            {
+              "appearance" : "tinted",
+              "value" : 0.7
+            }
+          ]
+        }
+      ],
+      "shadow" : {
+        "kind" : "neutral",
+        "opacity" : 0.5
+      },
+      "specular" : false,
+      "translucency" : {
+        "enabled" : true,
+        "value" : 0.5
+      }
+    }
+  ],
+  "supported-platforms" : {
+    "squares" : [
+      "macOS"
+    ]
+  }
+}
