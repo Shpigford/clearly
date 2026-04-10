@@ -71,6 +71,12 @@ class FlatSectionOutlineView: NSOutlineView {
         }
         return frame
     }
+
+    // Allow buttons inside cell views to receive clicks
+    override func validateProposedFirstResponder(_ responder: NSResponder, for event: NSEvent?) -> Bool {
+        if responder is NSButton { return true }
+        return super.validateProposedFirstResponder(responder, for: event)
+    }
 }
 
 // MARK: - NSOutlineView wrapper
@@ -197,6 +203,7 @@ struct FileExplorerOutlineView: NSViewRepresentable {
 
         // Prevent re-entrant selection changes
         private var isProgrammaticSelection = false
+        private weak var clearRecentsButton: NSButton?
 
         init(workspace: WorkspaceManager) {
             self.workspace = workspace
@@ -297,6 +304,7 @@ struct FileExplorerOutlineView: NSViewRepresentable {
             outlineView.reloadData()
             // autosaveExpandedItems handles restoration automatically
             selectCurrentFile()
+            clearRecentsButton?.isHidden = workspace.recentFiles.isEmpty
         }
 
         func selectCurrentFile() {
@@ -369,9 +377,15 @@ struct FileExplorerOutlineView: NSViewRepresentable {
 
         // MARK: - Data Source
 
-        /// Untitled open documents shown at the top of RECENTS.
-        private var untitledDocs: [OpenDocument] {
-            workspace.openDocuments.filter { $0.isUntitled }
+        /// Open documents shown at the top of RECENTS.
+        private var recentSectionOpenDocs: [OpenDocument] {
+            workspace.openDocuments
+        }
+
+        /// Recent files that are not already visible as open documents.
+        private var recentHistoryFiles: [URL] {
+            let openFileURLs = Set(workspace.openDocuments.compactMap(\.fileURL))
+            return workspace.recentFiles.filter { !openFileURLs.contains($0) }
         }
 
         func outlineView(_ outlineView: NSOutlineView, numberOfChildrenOfItem item: Any?) -> Int {
@@ -382,7 +396,7 @@ struct FileExplorerOutlineView: NSViewRepresentable {
             case .section(.locations):
                 return workspace.locations.count
             case .section(.recents):
-                return untitledDocs.count + workspace.recentFiles.count
+                return recentSectionOpenDocs.count + recentHistoryFiles.count
             case .location(let loc):
                 return loc.fileTree.count
             case .fileNode(let node):
@@ -400,11 +414,11 @@ struct FileExplorerOutlineView: NSViewRepresentable {
             case .section(.locations):
                 return self.item(for: workspace.locations[index])
             case .section(.recents):
-                let untitled = untitledDocs
-                if index < untitled.count {
-                    return self.item(for: untitled[index])
+                let openDocs = recentSectionOpenDocs
+                if index < openDocs.count {
+                    return self.item(for: openDocs[index])
                 }
-                return self.item(for: workspace.recentFiles[index - untitled.count])
+                return self.item(for: recentHistoryFiles[index - openDocs.count])
             case .location(let loc):
                 return self.item(for: loc.fileTree[index])
             case .fileNode(let node):
@@ -520,6 +534,27 @@ struct FileExplorerOutlineView: NSViewRepresentable {
                         addBtn.centerYAnchor.constraint(equalTo: cell.centerYAnchor),
                         addBtn.widthAnchor.constraint(equalToConstant: 16),
                         addBtn.heightAnchor.constraint(equalToConstant: 16),
+                    ])
+                } else if section == .recents {
+                    let clearBtn = NSButton(frame: .zero)
+                    clearBtn.bezelStyle = .inline
+                    clearBtn.isBordered = false
+                    clearBtn.image = NSImage(systemSymbolName: "xmark", accessibilityDescription: "Clear Recents")
+                    clearBtn.imagePosition = .imageOnly
+                    clearBtn.toolTip = "Clear Recents"
+                    clearBtn.target = self
+                    clearBtn.action = #selector(clearRecentsAction(_:))
+                    clearBtn.tag = addButtonTag
+                    clearBtn.translatesAutoresizingMaskIntoConstraints = false
+                    clearBtn.contentTintColor = .secondaryLabelColor
+                    clearBtn.isHidden = workspace.recentFiles.isEmpty
+                    self.clearRecentsButton = clearBtn
+                    cell.addSubview(clearBtn)
+                    NSLayoutConstraint.activate([
+                        clearBtn.trailingAnchor.constraint(equalTo: cell.trailingAnchor, constant: -4),
+                        clearBtn.centerYAnchor.constraint(equalTo: cell.centerYAnchor),
+                        clearBtn.widthAnchor.constraint(equalToConstant: 16),
+                        clearBtn.heightAnchor.constraint(equalToConstant: 16),
                     ])
                 }
 
@@ -755,11 +790,30 @@ struct FileExplorerOutlineView: NSViewRepresentable {
                 menu.addItem(closeItem)
 
             case .section(.recents):
-                break
+                if !workspace.recentFiles.isEmpty {
+                    let clearItem = NSMenuItem(title: "Clear Recents", action: #selector(clearRecentsAction(_:)), keyEquivalent: "")
+                    clearItem.target = self
+                    menu.addItem(clearItem)
+                }
             }
         }
 
         // MARK: - Context Menu Actions
+
+        @objc func clearRecentsAction(_ sender: Any) {
+            // Close all open documents (prompts to save dirty ones)
+            let docIDs = workspace.openDocuments.map(\.id)
+            for id in docIDs {
+                if !workspace.closeDocument(id) {
+                    return // User cancelled a save prompt — abort
+                }
+            }
+
+            workspace.clearRecents()
+            recentItems.removeAll()
+            openDocItems.removeAll()
+            reloadAndExpand()
+        }
 
         @objc func addLocationAction(_ sender: NSMenuItem) {
             workspace.showOpenPanel()

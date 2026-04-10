@@ -426,6 +426,12 @@ final class WorkspaceManager {
         persistRecents()
     }
 
+    func clearRecents() {
+        recentFiles.removeAll()
+        UserDefaults.standard.removeObject(forKey: Self.lastOpenFileKey)
+        persistRecents()
+    }
+
     // MARK: - File Operations
 
     func createFile(named name: String, in folderURL: URL) -> URL? {
