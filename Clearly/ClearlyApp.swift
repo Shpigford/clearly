@@ -342,7 +342,8 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate {
 
     func shouldToggleHiddenFiles(for event: NSEvent) -> Bool {
         guard event.type == .keyDown else { return false }
-        guard event.charactersIgnoringModifiers == "." else { return false }
+        // keyCode 47 = period key; charactersIgnoringModifiers gives ">" when Shift is held
+        guard event.keyCode == 47 else { return false }
 
         let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
         guard modifiers == [.command, .shift] else { return false }
