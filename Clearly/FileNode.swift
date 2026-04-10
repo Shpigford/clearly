@@ -5,6 +5,7 @@ struct FileNode: Identifiable, Hashable {
     var id: URL { url }
     let name: String
     let url: URL
+    let isHidden: Bool
     var children: [FileNode]?
 
     var isDirectory: Bool { children != nil }
@@ -14,12 +15,13 @@ struct FileNode: Identifiable, Hashable {
     ]
 
     /// Build a file tree from a directory URL, filtering to markdown files.
-    static func buildTree(at url: URL) -> [FileNode] {
+    static func buildTree(at url: URL, showHiddenFiles: Bool = false) -> [FileNode] {
         let fm = FileManager.default
+        let options: FileManager.DirectoryEnumerationOptions = showHiddenFiles ? [] : [.skipsHiddenFiles]
         guard let contents = try? fm.contentsOfDirectory(
             at: url,
             includingPropertiesForKeys: [.isDirectoryKey, .nameKey],
-            options: [.skipsHiddenFiles]
+            options: options
         ) else { return [] }
 
         var folders: [FileNode] = []
@@ -28,15 +30,16 @@ struct FileNode: Identifiable, Hashable {
         for itemURL in contents {
             let isDir = (try? itemURL.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory ?? false
             let name = itemURL.lastPathComponent
+            let hidden = name.hasPrefix(".")
 
             if isDir {
-                let children = buildTree(at: itemURL)
+                let children = buildTree(at: itemURL, showHiddenFiles: showHiddenFiles)
                 // Only include folders that contain markdown files (directly or nested)
                 if !children.isEmpty {
-                    folders.append(FileNode(name: name, url: itemURL, children: children))
+                    folders.append(FileNode(name: name, url: itemURL, isHidden: hidden, children: children))
                 }
             } else if markdownExtensions.contains(itemURL.pathExtension.lowercased()) {
-                files.append(FileNode(name: name, url: itemURL, children: nil))
+                files.append(FileNode(name: name, url: itemURL, isHidden: hidden, children: nil))
             }
         }
 

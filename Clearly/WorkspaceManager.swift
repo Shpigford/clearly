@@ -32,6 +32,7 @@ final class WorkspaceManager {
     // MARK: - Sidebar
 
     var isSidebarVisible: Bool = false
+    var showHiddenFiles: Bool = false
 
     // MARK: - Private
 
@@ -48,6 +49,7 @@ final class WorkspaceManager {
     private static let sidebarVisibleKey = "sidebarVisible"
     private static let launchBehaviorKey = "launchBehavior"
     private static let folderIconsKey = "folderIcons"
+    private static let showHiddenFilesKey = "showHiddenFiles"
 
     /// Custom folder icons keyed by folder path (URL.path → SF Symbol name).
     var folderIcons: [String: String] = [:]
@@ -62,6 +64,7 @@ final class WorkspaceManager {
 
     init() {
         isSidebarVisible = UserDefaults.standard.bool(forKey: Self.sidebarVisibleKey)
+        showHiddenFiles = UserDefaults.standard.bool(forKey: Self.showHiddenFilesKey)
         folderIcons = UserDefaults.standard.dictionary(forKey: Self.folderIconsKey) as? [String: String] ?? [:]
         restoreLocations()
         restoreRecents()
@@ -87,6 +90,14 @@ final class WorkspaceManager {
     func toggleSidebar() {
         isSidebarVisible.toggle()
         UserDefaults.standard.set(isSidebarVisible, forKey: Self.sidebarVisibleKey)
+    }
+
+    func toggleShowHiddenFiles() {
+        showHiddenFiles.toggle()
+        UserDefaults.standard.set(showHiddenFiles, forKey: Self.showHiddenFilesKey)
+        for index in locations.indices {
+            locations[index].fileTree = FileNode.buildTree(at: locations[index].url, showHiddenFiles: showHiddenFiles)
+        }
     }
 
     // MARK: - Open Documents
@@ -375,7 +386,7 @@ final class WorkspaceManager {
         }
         accessedURLs.insert(url)
 
-        let tree = FileNode.buildTree(at: url)
+        let tree = FileNode.buildTree(at: url, showHiddenFiles: showHiddenFiles)
         let location = BookmarkedLocation(
             url: url,
             bookmarkData: bookmarkData,
@@ -401,7 +412,7 @@ final class WorkspaceManager {
 
     func refreshTree(for locationID: UUID) {
         guard let index = locations.firstIndex(where: { $0.id == locationID }) else { return }
-        locations[index].fileTree = FileNode.buildTree(at: locations[index].url)
+        locations[index].fileTree = FileNode.buildTree(at: locations[index].url, showHiddenFiles: showHiddenFiles)
     }
 
     // MARK: - Recents
@@ -563,7 +574,7 @@ final class WorkspaceManager {
             guard url.startAccessingSecurityScopedResource() else { continue }
             accessedURLs.insert(url)
 
-            let tree = FileNode.buildTree(at: url)
+            let tree = FileNode.buildTree(at: url, showHiddenFiles: showHiddenFiles)
             let location = BookmarkedLocation(
                 id: bookmark.id,
                 url: url,

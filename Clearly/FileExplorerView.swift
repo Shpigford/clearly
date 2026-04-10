@@ -495,6 +495,7 @@ struct FileExplorerOutlineView: NSViewRepresentable {
             cell.viewWithTag(addButtonTag)?.removeFromSuperview()
             cell.textField?.font = .systemFont(ofSize: 12)
             cell.textField?.textColor = .labelColor
+            cell.alphaValue = 1.0
 
             switch outlineItem.kind {
             case .section(let section):
@@ -546,6 +547,7 @@ struct FileExplorerOutlineView: NSViewRepresentable {
                     cell.imageView?.contentTintColor = .tertiaryLabelColor
                 }
                 cell.imageView?.isHidden = false
+                if node.isHidden { cell.alphaValue = 0.5 }
 
             case .recentFile(let url):
                 let filename = url.lastPathComponent

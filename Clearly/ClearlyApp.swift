@@ -136,6 +136,7 @@ struct MainWindowMarker: NSViewRepresentable {
 final class ClearlyAppDelegate: NSObject, NSApplicationDelegate {
     private var observers: [Any] = []
     private var commandQMonitor: Any?
+    private var showHiddenFilesMonitor: Any?
     private var isProgrammaticallyClosingWindows = false
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -173,6 +174,13 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate {
             guard let self else { return event }
             guard self.shouldCloseToMenuBar(for: event) else { return event }
             self.closeDocumentWindowsToMenuBar()
+            return nil
+        }
+
+        showHiddenFilesMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            guard let self else { return event }
+            guard self.shouldToggleHiddenFiles(for: event) else { return event }
+            WorkspaceManager.shared.toggleShowHiddenFiles()
             return nil
         }
 
@@ -226,6 +234,10 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate {
         if let commandQMonitor {
             NSEvent.removeMonitor(commandQMonitor)
             self.commandQMonitor = nil
+        }
+        if let showHiddenFilesMonitor {
+            NSEvent.removeMonitor(showHiddenFilesMonitor)
+            self.showHiddenFilesMonitor = nil
         }
     }
 
@@ -326,6 +338,19 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate {
 
         let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
         return modifiers == [.command]
+    }
+
+    func shouldToggleHiddenFiles(for event: NSEvent) -> Bool {
+        guard event.type == .keyDown else { return false }
+        guard event.charactersIgnoringModifiers == "." else { return false }
+
+        let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+        guard modifiers == [.command, .shift] else { return false }
+
+        guard let window = event.window else { return false }
+        guard WindowRouter.isMainDocumentWindow(window) else { return false }
+
+        return true
     }
 }
 
@@ -489,6 +514,12 @@ struct ClearlyApp: App {
                 Divider()
 
                 OutlineToggleCommand()
+
+                Divider()
+
+                Button(workspace.showHiddenFiles ? "Hide Hidden Files" : "Show Hidden Files") {
+                    workspace.toggleShowHiddenFiles()
+                }
             }
 
             CommandGroup(after: .textEditing) {
