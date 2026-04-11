@@ -157,4 +157,4 @@ This repo includes a `CLAUDE.md` file with full architecture context and Claude 
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+FSL-1.1-MIT — see [LICENSE](LICENSE). Code converts to MIT after two years.
