@@ -31,7 +31,7 @@ final class MarkdownSyntaxHighlighter: NSObject {
         add("^\\$\\$\\n([\\s\\S]*?)^\\$\\$\\s*$", .mathBlock, options: .anchorsMatchLines)
 
         // Inline math: $...$
-        add("(?<!\\$)\\$(?!\\$)(.+?)(?<!\\$)\\$(?!\\$)", .mathInline)
+        add("(?<!\\$)\\$(?!\\$)([^\n$]+?)(?<!\\$)\\$(?!\\$)", .mathInline)
 
         // Headings: # Heading
         add("^(#{1,6}\\s+)(.+)$", .heading, options: .anchorsMatchLines)
@@ -46,13 +46,19 @@ final class MarkdownSyntaxHighlighter: NSObject {
         add("(?<![\\w*])(\\*(?!\\*)|_(?!_))(?!\\s)(.+?)(?<!\\s)\\1(?![\\w*])", .italic)
 
         // Strikethrough: ~~text~~
-        add("(~~)(.+?)(~~)", .strikethrough)
+        add("(~~)([^\n]+?)(~~)", .strikethrough)
 
         // Inline code: `code`
-        add("(`+)(.+?)(\\1)", .inlineCode)
+        add("(`+)([^\n]+?)(\\1)", .inlineCode)
+
+        // Images: ![alt](src) — must come before links
+        add("(!\\[)([^\\]\n]*)(\\]\\([^\n]+?\\))", .link)
 
         // Links: [text](url)
-        add("(\\[)(.+?)(\\]\\(.+?\\))", .link)
+        add("(\\[)([^\n]+?)(\\]\\([^\n]+?\\))", .link)
+
+        // Reference links: [text][ref]
+        add("(\\[)([^\\]\n]+)(\\])(\\[)([^\\]\n]*)(\\])", .link)
 
         // Blockquotes: > text
         add("^(>+\\s?)(.*)$", .blockquote, options: .anchorsMatchLines)
@@ -68,6 +74,21 @@ final class MarkdownSyntaxHighlighter: NSObject {
 
         // Horizontal rule
         add("^([-*_]{3,})\\s*$", .syntax, options: .anchorsMatchLines)
+
+        // Highlight/Mark: ==text==
+        add("(==)([^=\n]+?)(==)", .highlight)
+
+        // Footnote markers: [^ref]
+        add("(\\[\\^)([^\\]\n]+)(\\])", .footnote)
+
+        // Table rows: lines with pipes
+        add("^(\\|.+\\|)\\s*$", .syntax, options: .anchorsMatchLines)
+
+        // Setext headings: text followed by === or --- on next line
+        add("^(.+)\\n(={3,}|-{3,})\\s*$", .heading, options: .anchorsMatchLines)
+
+        // HTML tags
+        add("(</?[a-zA-Z][a-zA-Z0-9]*(?:\\s+[^>]*)?>)", .htmlTag)
 
         return result
     }()
@@ -89,6 +110,9 @@ final class MarkdownSyntaxHighlighter: NSObject {
         case mathBlock
         case mathInline
         case frontmatter
+        case highlight
+        case footnote
+        case htmlTag
     }
 
     // MARK: - Highlighting
@@ -271,6 +295,25 @@ final class MarkdownSyntaxHighlighter: NSObject {
                         textStorage.addAttribute(.foregroundColor, value: Theme.syntaxColor, range: closeRange)
                         textStorage.addAttribute(.foregroundColor, value: Theme.mathColor, range: contentRange)
                     }
+
+                case .highlight:
+                    if match.numberOfRanges >= 4 {
+                        let openRange = match.range(at: 1)
+                        let contentRange = match.range(at: 2)
+                        let closeRange = match.range(at: 3)
+                        textStorage.addAttribute(.foregroundColor, value: Theme.syntaxColor, range: openRange)
+                        textStorage.addAttribute(.foregroundColor, value: Theme.syntaxColor, range: closeRange)
+                        textStorage.addAttributes([
+                            .foregroundColor: Theme.highlightColor,
+                            .backgroundColor: Theme.highlightBackgroundColor
+                        ], range: contentRange)
+                    }
+
+                case .footnote:
+                    textStorage.addAttribute(.foregroundColor, value: Theme.footnoteColor, range: match.range)
+
+                case .htmlTag:
+                    textStorage.addAttribute(.foregroundColor, value: Theme.htmlTagColor, range: match.range)
 
                 case .frontmatter:
                     let matchedText = (text as NSString).substring(with: match.range)

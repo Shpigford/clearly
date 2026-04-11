@@ -11,57 +11,68 @@ enum PreviewCSS {
     tr:hover td { background-color: transparent !important; }
     th { cursor: default !important; }
     body {
-        color: #222222 !important;
+        color: #1D1D1F !important;
         background: white !important;
         max-width: none !important;
         margin: 0 !important;
         padding: 0 !important;
     }
-    a { color: #3366AA !important; }
+    a { color: #0071E3 !important; }
     code {
-        background-color: #F0F0F0 !important;
-        color: #CC3333 !important;
+        background-color: #F5F5F7 !important;
+        color: #1D1D1F !important;
     }
     pre {
-        background-color: #F5F5F5 !important;
-        border-color: #E0E0E0 !important;
-        color: #222222 !important;
+        background-color: #F5F5F7 !important;
+        color: #1D1D1F !important;
     }
     pre code {
         background: none !important;
-        color: #222222 !important;
+        color: #1D1D1F !important;
     }
     blockquote {
-        border-left-color: #CCCCCC !important;
-        color: #666666 !important;
+        border: none !important;
+        color: #48484A !important;
     }
     table th {
-        background-color: #F5F5F5 !important;
-        border-color: #DDDDDD !important;
+        background-color: transparent !important;
+        border-color: rgba(0, 0, 0, 0.12) !important;
     }
     table td {
-        border-color: #EEEEEE !important;
+        border-color: rgba(0, 0, 0, 0.06) !important;
     }
     table tr:nth-child(even) {
-        background-color: #FAFAFA !important;
+        background-color: transparent !important;
     }
     hr {
-        border-color: #DDDDDD !important;
+        border-color: rgba(0, 0, 0, 0.12) !important;
     }
     .img-placeholder {
-        background-color: #F0F0F0 !important;
-        border-color: #CCCCCC !important;
-        color: #999999 !important;
+        background-color: #F5F5F7 !important;
+        border-color: rgba(0, 0, 0, 0.12) !important;
+        color: #AEAEB2 !important;
     }
     .frontmatter {
-        background-color: #F0F0F0 !important;
+        background-color: #F5F5F7 !important;
     }
     .frontmatter dt {
-        color: #555555 !important;
+        color: #86868B !important;
     }
     .frontmatter dd {
-        color: #333333 !important;
+        color: #1D1D1F !important;
     }
+    mark {
+        background-color: rgba(255, 212, 0, 0.4) !important;
+    }
+    .callout {
+        border: none !important;
+        background-color: rgba(0, 0, 0, 0.03) !important;
+    }
+    details.callout > summary::before { content: "" !important; }
+    .toc { background-color: #F5F5F7 !important; }
+    .heading-anchor { display: none !important; }
+    .lightbox-overlay { display: none !important; }
+    .footnote-popover { display: none !important; }
     .page-break {
         height: 0 !important;
         border: none !important;
@@ -94,106 +105,24 @@ enum PreviewCSS {
     }
 
     body {
-        font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif;
+        font-family: system-ui, -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "Helvetica Neue", sans-serif;
         font-size: \(Int(fontSize))px;
-        line-height: 1.6;
+        line-height: 1.75;
         max-width: 61em;
         margin: 0 auto;
-        padding: 10px 60px 40px;
-        color: #222222;
-        background-color: #FAFAFA;
+        padding: 16px 64px 48px;
+        color: #1D1D1F;
+        background-color: #FFFFFF;
         -webkit-font-smoothing: antialiased;
-    }
-
-    @media (prefers-color-scheme: dark) {
-        body {
-            color: #E0E0E0;
-            background-color: #1A1A1A;
-        }
-        a { color: #6699CC; }
-        code {
-            background-color: #2A2A2A !important;
-            color: #E07070 !important;
-        }
-        pre {
-            background-color: #2A2A2A !important;
-            border-color: #333333 !important;
-            color: #E0E0E0 !important;
-        }
-        pre code {
-            background: none !important;
-            color: #E0E0E0 !important;
-        }
-        .code-copy-btn {
-            background: rgba(255, 255, 255, 0.06);
-            color: #999999;
-        }
-        .code-copy-btn:hover {
-            background: rgba(255, 255, 255, 0.1);
-        }
-        .code-copy-btn:active {
-            background: rgba(255, 255, 255, 0.14);
-        }
-        .code-copy-btn.copied {
-            color: #3fb950;
-        }
-        blockquote {
-            border-left-color: #444444;
-            color: #999999;
-        }
-        table th {
-            background-color: #2A2A2A;
-            border-color: #444444;
-        }
-        table th:hover {
-            background-color: #333333;
-        }
-        table td {
-            border-color: #333333;
-        }
-        table tr:nth-child(even) {
-            background-color: #222222;
-        }
-        tr:hover td {
-            background-color: rgba(255, 255, 255, 0.03);
-        }
-        caption {
-            color: #999999;
-        }
-        .table-copy-btn {
-            background: rgba(255, 255, 255, 0.06);
-            color: #999999;
-        }
-        .table-copy-btn:hover {
-            background: rgba(255, 255, 255, 0.1);
-        }
-        .table-copy-btn:active {
-            background: rgba(255, 255, 255, 0.14);
-        }
-        .table-copy-btn.copied {
-            color: #3fb950;
-        }
-        hr {
-            border-color: #333333;
-        }
-        .frontmatter {
-            background-color: #222222 !important;
-            border: 1px solid #333333 !important;
-        }
-        .frontmatter dt {
-            color: #777777 !important;
-        }
-        .frontmatter dd {
-            color: #999999 !important;
-        }
+        -webkit-text-size-adjust: 100%;
     }
 
     h1, h2, h3, h4, h5, h6 {
-        font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif;
-        font-weight: 700;
-        line-height: 1.3;
-        margin-top: 1.5em;
-        margin-bottom: 0.5em;
+        font-family: system-ui, -apple-system, BlinkMacSystemFont, "SF Pro Display", "Helvetica Neue", sans-serif;
+        line-height: 1.25;
+        margin-top: 2em;
+        margin-bottom: 0.75em;
+        letter-spacing: -0.015em;
     }
 
     body > *:first-child {
@@ -203,9 +132,9 @@ enum PreviewCSS {
     /* Frontmatter metadata */
     .frontmatter {
         margin-bottom: 1.5em;
-        padding: 0.75em 1em;
-        background-color: #F0F0F0;
-        border-radius: 6px;
+        padding: 1em 1.25em;
+        background-color: rgba(0, 0, 0, 0.03);
+        border-radius: 10px;
         font-size: 0.85em;
     }
 
@@ -227,7 +156,7 @@ enum PreviewCSS {
 
     .frontmatter dt {
         font-weight: 600;
-        color: #555555;
+        color: #86868B;
         min-width: 6em;
     }
 
@@ -237,7 +166,7 @@ enum PreviewCSS {
 
     .frontmatter dd {
         margin: 0;
-        color: #333333;
+        color: #1D1D1F;
         white-space: pre-wrap;
     }
 
@@ -251,17 +180,19 @@ enum PreviewCSS {
         font-size: 0.95em;
     }
 
-    h1 { font-size: 2em; }
-    h2 { font-size: 1.5em; }
-    h3 { font-size: 1.25em; }
-    h4 { font-size: 1.1em; }
+    h1 { font-size: 2.25em; font-weight: 700; letter-spacing: -0.025em; }
+    h2 { font-size: 1.625em; font-weight: 650; }
+    h3 { font-size: 1.3125em; font-weight: 600; }
+    h4 { font-size: 1.125em; font-weight: 600; }
+    h5 { font-size: 1em; font-weight: 600; }
+    h6 { font-size: 0.9375em; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: rgba(29, 29, 31, 0.55); }
 
     p {
-        margin-bottom: 1em;
+        margin-bottom: 1.125em;
     }
 
     a {
-        color: #3366AA;
+        color: #0071E3;
         text-decoration: none;
     }
     a:hover {
@@ -270,20 +201,20 @@ enum PreviewCSS {
 
     code {
         font-family: "SF Mono", SFMono-Regular, Menlo, monospace;
-        font-size: 0.85em;
-        background-color: #F0F0F0;
-        color: #CC3333;
-        padding: 0.15em 0.35em;
-        border-radius: 3px;
+        font-size: 0.875em;
+        background-color: rgba(0, 0, 0, 0.04);
+        color: #1D1D1F;
+        padding: 0.125em 0.375em;
+        border-radius: 5px;
     }
 
     pre {
         position: relative;
-        background-color: #F5F5F5;
-        border: 1px solid #E0E0E0;
-        border-radius: 4px;
-        padding: 1em;
-        margin-bottom: 1em;
+        background-color: #F5F5F7;
+        border: none;
+        border-radius: 10px;
+        padding: 1.125em 1.25em;
+        margin-bottom: 1.25em;
         overflow-x: auto;
     }
 
@@ -296,9 +227,9 @@ enum PreviewCSS {
         padding: 0;
         margin: 0;
         border: none;
-        border-radius: 4px;
-        background: rgba(0, 0, 0, 0.04);
-        color: #666666;
+        border-radius: 6px;
+        background: rgba(0, 0, 0, 0.05);
+        color: #86868B;
         cursor: pointer;
         opacity: 0;
         transition: opacity 0.15s ease;
@@ -312,7 +243,7 @@ enum PreviewCSS {
     }
 
     .code-copy-btn.copied {
-        color: #2ea043;
+        color: #34C759;
     }
 
     pre:hover .code-copy-btn {
@@ -335,25 +266,29 @@ enum PreviewCSS {
         background: none;
         color: inherit;
         padding: 0;
-        font-size: 0.85em;
+        font-size: 0.875em;
     }
 
     blockquote {
-        border-left: 3px solid #CCCCCC;
-        padding-left: 1em;
+        border: none;
+        background-color: rgba(0, 0, 0, 0.03);
+        border-radius: 8px;
+        padding: 0.75em 1.25em;
         margin-left: 0;
-        margin-bottom: 1em;
-        color: #666666;
-        font-style: italic;
+        margin-bottom: 1.25em;
+        color: #48484A;
+    }
+    blockquote > *:last-child {
+        margin-bottom: 0;
     }
 
     ul, ol {
         margin-bottom: 1em;
-        padding-left: 1.5em;
+        padding-left: 1.625em;
     }
 
     li {
-        margin-bottom: 0.25em;
+        margin-bottom: 0.3em;
     }
 
     /* Task lists */
@@ -401,7 +336,7 @@ enum PreviewCSS {
     }
 
     th, td {
-        padding: 0.5em 0.75em;
+        padding: 0.625em 0.875em;
         max-width: 20em;
         overflow-wrap: break-word;
     }
@@ -414,27 +349,27 @@ enum PreviewCSS {
 
     th {
         font-weight: 600;
-        background-color: #F5F5F5;
-        border-bottom: 2px solid #DDDDDD;
+        background-color: transparent;
+        border-bottom: 1px solid rgba(0, 0, 0, 0.12);
         cursor: pointer;
         user-select: none;
         white-space: nowrap;
     }
 
     th:hover {
-        background-color: #EEEEEE;
+        background-color: rgba(0, 0, 0, 0.03);
     }
 
     td {
-        border-bottom: 1px solid #EEEEEE;
+        border-bottom: 1px solid rgba(0, 0, 0, 0.06);
     }
 
     tr:nth-child(even) {
-        background-color: #FAFAFA;
+        background-color: transparent;
     }
 
     tr:hover td {
-        background-color: rgba(0, 0, 0, 0.03);
+        background-color: rgba(0, 0, 0, 0.02);
     }
 
     .sort-indicator {
@@ -453,7 +388,7 @@ enum PreviewCSS {
         text-align: left;
         font-size: 0.9em;
         font-weight: 500;
-        color: #666666;
+        color: #86868B;
         padding-bottom: 0.5em;
     }
 
@@ -465,9 +400,9 @@ enum PreviewCSS {
         padding: 0;
         margin: 0;
         border: none;
-        border-radius: 4px;
-        background: rgba(0, 0, 0, 0.04);
-        color: #666666;
+        border-radius: 6px;
+        background: rgba(0, 0, 0, 0.05);
+        color: #86868B;
         cursor: pointer;
         opacity: 0;
         pointer-events: none;
@@ -484,7 +419,7 @@ enum PreviewCSS {
     }
 
     .table-copy-btn.copied {
-        color: #2ea043;
+        color: #34C759;
     }
 
     .table-shell:hover .table-copy-btn,
@@ -511,22 +446,155 @@ enum PreviewCSS {
 
     hr {
         border: none;
-        border-top: 1px solid #DDDDDD;
-        margin: 2em 0;
+        border-top: 0.5px solid rgba(0, 0, 0, 0.1);
+        margin: 2.5em 0;
     }
 
     .page-break {
         display: block;
         height: 0;
-        border-top: 2px dashed #CCCCCC;
+        border-top: 1px dashed rgba(0, 0, 0, 0.12);
         margin: 2em 0;
     }
 
-    @media (prefers-color-scheme: dark) {
-        .page-break {
-            border-top-color: #444444;
-        }
+    /* Highlight/Mark */
+    mark {
+        background-color: rgba(255, 212, 0, 0.3);
+        color: inherit !important;
+        padding: 0.1em 0.2em;
+        border-radius: 3px;
     }
+    /* Superscript/Subscript */
+    sup, sub {
+        font-size: 0.75em;
+        line-height: 0;
+    }
+
+    /* Callouts/Admonitions */
+    .callout {
+        border: none;
+        border-radius: 10px;
+        padding: 1em 1.25em;
+        margin-bottom: 1.25em;
+        background-color: rgba(0, 122, 255, 0.1);
+    }
+    .callout-title {
+        font-weight: 600;
+        margin-bottom: 0.375em;
+        display: flex;
+        align-items: center;
+        gap: 0.4em;
+    }
+    .callout-icon { flex-shrink: 0; }
+    .callout-content > *:last-child { margin-bottom: 0; }
+    .callout-content blockquote { border-left: none; padding-left: 0; color: inherit; }
+
+    details.callout > summary { cursor: pointer; list-style: none; }
+    details.callout > summary::-webkit-details-marker { display: none; }
+    details.callout > summary::before { content: "▶"; font-size: 0.7em; margin-right: 0.3em; transition: transform 0.2s; display: inline-block; }
+    details.callout[open] > summary::before { transform: rotate(90deg); }
+
+    .callout-note, .callout-info { background-color: rgba(0, 122, 255, 0.1); }
+    .callout-tip { background-color: rgba(52, 199, 89, 0.1); }
+    .callout-important { background-color: rgba(175, 82, 222, 0.1); }
+    .callout-warning { background-color: rgba(255, 149, 0, 0.1); }
+    .callout-caution, .callout-danger { background-color: rgba(255, 59, 48, 0.1); }
+    .callout-abstract { background-color: rgba(90, 200, 250, 0.1); }
+    .callout-todo { background-color: rgba(0, 122, 255, 0.1); }
+    .callout-example { background-color: rgba(88, 86, 214, 0.1); }
+    .callout-quote { background-color: rgba(142, 142, 147, 0.1); }
+    .callout-bug, .callout-failure { background-color: rgba(255, 59, 48, 0.1); }
+    .callout-success { background-color: rgba(52, 199, 89, 0.1); }
+    .callout-question { background-color: rgba(255, 204, 0, 0.1); }
+
+    /* Table of Contents */
+    .toc {
+        background-color: rgba(0, 0, 0, 0.025);
+        border: none;
+        border-radius: 10px;
+        padding: 1.25em 1.5em;
+        margin-bottom: 1.5em;
+    }
+    .toc::before {
+        content: "Table of Contents";
+        display: block;
+        font-weight: 600;
+        font-size: 0.9em;
+        margin-bottom: 0.5em;
+        color: #86868B;
+    }
+    .toc ul {
+        margin-bottom: 0;
+        padding-left: 1.2em;
+        list-style: none;
+    }
+    .toc > ul { padding-left: 0; }
+    .toc li { margin-bottom: 0.15em; }
+    .toc a { font-size: 0.9em; }
+
+    /* Heading anchor links */
+    .heading-anchor {
+        opacity: 0;
+        margin-left: -1.2em;
+        padding-right: 0.3em;
+        text-decoration: none;
+        color: #AEAEB2;
+        font-weight: 400;
+        transition: opacity 0.15s ease;
+    }
+    h1:hover .heading-anchor, h2:hover .heading-anchor, h3:hover .heading-anchor,
+    h4:hover .heading-anchor, h5:hover .heading-anchor, h6:hover .heading-anchor {
+        opacity: 0.4;
+    }
+    .heading-anchor:hover { opacity: 1 !important; }
+
+    /* Collapsible details animation */
+    details::details-content {
+        transition: block-size 0.3s ease, opacity 0.3s ease, content-visibility 0.3s ease allow-discrete;
+        block-size: 0;
+        opacity: 0;
+        overflow: clip;
+    }
+    details[open]::details-content {
+        block-size: auto;
+        opacity: 1;
+    }
+
+    /* Image lightbox */
+    .lightbox-overlay {
+        position: fixed;
+        inset: 0;
+        background: rgba(0, 0, 0, 0.75);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 9999;
+        cursor: zoom-out;
+        opacity: 0;
+        transition: opacity 0.2s ease;
+    }
+    .lightbox-img {
+        max-width: 90vw;
+        max-height: 90vh;
+        object-fit: contain;
+        border-radius: 8px;
+    }
+
+    /* Footnote popovers */
+    .footnote-popover {
+        position: absolute;
+        max-width: 400px;
+        padding: 14px 18px;
+        background: #FFFFFF;
+        border: none;
+        border-radius: 10px;
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08), 0 0 0 0.5px rgba(0, 0, 0, 0.06);
+        font-size: 0.9em;
+        z-index: 100;
+        line-height: 1.5;
+    }
+    .footnote-popover p { margin-bottom: 0.5em; }
+    .footnote-popover p:last-child { margin-bottom: 0; }
 
     .math-block {
         text-align: center;
@@ -549,10 +617,10 @@ enum PreviewCSS {
         justify-content: center;
         gap: 8px;
         padding: 24px 16px;
-        border-radius: 6px;
-        background-color: #F0F0F0;
-        border: 1px dashed #CCCCCC;
-        color: #999999;
+        border-radius: 10px;
+        background-color: rgba(0, 0, 0, 0.03);
+        border: 1px dashed rgba(0, 0, 0, 0.12);
+        color: #AEAEB2;
         font-size: 0.85em;
         margin-bottom: 1em;
         overflow: hidden;
@@ -581,17 +649,127 @@ enum PreviewCSS {
         height: auto;
     }
 
+    /* ========== Dark Mode ========== */
     @media (prefers-color-scheme: dark) {
-        .mermaid {
-            color: #E0E0E0;
+        body {
+            color: #F5F5F7;
+            background-color: #1C1C1E;
         }
-    }
-
-    @media (prefers-color-scheme: dark) {
+        a { color: #0A84FF; }
+        h6 { color: rgba(245, 245, 247, 0.55); }
+        code {
+            background-color: rgba(255, 255, 255, 0.06);
+            color: #F5F5F7;
+        }
+        pre {
+            background-color: rgba(255, 255, 255, 0.05);
+            color: #F5F5F7;
+        }
+        pre code {
+            background: none;
+            color: #F5F5F7;
+        }
+        .code-copy-btn {
+            background: rgba(255, 255, 255, 0.07);
+            color: #AEAEB2;
+        }
+        .code-copy-btn:hover {
+            background: rgba(255, 255, 255, 0.1);
+        }
+        .code-copy-btn:active {
+            background: rgba(255, 255, 255, 0.14);
+        }
+        .code-copy-btn.copied {
+            color: #30D158;
+        }
+        blockquote {
+            color: #E5E5EA;
+            background-color: rgba(255, 255, 255, 0.04);
+        }
+        table th {
+            background-color: transparent;
+            border-color: rgba(255, 255, 255, 0.15);
+        }
+        table th:hover {
+            background-color: rgba(255, 255, 255, 0.05);
+        }
+        table td {
+            border-color: rgba(255, 255, 255, 0.08);
+        }
+        table tr:nth-child(even) {
+            background-color: transparent;
+        }
+        tr:hover td {
+            background-color: rgba(255, 255, 255, 0.03);
+        }
+        caption {
+            color: #AEAEB2;
+        }
+        .table-copy-btn {
+            background: rgba(255, 255, 255, 0.07);
+            color: #AEAEB2;
+        }
+        .table-copy-btn:hover {
+            background: rgba(255, 255, 255, 0.1);
+        }
+        .table-copy-btn:active {
+            background: rgba(255, 255, 255, 0.14);
+        }
+        .table-copy-btn.copied {
+            color: #30D158;
+        }
+        hr {
+            border-color: rgba(255, 255, 255, 0.1);
+        }
+        .page-break {
+            border-top-color: rgba(255, 255, 255, 0.12);
+        }
+        mark {
+            background-color: rgba(255, 214, 0, 0.25);
+        }
+        .callout {
+            background-color: rgba(10, 132, 255, 0.14);
+        }
+        .callout-tip { background-color: rgba(48, 209, 88, 0.14); }
+        .callout-important { background-color: rgba(191, 90, 242, 0.14); }
+        .callout-warning { background-color: rgba(255, 159, 10, 0.14); }
+        .callout-caution, .callout-danger { background-color: rgba(255, 69, 58, 0.14); }
+        .callout-abstract { background-color: rgba(100, 210, 255, 0.14); }
+        .callout-example { background-color: rgba(94, 92, 230, 0.14); }
+        .callout-quote { background-color: rgba(152, 152, 157, 0.14); }
+        .callout-bug, .callout-failure { background-color: rgba(255, 69, 58, 0.14); }
+        .callout-success { background-color: rgba(48, 209, 88, 0.14); }
+        .callout-question { background-color: rgba(255, 214, 10, 0.14); }
+        .toc {
+            background-color: rgba(255, 255, 255, 0.035);
+        }
+        .toc::before { color: #AEAEB2; }
+        .heading-anchor { color: rgba(255, 255, 255, 0.2); }
+        .frontmatter {
+            background-color: rgba(255, 255, 255, 0.04);
+        }
+        .frontmatter dt {
+            color: #AEAEB2;
+        }
+        .frontmatter dd {
+            color: #F5F5F7;
+        }
+        .footnote-popover {
+            background: #2C2C2E;
+            color: #F5F5F7;
+            box-shadow: 0 4px 24px rgba(0, 0, 0, 0.35), 0 0 0 0.5px rgba(255, 255, 255, 0.08);
+        }
+        .footnote-popover code {
+            background-color: rgba(255, 255, 255, 0.08);
+            color: #F5F5F7;
+        }
+        .mermaid {
+            color: #F5F5F7;
+        }
         .img-placeholder {
-            background-color: #2A2A2A;
-            border-color: #444444;
-            color: #777777;
+            background-color: rgba(255, 255, 255, 0.04);
+            border-color: rgba(255, 255, 255, 0.12);
+            color: #8E8E93;
         }
     }
 
@@ -604,57 +782,71 @@ enum PreviewCSS {
         tr:hover td { background-color: transparent !important; }
         th { cursor: default !important; }
         body {
-            color: #222222 !important;
+            color: #1D1D1F !important;
             background-color: #FFFFFF !important;
             max-width: none;
             padding: 0;
             margin: 0;
         }
-        a { color: #3366AA !important; }
+        a { color: #0071E3 !important; }
         code {
-            background-color: #F0F0F0 !important;
-            color: #CC3333 !important;
+            background-color: #F5F5F7 !important;
+            color: #1D1D1F !important;
         }
         pre {
-            background-color: #F5F5F5 !important;
-            border-color: #E0E0E0 !important;
-            color: #222222 !important;
+            background-color: #F5F5F7 !important;
+            color: #1D1D1F !important;
         }
         pre code {
             background: none !important;
-            color: #222222 !important;
+            color: #1D1D1F !important;
         }
         blockquote {
-            border-left-color: #CCCCCC !important;
-            color: #666666 !important;
+            border-left-color: rgba(0, 0, 0, 0.15) !important;
+            color: #48484A !important;
         }
         th {
-            background-color: #F5F5F5 !important;
-            border-color: #DDDDDD !important;
+            background-color: transparent !important;
+            border-color: rgba(0, 0, 0, 0.12) !important;
         }
         td {
-            border-color: #EEEEEE !important;
+            border-color: rgba(0, 0, 0, 0.06) !important;
         }
         tr:nth-child(even) {
-            background-color: #FAFAFA !important;
+            background-color: transparent !important;
         }
         hr {
-            border-color: #DDDDDD !important;
+            border-color: rgba(0, 0, 0, 0.12) !important;
         }
         .img-placeholder {
-            background-color: #F0F0F0 !important;
-            border-color: #CCCCCC !important;
-            color: #999999 !important;
+            background-color: #F5F5F7 !important;
+            border-color: rgba(0, 0, 0, 0.12) !important;
+            color: #AEAEB2 !important;
         }
         .frontmatter {
-            background-color: #F0F0F0 !important;
+            background-color: #F5F5F7 !important;
         }
         .frontmatter dt {
-            color: #555555 !important;
+            color: #86868B !important;
         }
         .frontmatter dd {
-            color: #333333 !important;
+            color: #1D1D1F !important;
         }
+        mark {
+            background-color: rgba(255, 212, 0, 0.4) !important;
+            -webkit-print-color-adjust: exact;
+            print-color-adjust: exact;
+        }
+        .callout {
+            border: none !important;
+            -webkit-print-color-adjust: exact;
+            print-color-adjust: exact;
+        }
+        details.callout > summary::before { content: "" !important; }
+        .toc { background-color: #F5F5F7 !important; }
+        .heading-anchor { display: none !important; }
+        .lightbox-overlay { display: none !important; }
+        .footnote-popover { display: none !important; }
         .page-break {
             page-break-after: always;
             break-after: page;

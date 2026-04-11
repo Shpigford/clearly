@@ -1,5 +1,9 @@
 import SwiftUI
 
+extension Notification.Name {
+    static let scrollEditorToLine = Notification.Name("scrollEditorToLine")
+}
+
 enum ViewMode: String, CaseIterable {
     case edit
     case preview
@@ -98,7 +102,40 @@ struct ContentView: View {
     private var previewPane: some View {
         let editorFontSize = CGFloat(fontSize)
         let fileURL = workspace.currentFileURL
-        return PreviewView(markdown: workspace.currentFileText, fontSize: editorFontSize, mode: mode, positionSyncID: positionSyncID, fileURL: fileURL, findState: findState, outlineState: outlineState)
+        return PreviewView(
+            markdown: workspace.currentFileText,
+            fontSize: editorFontSize,
+            mode: mode,
+            positionSyncID: positionSyncID,
+            fileURL: fileURL,
+            findState: findState,
+            outlineState: outlineState,
+            onTaskToggle: { [workspace] line, checked in
+                var lines = workspace.currentFileText.components(separatedBy: "\n")
+                let idx = line - 1
+                guard idx >= 0, idx < lines.count else { return }
+                if checked {
+                    lines[idx] = lines[idx]
+                        .replacingOccurrences(of: "- [ ]", with: "- [x]")
+                        .replacingOccurrences(of: "* [ ]", with: "* [x]")
+                        .replacingOccurrences(of: "+ [ ]", with: "+ [x]")
+                } else {
+                    lines[idx] = lines[idx]
+                        .replacingOccurrences(of: "- [x]", with: "- [ ]")
+                        .replacingOccurrences(of: "- [X]", with: "- [ ]")
+                        .replacingOccurrences(of: "* [x]", with: "* [ ]")
+                        .replacingOccurrences(of: "* [X]", with: "* [ ]")
+                        .replacingOccurrences(of: "+ [x]", with: "+ [ ]")
+                        .replacingOccurrences(of: "+ [X]", with: "+ [ ]")
+                }
+                workspace.currentFileText = lines.joined(separator: "\n")
+            },
+            onClickToSource: { line in
+                mode = .edit
+                // Post a notification that EditorView can observe to scroll to line
+                NotificationCenter.default.post(name: .scrollEditorToLine, object: nil, userInfo: ["line": line])
+            }
+        )
     }
 
     private var mainContent: some View {

@@ -11,6 +11,8 @@ A **native macOS markdown editor** built with SwiftUI — fast, focused, and bea
 
 > "The best tool is the one that gets out of your way." — *somebody, probably*
 
+[TOC]
+
 ---
 
 ## Headings
@@ -31,6 +33,22 @@ You can write in **bold**, *italic*, ***bold italic***, or ~~strikethrough~~. Co
 Use `inline code` for short snippets, variable names like `NSTextStorage`, or file paths like `~/Desktop/demo.md`.
 
 Links look like this: [Clearly on GitHub](https://github.com/joshpigford/clearly), and autolinked URLs work too: https://apple.com.
+
+### Highlight
+
+Use ==double equals== to ==highlight important text==. Great for drawing attention to key points.
+
+### Superscript & Subscript
+
+Water is H~2~O. Einstein's famous equation: E = mc^2^.
+
+The formula for the area of a circle is A = πr^2^, and CO~2~ levels are rising.
+
+### Emoji Shortcodes
+
+Clearly supports GitHub-style emoji shortcodes: :rocket: :fire: :sparkles: :tada: :heart: :100:
+
+Ship features :ship:, fix bugs :bug:, and celebrate :champagne:!
 
 ---
 
@@ -62,6 +80,8 @@ Links look like this: [Clearly on GitHub](https://github.com/joshpigford/clearly
 - [ ] Tell all your friends
 - [ ] World domination
 
+*Tip: In preview mode, you can click the checkboxes to toggle them!*
+
 ---
 
 ## Blockquotes
@@ -74,13 +94,55 @@ Links look like this: [Clearly on GitHub](https://github.com/joshpigford/clearly
 
 ---
 
+## Callouts & Admonitions
+
+Clearly supports GitHub/Obsidian-style callouts with `> [!TYPE]` syntax:
+
+> [!NOTE]
+> This is a note callout. Use it for supplementary information.
+
+> [!TIP]
+> Pro tip: double-click any element in the preview to jump to its source line in the editor.
+
+> [!IMPORTANT]
+> Critical information that users need to know.
+
+> [!WARNING]
+> Potential issues that need attention.
+
+> [!CAUTION]
+> Negative consequences that could occur.
+
+### More callout types
+
+> [!EXAMPLE]
+> Here's an example of how to use callouts effectively.
+
+> [!BUG]
+> Known issue: this only happens on Tuesdays during a full moon.
+
+> [!SUCCESS]
+> All tests passing. Ship it!
+
+> [!QUESTION]
+> Is this the best markdown editor ever? Signs point to yes.
+
+### Foldable callouts
+
+Add a `-` after the type to make it collapsible:
+
+> [!TIP]- Click to expand
+> This content is hidden by default! Great for FAQs, spoilers, or optional details.
+
+---
+
 ## Code
 
 Inline: use `cmd + 1` for editor mode and `cmd + 2` for preview mode.
 
-Fenced code block with a language hint:
+Fenced code block with syntax highlighting:
 
-```swift
+```swift title="ClearlyApp.swift"
 import SwiftUI
 
 @main
@@ -109,6 +171,17 @@ xcodegen generate
 xcodebuild -scheme Clearly -configuration Debug build
 ```
 
+### Diff Highlighting
+
+```diff
+- const oldFeature = "basic markdown";
++ const newFeature = "supercharged markdown";
+  
+- // TODO: add syntax highlighting
++ // Done: full Highlight.js integration
++ // Done: line numbers, diff highlighting
+```
+
 ---
 
 ## Tables
@@ -117,12 +190,14 @@ xcodebuild -scheme Clearly -configuration Debug build
 
 | Feature              | Editor | Preview | QuickLook |
 | :------------------- | :----: | :-----: | :-------: |
-| Syntax highlighting  |   ✓    |    —    |     —     |
+| Syntax highlighting  |   ✓    |    ✓    |     ✓     |
 | Live GFM rendering   |   —    |    ✓    |     ✓     |
 | Tables               |   ✓    |    ✓    |     ✓     |
 | Math (KaTeX)         |   ✓    |    ✓    |     ✓     |
 | Mermaid diagrams     |   ✓    |    ✓    |     ✓     |
 | Task lists           |   ✓    |    ✓    |     ✓     |
+| Callouts             |   ✓    |    ✓    |     ✓     |
+| Code highlighting    |   —    |    ✓    |     ✓     |
 
 ### Right-aligned numbers
 
@@ -214,14 +289,32 @@ ___
 
 ![Clearly Screenshot](https://raw.githubusercontent.com/Shpigford/clearly/main/website/screenshot.jpg)
 
+*Click any image in preview mode to view it in a lightbox!*
+
 ---
 
 ## Footnotes
 
 Clearly renders GitHub-style footnotes[^1], including multiple references[^note] in the same paragraph[^1].
 
+*Hover over a footnote reference in preview mode to see a popover with the footnote content!*
+
 [^1]: This is the first footnote. It can contain **formatting** and `code`.
 [^note]: Named footnotes work too — use any label you like.
+
+---
+
+## Collapsible Sections
+
+<details>
+<summary>Click to expand this section</summary>
+
+This content is hidden by default using the HTML `<details>` element. Clearly animates the open/close transition smoothly.
+
+- You can put any markdown here
+- Including lists, code, and more
+
+</details>
 
 ---
 
@@ -237,4 +330,4 @@ HTML passes through for when you need it:
 
 ## The End
 
-That's Clearly — **every markdown feature you actually use**, rendered beautifully, highlighted live, and ready to ship. 🚀
+That's Clearly — **every markdown feature you actually use**, rendered beautifully, highlighted live, and ready to ship. :rocket:

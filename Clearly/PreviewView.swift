@@ -12,6 +12,8 @@ struct PreviewView: NSViewRepresentable {
     var fileURL: URL?
     var findState: FindState?
     var outlineState: OutlineState?
+    var onTaskToggle: ((Int, Bool) -> Void)?
+    var onClickToSource: ((Int) -> Void)?
     @Environment(\.colorScheme) private var colorScheme
 
     private var contentKey: String {
@@ -29,6 +31,8 @@ struct PreviewView: NSViewRepresentable {
         config.userContentController.add(context.coordinator, name: "scrollSync")
         config.userContentController.add(context.coordinator, name: "copyToClipboard")
         config.userContentController.add(context.coordinator, contentWorld: Self.copyButtonContentWorld, name: "copyToClipboard")
+        config.userContentController.add(context.coordinator, name: "taskToggle")
+        config.userContentController.add(context.coordinator, name: "clickToSource")
         config.userContentController.addUserScript(Self.copyButtonUserScript())
         let webView = WKWebView(frame: .zero, configuration: config)
         webView.navigationDelegate = context.coordinator
@@ -38,6 +42,8 @@ struct PreviewView: NSViewRepresentable {
         context.coordinator.positionSyncID = positionSyncID
         context.coordinator.findState = findState
         context.coordinator.outlineState = outlineState
+        context.coordinator.onTaskToggle = onTaskToggle
+        context.coordinator.onClickToSource = onClickToSource
         let coordinator = context.coordinator
         findState?.previewNavigateToNext = { [weak coordinator] in
             coordinator?.navigateToNextMatch()
@@ -75,7 +81,13 @@ struct PreviewView: NSViewRepresentable {
         context.coordinator.lastMode = mode
 
         if context.coordinator.lastContentKey != contentKey {
-            loadHTML(in: webView, context: context)
+            if context.coordinator.skipNextReload {
+                // Task toggle already updated the DOM; just sync the content key
+                context.coordinator.skipNextReload = false
+                context.coordinator.lastContentKey = contentKey
+            } else {
+                loadHTML(in: webView, context: context)
+            }
         }
     }
 
@@ -84,6 +96,8 @@ struct PreviewView: NSViewRepresentable {
         webView.configuration.userContentController.removeScriptMessageHandler(forName: "scrollSync")
         webView.configuration.userContentController.removeScriptMessageHandler(forName: "copyToClipboard")
         webView.configuration.userContentController.removeScriptMessageHandler(forName: "copyToClipboard", contentWorld: Self.copyButtonContentWorld)
+        webView.configuration.userContentController.removeScriptMessageHandler(forName: "taskToggle")
+        webView.configuration.userContentController.removeScriptMessageHandler(forName: "clickToSource")
     }
 
     private func loadHTML(in webView: WKWebView, context: Context) {
@@ -149,10 +163,115 @@ struct PreviewView: NSViewRepresentable {
             window.webkit.messageHandlers.linkClicked.postMessage(href);
         });
         \(scrollJS)
+        // Heading anchor links
+        var usedHeadingIDs = new Set();
+        function uniqueHeadingID(base, normalize) {
+            var normalized = base || 'section';
+            if (normalize) {
+                normalized = normalized.toLowerCase().replace(/[^\\w]+/g, '-').replace(/^-|-$/g, '') || 'section';
+            }
+            var candidate = normalized;
+            var suffix = 1;
+            while (usedHeadingIDs.has(candidate)) {
+                candidate = normalized + '-' + suffix;
+                suffix += 1;
+            }
+            usedHeadingIDs.add(candidate);
+            return candidate;
+        }
+        document.querySelectorAll('h1,h2,h3,h4,h5,h6').forEach(function(h) {
+            h.id = uniqueHeadingID(h.id || h.textContent.trim(), !h.id);
+            var link = document.createElement('a');
+            link.className = 'heading-anchor';
+            link.href = '#' + h.id;
+            link.textContent = '#';
+            link.addEventListener('click', function(e) { e.stopPropagation(); });
+            h.prepend(link);
+        });
+        // Task list checkbox toggle
+        document.querySelectorAll('input[type="checkbox"]').forEach(function(cb) {
+            var li = cb.closest('li');
+            if (!li) return;
+            cb.removeAttribute('disabled');
+            cb.disabled = false;
+            cb.style.cursor = 'pointer';
+            cb.addEventListener('click', function(e) {
+                e.stopPropagation();
+                var sp = li.getAttribute('data-sourcepos');
+                if (!sp) {
+                    var parent = li.closest('[data-sourcepos]');
+                    if (parent) sp = parent.getAttribute('data-sourcepos');
+                }
+                if (sp && window.webkit && window.webkit.messageHandlers.taskToggle) {
+                    window.webkit.messageHandlers.taskToggle.postMessage({
+                        sourcepos: sp,
+                        checked: cb.checked
+                    });
+                }
+            });
+        });
+        // Click-to-source: double-click to jump to editor
+        document.addEventListener('dblclick', function(e) {
+            var el = e.target;
+            while (el && el !== document.body) {
+                var sp = el.getAttribute('data-sourcepos');
+                if (sp) {
+                    var m = /^(\\d+):/.exec(sp);
+                    if (m && window.webkit && window.webkit.messageHandlers.clickToSource) {
+                        window.webkit.messageHandlers.clickToSource.postMessage(parseInt(m[1], 10));
+                    }
+                    return;
+                }
+                el = el.parentElement;
+            }
+        });
+        // Image lightbox
+        document.querySelectorAll('img').forEach(function(img) {
+            img.style.cursor = 'zoom-in';
+            img.addEventListener('click', function(e) {
+                e.preventDefault();
+                var overlay = document.createElement('div');
+                overlay.className = 'lightbox-overlay';
+                var clone = img.cloneNode();
+                clone.className = 'lightbox-img';
+                clone.style.cursor = 'default';
+                overlay.appendChild(clone);
+                overlay.addEventListener('click', function() {
+                    overlay.style.opacity = '0';
+                    setTimeout(function() { overlay.remove(); }, 200);
+                });
+                document.body.appendChild(overlay);
+                requestAnimationFrame(function() { overlay.style.opacity = '1'; });
+            });
+        });
+        // Footnote popovers
+        document.querySelectorAll('.footnote-ref a, sup.footnote-ref a').forEach(function(a) {
+            var popover = null;
+            a.addEventListener('mouseenter', function(e) {
+                var href = a.getAttribute('href');
+                if (!href || !href.startsWith('#')) return;
+                var target = document.querySelector(href);
+                if (!target) return;
+                popover = document.createElement('div');
+                popover.className = 'footnote-popover';
+                var content = target.cloneNode(true);
+                var backref = content.querySelector('.footnote-backref');
+                if (backref) backref.remove();
+                popover.innerHTML = content.innerHTML;
+                document.body.appendChild(popover);
+                var rect = a.getBoundingClientRect();
+                popover.style.top = (rect.bottom + window.scrollY + 6) + 'px';
+                popover.style.left = Math.max(8, Math.min(rect.left, window.innerWidth - 420)) + 'px';
+            });
+            a.addEventListener('mouseleave', function() {
+                if (popover) { popover.remove(); popover = null; }
+            });
+        });
         </script>
         \(MathSupport.scriptHTML(for: htmlBody))
         \(TableSupport.scriptHTML(for: htmlBody))
         \(MermaidSupport.scriptHTML)
+        \(SyntaxHighlightSupport.scriptHTML(for: htmlBody))
         </html>
         """
         webView.loadHTMLString(html, baseURL: fileURL?.deletingLastPathComponent() ?? MermaidSupport.resourceBaseURL)
@@ -167,6 +286,9 @@ struct PreviewView: NSViewRepresentable {
         var positionSyncID = ""
         var findState: FindState?
         var outlineState: OutlineState?
+        var onTaskToggle: ((Int, Bool) -> Void)?
+        var onClickToSource: ((Int) -> Void)?
+        var skipNextReload = false
         weak var webView: WKWebView?
         private var findCancellables = Set<AnyCancellable>()
         private var matchCount = 0
@@ -386,6 +508,29 @@ struct PreviewView: NSViewRepresentable {
 
             if message.name == "linkClicked", let href = message.body as? String {
                 handleLinkClick(href)
+                return
+            }
+
+            if message.name == "taskToggle", let body = message.body as? [String: Any],
+               let sourcepos = body["sourcepos"] as? String,
+               let checked = body["checked"] as? Bool {
+                // Parse line number from sourcepos "startLine:startCol-endLine:endCol"
+                if let dashIdx = sourcepos.firstIndex(of: ":"),
+                   let line = Int(sourcepos[sourcepos.startIndex..<dashIdx]) {
+                    // The checkbox is already toggled in the DOM — skip the next
+                    // HTML reload so the page doesn't flash.
+                    skipNextReload = true
+                    DispatchQueue.main.async { [weak self] in
+                        self?.onTaskToggle?(line, checked)
+                    }
+                }
+                return
+            }
+
+            if message.name == "clickToSource", let line = message.body as? Int {
+                DispatchQueue.main.async { [weak self] in
+                    self?.onClickToSource?(line)
+                }
                 return
             }
 

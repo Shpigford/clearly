@@ -115,6 +115,14 @@ struct EditorView: NSViewRepresentable {
             object: scrollView.contentView
         )
 
+        // Observe click-to-source from preview
+        NotificationCenter.default.addObserver(
+            context.coordinator,
+            selector: #selector(Coordinator.handleScrollToLine(_:)),
+            name: .scrollEditorToLine,
+            object: nil
+        )
+
         DiagnosticLog.log("makeNSView: EditorView ready")
         return scrollView
     }
@@ -252,6 +260,28 @@ struct EditorView: NSViewRepresentable {
             guard let textView else { return }
             textView.scrollRangeToVisible(range)
             textView.showFindIndicator(for: range)
+        }
+
+        @objc func handleScrollToLine(_ notification: Notification) {
+            guard let line = notification.userInfo?["line"] as? Int,
+                  let textView,
+                  line > 0 else { return }
+            let text = textView.string
+            let lines = (text as NSString).components(separatedBy: "\n")
+            let targetLine = min(line, lines.count)
+            var charOffset = 0
+            for i in 0..<(targetLine - 1) {
+                charOffset += (lines[i] as NSString).length + 1 // +1 for \n
+            }
+            let nsText = text as NSString
+            let range = NSRange(location: min(charOffset, nsText.length), length: 0)
+            textView.scrollRangeToVisible(range)
+            // Briefly highlight the line
+            if targetLine - 1 < lines.count {
+                let lineLen = (lines[targetLine - 1] as NSString).length
+                let highlightRange = NSRange(location: min(charOffset, nsText.length), length: min(lineLen, nsText.length - charOffset))
+                textView.showFindIndicator(for: highlightRange)
+            }
         }
 
         func observeFindState(_ state: FindState) {

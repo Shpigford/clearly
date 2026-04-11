@@ -22,8 +22,13 @@ Open folders, browse your files, write with syntax highlighting, and preview ins
 
 - **File explorer** — open folders, browse markdown files in a sidebar with bookmarked locations and recents
 - **Document outline** — navigable header outline panel for jumping between sections (⇧⌘O)
-- **Syntax highlighting** — headings, bold, italic, links, code blocks, and more
+- **Syntax highlighting** — headings, bold, italic, links, code blocks, tables, footnotes, highlights, and more
 - **Instant preview** — rendered GitHub Flavored Markdown, including Mermaid diagrams and KaTeX math
+- **Code syntax highlighting** — 27+ languages via Highlight.js with line numbers and diff highlighting
+- **Callouts & admonitions** — `> [!NOTE]`, `> [!WARNING]`, and 15 callout types with foldable support
+- **Extended markdown** — ==highlights==, ^superscript^, ~subscript~, :emoji: shortcodes, and `[TOC]` generation
+- **Interactive preview** — clickable task checkboxes, heading anchor links, image lightbox, footnote popovers
+- **Click-to-source** — double-click any element in preview to jump to its source line in the editor
 - **Frontmatter support** — YAML frontmatter is formatted cleanly in both editor and preview
 - **Editor/Preview toggle** — switch between editor (⌘1) and preview (⌘2) with scroll position preserved
 - **PDF export** — export to PDF or print directly from the app
@@ -79,8 +84,11 @@ ClearlyQuickLook/
 └── Info.plist                      # Extension config (NSExtensionAttributes)
 
 Shared/
-├── MarkdownRenderer.swift          # cmark-gfm wrapper — GFM → HTML
-└── PreviewCSS.swift                # CSS shared by in-app preview and QuickLook
+├── MarkdownRenderer.swift          # cmark-gfm wrapper — GFM → HTML + post-processing pipeline
+├── PreviewCSS.swift                # CSS shared by in-app preview and QuickLook
+├── EmojiShortcodes.swift           # :shortcode: → Unicode emoji lookup table
+├── SyntaxHighlightSupport.swift    # Highlight.js injection for code block syntax coloring
+└── Resources/                      # Bundled JS/CSS (Mermaid, KaTeX, Highlight.js, demo.md)
 
 website/                 # Static marketing site (HTML/CSS), deployed to clearly.md
 scripts/                 # Release pipeline (release.sh)

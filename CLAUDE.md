@@ -29,7 +29,7 @@ Open in Xcode: `open Clearly.xcodeproj` (gitignored, so regenerate with xcodegen
 2. **ClearlyQuickLook** (app extension) — QLPreviewProvider for Finder previews
 
 **Shared code** lives in `Shared/` and is compiled into both targets:
-- `MarkdownRenderer.swift` — wraps `cmark_gfm_markdown_to_html()` for GFM rendering (tables, strikethrough, task lists, autolinks). Also does HTML post-processing for math (`$...$` → KaTeX spans) and table captions (`Table: text` → `<caption>`)
+- `MarkdownRenderer.swift` — wraps `cmark_gfm_markdown_to_html()` for GFM rendering. Post-processing pipeline (in order): math (`$...$` → KaTeX spans), highlight marks (`==text==` → `<mark>`), superscript/subscript, emoji shortcodes, callouts/admonitions (`[!TYPE]` blockquotes), TOC generation, table captions, code filename headers. All post-processing that touches inline syntax must use `protectCodeRegions()`/`restoreProtectedSegments()` to avoid transforming content inside `<pre>`/`<code>` tags.
 - `PreviewCSS.swift` — CSS string used by both the in-app preview and the QuickLook extension
 - `MathSupport.swift` / `MermaidSupport.swift` / `TableSupport.swift` — conditional JS injection for preview features. Each follows the same pattern: check if the HTML contains relevant content, return script HTML or empty string
 
@@ -75,11 +75,14 @@ When adding new Sparkle-dependent code, always wrap it in `#if canImport(Sparkle
 - All colors go through `Theme` with dynamic light/dark resolution — don't hardcode colors
 - Preview CSS in `PreviewCSS.swift` must stay in sync with `Theme` colors for visual consistency between editor and preview modes
 - CSS changes in `PreviewCSS.swift` must cover four contexts: base (light), `@media (prefers-color-scheme: dark)`, `@media print`, and the `forExport` override string. Interactive elements (copy buttons, sort indicators) should be hidden in print/export
+- **CSS source order in `PreviewCSS.swift`**: Base (light) styles for new elements must be defined BEFORE any `@media (prefers-color-scheme: dark)` overrides for those elements. If a base style comes after a dark-mode `@media` block, the base style wins by source order and dark mode breaks. Place the dark-mode override immediately after the base definition (in its own `@media` block if needed), not in the consolidated dark-mode block near the top of the file.
 - Changes to `project.yml` require running `xcodegen generate` to update the Xcode project
 
 ### Adding preview features
 
-Follow the `MathSupport`/`MermaidSupport`/`TableSupport` pattern: create a `*Support.swift` enum in `Shared/` with a static method that returns a `<script>` block (or empty string if the feature isn't needed for the current content). Integrate it into `PreviewView.swift`, `PreviewProvider.swift`, and `PDFExporter.swift` HTML templates. This ensures the feature works in preview, QuickLook, and PDF export.
+Follow the `MathSupport`/`MermaidSupport`/`TableSupport`/`SyntaxHighlightSupport` pattern: create a `*Support.swift` enum in `Shared/` with a static method that returns a `<script>` block (or empty string if the feature isn't needed for the current content). Integrate it into `PreviewView.swift`, `PreviewProvider.swift`, and `PDFExporter.swift` HTML templates. This ensures the feature works in preview, QuickLook, and PDF export.
+
+**Preview-to-editor communication**: Interactive preview features that modify source text or switch modes use `WKScriptMessageHandler` callbacks. Register the handler in `makeNSView`, add a callback closure on `PreviewView`, and wire it in `ContentView`. When the preview modifies source text (e.g., task checkbox toggle), set `coordinator.skipNextReload = true` before updating the binding — this prevents a full `loadHTMLString` flash since the DOM is already updated.
 
 ### Demo document
 
