@@ -35,8 +35,8 @@ enum Theme {
 
     static let backgroundColor = NSColor(name: "themeBackground") { appearance in
         appearance.isDark
-            ? NSColor(red: 0.1, green: 0.1, blue: 0.1, alpha: 1)
-            : NSColor(red: 0.98, green: 0.98, blue: 0.98, alpha: 1)
+            ? NSColor(red: 0.11, green: 0.11, blue: 0.118, alpha: 1)
+            : NSColor(red: 1.0, green: 1.0, blue: 1.0, alpha: 1)
     }
 
     static let textColor = NSColor(name: "themeText") { appearance in
@@ -97,6 +97,30 @@ enum Theme {
         appearance.isDark
             ? NSColor(red: 0.55, green: 0.55, blue: 0.65, alpha: 1)
             : NSColor(red: 0.35, green: 0.35, blue: 0.5, alpha: 1)
+    }
+
+    static let highlightColor = NSColor(name: "themeHighlight") { appearance in
+        appearance.isDark
+            ? NSColor(red: 0.9, green: 0.8, blue: 0.3, alpha: 1)
+            : NSColor(red: 0.6, green: 0.5, blue: 0.0, alpha: 1)
+    }
+
+    static let highlightBackgroundColor = NSColor(name: "themeHighlightBg") { appearance in
+        appearance.isDark
+            ? NSColor(red: 0.9, green: 0.8, blue: 0.3, alpha: 0.15)
+            : NSColor(red: 1.0, green: 0.9, blue: 0.0, alpha: 0.25)
+    }
+
+    static let footnoteColor = NSColor(name: "themeFootnote") { appearance in
+        appearance.isDark
+            ? NSColor(red: 0.6, green: 0.7, blue: 0.9, alpha: 1)
+            : NSColor(red: 0.3, green: 0.4, blue: 0.7, alpha: 1)
+    }
+
+    static let htmlTagColor = NSColor(name: "themeHTMLTag") { appearance in
+        appearance.isDark
+            ? NSColor(red: 0.5, green: 0.5, blue: 0.5, alpha: 1)
+            : NSColor(red: 0.55, green: 0.55, blue: 0.55, alpha: 1)
     }
 
     static let findHighlightColor = NSColor(name: "themeFindHighlight") { appearance in

@@ -36,6 +36,10 @@ targets:
       - path: Shared/Resources/fonts
         buildPhase: resources
         type: folder
+      - path: Shared/Resources/highlight.min.js
+        buildPhase: resources
+      - path: Shared/Resources/highlight-theme.css
+        buildPhase: resources
       - path: Shared/Resources/demo.md
         buildPhase: resources
     dependencies:
@@ -77,6 +81,10 @@ targets:
       - path: Shared/Resources/fonts
         buildPhase: resources
         type: folder
+      - path: Shared/Resources/highlight.min.js
+        buildPhase: resources
+      - path: Shared/Resources/highlight-theme.css
+        buildPhase: resources
     dependencies:
       - package: cmark-gfm
         product: cmark
