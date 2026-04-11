@@ -29,8 +29,9 @@ Open in Xcode: `open Clearly.xcodeproj` (gitignored, so regenerate with xcodegen
 2. **ClearlyQuickLook** (app extension) — QLPreviewProvider for Finder previews
 
 **Shared code** lives in `Shared/` and is compiled into both targets:
-- `MarkdownRenderer.swift` — wraps `cmark_gfm_markdown_to_html()` for GFM rendering (tables, strikethrough, task lists, autolinks)
+- `MarkdownRenderer.swift` — wraps `cmark_gfm_markdown_to_html()` for GFM rendering (tables, strikethrough, task lists, autolinks). Also does HTML post-processing for math (`$...$` → KaTeX spans) and table captions (`Table: text` → `<caption>`)
 - `PreviewCSS.swift` — CSS string used by both the in-app preview and the QuickLook extension
+- `MathSupport.swift` / `MermaidSupport.swift` / `TableSupport.swift` — conditional JS injection for preview features. Each follows the same pattern: check if the HTML contains relevant content, return script HTML or empty string
 
 **App code** in `Clearly/`:
 - `ClearlyApp.swift` — App entry point. `DocumentGroup` with `MarkdownDocument`, menu commands for switching view modes (⌘1 Editor, ⌘2 Preview)
@@ -73,4 +74,13 @@ When adding new Sparkle-dependent code, always wrap it in `#if canImport(Sparkle
 
 - All colors go through `Theme` with dynamic light/dark resolution — don't hardcode colors
 - Preview CSS in `PreviewCSS.swift` must stay in sync with `Theme` colors for visual consistency between editor and preview modes
+- CSS changes in `PreviewCSS.swift` must cover four contexts: base (light), `@media (prefers-color-scheme: dark)`, `@media print`, and the `forExport` override string. Interactive elements (copy buttons, sort indicators) should be hidden in print/export
 - Changes to `project.yml` require running `xcodegen generate` to update the Xcode project
+
+### Adding preview features
+
+Follow the `MathSupport`/`MermaidSupport`/`TableSupport` pattern: create a `*Support.swift` enum in `Shared/` with a static method that returns a `<script>` block (or empty string if the feature isn't needed for the current content). Integrate it into `PreviewView.swift`, `PreviewProvider.swift`, and `PDFExporter.swift` HTML templates. This ensures the feature works in preview, QuickLook, and PDF export.
+
+### Demo document
+
+`Shared/Resources/demo.md` is bundled with the app and accessible via **Help → Sample Document**. Keep it updated when adding new markdown features so it serves as both a user showcase and a test fixture.
