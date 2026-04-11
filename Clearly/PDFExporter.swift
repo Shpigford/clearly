@@ -64,6 +64,7 @@ final class PDFExporter: NSObject, WKNavigationDelegate {
         </head>
         <body>\(htmlBody)</body>
         \(MathSupport.scriptHTML(for: htmlBody))
+        \(TableSupport.scriptHTML(for: htmlBody))
         </html>
         """
         wv.loadHTMLString(html, baseURL: documentURL?.deletingLastPathComponent() ?? MermaidSupport.resourceBaseURL)

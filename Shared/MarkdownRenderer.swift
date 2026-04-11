@@ -9,7 +9,7 @@ enum MarkdownRenderer {
 
         let body = frontmatter?.body ?? markdown
         let len = body.utf8.count
-        let options = Int32(CMARK_OPT_UNSAFE | CMARK_OPT_FOOTNOTES | CMARK_OPT_STRIKETHROUGH_DOUBLE_TILDE | CMARK_OPT_SOURCEPOS)
+        let options = Int32(CMARK_OPT_UNSAFE | CMARK_OPT_FOOTNOTES | CMARK_OPT_STRIKETHROUGH_DOUBLE_TILDE | CMARK_OPT_SOURCEPOS | CMARK_OPT_TABLE_PREFER_STYLE_ATTRIBUTES)
         var html: String
         // Try GFM renderer first (tables, strikethrough, task lists, autolinks)
         if let buf = cmark_gfm_markdown_to_html(body, len, options) {
@@ -23,6 +23,7 @@ enum MarkdownRenderer {
             return ""
         }
         html = processMath(html)
+        html = processCaptions(html)
 
         // Fix sourcepos line numbers after stripping frontmatter
         if let frontmatter, frontmatter.lineCount > 0 {
@@ -162,6 +163,21 @@ enum MarkdownRenderer {
             )
         }
         return restored
+    }
+
+    /// Convert "Table: caption text" paragraphs immediately before a <table> into <caption> elements.
+    private static func processCaptions(_ html: String) -> String {
+        guard html.contains("<table") else { return html }
+        guard let regex = try? NSRegularExpression(
+            pattern: #"<p[^>]*>Table:\s*(.*?)</p>\s*(<table[^>]*>)"#,
+            options: [.dotMatchesLineSeparators]
+        ) else { return html }
+        let nsHTML = html as NSString
+        return regex.stringByReplacingMatches(
+            in: html,
+            range: NSRange(location: 0, length: nsHTML.length),
+            withTemplate: "$2<caption>$1</caption>"
+        )
     }
 
     private static func escapeHTML(_ text: String) -> String {

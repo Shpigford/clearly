@@ -27,6 +27,7 @@ struct PreviewView: NSViewRepresentable {
         config.setURLSchemeHandler(LocalImageSchemeHandler(), forURLScheme: LocalImageSupport.scheme)
         config.userContentController.add(context.coordinator, name: "linkClicked")
         config.userContentController.add(context.coordinator, name: "scrollSync")
+        config.userContentController.add(context.coordinator, name: "copyToClipboard")
         config.userContentController.add(context.coordinator, contentWorld: Self.copyButtonContentWorld, name: "copyToClipboard")
         config.userContentController.addUserScript(Self.copyButtonUserScript())
         let webView = WKWebView(frame: .zero, configuration: config)
@@ -81,6 +82,7 @@ struct PreviewView: NSViewRepresentable {
     static func dismantleNSView(_ webView: WKWebView, coordinator: Coordinator) {
         webView.configuration.userContentController.removeScriptMessageHandler(forName: "linkClicked")
         webView.configuration.userContentController.removeScriptMessageHandler(forName: "scrollSync")
+        webView.configuration.userContentController.removeScriptMessageHandler(forName: "copyToClipboard")
         webView.configuration.userContentController.removeScriptMessageHandler(forName: "copyToClipboard", contentWorld: Self.copyButtonContentWorld)
     }
 
@@ -149,6 +151,7 @@ struct PreviewView: NSViewRepresentable {
         \(scrollJS)
         </script>
         \(MathSupport.scriptHTML(for: htmlBody))
+        \(TableSupport.scriptHTML(for: htmlBody))
         \(MermaidSupport.scriptHTML)
         </html>
         """

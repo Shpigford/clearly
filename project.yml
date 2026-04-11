@@ -36,6 +36,8 @@ targets:
       - path: Shared/Resources/fonts
         buildPhase: resources
         type: folder
+      - path: Shared/Resources/demo.md
+        buildPhase: resources
     dependencies:
       - package: cmark-gfm
         product: cmark

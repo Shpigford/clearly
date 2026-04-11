@@ -4,6 +4,12 @@ enum PreviewCSS {
     static func css(fontSize: CGFloat = 18, forExport: Bool = false) -> String {
     let exportOverrides = forExport ? """
     .code-copy-btn { display: none !important; }
+    .table-copy-btn { display: none !important; }
+    .sort-indicator { display: none !important; }
+    thead { position: static !important; }
+    thead { display: table-header-group; }
+    tr:hover td { background-color: transparent !important; }
+    th { cursor: default !important; }
     body {
         color: #222222 !important;
         background: white !important;
@@ -139,11 +145,33 @@ enum PreviewCSS {
             background-color: #2A2A2A;
             border-color: #444444;
         }
+        table th:hover {
+            background-color: #333333;
+        }
         table td {
             border-color: #333333;
         }
         table tr:nth-child(even) {
             background-color: #222222;
+        }
+        tr:hover td {
+            background-color: rgba(255, 255, 255, 0.03);
+        }
+        caption {
+            color: #999999;
+        }
+        .table-copy-btn {
+            background: rgba(255, 255, 255, 0.06);
+            color: #999999;
+        }
+        .table-copy-btn:hover {
+            background: rgba(255, 255, 255, 0.1);
+        }
+        .table-copy-btn:active {
+            background: rgba(255, 255, 255, 0.14);
+        }
+        .table-copy-btn.copied {
+            color: #3fb950;
         }
         hr {
             border-color: #333333;
@@ -345,21 +373,56 @@ enum PreviewCSS {
     }
 
     /* Tables */
+    .table-shell {
+        position: relative;
+        overflow: visible;
+        margin-bottom: 1em;
+        --table-copy-top: 6px;
+    }
+
+    .table-shell.has-copy-btn::after {
+        content: "";
+        position: absolute;
+        top: calc(var(--table-copy-top) - 6px);
+        right: -44px;
+        width: 44px;
+        height: 40px;
+        pointer-events: auto;
+    }
+
+    .table-wrapper {
+        overflow-x: auto;
+    }
+
     table {
         border-collapse: collapse;
         width: 100%;
-        margin-bottom: 1em;
+        font-variant-numeric: tabular-nums;
     }
 
     th, td {
-        text-align: left;
         padding: 0.5em 0.75em;
+        max-width: 20em;
+        overflow-wrap: break-word;
+    }
+
+    thead {
+        position: sticky;
+        top: 0;
+        z-index: 1;
     }
 
     th {
         font-weight: 600;
         background-color: #F5F5F5;
         border-bottom: 2px solid #DDDDDD;
+        cursor: pointer;
+        user-select: none;
+        white-space: nowrap;
+    }
+
+    th:hover {
+        background-color: #EEEEEE;
     }
 
     td {
@@ -368,6 +431,76 @@ enum PreviewCSS {
 
     tr:nth-child(even) {
         background-color: #FAFAFA;
+    }
+
+    tr:hover td {
+        background-color: rgba(0, 0, 0, 0.03);
+    }
+
+    .sort-indicator {
+        font-size: 0.7em;
+        margin-left: 0.3em;
+        opacity: 0.3;
+    }
+
+    th.sort-asc .sort-indicator,
+    th.sort-desc .sort-indicator {
+        opacity: 1;
+    }
+
+    caption {
+        caption-side: top;
+        text-align: left;
+        font-size: 0.9em;
+        font-weight: 500;
+        color: #666666;
+        padding-bottom: 0.5em;
+    }
+
+    .table-copy-btn {
+        position: absolute;
+        right: -36px;
+        width: 28px;
+        height: 28px;
+        padding: 0;
+        margin: 0;
+        border: none;
+        border-radius: 4px;
+        background: rgba(0, 0, 0, 0.04);
+        color: #666666;
+        cursor: pointer;
+        opacity: 0;
+        pointer-events: none;
+        transform: translateX(-4px);
+        transition: opacity 0.15s ease, transform 0.15s ease;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 2;
+    }
+
+    .table-copy-btn svg {
+        display: block;
+    }
+
+    .table-copy-btn.copied {
+        color: #2ea043;
+    }
+
+    .table-shell:hover .table-copy-btn,
+    .table-copy-btn:hover,
+    .table-copy-btn:focus-visible {
+        opacity: 1;
+        pointer-events: auto;
+        transform: translateX(0);
+    }
+
+    .table-copy-btn:hover {
+        background: rgba(0, 0, 0, 0.08);
+    }
+
+    .table-copy-btn:active {
+        background: rgba(0, 0, 0, 0.12);
     }
 
     /* Strikethrough */
@@ -464,6 +597,12 @@ enum PreviewCSS {
 
     @media print {
         .code-copy-btn { display: none !important; }
+        .table-copy-btn { display: none !important; }
+        .sort-indicator { display: none !important; }
+        thead { position: static !important; }
+        thead { display: table-header-group; }
+        tr:hover td { background-color: transparent !important; }
+        th { cursor: default !important; }
         body {
             color: #222222 !important;
             background-color: #FFFFFF !important;

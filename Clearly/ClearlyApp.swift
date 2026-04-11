@@ -534,6 +534,13 @@ struct ClearlyApp: App {
                     NSWorkspace.shared.open(URL(string: "https://github.com/Shpigford/clearly/issues")!)
                 }
                 Divider()
+                Button("Sample Document") {
+                    if let url = Bundle.main.url(forResource: "demo", withExtension: "md"),
+                       let content = try? String(contentsOf: url, encoding: .utf8) {
+                        workspace.createDocumentWithContent(content)
+                    }
+                }
+                Divider()
                 Button("Export Diagnostic Log…") {
                     do {
                         let logText = try DiagnosticLog.exportRecentLogs()

@@ -122,6 +122,25 @@ final class WorkspaceManager {
     }
 
     @discardableResult
+    func createDocumentWithContent(_ content: String) -> Bool {
+        guard saveFileBacked() else { return false }
+        snapshotActiveDocument()
+        let doc = OpenDocument(
+            id: UUID(),
+            fileURL: nil,
+            text: content,
+            lastSavedText: "",
+            untitledNumber: nextUntitledNumber
+        )
+        nextUntitledNumber += 1
+        openDocuments.append(doc)
+        activateDocument(doc)
+        DiagnosticLog.log("Created document with content: \(doc.displayName)")
+        presentMainWindow()
+        return true
+    }
+
+    @discardableResult
     func switchToDocument(_ id: UUID) -> Bool {
         guard id != activeDocumentID else { return true }
         guard openDocuments.contains(where: { $0.id == id }) else { return false }
