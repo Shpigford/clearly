@@ -122,7 +122,7 @@ struct LauncherSceneMarker: NSViewRepresentable {
 // MARK: - App Delegate (dock icon management + file open handling)
 
 @MainActor
-final class ClearlyAppDelegate: NSObject, NSApplicationDelegate {
+final class ClearlyAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     private var observers: [Any] = []
     private var commandQMonitor: Any?
     private var showHiddenFilesMonitor: Any?
@@ -403,6 +403,7 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate {
         injectSidebarToggleIfNeeded()
         injectViewCommandsIfNeeded()
         injectGlobalSearchIfNeeded()
+        injectExportPrintIfNeeded()
     }
 
     private func injectGlobalSearchIfNeeded() {
@@ -542,6 +543,55 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate {
             editMenu.addItem(.separator())
             editMenu.addItem(spellingItem)
         }
+    }
+
+    // MARK: - Export / Print menu injection
+
+    private func injectExportPrintIfNeeded() {
+        guard let fileMenu = NSApp.mainMenu?.item(withTitle: "File")?.submenu else { return }
+        guard !fileMenu.items.contains(where: { $0.title == "Export as PDF…" }) else { return }
+
+        let exportItem = NSMenuItem(title: "Export as PDF…", action: #selector(exportPDFAction(_:)), keyEquivalent: "e")
+        exportItem.keyEquivalentModifierMask = [.command, .shift]
+        exportItem.target = self
+
+        let printItem = NSMenuItem(title: "Print…", action: #selector(printDocumentAction(_:)), keyEquivalent: "p")
+        printItem.keyEquivalentModifierMask = [.command, .shift]
+        printItem.target = self
+
+        fileMenu.addItem(.separator())
+        fileMenu.addItem(exportItem)
+        fileMenu.addItem(printItem)
+    }
+
+    @objc private func exportPDFAction(_ sender: Any?) {
+        let workspace = WorkspaceManager.shared
+        guard workspace.activeDocumentID != nil else { return }
+        let fontSize = UserDefaults.standard.double(forKey: "editorFontSize")
+        PDFExporter().exportPDF(
+            markdown: workspace.currentFileText,
+            fontSize: CGFloat(fontSize > 0 ? fontSize : 16),
+            fileURL: workspace.currentFileURL
+        )
+    }
+
+    @objc private func printDocumentAction(_ sender: Any?) {
+        let workspace = WorkspaceManager.shared
+        guard workspace.activeDocumentID != nil else { return }
+        let fontSize = UserDefaults.standard.double(forKey: "editorFontSize")
+        PDFExporter().printHTML(
+            markdown: workspace.currentFileText,
+            fontSize: CGFloat(fontSize > 0 ? fontSize : 16),
+            fileURL: workspace.currentFileURL
+        )
+    }
+
+    @objc func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
+        if menuItem.action == #selector(exportPDFAction(_:)) ||
+           menuItem.action == #selector(printDocumentAction(_:)) {
+            return WorkspaceManager.shared.activeDocumentID != nil
+        }
+        return true
     }
 
     func applicationWillBecomeActive(_ notification: Notification) {
@@ -891,12 +941,7 @@ struct ClearlyApp: App {
                 CheckForUpdatesView(updater: updaterController.updater)
             }
             #endif
-            CommandGroup(after: .importExport) {
-                ExportPDFCommand()
-            }
-            CommandGroup(replacing: .printItem) {
-                PrintCommand()
-            }
+            CommandGroup(replacing: .printItem) { }
             // View menu — sidebar, editor/preview modes, outline
             CommandGroup(before: .toolbar) {
                 // Toggle Sidebar, Editor/Preview, and Toggle Outline
@@ -1119,38 +1164,6 @@ struct CheckForUpdatesView: View {
     }
 }
 #endif
-
-// MARK: - Export / Print Commands
-
-struct ExportPDFCommand: View {
-    @FocusedValue(\.documentText) var text
-    @FocusedValue(\.documentFileURL) var fileURL
-    @AppStorage("editorFontSize") private var fontSize: Double = 16
-
-    var body: some View {
-        Button("Export as PDF…") {
-            guard let text else { return }
-            PDFExporter().exportPDF(markdown: text, fontSize: CGFloat(fontSize), fileURL: fileURL)
-        }
-        .disabled(text == nil)
-        .keyboardShortcut("e", modifiers: [.command, .shift])
-    }
-}
-
-struct PrintCommand: View {
-    @FocusedValue(\.documentText) var text
-    @FocusedValue(\.documentFileURL) var fileURL
-    @AppStorage("editorFontSize") private var fontSize: Double = 16
-
-    var body: some View {
-        Button("Print…") {
-            guard let text else { return }
-            PDFExporter().printHTML(markdown: text, fontSize: CGFloat(fontSize), fileURL: fileURL)
-        }
-        .disabled(text == nil)
-        .keyboardShortcut("p", modifiers: [.command, .shift])
-    }
-}
 
 #if canImport(Sparkle)
 final class CheckForUpdatesViewModel: ObservableObject {
