@@ -7,8 +7,18 @@ enum Theme {
         let size = UserDefaults.standard.double(forKey: "editorFontSize")
         return size > 0 ? CGFloat(size) : 16
     }
-    static var editorFont: NSFont { NSFont.monospacedSystemFont(ofSize: editorFontSize, weight: .regular) }
-    static var editorFontSwiftUI: Font { Font.system(size: editorFontSize, design: .monospaced) }
+
+    static var editorTypography: EditorTypography {
+        TypographyPreferences.editorTypography(size: editorFontSize)
+    }
+
+    static var editorFont: NSFont {
+        editorTypography.font
+    }
+
+    static var editorFontSwiftUI: Font {
+        .custom(editorFont.fontName, size: editorFont.pointSize)
+    }
 
     // MARK: - Margins
     static let editorInsetX: CGFloat = 60
@@ -20,15 +30,12 @@ enum Theme {
 
     /// Desired line height = font natural height + lineSpacing
     static var editorLineHeight: CGFloat {
-        let font = editorFont
-        return ceil(font.ascender - font.descender + font.leading) + lineSpacing
+        editorTypography.lineHeight
     }
 
     /// Baseline offset to vertically center text within the line height
     static var editorBaselineOffset: CGFloat {
-        let font = editorFont
-        let naturalHeight = ceil(font.ascender - font.descender + font.leading)
-        return (editorLineHeight - naturalHeight) / 2
+        editorTypography.baselineOffset
     }
 
     // MARK: - Dynamic Colors (auto-resolve for light/dark)

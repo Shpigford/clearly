@@ -7,6 +7,7 @@ struct PreviewView: NSViewRepresentable {
 
     let markdown: String
     var fontSize: CGFloat = 18
+    var previewTypography: PreviewTypography = .default
     var mode: ViewMode
     var positionSyncID: String
     var fileURL: URL?
@@ -17,7 +18,14 @@ struct PreviewView: NSViewRepresentable {
     @Environment(\.colorScheme) private var colorScheme
 
     private var contentKey: String {
-        "\(markdown)__\(fontSize)__\(colorScheme == .dark ? "dark" : "light")__\(LocalImageSupport.fileURLKeyFragment(fileURL))"
+        [
+            markdown,
+            String(describing: fontSize),
+            previewTypography.bodyFontFamily,
+            previewTypography.headingFontFamily,
+            colorScheme == .dark ? "dark" : "light",
+            LocalImageSupport.fileURLKeyFragment(fileURL)
+        ].joined(separator: "__")
     }
 
     func makeCoordinator() -> Coordinator {
@@ -124,7 +132,7 @@ struct PreviewView: NSViewRepresentable {
         <head>
         <meta charset="utf-8">
         <meta name="viewport" content="width=device-width, initial-scale=1">
-        <style>\(PreviewCSS.css(fontSize: fontSize))
+        <style>\(PreviewCSS.css(fontSize: fontSize, typography: previewTypography))
         mark.clearly-find { background-color: rgba(255, 230, 0, 0.4); border-radius: 2px; padding: 0 1px; }
         mark.clearly-find.current { background-color: rgba(255, 165, 0, 0.6); }
         @media (prefers-color-scheme: dark) {

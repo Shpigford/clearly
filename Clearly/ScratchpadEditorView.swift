@@ -20,7 +20,12 @@ struct ScratchpadEditorView: NSViewRepresentable {
     @Binding var text: String
     var fontSize: CGFloat = 16
     var onSave: (() -> Void)?
+    @AppStorage(TypographyPreferences.editorFontNameKey) private var editorFontName = ""
     @Environment(\.colorScheme) private var colorScheme
+
+    private var resolvedEditorTypography: EditorTypography {
+        TypographyPreferences.editorTypography(size: fontSize, storedFontName: editorFontName.isEmpty ? nil : editorFontName)
+    }
 
     func makeCoordinator() -> Coordinator {
         Coordinator(self)
@@ -42,21 +47,14 @@ struct ScratchpadEditorView: NSViewRepresentable {
         textView.isAutomaticTextReplacementEnabled = false
         TextCheckingPreferences.apply(to: textView)
 
-        textView.font = Theme.editorFont
+        let editorTypography = resolvedEditorTypography
+
+        textView.font = editorTypography.font
         textView.textColor = Theme.textColor
         textView.backgroundColor = .clear
         textView.drawsBackground = false
-
-        let paragraph = NSMutableParagraphStyle()
-        paragraph.minimumLineHeight = Theme.editorLineHeight
-        paragraph.maximumLineHeight = Theme.editorLineHeight
-        textView.defaultParagraphStyle = paragraph
-        textView.typingAttributes = [
-            .font: Theme.editorFont,
-            .foregroundColor: Theme.textColor,
-            .paragraphStyle: paragraph,
-            .baselineOffset: Theme.editorBaselineOffset
-        ]
+        textView.defaultParagraphStyle = editorTypography.paragraphStyle
+        textView.typingAttributes = editorTypography.typingAttributes
 
         textView.textContainerInset = NSSize(width: 20, height: 8)
         textView.textContainer?.lineFragmentPadding = 0
@@ -96,24 +94,23 @@ struct ScratchpadEditorView: NSViewRepresentable {
 
         let currentScheme = colorScheme
         let currentFontSize = fontSize
-        let appearanceChanged = context.coordinator.lastColorScheme != currentScheme || context.coordinator.lastFontSize != currentFontSize
+        let currentEditorFontName = editorFontName
+        let appearanceChanged = context.coordinator.lastColorScheme != currentScheme ||
+            context.coordinator.lastFontSize != currentFontSize ||
+            context.coordinator.lastEditorFontName != currentEditorFontName
         if appearanceChanged {
             context.coordinator.lastColorScheme = currentScheme
             context.coordinator.lastFontSize = currentFontSize
-            textView.font = Theme.editorFont
+            context.coordinator.lastEditorFontName = currentEditorFontName
 
-            let paragraph = NSMutableParagraphStyle()
-            paragraph.minimumLineHeight = Theme.editorLineHeight
-            paragraph.maximumLineHeight = Theme.editorLineHeight
-            textView.typingAttributes = [
-                .font: Theme.editorFont,
-                .foregroundColor: Theme.textColor,
-                .paragraphStyle: paragraph,
-                .baselineOffset: Theme.editorBaselineOffset
-            ]
+            let editorTypography = resolvedEditorTypography
+            textView.font = editorTypography.font
+            textView.textColor = Theme.textColor
+            textView.defaultParagraphStyle = editorTypography.paragraphStyle
+            textView.typingAttributes = editorTypography.typingAttributes
 
             context.coordinator.isHighlighting = true
-            context.coordinator.highlighter?.highlightAll(textView.textStorage!, caller: "scratchpad-appearance")
+            context.coordinator.highlighter?.highlightAll(textView.textStorage!, typography: editorTypography, caller: "scratchpad-appearance")
             context.coordinator.isHighlighting = false
         }
 
@@ -123,7 +120,7 @@ struct ScratchpadEditorView: NSViewRepresentable {
             textView.string = text
             textView.selectedRanges = selectedRanges
             context.coordinator.isHighlighting = true
-            context.coordinator.highlighter?.highlightAll(textView.textStorage!, caller: "scratchpad-externalText")
+            context.coordinator.highlighter?.highlightAll(textView.textStorage!, typography: context.coordinator.currentEditorTypography, caller: "scratchpad-externalText")
             context.coordinator.isHighlighting = false
             context.coordinator.isUpdating = false
         }
@@ -139,10 +136,15 @@ struct ScratchpadEditorView: NSViewRepresentable {
         weak var textView: NSTextView?
         var lastColorScheme: ColorScheme?
         var lastFontSize: CGFloat?
+        var lastEditorFontName = ""
         var onSave: (() -> Void)?
 
         init(_ parent: ScratchpadEditorView) {
             self.parent = parent
+        }
+
+        var currentEditorTypography: EditorTypography {
+            TypographyPreferences.editorTypography(size: parent.fontSize, storedFontName: parent.editorFontName.isEmpty ? nil : parent.editorFontName)
         }
 
         func textDidChange(_ notification: Notification) {
@@ -150,7 +152,7 @@ struct ScratchpadEditorView: NSViewRepresentable {
             if isUpdating { return }
 
             isHighlighting = true
-            highlighter?.highlightAll(textView.textStorage!, caller: "scratchpad-textDidChange")
+            highlighter?.highlightAll(textView.textStorage!, typography: currentEditorTypography, caller: "scratchpad-textDidChange")
             isHighlighting = false
 
             let newText = textView.string

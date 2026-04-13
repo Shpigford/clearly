@@ -10,6 +10,8 @@ struct SettingsView: View {
     let updater: SPUUpdater
     #endif
     @AppStorage("editorFontSize") private var fontSize: Double = 16
+    @AppStorage(TypographyPreferences.editorFontNameKey) private var editorFontName = ""
+    @AppStorage(TypographyPreferences.previewFontNameKey) private var previewFontName = ""
     @AppStorage("themePreference") private var themePreference = "system"
     @AppStorage("launchBehavior") private var launchBehavior = "lastFile"
 
@@ -25,43 +27,109 @@ struct SettingsView: View {
                     Label("About", systemImage: "info.circle")
                 }
         }
-        .frame(width: 420, height: 360)
+        .frame(width: 460, height: 440)
     }
 
+    @StateObject private var fontPanelController = TypographyFontPanelController()
     @State private var launchAtLogin = SMAppService.mainApp.status == .enabled
+
+    private var selectedEditorFontName: String? {
+        editorFontName.isEmpty ? nil : editorFontName
+    }
+
+    private var selectedPreviewFontName: String? {
+        previewFontName.isEmpty ? nil : previewFontName
+    }
+
+    private var editorFontChoices: [EditorFontChoice] {
+        TypographyPreferences.editorFontChoices(size: CGFloat(fontSize))
+    }
+
+    private var editorFontSelection: Binding<String> {
+        Binding(
+            get: {
+                guard let selectedEditorFontName,
+                      editorFontChoices.contains(where: { $0.storedFontName == selectedEditorFontName }) else {
+                    return TypographyPreferences.defaultEditorFontChoiceID
+                }
+
+                return selectedEditorFontName
+            },
+            set: { newValue in
+                editorFontName = newValue == TypographyPreferences.defaultEditorFontChoiceID ? "" : newValue
+            }
+        )
+    }
 
     private var generalSettings: some View {
         Form {
-            Picker("Appearance", selection: $themePreference) {
-                Text("System").tag("system")
-                Text("Light").tag("light")
-                Text("Dark").tag("dark")
+            Section {
+                Picker("Appearance", selection: $themePreference) {
+                    Text("System").tag("system")
+                    Text("Light").tag("light")
+                    Text("Dark").tag("dark")
+                }
+
+                Picker("On Launch", selection: $launchBehavior) {
+                    Text("Open last file").tag("lastFile")
+                    Text("Create new document").tag("newDocument")
+                }
             }
-            Picker("On Launch", selection: $launchBehavior) {
-                Text("Open last file").tag("lastFile")
-                Text("Create new document").tag("newDocument")
-            }
-            HStack {
-                Text("Font Size")
-                Slider(value: $fontSize, in: 12...24, step: 1)
-                Text("\(Int(fontSize))")
-                    .font(.system(size: 13, weight: .medium))
-                    .monospacedDigit()
-                    .frame(width: 30, alignment: .trailing)
-            }
-            KeyboardShortcuts.Recorder("New Scratchpad:", name: .newScratchpad)
-            Toggle("Launch at Login", isOn: $launchAtLogin)
-                .onChange(of: launchAtLogin) { _, newValue in
-                    do {
-                        if newValue {
-                            try SMAppService.mainApp.register()
-                        } else {
-                            try SMAppService.mainApp.unregister()
-                        }
-                    } catch {
-                        launchAtLogin = SMAppService.mainApp.status == .enabled
+
+            Section("Typography") {
+                Picker("Editor Font", selection: editorFontSelection) {
+                    ForEach(editorFontChoices) { choice in
+                        Text(choice.displayName).tag(choice.id)
                     }
                 }
+
+                HStack {
+                    Text("Preview Font")
+                    Spacer()
+                    Text(TypographyPreferences.displayName(for: .preview, size: CGFloat(fontSize), storedFontName: selectedPreviewFontName))
+                        .foregroundStyle(.secondary)
+                }
+
+                HStack {
+                    Button("Choose Preview Font…") {
+                        fontPanelController.chooseFont(for: .preview, size: CGFloat(fontSize), storedFontName: selectedPreviewFontName)
+                    }
+
+                    Button("Reset") {
+                        TypographyPreferences.clearStoredFontName(for: .preview)
+                    }
+                    .disabled(selectedPreviewFontName == nil)
+                }
+
+                HStack {
+                    Text("Font Size")
+                    Slider(value: $fontSize, in: 12...24, step: 1)
+                    Text("\(Int(fontSize))")
+                        .font(.system(size: 13, weight: .medium))
+                        .monospacedDigit()
+                        .frame(width: 30, alignment: .trailing)
+                }
+
+                Text("Preview uses the current font size setting. Quick Look stays on the bundled default preview font.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Section {
+                KeyboardShortcuts.Recorder("New Scratchpad:", name: .newScratchpad)
+                Toggle("Launch at Login", isOn: $launchAtLogin)
+                    .onChange(of: launchAtLogin) { _, newValue in
+                        do {
+                            if newValue {
+                                try SMAppService.mainApp.register()
+                            } else {
+                                try SMAppService.mainApp.unregister()
+                            }
+                        } catch {
+                            launchAtLogin = SMAppService.mainApp.status == .enabled
+                        }
+                    }
+            }
         }
         .formStyle(.grouped)
     }

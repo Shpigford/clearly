@@ -11,7 +11,12 @@ struct EditorView: NSViewRepresentable {
     var positionSyncID: String
     var findState: FindState?
     var outlineState: OutlineState?
+    @AppStorage(TypographyPreferences.editorFontNameKey) private var editorFontName = ""
     @Environment(\.colorScheme) private var colorScheme
+
+    private var resolvedEditorTypography: EditorTypography {
+        TypographyPreferences.editorTypography(size: fontSize, storedFontName: editorFontName.isEmpty ? nil : editorFontName)
+    }
 
     func makeCoordinator() -> Coordinator {
         Coordinator(self)
@@ -34,23 +39,17 @@ struct EditorView: NSViewRepresentable {
         textView.isAutomaticTextReplacementEnabled = false
         TextCheckingPreferences.apply(to: textView)
 
+        let editorTypography = resolvedEditorTypography
+
         // Font
-        textView.font = Theme.editorFont
+        textView.font = editorTypography.font
         textView.textColor = Theme.textColor
         textView.backgroundColor = Theme.backgroundColor
 
         // Paragraph style with line height — use min/max line height + baselineOffset
         // so text is vertically centered in each line (not top-aligned like lineSpacing)
-        let paragraph = NSMutableParagraphStyle()
-        paragraph.minimumLineHeight = Theme.editorLineHeight
-        paragraph.maximumLineHeight = Theme.editorLineHeight
-        textView.defaultParagraphStyle = paragraph
-        textView.typingAttributes = [
-            .font: Theme.editorFont,
-            .foregroundColor: Theme.textColor,
-            .paragraphStyle: paragraph,
-            .baselineOffset: Theme.editorBaselineOffset
-        ]
+        textView.defaultParagraphStyle = editorTypography.paragraphStyle
+        textView.typingAttributes = editorTypography.typingAttributes
 
         // Insets
         textView.textContainerInset = NSSize(width: Theme.editorInsetX, height: Theme.editorInsetTop)
@@ -173,28 +172,27 @@ struct EditorView: NSViewRepresentable {
         // Re-highlight and update typing attributes when appearance or font size changes
         let currentScheme = colorScheme
         let currentFontSize = fontSize
-        let appearanceChanged = context.coordinator.lastColorScheme != currentScheme || context.coordinator.lastFontSize != currentFontSize
+        let currentEditorFontName = editorFontName
+        let appearanceChanged = context.coordinator.lastColorScheme != currentScheme ||
+            context.coordinator.lastFontSize != currentFontSize ||
+            context.coordinator.lastEditorFontName != currentEditorFontName
         if appearanceChanged {
             if count <= 5 {
                 DiagnosticLog.log("updateNSView #\(count): appearance changed (scheme=\(currentScheme), fontSize=\(currentFontSize))")
             }
             context.coordinator.lastColorScheme = currentScheme
             context.coordinator.lastFontSize = currentFontSize
-            textView.font = Theme.editorFont
+            context.coordinator.lastEditorFontName = currentEditorFontName
 
-            let paragraph = NSMutableParagraphStyle()
-            paragraph.minimumLineHeight = Theme.editorLineHeight
-            paragraph.maximumLineHeight = Theme.editorLineHeight
-            textView.typingAttributes = [
-                .font: Theme.editorFont,
-                .foregroundColor: Theme.textColor,
-                .paragraphStyle: paragraph,
-                .baselineOffset: Theme.editorBaselineOffset
-            ]
+            let editorTypography = resolvedEditorTypography
+            textView.font = editorTypography.font
+            textView.textColor = Theme.textColor
+            textView.defaultParagraphStyle = editorTypography.paragraphStyle
+            textView.typingAttributes = editorTypography.typingAttributes
 
             // Suppress scroll handler during highlighting to prevent layout manager deadlock
             context.coordinator.isHighlightingInProgress = true
-            context.coordinator.highlighter?.highlightAll(textView.textStorage!, caller: "appearance")
+            context.coordinator.highlighter?.highlightAll(textView.textStorage!, typography: editorTypography, caller: "appearance")
             context.coordinator.isHighlightingInProgress = false
             context.coordinator.restoreFindHighlightsIfNeeded()
         }
@@ -212,7 +210,7 @@ struct EditorView: NSViewRepresentable {
             textView.string = text
             textView.selectedRanges = selectedRanges
             context.coordinator.isHighlightingInProgress = true
-            context.coordinator.highlighter?.highlightAll(textView.textStorage!, caller: "externalText")
+            context.coordinator.highlighter?.highlightAll(textView.textStorage!, typography: context.coordinator.currentEditorTypography, caller: "externalText")
             context.coordinator.isHighlightingInProgress = false
             context.coordinator.restoreFindHighlightsIfNeeded()
             context.coordinator.isUpdating = false
@@ -239,6 +237,7 @@ struct EditorView: NSViewRepresentable {
         var outlineState: OutlineState?
         var lastColorScheme: ColorScheme?
         var lastFontSize: CGFloat?
+        var lastEditorFontName = ""
         var updateCount = 0
         private var lastScrollTime: TimeInterval = 0
         private var editGeneration: UInt = 0
@@ -254,6 +253,10 @@ struct EditorView: NSViewRepresentable {
 
         init(_ parent: EditorView) {
             self.parent = parent
+        }
+
+        var currentEditorTypography: EditorTypography {
+            TypographyPreferences.editorTypography(size: parent.fontSize, storedFontName: parent.editorFontName.isEmpty ? nil : parent.editorFontName)
         }
 
         func scrollToHeading(_ range: NSRange) {
@@ -336,7 +339,7 @@ struct EditorView: NSViewRepresentable {
 
             // Highlight synchronously so colors appear on the same frame as the keystroke
             isHighlightingInProgress = true
-            highlighter?.highlightAll(textView.textStorage!, caller: "textDidChange")
+            highlighter?.highlightAll(textView.textStorage!, typography: currentEditorTypography, caller: "textDidChange")
             isHighlightingInProgress = false
 
             // Restore scroll position that highlighting may have disturbed

@@ -103,3 +103,17 @@ targets:
         Release:
           CODE_SIGN_STYLE: Manual
           CODE_SIGN_IDENTITY: "Developer ID Application"
+
+  ClearlyTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - path: ClearlyTests
+    dependencies:
+      - target: Clearly
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.sabotage.clearly.tests
+        PRODUCT_NAME: ClearlyTests
+        SWIFT_VERSION: "5.9"
+        GENERATE_INFOPLIST_FILE: YES
