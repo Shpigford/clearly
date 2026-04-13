@@ -5,7 +5,7 @@ struct ScratchpadMenuBar: View {
     var manager: ScratchpadManager
 
     var body: some View {
-        Button("New Scratchpad") {
+        Button(L10n.string("scratchpad.newScratchpad", defaultValue: "New Scratchpad")) {
             manager.createScratchpad()
         }
         .keyboardShortcut(for: .newScratchpad)
@@ -19,27 +19,27 @@ struct ScratchpadMenuBar: View {
                 }
             }
 
-            Button("Close All Scratchpads") {
+            Button(L10n.string("scratchpad.closeAll", defaultValue: "Close All Scratchpads")) {
                 manager.closeAll()
             }
 
             Divider()
         }
 
-        Button("New Document") {
+        Button(L10n.string("app.menu.newDocument", defaultValue: "New Document")) {
             performMenuBarAction {
                 WorkspaceManager.shared.createUntitledDocument()
             }
         }
         .keyboardShortcut("n", modifiers: [.command])
 
-        Button("Show Workspace") {
+        Button(L10n.string("scratchpad.showWorkspace", defaultValue: "Show Workspace")) {
             performMenuBarAction {
                 WindowRouter.shared.showMainWindow()
             }
         }
 
-        Button("Open Document") {
+        Button(L10n.string("scratchpad.openDocument", defaultValue: "Open Document")) {
             performMenuBarAction {
                 WorkspaceManager.shared.showOpenPanel()
             }
@@ -49,11 +49,11 @@ struct ScratchpadMenuBar: View {
         Divider()
 
         SettingsLink {
-            Text("Settings…")
+            Text(L10n.string("scratchpad.settings", defaultValue: "Settings…"))
         }
         .keyboardShortcut(",", modifiers: [.command])
 
-        Button("Quit Clearly") {
+        Button(L10n.string("scratchpad.quit", defaultValue: "Quit Clearly")) {
             NSApp.terminate(nil)
         }
     }

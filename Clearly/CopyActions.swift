@@ -67,36 +67,36 @@ enum CopyActions {
 
     /// Builds an NSMenu with all copy items for a given file URL.
     static func copySubmenu(for url: URL, target: AnyObject) -> NSMenu {
-        let sub = NSMenu(title: "Copy")
+        let sub = NSMenu(title: L10n.string("sidebar.context.copy", defaultValue: "Copy"))
 
-        let pathItem = NSMenuItem(title: "Copy File Path", action: #selector(CopyMenuActions.copyFilePathAction(_:)), keyEquivalent: "")
+        let pathItem = NSMenuItem(title: L10n.string("content.copy.filePath", defaultValue: "Copy File Path"), action: #selector(CopyMenuActions.copyFilePathAction(_:)), keyEquivalent: "")
         pathItem.representedObject = url
         pathItem.target = target
         sub.addItem(pathItem)
 
-        let nameItem = NSMenuItem(title: "Copy File Name", action: #selector(CopyMenuActions.copyFileNameAction(_:)), keyEquivalent: "")
+        let nameItem = NSMenuItem(title: L10n.string("content.copy.fileName", defaultValue: "Copy File Name"), action: #selector(CopyMenuActions.copyFileNameAction(_:)), keyEquivalent: "")
         nameItem.representedObject = url
         nameItem.target = target
         sub.addItem(nameItem)
 
         sub.addItem(.separator())
 
-        let mdItem = NSMenuItem(title: "Copy Markdown", action: #selector(CopyMenuActions.copyMarkdownAction(_:)), keyEquivalent: "")
+        let mdItem = NSMenuItem(title: L10n.string("content.copy.markdown", defaultValue: "Copy Markdown"), action: #selector(CopyMenuActions.copyMarkdownAction(_:)), keyEquivalent: "")
         mdItem.representedObject = url
         mdItem.target = target
         sub.addItem(mdItem)
 
-        let htmlItem = NSMenuItem(title: "Copy HTML", action: #selector(CopyMenuActions.copyHTMLAction(_:)), keyEquivalent: "")
+        let htmlItem = NSMenuItem(title: L10n.string("content.copy.html", defaultValue: "Copy HTML"), action: #selector(CopyMenuActions.copyHTMLAction(_:)), keyEquivalent: "")
         htmlItem.representedObject = url
         htmlItem.target = target
         sub.addItem(htmlItem)
 
-        let richItem = NSMenuItem(title: "Copy Rich Text", action: #selector(CopyMenuActions.copyRichTextAction(_:)), keyEquivalent: "")
+        let richItem = NSMenuItem(title: L10n.string("content.copy.richText", defaultValue: "Copy Rich Text"), action: #selector(CopyMenuActions.copyRichTextAction(_:)), keyEquivalent: "")
         richItem.representedObject = url
         richItem.target = target
         sub.addItem(richItem)
 
-        let plainItem = NSMenuItem(title: "Copy Plain Text", action: #selector(CopyMenuActions.copyPlainTextAction(_:)), keyEquivalent: "")
+        let plainItem = NSMenuItem(title: L10n.string("content.copy.plainText", defaultValue: "Copy Plain Text"), action: #selector(CopyMenuActions.copyPlainTextAction(_:)), keyEquivalent: "")
         plainItem.representedObject = url
         plainItem.target = target
         sub.addItem(plainItem)

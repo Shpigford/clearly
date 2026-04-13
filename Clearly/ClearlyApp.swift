@@ -128,6 +128,7 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate {
     private var showHiddenFilesMonitor: Any?
     private var sidebarToggleMonitor: Any?
     private var themeObserver: Any?
+    private var languageObserver: Any?
     private var isProgrammaticallyClosingWindows = false
     private(set) var mainWindow: NSWindow?
 
@@ -260,6 +261,12 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate {
             }
         })
 
+        languageObserver = nc.addObserver(forName: .appLanguageDidChange, object: nil, queue: .main) { [weak self] _ in
+            Task { @MainActor in
+                self?.refreshLocalizedUI()
+            }
+        }
+
         commandQMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
             guard let self else { return event }
             guard self.shouldCloseToMenuBar(for: event) else { return event }
@@ -362,6 +369,10 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate {
             NotificationCenter.default.removeObserver(themeObserver)
             self.themeObserver = nil
         }
+        if let languageObserver {
+            NotificationCenter.default.removeObserver(languageObserver)
+            self.languageObserver = nil
+        }
     }
 
     // MARK: - Spelling and Grammar menu injection
@@ -374,13 +385,43 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate {
         injectSpellingMenuIfNeeded()
         injectSidebarToggleIfNeeded()
         injectViewCommandsIfNeeded()
+        refreshLocalizedMenuTitles()
+        refreshSwiftUICommandMenuTitles()
+    }
+
+    private func menuContainingAnyAction(_ selectors: [Selector]) -> NSMenu? {
+        NSApp.mainMenu?.items.first { item in
+            guard let submenu = item.submenu else { return false }
+            return submenu.items.contains { menuItem in
+                guard let action = menuItem.action else { return false }
+                return selectors.contains(action)
+            }
+        }?.submenu
+    }
+
+    private func editMenu() -> NSMenu? {
+        menuContainingAnyAction([
+            #selector(NSText.copy(_:)),
+            #selector(NSText.paste(_:))
+        ])
+    }
+
+    private func viewMenu() -> NSMenu? {
+        menuContainingAnyAction([
+            #selector(NSWindow.toggleToolbarShown(_:)),
+            #selector(NSWindow.toggleFullScreen(_:))
+        ])
     }
 
     private func injectSidebarToggleIfNeeded() {
-        guard let viewMenu = NSApp.mainMenu?.item(withTitle: "View")?.submenu else { return }
-        guard !viewMenu.items.contains(where: { $0.title == "Toggle Sidebar" }) else { return }
+        guard let viewMenu = viewMenu() else { return }
+        guard !viewMenu.items.contains(where: { $0.action == #selector(toggleSidebarMenuAction(_:)) }) else { return }
 
-        let sidebarItem = NSMenuItem(title: "Toggle Sidebar", action: #selector(toggleSidebarMenuAction(_:)), keyEquivalent: "l")
+        let sidebarItem = NSMenuItem(
+            title: L10n.string("app.menu.view.toggleSidebar", defaultValue: "Toggle Sidebar"),
+            action: #selector(toggleSidebarMenuAction(_:)),
+            keyEquivalent: "l"
+        )
         sidebarItem.keyEquivalentModifierMask = [.command, .shift]
         sidebarItem.target = self
 
@@ -393,23 +434,134 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate {
         doToggleSidebar()
     }
 
+    private func localizationsForKey(_ key: String, defaultValue: String) -> Set<String> {
+        var titles = Set([defaultValue])
+        for localization in AppLanguage.supportedIdentifiers {
+            titles.insert(L10n.string(key, defaultValue: defaultValue, localization: localization))
+        }
+        return titles
+    }
+
+    private func updateMenuTitles(
+        in menu: NSMenu?,
+        key: String,
+        defaultValue: String,
+        title: String
+    ) {
+        guard let menu else { return }
+        let candidates = localizationsForKey(key, defaultValue: defaultValue)
+        for item in menu.items where candidates.contains(item.title) {
+            item.title = title
+        }
+        for item in menu.items {
+            updateMenuTitles(in: item.submenu, key: key, defaultValue: defaultValue, title: title)
+        }
+    }
+
+    private func updateTopLevelMenuTitle(
+        key: String,
+        defaultValue: String,
+        title: String
+    ) {
+        guard let mainMenu = NSApp.mainMenu else { return }
+        let candidates = localizationsForKey(key, defaultValue: defaultValue)
+        guard let item = mainMenu.items.first(where: { candidates.contains($0.title) }) else { return }
+        item.title = title
+        item.submenu?.title = title
+    }
+
+    private func updateMenuItemTitle(in menu: NSMenu?, action: Selector, title: String) {
+        guard let item = menu?.items.first(where: { $0.action == action }) else { return }
+        item.title = title
+    }
+
+    private func refreshLocalizedMenuTitles() {
+        let viewMenu = viewMenu()
+        updateMenuItemTitle(
+            in: viewMenu,
+            action: #selector(toggleSidebarMenuAction(_:)),
+            title: L10n.string("app.menu.view.toggleSidebar", defaultValue: "Toggle Sidebar")
+        )
+        updateMenuItemTitle(
+            in: viewMenu,
+            action: #selector(toggleOutlineAction(_:)),
+            title: L10n.string("app.menu.toggleOutline", defaultValue: "Toggle Outline")
+        )
+        updateMenuItemTitle(
+            in: viewMenu,
+            action: #selector(switchToEditorAction(_:)),
+            title: L10n.string("app.menu.view.editor", defaultValue: "Editor")
+        )
+        updateMenuItemTitle(
+            in: viewMenu,
+            action: #selector(switchToPreviewAction(_:)),
+            title: L10n.string("app.menu.view.preview", defaultValue: "Preview")
+        )
+
+        guard let editMenu = editMenu(),
+              let spellingItem = editMenu.items.first(where: {
+                  $0.submenu?.items.contains(where: { $0.action == #selector(NSText.checkSpelling(_:)) }) == true
+              }),
+              let spellingMenu = spellingItem.submenu else {
+            return
+        }
+
+        let spellingTitle = L10n.string("app.menu.spellingAndGrammar", defaultValue: "Spelling and Grammar")
+        spellingItem.title = spellingTitle
+        spellingMenu.title = spellingTitle
+
+        updateMenuItemTitle(
+            in: spellingMenu,
+            action: #selector(NSText.showGuessPanel(_:)),
+            title: L10n.string("app.menu.spelling.show", defaultValue: "Show Spelling and Grammar")
+        )
+        updateMenuItemTitle(
+            in: spellingMenu,
+            action: #selector(NSText.checkSpelling(_:)),
+            title: L10n.string("app.menu.spelling.checkNow", defaultValue: "Check Document Now")
+        )
+        updateMenuItemTitle(
+            in: spellingMenu,
+            action: #selector(NSTextView.toggleContinuousSpellChecking(_:)),
+            title: L10n.string("app.menu.spelling.checkWhileTyping", defaultValue: "Check Spelling While Typing")
+        )
+        updateMenuItemTitle(
+            in: spellingMenu,
+            action: #selector(NSTextView.toggleGrammarChecking(_:)),
+            title: L10n.string("app.menu.spelling.checkGrammar", defaultValue: "Check Grammar With Spelling")
+        )
+        updateMenuItemTitle(
+            in: spellingMenu,
+            action: #selector(NSTextView.toggleAutomaticSpellingCorrection(_:)),
+            title: L10n.string("app.menu.spelling.correctAutomatically", defaultValue: "Correct Spelling Automatically")
+        )
+    }
+
     private func injectViewCommandsIfNeeded() {
-        guard let viewMenu = NSApp.mainMenu?.item(withTitle: "View")?.submenu else { return }
+        guard let viewMenu = viewMenu() else { return }
+        guard !viewMenu.items.contains(where: { $0.action == #selector(toggleOutlineAction(_:)) }) else { return }
 
-        // Remove tab bar items (system-injected, we don't use tabs)
-        viewMenu.items.removeAll { $0.title == "Show Tab Bar" || $0.title == "Show All Tabs" || $0.title == "Hide Tab Bar" }
-
-        guard !viewMenu.items.contains(where: { $0.title == "Toggle Outline" }) else { return }
-
-        let outlineItem = NSMenuItem(title: "Toggle Outline", action: #selector(toggleOutlineAction(_:)), keyEquivalent: "o")
+        let outlineItem = NSMenuItem(
+            title: L10n.string("app.menu.toggleOutline", defaultValue: "Toggle Outline"),
+            action: #selector(toggleOutlineAction(_:)),
+            keyEquivalent: "o"
+        )
         outlineItem.keyEquivalentModifierMask = [.command, .shift]
         outlineItem.target = self
 
-        let editorItem = NSMenuItem(title: "Editor", action: #selector(switchToEditorAction(_:)), keyEquivalent: "1")
+        let editorItem = NSMenuItem(
+            title: L10n.string("app.menu.view.editor", defaultValue: "Editor"),
+            action: #selector(switchToEditorAction(_:)),
+            keyEquivalent: "1"
+        )
         editorItem.keyEquivalentModifierMask = [.command]
         editorItem.target = self
 
-        let previewItem = NSMenuItem(title: "Preview", action: #selector(switchToPreviewAction(_:)), keyEquivalent: "2")
+        let previewItem = NSMenuItem(
+            title: L10n.string("app.menu.view.preview", defaultValue: "Preview"),
+            action: #selector(switchToPreviewAction(_:)),
+            keyEquivalent: "2"
+        )
         previewItem.keyEquivalentModifierMask = [.command]
         previewItem.target = self
 
@@ -434,39 +586,37 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func injectSpellingMenuIfNeeded() {
-        guard let editMenu = NSApp.mainMenu?.item(withTitle: "Edit")?.submenu else { return }
-        guard !editMenu.items.contains(where: { $0.title == "Spelling and Grammar" }) else { return }
+        guard let editMenu = editMenu() else { return }
+        guard !editMenu.items.contains(where: { $0.submenu?.items.contains(where: { $0.action == #selector(NSText.checkSpelling(_:)) }) == true }) else { return }
 
-        let spellingItem = NSMenuItem(title: "Spelling and Grammar", action: nil, keyEquivalent: "")
-        let spellingMenu = NSMenu(title: "Spelling and Grammar")
+        let spellingTitle = L10n.string("app.menu.spellingAndGrammar", defaultValue: "Spelling and Grammar")
+        let spellingItem = NSMenuItem(title: spellingTitle, action: nil, keyEquivalent: "")
+        let spellingMenu = NSMenu(title: spellingTitle)
 
-        let showItem = NSMenuItem(title: "Show Spelling and Grammar", action: #selector(NSText.showGuessPanel(_:)), keyEquivalent: ":")
+        let showItem = NSMenuItem(
+            title: L10n.string("app.menu.spelling.show", defaultValue: "Show Spelling and Grammar"),
+            action: #selector(NSText.showGuessPanel(_:)),
+            keyEquivalent: ":"
+        )
         showItem.keyEquivalentModifierMask = [.command]
         spellingMenu.addItem(showItem)
 
-        let checkItem = NSMenuItem(title: "Check Document Now", action: #selector(NSText.checkSpelling(_:)), keyEquivalent: ";")
+        let checkItem = NSMenuItem(
+            title: L10n.string("app.menu.spelling.checkNow", defaultValue: "Check Document Now"),
+            action: #selector(NSText.checkSpelling(_:)),
+            keyEquivalent: ";"
+        )
         checkItem.keyEquivalentModifierMask = [.command]
         spellingMenu.addItem(checkItem)
 
         spellingMenu.addItem(.separator())
-        spellingMenu.addItem(NSMenuItem(title: "Check Spelling While Typing", action: #selector(NSTextView.toggleContinuousSpellChecking(_:)), keyEquivalent: ""))
-        spellingMenu.addItem(NSMenuItem(title: "Check Grammar With Spelling", action: #selector(NSTextView.toggleGrammarChecking(_:)), keyEquivalent: ""))
-        spellingMenu.addItem(NSMenuItem(title: "Correct Spelling Automatically", action: #selector(NSTextView.toggleAutomaticSpellingCorrection(_:)), keyEquivalent: ""))
+        spellingMenu.addItem(NSMenuItem(title: L10n.string("app.menu.spelling.checkWhileTyping", defaultValue: "Check Spelling While Typing"), action: #selector(NSTextView.toggleContinuousSpellChecking(_:)), keyEquivalent: ""))
+        spellingMenu.addItem(NSMenuItem(title: L10n.string("app.menu.spelling.checkGrammar", defaultValue: "Check Grammar With Spelling"), action: #selector(NSTextView.toggleGrammarChecking(_:)), keyEquivalent: ""))
+        spellingMenu.addItem(NSMenuItem(title: L10n.string("app.menu.spelling.correctAutomatically", defaultValue: "Correct Spelling Automatically"), action: #selector(NSTextView.toggleAutomaticSpellingCorrection(_:)), keyEquivalent: ""))
 
         spellingItem.submenu = spellingMenu
-
-        // Place before Writing Tools (and its preceding separator) if present.
-        if let writingToolsIndex = editMenu.items.firstIndex(where: { $0.title == "Writing Tools" }) {
-            // Insert before the separator that precedes Writing Tools
-            let insertIndex = (writingToolsIndex > 0 && editMenu.items[writingToolsIndex - 1].isSeparatorItem)
-                ? writingToolsIndex - 1
-                : writingToolsIndex
-            editMenu.insertItem(spellingItem, at: insertIndex)
-            editMenu.insertItem(.separator(), at: insertIndex)
-        } else {
-            editMenu.addItem(.separator())
-            editMenu.addItem(spellingItem)
-        }
+        editMenu.addItem(.separator())
+        editMenu.addItem(spellingItem)
     }
 
     func applicationWillBecomeActive(_ notification: Notification) {
@@ -503,6 +653,76 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate {
         hideLauncherWindow()
         DispatchQueue.main.async { [weak self] in
             self?.updateActivationPolicy()
+        }
+    }
+
+    private func refreshLocalizedUI() {
+        splitViewController?.refreshLocalizedViews()
+        refreshLocalizedMenuTitles()
+        refreshSwiftUICommandMenuTitles()
+        NSApp.mainMenu?.update()
+    }
+
+    private func refreshSwiftUICommandMenuTitles() {
+        let menu = NSApp.mainMenu
+        let topLevelReplacements: [(key: String, defaultValue: String)] = [
+            ("app.menu.file", "File"),
+            ("app.menu.edit", "Edit"),
+            ("app.menu.view", "View"),
+            ("app.menu.window", "Window"),
+            ("app.menu.help", "Help"),
+            ("app.menu.format", "Format")
+        ]
+        let replacements: [(key: String, defaultValue: String)] = [
+            ("app.menu.newDocument", "New Document"),
+            ("app.menu.open", "Open…"),
+            ("app.menu.save", "Save"),
+            ("app.menu.hideHiddenFiles", "Hide Hidden Files"),
+            ("app.menu.showHiddenFiles", "Show Hidden Files"),
+            ("app.menu.help.clearlyHelp", "Clearly Help"),
+            ("app.menu.help.sampleDocument", "Sample Document"),
+            ("app.menu.help.exportDiagnosticLog", "Export Diagnostic Log…"),
+            ("app.menu.format", "Format"),
+            ("app.menu.format.bold", "Bold"),
+            ("app.menu.format.italic", "Italic"),
+            ("app.menu.format.strikethrough", "Strikethrough"),
+            ("app.menu.format.heading", "Heading"),
+            ("app.menu.format.link", "Link…"),
+            ("app.menu.format.image", "Image…"),
+            ("app.menu.format.bulletList", "Bullet List"),
+            ("app.menu.format.numberedList", "Numbered List"),
+            ("app.menu.format.todo", "Todo"),
+            ("app.menu.format.quote", "Quote"),
+            ("app.menu.format.horizontalRule", "Horizontal Rule"),
+            ("app.menu.format.table", "Table"),
+            ("app.menu.format.code", "Code"),
+            ("app.menu.format.codeBlock", "Code Block"),
+            ("app.menu.format.math", "Math"),
+            ("app.menu.format.mathBlock", "Math Block"),
+            ("app.menu.format.pageBreak", "Page Break"),
+            ("app.menu.find", "Find…"),
+            ("app.menu.font.increase", "Increase Font Size"),
+            ("app.menu.font.decrease", "Decrease Font Size"),
+            ("app.menu.checkForUpdates", "Check for Updates…"),
+            ("app.menu.exportPdf", "Export as PDF…"),
+            ("app.menu.print", "Print…")
+        ]
+
+        for replacement in topLevelReplacements {
+            updateTopLevelMenuTitle(
+                key: replacement.key,
+                defaultValue: replacement.defaultValue,
+                title: L10n.string(replacement.key, defaultValue: replacement.defaultValue)
+            )
+        }
+
+        for replacement in replacements {
+            updateMenuTitles(
+                in: menu,
+                key: replacement.key,
+                defaultValue: replacement.defaultValue,
+                title: L10n.string(replacement.key, defaultValue: replacement.defaultValue)
+            )
         }
     }
 
@@ -583,6 +803,7 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate {
     func shouldCloseToMenuBar(for event: NSEvent) -> Bool {
         guard event.type == .keyDown else { return false }
         guard event.charactersIgnoringModifiers?.lowercased() == "q" else { return false }
+        guard !AppLanguagePreference.hasPendingChange else { return false }
 
         let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
         return modifiers == [.command]
@@ -619,6 +840,8 @@ private class SoftDividerSplitView: NSSplitView {
 class ClearlySplitViewController: NSSplitViewController {
     let workspace: WorkspaceManager
     private var needsInitialCollapse = false
+    private weak var sidebarViewController: SidebarViewController?
+    private weak var detailHostController: NSHostingController<AnyView>?
 
     init(workspace: WorkspaceManager) {
         self.workspace = workspace
@@ -641,6 +864,7 @@ class ClearlySplitViewController: NSSplitViewController {
 
         // Sidebar — pure AppKit, no NSHostingView (avoids opaque white background)
         let sidebarVC = SidebarViewController(workspace: workspace)
+        self.sidebarViewController = sidebarVC
         let sidebarItem = NSSplitViewItem(contentListWithViewController: sidebarVC)
         sidebarItem.canCollapse = true
         sidebarItem.minimumThickness = 180
@@ -648,10 +872,8 @@ class ClearlySplitViewController: NSSplitViewController {
         addSplitViewItem(sidebarItem)
 
         // Detail
-        // Detail
-        let detailHost = NSHostingController(rootView:
-            DetailView(workspace: workspace)
-        )
+        let detailHost = NSHostingController(rootView: localizedDetailView())
+        self.detailHostController = detailHost
         let detailItem = NSSplitViewItem(viewController: detailHost)
         detailItem.minimumThickness = 400
         addSplitViewItem(detailItem)
@@ -659,6 +881,13 @@ class ClearlySplitViewController: NSSplitViewController {
         if !workspace.isSidebarVisible {
             needsInitialCollapse = true
         }
+    }
+
+    private func localizedDetailView() -> AnyView {
+        AnyView(
+            DetailView(workspace: workspace)
+                .environment(\.locale, Locale(identifier: AppLanguage.currentLocalization()))
+        )
     }
 
     override func viewDidAppear() {
@@ -683,6 +912,11 @@ class ClearlySplitViewController: NSSplitViewController {
         } else {
             sidebarItem.isCollapsed = targetCollapsed
         }
+    }
+
+    func refreshLocalizedViews() {
+        detailHostController?.rootView = localizedDetailView()
+        sidebarViewController?.refreshLocalizedViews()
     }
 
     override func toggleSidebar(_ sender: Any?) {
@@ -720,23 +954,23 @@ struct NoFileView: View {
                     .font(.system(size: 40))
                     .foregroundStyle(.quaternary)
                     .padding(.bottom, 12)
-                Text("No File Open")
+                Text(L10n.string("app.empty.noFileOpen", defaultValue: "No File Open"))
                     .font(.system(size: 20, weight: .medium, design: .default))
                     .foregroundStyle(.secondary)
                     .tracking(-0.2)
                     .padding(.bottom, 6)
-                Text("Create a new document or open an existing file")
+                Text(L10n.string("app.empty.noFileSubtitle", defaultValue: "Create a new document or open an existing file"))
                     .font(.system(size: 13))
                     .foregroundStyle(.tertiary)
                     .padding(.bottom, 20)
                 HStack(spacing: 12) {
-                    Button("New Document") {
+                    Button(L10n.string("app.menu.newDocument", defaultValue: "New Document")) {
                         workspace.createUntitledDocument()
                     }
                     .keyboardShortcut(.defaultAction)
                     .buttonStyle(.borderedProminent)
                     .tint(.accentColor)
-                    Button("Open\u{2026}") {
+                    Button(L10n.string("app.menu.open", defaultValue: "Open…")) {
                         workspace.showOpenPanel()
                     }
                     .buttonStyle(.bordered)
@@ -751,6 +985,7 @@ struct NoFileView: View {
 @main
 struct ClearlyApp: App {
     @NSApplicationDelegateAdaptor(ClearlyAppDelegate.self) var appDelegate
+    @AppStorage(AppLanguagePreference.userDefaultsKey) private var appLanguagePreference = AppLanguagePreference.system.rawValue
     @AppStorage("themePreference") private var themePreference = "system"
     @State private var scratchpadManager = ScratchpadManager.shared
     private let workspace = WorkspaceManager.shared
@@ -759,6 +994,10 @@ struct ClearlyApp: App {
     #endif
 
     init() {
+        AppLanguagePreference.configureDefaultPreference()
+        let appliedPreference = UserDefaults.standard.string(forKey: AppLanguagePreference.userDefaultsKey)
+            ?? AppLanguagePreference.system.rawValue
+        UserDefaults.standard.set(appliedPreference, forKey: AppLanguagePreference.appliedUserDefaultsKey)
         DiagnosticLog.trimIfNeeded()
         DiagnosticLog.log("App launched")
         #if canImport(Sparkle)
@@ -778,22 +1017,31 @@ struct ClearlyApp: App {
         }
     }
 
+    private var resolvedLanguageIdentifier: String {
+        (AppLanguagePreference(rawValue: appLanguagePreference) ?? .system).localeIdentifier
+    }
+
+    private var appLocale: Locale {
+        Locale(identifier: resolvedLanguageIdentifier)
+    }
+
     var body: some Scene {
         Window("Clearly", id: "launcher") {
             LauncherSceneMarker()
                 .frame(width: 0, height: 0)
                 .hidden()
+                .environment(\.locale, appLocale)
         }
         .defaultSize(width: 1, height: 1)
         .commands {
             // Replace New/Open with our own
             CommandGroup(replacing: .newItem) {
-                Button("New Document") {
+                Button(L10n.string("app.menu.newDocument", defaultValue: "New Document")) {
                     workspace.createUntitledDocument()
                 }
                 .keyboardShortcut("n", modifiers: .command)
 
-                Button("Open…") {
+                Button(L10n.string("app.menu.open", defaultValue: "Open…")) {
                     workspace.showOpenPanel()
                 }
                 .keyboardShortcut("o", modifiers: .command)
@@ -801,7 +1049,7 @@ struct ClearlyApp: App {
 
             // Save
             CommandGroup(replacing: .saveItem) {
-                Button("Save") {
+                Button(L10n.string("app.menu.save", defaultValue: "Save")) {
                     workspace.saveCurrentFile()
                 }
                 .keyboardShortcut("s", modifiers: .command)
@@ -824,8 +1072,14 @@ struct ClearlyApp: App {
                 // Toggle Sidebar, Editor/Preview, and Toggle Outline
                 // are handled via AppKit menu injection in AppDelegate
 
-                Button(workspace.showHiddenFiles ? "Hide Hidden Files" : "Show Hidden Files") {
+                Button {
                     workspace.toggleShowHiddenFiles()
+                } label: {
+                    Text(
+                        workspace.showHiddenFiles
+                        ? L10n.string("app.menu.hideHiddenFiles", defaultValue: "Hide Hidden Files")
+                        : L10n.string("app.menu.showHiddenFiles", defaultValue: "Show Hidden Files")
+                    )
                 }
             }
 
@@ -836,18 +1090,18 @@ struct ClearlyApp: App {
                 FontSizeCommands()
             }
             CommandGroup(replacing: .help) {
-                Button("Clearly Help") {
+                Button(L10n.string("app.menu.help.clearlyHelp", defaultValue: "Clearly Help")) {
                     NSWorkspace.shared.open(URL(string: "https://github.com/Shpigford/clearly/issues")!)
                 }
                 Divider()
-                Button("Sample Document") {
+                Button(L10n.string("app.menu.help.sampleDocument", defaultValue: "Sample Document")) {
                     if let url = Bundle.main.url(forResource: "demo", withExtension: "md"),
                        let content = try? String(contentsOf: url, encoding: .utf8) {
                         workspace.createDocumentWithContent(content)
                     }
                 }
                 Divider()
-                Button("Export Diagnostic Log…") {
+                Button(L10n.string("app.menu.help.exportDiagnosticLog", defaultValue: "Export Diagnostic Log…")) {
                     do {
                         let logText = try DiagnosticLog.exportRecentLogs()
                         let panel = NSSavePanel()
@@ -861,89 +1115,89 @@ struct ClearlyApp: App {
                     }
                 }
             }
-            CommandMenu("Format") {
-                Button("Bold") {
+            CommandMenu(L10n.string("app.menu.format", defaultValue: "Format")) {
+                Button(L10n.string("app.menu.format.bold", defaultValue: "Bold")) {
                     NSApp.sendAction(#selector(ClearlyTextView.toggleBold(_:)), to: nil, from: nil)
                 }
                 .keyboardShortcut("b", modifiers: .command)
 
-                Button("Italic") {
+                Button(L10n.string("app.menu.format.italic", defaultValue: "Italic")) {
                     NSApp.sendAction(#selector(ClearlyTextView.toggleItalic(_:)), to: nil, from: nil)
                 }
                 .keyboardShortcut("i", modifiers: .command)
 
-                Button("Strikethrough") {
+                Button(L10n.string("app.menu.format.strikethrough", defaultValue: "Strikethrough")) {
                     NSApp.sendAction(#selector(ClearlyTextView.toggleStrikethrough(_:)), to: nil, from: nil)
                 }
                 .keyboardShortcut("x", modifiers: [.command, .shift])
 
-                Button("Heading") {
+                Button(L10n.string("app.menu.format.heading", defaultValue: "Heading")) {
                     NSApp.sendAction(#selector(ClearlyTextView.insertHeading(_:)), to: nil, from: nil)
                 }
                 .keyboardShortcut("h", modifiers: [.command, .shift])
 
                 Divider()
 
-                Button("Link...") {
+                Button(L10n.string("app.menu.format.link", defaultValue: "Link…")) {
                     NSApp.sendAction(#selector(ClearlyTextView.insertLink(_:)), to: nil, from: nil)
                 }
                 .keyboardShortcut("k", modifiers: .command)
 
-                Button("Image...") {
+                Button(L10n.string("app.menu.format.image", defaultValue: "Image…")) {
                     NSApp.sendAction(#selector(ClearlyTextView.insertImage(_:)), to: nil, from: nil)
                 }
 
                 Divider()
 
-                Button("Bullet List") {
+                Button(L10n.string("app.menu.format.bulletList", defaultValue: "Bullet List")) {
                     NSApp.sendAction(#selector(ClearlyTextView.toggleBulletList(_:)), to: nil, from: nil)
                 }
 
-                Button("Numbered List") {
+                Button(L10n.string("app.menu.format.numberedList", defaultValue: "Numbered List")) {
                     NSApp.sendAction(#selector(ClearlyTextView.toggleNumberedList(_:)), to: nil, from: nil)
                 }
 
-                Button("Todo") {
+                Button(L10n.string("app.menu.format.todo", defaultValue: "Todo")) {
                     NSApp.sendAction(#selector(ClearlyTextView.toggleTodoList(_:)), to: nil, from: nil)
                 }
 
                 Divider()
 
-                Button("Quote") {
+                Button(L10n.string("app.menu.format.quote", defaultValue: "Quote")) {
                     NSApp.sendAction(#selector(ClearlyTextView.toggleBlockquote(_:)), to: nil, from: nil)
                 }
 
-                Button("Horizontal Rule") {
+                Button(L10n.string("app.menu.format.horizontalRule", defaultValue: "Horizontal Rule")) {
                     NSApp.sendAction(#selector(ClearlyTextView.insertHorizontalRule(_:)), to: nil, from: nil)
                 }
 
-                Button("Table") {
+                Button(L10n.string("app.menu.format.table", defaultValue: "Table")) {
                     NSApp.sendAction(#selector(ClearlyTextView.insertMarkdownTable(_:)), to: nil, from: nil)
                 }
 
                 Divider()
 
-                Button("Code") {
+                Button(L10n.string("app.menu.format.code", defaultValue: "Code")) {
                     NSApp.sendAction(#selector(ClearlyTextView.toggleInlineCode(_:)), to: nil, from: nil)
                 }
 
-                Button("Code Block") {
+                Button(L10n.string("app.menu.format.codeBlock", defaultValue: "Code Block")) {
                     NSApp.sendAction(#selector(ClearlyTextView.insertCodeBlock(_:)), to: nil, from: nil)
                 }
 
                 Divider()
 
-                Button("Math") {
+                Button(L10n.string("app.menu.format.math", defaultValue: "Math")) {
                     NSApp.sendAction(#selector(ClearlyTextView.toggleInlineMath(_:)), to: nil, from: nil)
                 }
 
-                Button("Math Block") {
+                Button(L10n.string("app.menu.format.mathBlock", defaultValue: "Math Block")) {
                     NSApp.sendAction(#selector(ClearlyTextView.insertMathBlock(_:)), to: nil, from: nil)
                 }
 
                 Divider()
 
-                Button("Page Break") {
+                Button(L10n.string("app.menu.format.pageBreak", defaultValue: "Page Break")) {
                     NSApp.sendAction(#selector(ClearlyTextView.insertPageBreak(_:)), to: nil, from: nil)
                 }
             }
@@ -952,15 +1206,18 @@ struct ClearlyApp: App {
         Settings {
             #if canImport(Sparkle)
             SettingsView(updater: updaterController.updater)
+                .environment(\.locale, appLocale)
                 .preferredColorScheme(resolvedColorScheme)
             #else
             SettingsView()
+                .environment(\.locale, appLocale)
                 .preferredColorScheme(resolvedColorScheme)
             #endif
         }
 
-        MenuBarExtra("Scratchpads", image: "ScratchpadMenuBarIcon") {
+        MenuBarExtra(L10n.string("app.menubar.scratchpads", defaultValue: "Scratchpads"), image: "ScratchpadMenuBarIcon") {
             ScratchpadMenuBar(manager: scratchpadManager)
+                .environment(\.locale, appLocale)
         }
     }
 
@@ -970,7 +1227,7 @@ struct FindCommand: View {
     @FocusedValue(\.findState) var findState
 
     var body: some View {
-        Button("Find…") {
+        Button(L10n.string("app.menu.find", defaultValue: "Find…")) {
             findState?.present()
         }
         .keyboardShortcut("f", modifiers: .command)
@@ -981,7 +1238,7 @@ struct OutlineToggleCommand: View {
     @FocusedValue(\.outlineState) var outlineState
 
     var body: some View {
-        Button("Toggle Outline") {
+        Button(L10n.string("app.menu.toggleOutline", defaultValue: "Toggle Outline")) {
             outlineState?.toggle()
         }
         .keyboardShortcut("o", modifiers: [.command, .shift])
@@ -992,12 +1249,12 @@ struct ViewModeCommands: View {
     @FocusedValue(\.viewMode) var mode
 
     var body: some View {
-        Button("Editor") {
+        Button(L10n.string("app.menu.view.editor", defaultValue: "Editor")) {
             mode?.wrappedValue = .edit
         }
         .keyboardShortcut("1", modifiers: .command)
 
-        Button("Preview") {
+        Button(L10n.string("app.menu.view.preview", defaultValue: "Preview")) {
             mode?.wrappedValue = .preview
         }
         .keyboardShortcut("2", modifiers: .command)
@@ -1010,12 +1267,12 @@ struct FontSizeCommands: View {
     @AppStorage("editorFontSize") private var fontSize: Double = 16
 
     var body: some View {
-        Button("Increase Font Size") {
+        Button(L10n.string("app.menu.font.increase", defaultValue: "Increase Font Size")) {
             fontSize = min(fontSize + 1, 24)
         }
         .keyboardShortcut("+", modifiers: .command)
 
-        Button("Decrease Font Size") {
+        Button(L10n.string("app.menu.font.decrease", defaultValue: "Decrease Font Size")) {
             fontSize = max(fontSize - 1, 12)
         }
         .keyboardShortcut("-", modifiers: .command)
@@ -1035,7 +1292,7 @@ struct CheckForUpdatesView: View {
     }
 
     var body: some View {
-        Button("Check for Updates…") {
+        Button(L10n.string("app.menu.checkForUpdates", defaultValue: "Check for Updates…")) {
             updater.checkForUpdates()
         }
         .disabled(!checkForUpdatesViewModel.canCheckForUpdates)
@@ -1051,7 +1308,7 @@ struct ExportPDFCommand: View {
     @AppStorage("editorFontSize") private var fontSize: Double = 16
 
     var body: some View {
-        Button("Export as PDF…") {
+        Button(L10n.string("app.menu.exportPdf", defaultValue: "Export as PDF…")) {
             guard let text else { return }
             PDFExporter().exportPDF(markdown: text, fontSize: CGFloat(fontSize), fileURL: fileURL)
         }
@@ -1066,7 +1323,7 @@ struct PrintCommand: View {
     @AppStorage("editorFontSize") private var fontSize: Double = 16
 
     var body: some View {
-        Button("Print…") {
+        Button(L10n.string("app.menu.print", defaultValue: "Print…")) {
             guard let text else { return }
             PDFExporter().printHTML(markdown: text, fontSize: CGFloat(fontSize), fileURL: fileURL)
         }

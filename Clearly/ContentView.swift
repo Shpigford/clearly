@@ -82,6 +82,7 @@ struct ContentView: View {
     @Bindable var workspace: WorkspaceManager
     @State private var mode: ViewMode
     @State private var positionSyncID = UUID().uuidString
+    @State private var localizationRefreshID = UUID()
     @AppStorage("editorFontSize") private var fontSize: Double = 16
     @StateObject private var findState = FindState()
     @StateObject private var fileWatcher = FileWatcher()
@@ -146,8 +147,8 @@ struct ContentView: View {
             ClearlySegmentedControl(
                 selection: $mode,
                 items: [
-                    (value: .edit, icon: "pencil", label: "Edit"),
-                    (value: .preview, icon: "eye", label: "Preview")
+                    (value: .edit, icon: "pencil", label: L10n.string("content.viewMode.edit", defaultValue: "Edit")),
+                    (value: .preview, icon: "eye", label: L10n.string("content.viewMode.preview", defaultValue: "Preview"))
                 ]
             )
             .padding(.leading, 12)
@@ -156,9 +157,9 @@ struct ContentView: View {
 
             // Word/char count centered
             HStack(spacing: 0) {
-                Text("\(words) words")
+                Text(L10n.format("content.stats.words", defaultValue: "%lld words", Int64(words)))
                 Text(" \u{00B7} ")
-                Text("\(chars) characters")
+                Text(L10n.format("content.stats.characters", defaultValue: "%lld characters", Int64(chars)))
             }
             .font(.system(size: 11))
             .tracking(0.3)
@@ -171,19 +172,19 @@ struct ContentView: View {
                 if workspace.activeDocumentID != nil {
                     Menu {
                         if let url = workspace.currentFileURL {
-                            Button("Copy File Path") { CopyActions.copyFilePath(url) }
-                            Button("Copy File Name") { CopyActions.copyFileName(url) }
+                            Button("content.copy.filePath") { CopyActions.copyFilePath(url) }
+                            Button("content.copy.fileName") { CopyActions.copyFileName(url) }
                             Divider()
                         }
-                        Button("Copy Markdown") { CopyActions.copyMarkdown(workspace.currentFileText) }
-                        Button("Copy HTML") { CopyActions.copyHTML(workspace.currentFileText) }
-                        Button("Copy Rich Text") { CopyActions.copyRichText(workspace.currentFileText) }
-                        Button("Copy Plain Text") { CopyActions.copyPlainText(workspace.currentFileText) }
+                        Button("content.copy.markdown") { CopyActions.copyMarkdown(workspace.currentFileText) }
+                        Button("content.copy.html") { CopyActions.copyHTML(workspace.currentFileText) }
+                        Button("content.copy.richText") { CopyActions.copyRichText(workspace.currentFileText) }
+                        Button("content.copy.plainText") { CopyActions.copyPlainText(workspace.currentFileText) }
                     } label: {
                         Image(systemName: "doc.on.doc")
                     }
                     .buttonStyle(ClearlyToolbarButtonStyle())
-                    .help("Copy document content")
+                    .help(L10n.string("content.copy.help", defaultValue: "Copy document content"))
                 }
 
                 Button {
@@ -194,7 +195,7 @@ struct ContentView: View {
                     Image(systemName: "list.bullet.indent")
                 }
                 .buttonStyle(ClearlyToolbarButtonStyle(isActive: outlineState.isVisible))
-                .help("Document Outline (Shift+Cmd+O)")
+                .help(L10n.string("content.outline.help", defaultValue: "Document Outline (⇧⌘O)"))
 
                 Button {
                     findState.present()
@@ -202,7 +203,7 @@ struct ContentView: View {
                     Image(systemName: "magnifyingglass")
                 }
                 .buttonStyle(ClearlyToolbarButtonStyle())
-                .help("Find (Cmd+F)")
+                .help(L10n.string("content.find.help", defaultValue: "Find (⌘F)"))
             }
             .padding(.trailing, 12)
         }
@@ -240,6 +241,7 @@ struct ContentView: View {
         }
         .inspector(isPresented: $outlineState.isVisible) {
             OutlineView(outlineState: outlineState)
+                .id(localizationRefreshID)
                 .inspectorColumnWidth(min: 180, ideal: 200, max: 280)
         }
         .frame(minWidth: 500, minHeight: 400)
@@ -284,6 +286,9 @@ struct ContentView: View {
                 withAnimation(Theme.Motion.smooth) {
                     outlineState.toggle()
                 }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .appLanguageDidChange)) { _ in
+                localizationRefreshID = UUID()
             }
     }
 

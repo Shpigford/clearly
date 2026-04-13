@@ -283,41 +283,41 @@ final class ClearlyTextView: PersistentTextCheckingTextView {
     override func menu(for event: NSEvent) -> NSMenu? {
         let menu = super.menu(for: event) ?? NSMenu()
 
-        let formatMenu = NSMenu(title: "Text Format")
+        let formatMenu = NSMenu(title: L10n.string("editor.context.textFormat", defaultValue: "Text Format"))
 
-        formatMenu.addItem(withTitle: "Headers", action: #selector(insertHeading(_:)), keyEquivalent: "")
+        formatMenu.addItem(withTitle: L10n.string("editor.context.headers", defaultValue: "Headers"), action: #selector(insertHeading(_:)), keyEquivalent: "")
         formatMenu.addItem(.separator())
 
-        let boldItem = formatMenu.addItem(withTitle: "Bold", action: #selector(toggleBold(_:)), keyEquivalent: "b")
+        let boldItem = formatMenu.addItem(withTitle: L10n.string("app.menu.format.bold", defaultValue: "Bold"), action: #selector(toggleBold(_:)), keyEquivalent: "b")
         boldItem.keyEquivalentModifierMask = .command
-        let italicItem = formatMenu.addItem(withTitle: "Italic", action: #selector(toggleItalic(_:)), keyEquivalent: "i")
+        let italicItem = formatMenu.addItem(withTitle: L10n.string("app.menu.format.italic", defaultValue: "Italic"), action: #selector(toggleItalic(_:)), keyEquivalent: "i")
         italicItem.keyEquivalentModifierMask = .command
-        let strikeItem = formatMenu.addItem(withTitle: "Strikethrough", action: #selector(toggleStrikethrough(_:)), keyEquivalent: "x")
+        let strikeItem = formatMenu.addItem(withTitle: L10n.string("app.menu.format.strikethrough", defaultValue: "Strikethrough"), action: #selector(toggleStrikethrough(_:)), keyEquivalent: "x")
         strikeItem.keyEquivalentModifierMask = [.command, .shift]
         formatMenu.addItem(.separator())
 
-        formatMenu.addItem(withTitle: "Insert Link", action: #selector(insertLink(_:)), keyEquivalent: "")
-        formatMenu.addItem(withTitle: "Insert Image", action: #selector(insertImage(_:)), keyEquivalent: "")
+        formatMenu.addItem(withTitle: L10n.string("editor.context.insertLink", defaultValue: "Insert Link"), action: #selector(insertLink(_:)), keyEquivalent: "")
+        formatMenu.addItem(withTitle: L10n.string("editor.context.insertImage", defaultValue: "Insert Image"), action: #selector(insertImage(_:)), keyEquivalent: "")
         formatMenu.addItem(.separator())
 
-        formatMenu.addItem(withTitle: "List", action: #selector(toggleBulletList(_:)), keyEquivalent: "")
-        formatMenu.addItem(withTitle: "Ordered List", action: #selector(toggleNumberedList(_:)), keyEquivalent: "")
-        formatMenu.addItem(withTitle: "Todo", action: #selector(toggleTodoList(_:)), keyEquivalent: "")
+        formatMenu.addItem(withTitle: L10n.string("editor.context.list", defaultValue: "List"), action: #selector(toggleBulletList(_:)), keyEquivalent: "")
+        formatMenu.addItem(withTitle: L10n.string("editor.context.orderedList", defaultValue: "Ordered List"), action: #selector(toggleNumberedList(_:)), keyEquivalent: "")
+        formatMenu.addItem(withTitle: L10n.string("app.menu.format.todo", defaultValue: "Todo"), action: #selector(toggleTodoList(_:)), keyEquivalent: "")
         formatMenu.addItem(.separator())
 
-        formatMenu.addItem(withTitle: "Quote", action: #selector(toggleBlockquote(_:)), keyEquivalent: "")
-        formatMenu.addItem(withTitle: "Horizontal Rule", action: #selector(insertHorizontalRule(_:)), keyEquivalent: "")
-        formatMenu.addItem(withTitle: "Table", action: #selector(insertMarkdownTable(_:)), keyEquivalent: "")
+        formatMenu.addItem(withTitle: L10n.string("app.menu.format.quote", defaultValue: "Quote"), action: #selector(toggleBlockquote(_:)), keyEquivalent: "")
+        formatMenu.addItem(withTitle: L10n.string("app.menu.format.horizontalRule", defaultValue: "Horizontal Rule"), action: #selector(insertHorizontalRule(_:)), keyEquivalent: "")
+        formatMenu.addItem(withTitle: L10n.string("app.menu.format.table", defaultValue: "Table"), action: #selector(insertMarkdownTable(_:)), keyEquivalent: "")
         formatMenu.addItem(.separator())
 
-        formatMenu.addItem(withTitle: "Code", action: #selector(toggleInlineCode(_:)), keyEquivalent: "")
-        formatMenu.addItem(withTitle: "Code Block", action: #selector(insertCodeBlock(_:)), keyEquivalent: "")
+        formatMenu.addItem(withTitle: L10n.string("app.menu.format.code", defaultValue: "Code"), action: #selector(toggleInlineCode(_:)), keyEquivalent: "")
+        formatMenu.addItem(withTitle: L10n.string("app.menu.format.codeBlock", defaultValue: "Code Block"), action: #selector(insertCodeBlock(_:)), keyEquivalent: "")
         formatMenu.addItem(.separator())
 
-        formatMenu.addItem(withTitle: "Math", action: #selector(toggleInlineMath(_:)), keyEquivalent: "")
-        formatMenu.addItem(withTitle: "Math Block", action: #selector(insertMathBlock(_:)), keyEquivalent: "")
+        formatMenu.addItem(withTitle: L10n.string("app.menu.format.math", defaultValue: "Math"), action: #selector(toggleInlineMath(_:)), keyEquivalent: "")
+        formatMenu.addItem(withTitle: L10n.string("app.menu.format.mathBlock", defaultValue: "Math Block"), action: #selector(insertMathBlock(_:)), keyEquivalent: "")
 
-        let formatItem = NSMenuItem(title: "Text Format", action: nil, keyEquivalent: "")
+        let formatItem = NSMenuItem(title: L10n.string("editor.context.textFormat", defaultValue: "Text Format"), action: nil, keyEquivalent: "")
         formatItem.submenu = formatMenu
 
         menu.insertItem(.separator(), at: 0)

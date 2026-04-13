@@ -2,6 +2,7 @@ import Foundation
 
 enum PreviewCSS {
     static func css(fontSize: CGFloat = 18, forExport: Bool = false) -> String {
+    let tocTitle = L10n.string("preview.toc.title", defaultValue: "Table of Contents")
     let exportOverrides = forExport ? """
     .code-copy-btn { display: none !important; }
     .table-copy-btn { display: none !important; }
@@ -516,7 +517,7 @@ enum PreviewCSS {
         margin-bottom: 1.5em;
     }
     .toc::before {
-        content: "Table of Contents";
+        content: "\(tocTitle)";
         display: block;
         font-weight: 600;
         font-size: 0.9em;

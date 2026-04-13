@@ -12,7 +12,7 @@ struct FindBarView: View {
                     .foregroundStyle(.tertiary)
                     .font(.system(size: 12))
 
-                TextField("Find", text: $findState.query)
+                TextField(L10n.string("find.placeholder", defaultValue: "Find"), text: $findState.query)
                     .textFieldStyle(.plain)
                     .font(.system(size: 13))
                     .focused($isFieldFocused)
@@ -29,12 +29,17 @@ struct FindBarView: View {
 
                 if !findState.query.isEmpty {
                     if findState.matchCount > 0 {
-                        Text("\(findState.currentIndex) of \(findState.matchCount)")
+                        Text(L10n.format(
+                            "find.matchIndex",
+                            defaultValue: "%1$lld of %2$lld",
+                            Int64(findState.currentIndex),
+                            Int64(findState.matchCount)
+                        ))
                             .font(.system(size: 11, weight: .medium))
                             .foregroundStyle(.secondary)
                             .monospacedDigit()
                     } else {
-                        Text("No results")
+                        Text(L10n.string("find.noResults", defaultValue: "No results"))
                             .font(.system(size: 11, weight: .medium))
                             .foregroundStyle(.secondary)
                     }
@@ -61,7 +66,7 @@ struct FindBarView: View {
                 }
             }
 
-            Button("Done") {
+            Button(L10n.string("find.done", defaultValue: "Done")) {
                 findState.isVisible = false
             }
             .buttonStyle(.plain)

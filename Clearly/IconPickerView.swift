@@ -18,31 +18,31 @@ struct IconPickerView: View {
     let onSelectColor: (String?) -> Void
 
     private static let icons: [(String, String)] = [
-        ("folder", "Default"),
-        ("tray", "Inbox"),
-        ("star", "Favorites"),
-        ("archivebox", "Archive"),
-        ("briefcase", "Work"),
-        ("hammer", "Projects"),
-        ("pencil.line", "Writing"),
-        ("lightbulb", "Ideas"),
-        ("magnifyingglass", "Research"),
-        ("chevron.left.forwardslash.chevron.right", "Code"),
-        ("paintbrush", "Design"),
-        ("graduationcap", "Education"),
-        ("dollarsign.circle", "Finance"),
-        ("airplane", "Travel"),
-        ("heart", "Health"),
-        ("music.note", "Music"),
-        ("photo", "Photos"),
-        ("person", "Personal"),
-        ("book", "Reading"),
-        ("globe", "Web"),
-        ("tag", "Tags"),
-        ("bookmark", "Bookmarks"),
-        ("clock", "Recent"),
-        ("bubble.left", "Chat"),
-        ("link", "Links"),
+        ("folder", "iconPicker.icon.default"),
+        ("tray", "iconPicker.icon.inbox"),
+        ("star", "iconPicker.icon.favorites"),
+        ("archivebox", "iconPicker.icon.archive"),
+        ("briefcase", "iconPicker.icon.work"),
+        ("hammer", "iconPicker.icon.projects"),
+        ("pencil.line", "iconPicker.icon.writing"),
+        ("lightbulb", "iconPicker.icon.ideas"),
+        ("magnifyingglass", "iconPicker.icon.research"),
+        ("chevron.left.forwardslash.chevron.right", "iconPicker.icon.code"),
+        ("paintbrush", "iconPicker.icon.design"),
+        ("graduationcap", "iconPicker.icon.education"),
+        ("dollarsign.circle", "iconPicker.icon.finance"),
+        ("airplane", "iconPicker.icon.travel"),
+        ("heart", "iconPicker.icon.health"),
+        ("music.note", "iconPicker.icon.music"),
+        ("photo", "iconPicker.icon.photos"),
+        ("person", "iconPicker.icon.personal"),
+        ("book", "iconPicker.icon.reading"),
+        ("globe", "iconPicker.icon.web"),
+        ("tag", "iconPicker.icon.tags"),
+        ("bookmark", "iconPicker.icon.bookmarks"),
+        ("clock", "iconPicker.icon.recent"),
+        ("bubble.left", "iconPicker.icon.chat"),
+        ("link", "iconPicker.icon.links"),
     ]
 
     private let iconColumns = Array(repeating: GridItem(.fixed(36), spacing: 6), count: 5)
@@ -51,7 +51,7 @@ struct IconPickerView: View {
     var body: some View {
         VStack(spacing: 0) {
             // Color section
-            Text("Color")
+            Text(L10n.string("iconPicker.color", defaultValue: "Color"))
                 .font(.system(size: 11, weight: .semibold))
                 .foregroundStyle(.secondary)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -78,7 +78,7 @@ struct IconPickerView: View {
                         }
                 }
                 .buttonStyle(.plain)
-                .help("No color")
+                .help(L10n.string("iconPicker.color.none", defaultValue: "No color"))
 
                 ForEach(Theme.folderColorPalette, id: \.name) { item in
                     Button {
@@ -97,7 +97,7 @@ struct IconPickerView: View {
                         }
                     }
                     .buttonStyle(.plain)
-                    .help(item.name.capitalized)
+                    .help(L10n.string("color.\(item.name)", defaultValue: item.name.capitalized))
                 }
             }
             .padding(.horizontal, 12)
@@ -106,7 +106,7 @@ struct IconPickerView: View {
             Divider()
 
             // Icon section
-            Text("Icon")
+            Text(L10n.string("iconPicker.icon", defaultValue: "Icon"))
                 .font(.system(size: 11, weight: .semibold))
                 .foregroundStyle(.secondary)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -115,7 +115,7 @@ struct IconPickerView: View {
                 .padding(.bottom, 6)
 
             LazyVGrid(columns: iconColumns, spacing: 6) {
-                ForEach(Self.icons, id: \.0) { icon, label in
+                ForEach(Self.icons, id: \.0) { icon, labelKey in
                     Button {
                         let newIcon = icon == "folder" ? nil : icon
                         state.selectedIcon = newIcon
@@ -129,7 +129,7 @@ struct IconPickerView: View {
                                 RoundedRectangle(cornerRadius: 5)
                                     .fill(isIconSelected(icon) ? Color.primary.opacity(0.1) : Color.clear)
                             )
-                            .help(label)
+                            .help(L10n.string(labelKey, defaultValue: labelKey))
                     }
                     .buttonStyle(.plain)
                 }
@@ -138,7 +138,7 @@ struct IconPickerView: View {
 
             if state.selectedIcon != nil || state.selectedColor != nil {
                 Divider()
-                Button("Reset All") {
+                Button(L10n.string("iconPicker.resetAll", defaultValue: "Reset All")) {
                     state.selectedIcon = nil
                     state.selectedColor = nil
                     onSelectIcon(nil)

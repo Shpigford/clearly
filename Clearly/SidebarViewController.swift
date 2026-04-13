@@ -8,7 +8,7 @@ class SidebarViewController: NSViewController {
     let workspace: WorkspaceManager
     private var outlineCoordinator: FileExplorerOutlineView.Coordinator?
     private var scrollView: NSScrollView?
-    private var emptyHostingView: NSHostingView<FileExplorerEmptyView>?
+    private var emptyHostingView: NSHostingView<AnyView>?
     private var updateTimer: Timer?
 
     init(workspace: WorkspaceManager) {
@@ -17,6 +17,10 @@ class SidebarViewController: NSViewController {
     }
 
     required init?(coder: NSCoder) { fatalError() }
+
+    private var appLocale: Locale {
+        Locale(identifier: AppLanguage.currentLocalization())
+    }
 
     override func loadView() {
         let container = ClearlySidebarBackgroundView()
@@ -117,7 +121,7 @@ class SidebarViewController: NSViewController {
     }
 
     private func setupEmptyState() {
-        let hostingView = NSHostingView(rootView: FileExplorerEmptyView(workspace: workspace))
+        let hostingView = NSHostingView(rootView: localizedEmptyStateView())
         hostingView.translatesAutoresizingMaskIntoConstraints = false
         // Force transparent so container background shows through
         hostingView.wantsLayer = true
@@ -133,10 +137,22 @@ class SidebarViewController: NSViewController {
         ])
     }
 
+    private func localizedEmptyStateView() -> AnyView {
+        AnyView(
+            FileExplorerEmptyView(workspace: workspace)
+                .environment(\.locale, appLocale)
+        )
+    }
+
     private func updateVisibility() {
         let isEmpty = workspace.locations.isEmpty && workspace.recentFiles.isEmpty && workspace.openDocuments.isEmpty
         scrollView?.isHidden = isEmpty
         emptyHostingView?.isHidden = !isEmpty
+    }
+
+    func refreshLocalizedViews() {
+        emptyHostingView?.rootView = localizedEmptyStateView()
+        outlineCoordinator?.reloadLocalizedContent()
     }
 
     deinit {

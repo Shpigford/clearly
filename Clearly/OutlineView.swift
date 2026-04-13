@@ -3,10 +3,11 @@ import SwiftUI
 struct OutlineView: View {
     @ObservedObject var outlineState: OutlineState
     @Environment(\.colorScheme) private var colorScheme
+    @State private var localizationRefreshID = UUID()
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Text("OUTLINE")
+            Text(L10n.string("outline.title", defaultValue: "OUTLINE"))
                 .font(.system(size: 11, weight: .semibold))
                 .foregroundStyle(.tertiary)
                 .tracking(1.5)
@@ -22,10 +23,10 @@ struct OutlineView: View {
             if outlineState.headings.isEmpty {
                 Spacer()
                 VStack(spacing: 8) {
-                    Text("No headings")
+                    Text(L10n.string("outline.empty.title", defaultValue: "No headings"))
                         .font(.system(size: 12))
                         .foregroundStyle(.tertiary)
-                    Text("Add headings with # to build an outline")
+                    Text(L10n.string("outline.empty.subtitle", defaultValue: "Add headings with # to build an outline"))
                         .font(.system(size: 11))
                         .foregroundStyle(.quaternary)
                 }
@@ -45,8 +46,12 @@ struct OutlineView: View {
                 }
             }
         }
+        .id(localizationRefreshID)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Theme.outlinePanelBackgroundSwiftUI)
+        .onReceive(NotificationCenter.default.publisher(for: .appLanguageDidChange)) { _ in
+            localizationRefreshID = UUID()
+        }
     }
 }
 

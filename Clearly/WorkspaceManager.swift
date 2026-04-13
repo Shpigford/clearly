@@ -37,6 +37,7 @@ final class WorkspaceManager {
     // MARK: - Private
 
     private var fsStreams: [UUID: FSEventStreamRef] = [:]
+    private let fsEventQueue = DispatchQueue(label: "com.sabotage.clearly.fs-events")
     private var autoSaveWork: DispatchWorkItem?
     private var lastSavedText: String = ""
     private var accessedURLs: Set<URL> = []
@@ -335,7 +336,7 @@ final class WorkspaceManager {
         let panel = NSSavePanel()
         panel.allowedContentTypes = [.daringFireballMarkdown]
         panel.nameFieldStringValue = openDocuments[index].displayName + ".md"
-        panel.prompt = "Save"
+        panel.prompt = L10n.string("common.save", defaultValue: "Save")
 
         guard panel.runModal() == .OK, let url = panel.url else { return !treatCancelAsFailure }
 
@@ -552,8 +553,11 @@ final class WorkspaceManager {
         panel.allowsMultipleSelection = false
         panel.canCreateDirectories = true
         panel.allowedContentTypes = [.daringFireballMarkdown, .plainText, .text]
-        panel.message = "Choose a file to open or a folder to add to your sidebar"
-        panel.prompt = "Open"
+        panel.message = L10n.string(
+            "workspace.openPanel.message",
+            defaultValue: "Choose a file to open or a folder to add to your sidebar"
+        )
+        panel.prompt = L10n.string("common.open", defaultValue: "Open")
 
         guard panel.runModal() == .OK, let url = panel.url else { return }
 
@@ -746,7 +750,7 @@ final class WorkspaceManager {
             UInt32(kFSEventStreamCreateFlagFileEvents | kFSEventStreamCreateFlagUseCFTypes)
         ) else { return }
 
-        FSEventStreamScheduleWithRunLoop(stream, CFRunLoopGetMain(), CFRunLoopMode.defaultMode.rawValue)
+        FSEventStreamSetDispatchQueue(stream, fsEventQueue)
         FSEventStreamStart(stream)
         fsStreams[locationID] = stream
     }
@@ -847,13 +851,23 @@ final class WorkspaceManager {
     private func promptToSaveChanges(for doc: OpenDocument) -> DirtyDocumentDisposition {
         let alert = NSAlert()
         alert.alertStyle = .warning
-        alert.messageText = "Do you want to save changes to \"\(doc.displayName)\"?"
+        alert.messageText = L10n.format(
+            "workspace.saveChanges.title",
+            defaultValue: "Do you want to save changes to \"%@\"?",
+            doc.displayName
+        )
         alert.informativeText = doc.isUntitled
-            ? "This document exists only in memory. If you don't save, your changes will be lost."
-            : "If you don't save, your changes will be lost."
-        alert.addButton(withTitle: "Save")
-        alert.addButton(withTitle: "Cancel")
-        alert.addButton(withTitle: "Don't Save")
+            ? L10n.string(
+                "workspace.saveChanges.inMemory",
+                defaultValue: "This document exists only in memory. If you don't save, your changes will be lost."
+            )
+            : L10n.string(
+                "workspace.saveChanges.onDisk",
+                defaultValue: "If you don't save, your changes will be lost."
+            )
+        alert.addButton(withTitle: L10n.string("common.save", defaultValue: "Save"))
+        alert.addButton(withTitle: L10n.string("common.cancel", defaultValue: "Cancel"))
+        alert.addButton(withTitle: L10n.string("workspace.saveChanges.dontSave", defaultValue: "Don't Save"))
 
         switch alert.runModal() {
         case .alertFirstButtonReturn:

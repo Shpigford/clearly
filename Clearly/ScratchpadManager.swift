@@ -9,7 +9,7 @@ struct Scratchpad: Identifiable {
 
     var displayTitle: String {
         let firstLine = text.components(separatedBy: .newlines).first(where: { !$0.trimmingCharacters(in: .whitespaces).isEmpty }) ?? ""
-        if firstLine.isEmpty { return "Empty Scratchpad" }
+        if firstLine.isEmpty { return L10n.string("scratchpad.emptyTitle", defaultValue: "Empty Scratchpad") }
         return String(firstLine.prefix(30))
     }
 }
@@ -22,11 +22,22 @@ final class ScratchpadManager {
     var scratchpads: [Scratchpad] = []
     private var windows: [UUID: NSWindow] = [:]
     private var delegates: [UUID: WindowDelegate] = [:]
+    private var languageObserver: Any?
 
     private init() {
         KeyboardShortcuts.onKeyUp(for: .newScratchpad) { [weak self] in
             Task { @MainActor in
                 self?.createScratchpad()
+            }
+        }
+
+        languageObserver = NotificationCenter.default.addObserver(
+            forName: .appLanguageDidChange,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in
+                self?.refreshLocalizedWindows()
             }
         }
     }
@@ -44,7 +55,7 @@ final class ScratchpadManager {
             backing: .buffered,
             defer: false
         )
-        window.title = "Scratchpad"
+        window.title = L10n.string("scratchpad.windowTitle", defaultValue: "Scratchpad")
         window.level = .floating
         window.minSize = NSSize(width: 300, height: 200)
         window.isReleasedWhenClosed = false
@@ -110,6 +121,15 @@ final class ScratchpadManager {
 
         window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
+    }
+
+    func refreshLocalizedWindows() {
+        for scratchpad in scratchpads {
+            guard let window = windows[scratchpad.id] else { continue }
+            if scratchpad.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                window.title = L10n.string("scratchpad.windowTitle", defaultValue: "Scratchpad")
+            }
+        }
     }
 
     func remove(id: UUID) {

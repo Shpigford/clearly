@@ -10,6 +10,8 @@ struct SettingsView: View {
     let updater: SPUUpdater
     #endif
     @AppStorage("editorFontSize") private var fontSize: Double = 16
+    @AppStorage(AppLanguagePreference.userDefaultsKey) private var appLanguagePreference = AppLanguagePreference.system.rawValue
+    @AppStorage(AppLanguagePreference.appliedUserDefaultsKey) private var appliedLanguagePreference = AppLanguagePreference.system.rawValue
     @AppStorage("themePreference") private var themePreference = "system"
     @AppStorage("launchBehavior") private var launchBehavior = "lastFile"
 
@@ -17,12 +19,12 @@ struct SettingsView: View {
         TabView {
             generalSettings
                 .tabItem {
-                    Label("General", systemImage: "gearshape")
+                    Label(L10n.string("settings.tab.general", defaultValue: "General"), systemImage: "gearshape")
                 }
 
             aboutView
                 .tabItem {
-                    Label("About", systemImage: "info.circle")
+                    Label(L10n.string("settings.tab.about", defaultValue: "About"), systemImage: "info.circle")
                 }
         }
         .frame(width: 420, height: 360)
@@ -30,27 +32,59 @@ struct SettingsView: View {
 
     @State private var launchAtLogin = SMAppService.mainApp.status == .enabled
 
+    private var hasPendingLanguageRestart: Bool {
+        appLanguagePreference != appliedLanguagePreference
+    }
+
     private var generalSettings: some View {
         Form {
-            Picker("Appearance", selection: $themePreference) {
-                Text("System").tag("system")
-                Text("Light").tag("light")
-                Text("Dark").tag("dark")
+            VStack(alignment: .leading, spacing: 6) {
+                Picker(L10n.string("settings.general.language", defaultValue: "Language"), selection: $appLanguagePreference) {
+                    ForEach(AppLanguagePreference.allCases) { language in
+                        Text(languageOptionTitle(for: language)).tag(language.rawValue)
+                    }
+                }
+                .onChange(of: appLanguagePreference) { oldValue, newValue in
+                    guard newValue != oldValue else { return }
+                    guard newValue != appliedLanguagePreference else { return }
+                    presentLanguageRestartPrompt()
+                }
+                Text(L10n.string("settings.general.language.restartHint", defaultValue: "Language changes take effect after restarting Clearly."))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+                if hasPendingLanguageRestart {
+                    HStack(spacing: 10) {
+                        Text(L10n.string("settings.general.language.restartPending", defaultValue: "Your language change is ready to apply."))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+
+                        Button(L10n.string("settings.general.language.restartNow", defaultValue: "Quit and Reopen Now")) {
+                            AppRelauncher.relaunchIfPossible()
+                        }
+                        .buttonStyle(.link)
+                    }
+                }
             }
-            Picker("On Launch", selection: $launchBehavior) {
-                Text("Open last file").tag("lastFile")
-                Text("Create new document").tag("newDocument")
+            Picker(L10n.string("settings.general.appearance", defaultValue: "Appearance"), selection: $themePreference) {
+                Text(L10n.string("settings.general.appearance.system", defaultValue: "System")).tag("system")
+                Text(L10n.string("settings.general.appearance.light", defaultValue: "Light")).tag("light")
+                Text(L10n.string("settings.general.appearance.dark", defaultValue: "Dark")).tag("dark")
+            }
+            Picker(L10n.string("settings.general.onLaunch", defaultValue: "On Launch"), selection: $launchBehavior) {
+                Text(L10n.string("settings.general.launch.lastFile", defaultValue: "Open last file")).tag("lastFile")
+                Text(L10n.string("settings.general.launch.newDocument", defaultValue: "Create new document")).tag("newDocument")
             }
             HStack {
-                Text("Font Size")
+                Text(L10n.string("settings.general.fontSize", defaultValue: "Font Size"))
                 Slider(value: $fontSize, in: 12...24, step: 1)
                 Text("\(Int(fontSize))")
                     .font(.system(size: 13, weight: .medium))
                     .monospacedDigit()
                     .frame(width: 30, alignment: .trailing)
             }
-            KeyboardShortcuts.Recorder("New Scratchpad:", name: .newScratchpad)
-            Toggle("Launch at Login", isOn: $launchAtLogin)
+            KeyboardShortcuts.Recorder(L10n.string("settings.general.newScratchpad", defaultValue: "New Scratchpad:"), name: .newScratchpad)
+            Toggle(L10n.string("settings.general.launchAtLogin", defaultValue: "Launch at Login"), isOn: $launchAtLogin)
                 .onChange(of: launchAtLogin) { _, newValue in
                     do {
                         if newValue {
@@ -78,34 +112,34 @@ struct SettingsView: View {
             Text("Clearly")
                 .font(.system(size: 24, weight: .semibold))
 
-            Text("Version \(appVersion)")
+            Text(L10n.format("settings.about.version", defaultValue: "Version %@", appVersion))
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
 
-            Text("A clean, native markdown editor for Mac.")
+            Text(L10n.string("settings.about.description", defaultValue: "A clean, native markdown editor for Mac."))
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
 
             HStack(spacing: 16) {
                 #if canImport(Sparkle)
-                Button("Check for Updates") {
+                Button(L10n.string("settings.about.checkForUpdates", defaultValue: "Check for Updates")) {
                     updater.checkForUpdates()
                 }
                 .buttonStyle(.bordered)
                 #endif
 
-                Button("Website") {
+                Button(L10n.string("settings.about.website", defaultValue: "Website")) {
                     NSWorkspace.shared.open(URL(string: "https://clearly.md")!)
                 }
                 .buttonStyle(.bordered)
 
-                Button("GitHub") {
+                Button(L10n.string("settings.about.github", defaultValue: "GitHub")) {
                     NSWorkspace.shared.open(URL(string: "https://github.com/Shpigford/clearly")!)
                 }
                 .buttonStyle(.bordered)
             }
 
-            Text("Free and open source under the MIT License.")
+            Text(L10n.string("settings.about.license", defaultValue: "Free and open source under the MIT License."))
                 .font(.caption)
                 .foregroundStyle(.tertiary)
                 .padding(.bottom, 24)
@@ -117,5 +151,42 @@ struct SettingsView: View {
         let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?"
         let build = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "?"
         return "\(version) (\(build))"
+    }
+
+    private func presentLanguageRestartPrompt() {
+        let alert = NSAlert()
+        alert.alertStyle = .informational
+        alert.messageText = L10n.string(
+            "settings.general.language.restartPrompt.title",
+            defaultValue: "Restart Clearly Now?"
+        )
+        alert.informativeText = L10n.string(
+            "settings.general.language.restartPrompt.message",
+            defaultValue: "Apply the new language by quitting and reopening Clearly now."
+        )
+        alert.addButton(withTitle: L10n.string(
+            "settings.general.language.restartNow",
+            defaultValue: "Quit and Reopen Now"
+        ))
+        alert.addButton(withTitle: L10n.string(
+            "settings.general.language.restartLater",
+            defaultValue: "Later"
+        ))
+
+        if alert.runModal() == .alertFirstButtonReturn {
+            AppRelauncher.relaunchIfPossible()
+        }
+    }
+
+    private func languageOptionTitle(for language: AppLanguagePreference) -> String {
+        if language == .system {
+            return L10n.string(
+                language.titleKey,
+                defaultValue: language.rawValue,
+                localization: AppLanguage.preferredLocalization()
+            )
+        }
+
+        return L10n.string(language.titleKey, defaultValue: language.rawValue)
     }
 }

@@ -58,7 +58,7 @@ enum DiagnosticLog {
         let osVersion = ProcessInfo.processInfo.operatingSystemVersion
         let model = hardwareModel()
 
-        var output = "Clearly Diagnostic Log\n"
+        let output = "Clearly Diagnostic Log\n"
             + String(repeating: "─", count: 60) + "\n"
             + "Exported:  \(dateFormatter.string(from: Date()))\n"
             + "Clearly:   \(appVersion) (\(buildNumber))\n"

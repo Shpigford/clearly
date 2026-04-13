@@ -337,23 +337,25 @@ enum MarkdownRenderer {
 
     // MARK: - Callouts/Admonitions
 
-    private static let calloutTypes: [String: (icon: String, label: String)] = [
-        "note": ("\u{2139}\u{FE0F}", "Note"),
-        "tip": ("\u{2600}\u{FE0F}", "Tip"),
-        "important": ("\u{2757}", "Important"),
-        "warning": ("\u{26A0}\u{FE0F}", "Warning"),
-        "caution": ("\u{26D4}", "Caution"),
-        "abstract": ("\u{1F4CB}", "Abstract"),
-        "todo": ("\u{2611}\u{FE0F}", "Todo"),
-        "example": ("\u{1F4DD}", "Example"),
-        "quote": ("\u{275D}", "Quote"),
-        "bug": ("\u{1F41B}", "Bug"),
-        "danger": ("\u{26A1}", "Danger"),
-        "failure": ("\u{2717}", "Failure"),
-        "success": ("\u{2713}", "Success"),
-        "question": ("\u{003F}", "Question"),
-        "info": ("\u{2139}\u{FE0F}", "Info"),
-    ]
+    private static func calloutTypes() -> [String: (icon: String, label: String)] {
+        [
+            "note": ("\u{2139}\u{FE0F}", L10n.string("markdown.callout.note", defaultValue: "Note")),
+            "tip": ("\u{2600}\u{FE0F}", L10n.string("markdown.callout.tip", defaultValue: "Tip")),
+            "important": ("\u{2757}", L10n.string("markdown.callout.important", defaultValue: "Important")),
+            "warning": ("\u{26A0}\u{FE0F}", L10n.string("markdown.callout.warning", defaultValue: "Warning")),
+            "caution": ("\u{26D4}", L10n.string("markdown.callout.caution", defaultValue: "Caution")),
+            "abstract": ("\u{1F4CB}", L10n.string("markdown.callout.abstract", defaultValue: "Abstract")),
+            "todo": ("\u{2611}\u{FE0F}", L10n.string("markdown.callout.todo", defaultValue: "Todo")),
+            "example": ("\u{1F4DD}", L10n.string("markdown.callout.example", defaultValue: "Example")),
+            "quote": ("\u{275D}", L10n.string("markdown.callout.quote", defaultValue: "Quote")),
+            "bug": ("\u{1F41B}", L10n.string("markdown.callout.bug", defaultValue: "Bug")),
+            "danger": ("\u{26A1}", L10n.string("markdown.callout.danger", defaultValue: "Danger")),
+            "failure": ("\u{2717}", L10n.string("markdown.callout.failure", defaultValue: "Failure")),
+            "success": ("\u{2713}", L10n.string("markdown.callout.success", defaultValue: "Success")),
+            "question": ("\u{003F}", L10n.string("markdown.callout.question", defaultValue: "Question")),
+            "info": ("\u{2139}\u{FE0F}", L10n.string("markdown.callout.info", defaultValue: "Info")),
+        ]
+    }
 
     private static func processCallouts(_ html: String) -> String {
         guard html.contains("[!") else { return html }
@@ -377,7 +379,7 @@ enum MarkdownRenderer {
             let firstParaContent = ns.substring(with: match.range(at: 6)).trimmingCharacters(in: .whitespacesAndNewlines)
             let restContent = ns.substring(with: match.range(at: 7))
 
-            let info = calloutTypes[typeStr] ?? ("\u{2139}\u{FE0F}", typeStr.capitalized)
+            let info = calloutTypes()[typeStr] ?? ("\u{2139}\u{FE0F}", typeStr.capitalized)
             let displayTitle = titleText.isEmpty ? info.label : titleText
 
             // Build content from remaining first-paragraph text + rest of blockquote

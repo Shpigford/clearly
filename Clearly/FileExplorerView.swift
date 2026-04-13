@@ -36,14 +36,14 @@ struct FileExplorerEmptyView: View {
                             iconOpacity = 0.30
                         }
                     }
-                Text("No Locations")
+                Text(L10n.string("sidebar.empty.title", defaultValue: "No Locations"))
                     .font(.system(size: 14, weight: .medium))
                     .foregroundStyle(.secondary)
-                Text("Add a folder to browse your Markdown files")
+                Text(L10n.string("sidebar.empty.subtitle", defaultValue: "Add a folder to browse your Markdown files"))
                     .font(.system(size: 12))
                     .foregroundStyle(.tertiary)
                     .multilineTextAlignment(.center)
-                Button("Add Location…") {
+                Button(L10n.string("sidebar.addLocation", defaultValue: "Add Location…")) {
                     workspace.showOpenPanel()
                 }
                 .controlSize(.small)
@@ -280,6 +280,15 @@ struct FileExplorerOutlineView: NSViewRepresentable {
     enum Section: String, CaseIterable {
         case locations = "LOCATIONS"
         case recents = "RECENTS"
+
+        var localizedTitle: String {
+            switch self {
+            case .locations:
+                return L10n.string("sidebar.section.locations", defaultValue: "LOCATIONS")
+            case .recents:
+                return L10n.string("sidebar.section.recents", defaultValue: "RECENTS")
+            }
+        }
     }
 
     /// Wrapper for items in the outline view
@@ -347,6 +356,22 @@ struct FileExplorerOutlineView: NSViewRepresentable {
             for section in Section.allCases {
                 sectionItems[section] = OutlineItem(.section(section))
             }
+        }
+
+        private func localized(_ key: String, _ defaultValue: String) -> String {
+            L10n.string(key, defaultValue: defaultValue)
+        }
+
+        private func menuItem(
+            _ key: String,
+            _ defaultValue: String,
+            action: Selector?,
+            representedObject: Any? = nil
+        ) -> NSMenuItem {
+            let item = NSMenuItem(title: localized(key, defaultValue), action: action, keyEquivalent: "")
+            item.representedObject = representedObject
+            item.target = self
+            return item
         }
 
         func item(for section: Section) -> OutlineItem {
@@ -462,6 +487,13 @@ struct FileExplorerOutlineView: NSViewRepresentable {
             guard let outlineView else { return }
             outlineView.reloadData()
             // autosaveExpandedItems handles restoration automatically
+            selectCurrentFile()
+            clearRecentsButton?.isHidden = workspace.recentFiles.isEmpty
+        }
+
+        func reloadLocalizedContent() {
+            guard let outlineView else { return }
+            outlineView.reloadData()
             selectCurrentFile()
             clearRecentsButton?.isHidden = workspace.recentFiles.isEmpty
         }
@@ -676,7 +708,7 @@ struct FileExplorerOutlineView: NSViewRepresentable {
 
             switch outlineItem.kind {
             case .section(let section):
-                let sectionAttr = NSMutableAttributedString(string: section.rawValue)
+                let sectionAttr = NSMutableAttributedString(string: section.localizedTitle)
                 sectionAttr.addAttributes([
                     .font: NSFont.systemFont(ofSize: 10, weight: .semibold),
                     .foregroundColor: NSColor.tertiaryLabelColor,
@@ -689,9 +721,12 @@ struct FileExplorerOutlineView: NSViewRepresentable {
                     addBtn.bezelStyle = .inline
                     addBtn.isBordered = false
                     let btnConfig = NSImage.SymbolConfiguration(pointSize: 11, weight: .bold)
-                    addBtn.image = NSImage(systemSymbolName: "folder.badge.plus", accessibilityDescription: "Add Location")?.withSymbolConfiguration(btnConfig)
+                    addBtn.image = NSImage(
+                        systemSymbolName: "folder.badge.plus",
+                        accessibilityDescription: localized("sidebar.addLocation", "Add Location…")
+                    )?.withSymbolConfiguration(btnConfig)
                     addBtn.imagePosition = .imageOnly
-                    addBtn.toolTip = "Add Location (⌘O)"
+                    addBtn.toolTip = localized("sidebar.tooltip.addLocation", "Add Location (⌘O)")
                     addBtn.target = self
                     addBtn.action = #selector(addLocationAction(_:))
                     addBtn.tag = addButtonTag
@@ -709,9 +744,12 @@ struct FileExplorerOutlineView: NSViewRepresentable {
                     clearBtn.bezelStyle = .inline
                     clearBtn.isBordered = false
                     let clearConfig = NSImage.SymbolConfiguration(pointSize: 11, weight: .bold)
-                    clearBtn.image = NSImage(systemSymbolName: "xmark", accessibilityDescription: "Clear Recents")?.withSymbolConfiguration(clearConfig)
+                    clearBtn.image = NSImage(
+                        systemSymbolName: "xmark",
+                        accessibilityDescription: localized("sidebar.context.clearRecents", "Clear Recents")
+                    )?.withSymbolConfiguration(clearConfig)
                     clearBtn.imagePosition = .imageOnly
-                    clearBtn.toolTip = "Clear Recents"
+                    clearBtn.toolTip = localized("sidebar.tooltip.clearRecents", "Clear Recents")
                     clearBtn.target = self
                     clearBtn.action = #selector(clearRecentsAction(_:))
                     clearBtn.tag = addButtonTag
@@ -735,7 +773,10 @@ struct FileExplorerOutlineView: NSViewRepresentable {
                 )
                 let locIcon = workspace.folderIcons[loc.url.path] ?? "folder"
                 let config = NSImage.SymbolConfiguration(pointSize: 13, weight: .medium)
-                cell.imageView?.image = NSImage(systemSymbolName: locIcon, accessibilityDescription: "Folder")?.withSymbolConfiguration(config)
+                cell.imageView?.image = NSImage(
+                    systemSymbolName: locIcon,
+                    accessibilityDescription: localized("common.folder", "Folder")
+                )?.withSymbolConfiguration(config)
                 cell.imageView?.symbolConfiguration = config
                 let locColor = folderColorForURL(loc.url)
                 cell.imageView?.contentTintColor = locColor ?? .secondaryLabelColor
@@ -750,11 +791,17 @@ struct FileExplorerOutlineView: NSViewRepresentable {
                 let nodeColor = folderColorForURL(node.url)
                 if node.isDirectory {
                     let nodeIcon = workspace.folderIcons[node.url.path] ?? "folder"
-                    cell.imageView?.image = NSImage(systemSymbolName: nodeIcon, accessibilityDescription: "Folder")?.withSymbolConfiguration(config)
+                    cell.imageView?.image = NSImage(
+                        systemSymbolName: nodeIcon,
+                        accessibilityDescription: localized("common.folder", "Folder")
+                    )?.withSymbolConfiguration(config)
                     cell.imageView?.symbolConfiguration = config
                     cell.imageView?.contentTintColor = nodeColor ?? .secondaryLabelColor
                 } else {
-                    cell.imageView?.image = NSImage(systemSymbolName: "doc.text", accessibilityDescription: "File")?.withSymbolConfiguration(config)
+                    cell.imageView?.image = NSImage(
+                        systemSymbolName: "doc.text",
+                        accessibilityDescription: localized("common.file", "File")
+                    )?.withSymbolConfiguration(config)
                     cell.imageView?.symbolConfiguration = config
                     cell.imageView?.contentTintColor = nodeColor?.withAlphaComponent(0.6) ?? .tertiaryLabelColor
                 }
@@ -775,7 +822,10 @@ struct FileExplorerOutlineView: NSViewRepresentable {
                 cell.textField?.font = .systemFont(ofSize: 12)
                 cell.textField?.attributedStringValue = attributed
                 let recentConfig = NSImage.SymbolConfiguration(pointSize: 13, weight: .medium)
-                cell.imageView?.image = NSImage(systemSymbolName: "doc.text", accessibilityDescription: "File")?.withSymbolConfiguration(recentConfig)
+                cell.imageView?.image = NSImage(
+                    systemSymbolName: "doc.text",
+                    accessibilityDescription: localized("common.file", "File")
+                )?.withSymbolConfiguration(recentConfig)
                 cell.imageView?.symbolConfiguration = recentConfig
                 cell.imageView?.contentTintColor = .tertiaryLabelColor
                 cell.imageView?.isHidden = false
@@ -787,7 +837,10 @@ struct FileExplorerOutlineView: NSViewRepresentable {
                 )
                 let docConfig = NSImage.SymbolConfiguration(pointSize: 13, weight: .medium)
                 let iconName = doc.isUntitled ? "doc.text" : "doc.text.fill"
-                cell.imageView?.image = NSImage(systemSymbolName: iconName, accessibilityDescription: "Document")?.withSymbolConfiguration(docConfig)
+                cell.imageView?.image = NSImage(
+                    systemSymbolName: iconName,
+                    accessibilityDescription: localized("common.document", "Document")
+                )?.withSymbolConfiguration(docConfig)
                 cell.imageView?.symbolConfiguration = docConfig
                 cell.imageView?.contentTintColor = doc.isUntitled ? .secondaryLabelColor : .tertiaryLabelColor
                 cell.imageView?.isHidden = false
@@ -824,142 +877,88 @@ struct FileExplorerOutlineView: NSViewRepresentable {
             let clickedRow = outlineView.clickedRow
             guard clickedRow >= 0, let outlineItem = outlineView.item(atRow: clickedRow) as? OutlineItem else {
                 // Clicked on empty space
-                menu.addItem(NSMenuItem(title: "Add Location…", action: #selector(addLocationAction(_:)), keyEquivalent: ""))
-                menu.items.last?.target = self
+                menu.addItem(menuItem("sidebar.addLocation", "Add Location…", action: #selector(addLocationAction(_:))))
                 return
             }
 
             switch outlineItem.kind {
             case .section(.locations):
-                menu.addItem(NSMenuItem(title: "Add Location…", action: #selector(addLocationAction(_:)), keyEquivalent: ""))
-                menu.items.last?.target = self
+                menu.addItem(menuItem("sidebar.addLocation", "Add Location…", action: #selector(addLocationAction(_:))))
 
             case .location(let loc):
-                let newFileItem = NSMenuItem(title: "New File…", action: #selector(newFileInFolderAction(_:)), keyEquivalent: "")
-                newFileItem.representedObject = loc.url
-                newFileItem.target = self
-                menu.addItem(newFileItem)
-
-                let newFolderItem = NSMenuItem(title: "New Folder…", action: #selector(newFolderAction(_:)), keyEquivalent: "")
-                newFolderItem.representedObject = loc.url
-                newFolderItem.target = self
-                menu.addItem(newFolderItem)
+                menu.addItem(menuItem("sidebar.context.newFile", "New File…", action: #selector(newFileInFolderAction(_:)), representedObject: loc.url))
+                menu.addItem(menuItem("sidebar.context.newFolder", "New Folder…", action: #selector(newFolderAction(_:)), representedObject: loc.url))
 
                 menu.addItem(.separator())
 
-                let changeIconItem = NSMenuItem(title: "Customize…", action: #selector(changeIconAction(_:)), keyEquivalent: "")
-                changeIconItem.representedObject = loc.url
-                changeIconItem.target = self
-                menu.addItem(changeIconItem)
+                menu.addItem(menuItem("sidebar.context.customize", "Customize…", action: #selector(changeIconAction(_:)), representedObject: loc.url))
 
                 menu.addItem(.separator())
 
-                let revealItem = NSMenuItem(title: "Reveal in Finder", action: #selector(revealInFinderAction(_:)), keyEquivalent: "")
-                revealItem.representedObject = loc.url
-                revealItem.target = self
-                menu.addItem(revealItem)
+                menu.addItem(menuItem("sidebar.context.revealInFinder", "Reveal in Finder", action: #selector(revealInFinderAction(_:)), representedObject: loc.url))
 
                 menu.addItem(.separator())
 
-                let removeItem = NSMenuItem(title: "Remove Location", action: #selector(removeLocationAction(_:)), keyEquivalent: "")
-                removeItem.representedObject = loc.id
-                removeItem.target = self
-                menu.addItem(removeItem)
+                menu.addItem(menuItem("sidebar.context.removeLocation", "Remove Location", action: #selector(removeLocationAction(_:)), representedObject: loc.id))
 
             case .fileNode(let node):
                 let parentURL = node.url.deletingLastPathComponent()
 
                 if node.isDirectory {
-                    let newFileItem = NSMenuItem(title: "New File…", action: #selector(newFileInFolderAction(_:)), keyEquivalent: "")
-                    newFileItem.representedObject = node.url
-                    newFileItem.target = self
-                    menu.addItem(newFileItem)
-
-                    let newFolderItem = NSMenuItem(title: "New Folder…", action: #selector(newFolderAction(_:)), keyEquivalent: "")
-                    newFolderItem.representedObject = node.url
-                    newFolderItem.target = self
-                    menu.addItem(newFolderItem)
+                    menu.addItem(menuItem("sidebar.context.newFile", "New File…", action: #selector(newFileInFolderAction(_:)), representedObject: node.url))
+                    menu.addItem(menuItem("sidebar.context.newFolder", "New Folder…", action: #selector(newFolderAction(_:)), representedObject: node.url))
 
                     menu.addItem(.separator())
 
-                    let changeIconItem = NSMenuItem(title: "Customize…", action: #selector(changeIconAction(_:)), keyEquivalent: "")
-                    changeIconItem.representedObject = node.url
-                    changeIconItem.target = self
-                    menu.addItem(changeIconItem)
+                    menu.addItem(menuItem("sidebar.context.customize", "Customize…", action: #selector(changeIconAction(_:)), representedObject: node.url))
 
                     menu.addItem(.separator())
                 } else {
-                    let newFileItem = NSMenuItem(title: "New File…", action: #selector(newFileInFolderAction(_:)), keyEquivalent: "")
-                    newFileItem.representedObject = parentURL
-                    newFileItem.target = self
-                    menu.addItem(newFileItem)
+                    menu.addItem(menuItem("sidebar.context.newFile", "New File…", action: #selector(newFileInFolderAction(_:)), representedObject: parentURL))
 
                     menu.addItem(.separator())
                 }
 
-                let renameItem = NSMenuItem(title: "Rename…", action: #selector(renameAction(_:)), keyEquivalent: "")
-                renameItem.representedObject = node.url
-                renameItem.target = self
-                menu.addItem(renameItem)
+                menu.addItem(menuItem("sidebar.context.rename", "Rename…", action: #selector(renameAction(_:)), representedObject: node.url))
 
-                let revealItem = NSMenuItem(title: "Reveal in Finder", action: #selector(revealInFinderAction(_:)), keyEquivalent: "")
-                revealItem.representedObject = node.url
-                revealItem.target = self
-                menu.addItem(revealItem)
+                menu.addItem(menuItem("sidebar.context.revealInFinder", "Reveal in Finder", action: #selector(revealInFinderAction(_:)), representedObject: node.url))
 
                 if !node.isDirectory {
-                    let copyItem = NSMenuItem(title: "Copy", action: nil, keyEquivalent: "")
+                    let copyItem = NSMenuItem(title: localized("sidebar.context.copy", "Copy"), action: nil, keyEquivalent: "")
                     copyItem.submenu = CopyActions.copySubmenu(for: node.url, target: self)
                     menu.addItem(copyItem)
                 }
 
                 menu.addItem(.separator())
 
-                let deleteItem = NSMenuItem(title: "Move to Trash", action: #selector(moveToTrashAction(_:)), keyEquivalent: "")
-                deleteItem.representedObject = node.url
-                deleteItem.target = self
-                menu.addItem(deleteItem)
+                menu.addItem(menuItem("sidebar.context.moveToTrash", "Move to Trash", action: #selector(moveToTrashAction(_:)), representedObject: node.url))
 
             case .recentFile(let url):
-                let revealItem = NSMenuItem(title: "Reveal in Finder", action: #selector(revealInFinderAction(_:)), keyEquivalent: "")
-                revealItem.representedObject = url
-                revealItem.target = self
-                menu.addItem(revealItem)
+                menu.addItem(menuItem("sidebar.context.revealInFinder", "Reveal in Finder", action: #selector(revealInFinderAction(_:)), representedObject: url))
 
-                let copyItem = NSMenuItem(title: "Copy", action: nil, keyEquivalent: "")
+                let copyItem = NSMenuItem(title: localized("sidebar.context.copy", "Copy"), action: nil, keyEquivalent: "")
                 copyItem.submenu = CopyActions.copySubmenu(for: url, target: self)
                 menu.addItem(copyItem)
 
             case .openDocument(let doc):
                 if doc.isUntitled {
-                    let saveItem = NSMenuItem(title: "Save As…", action: #selector(saveOpenDocAction(_:)), keyEquivalent: "")
-                    saveItem.representedObject = doc.id
-                    saveItem.target = self
-                    menu.addItem(saveItem)
+                    menu.addItem(menuItem("sidebar.context.saveAs", "Save As…", action: #selector(saveOpenDocAction(_:)), representedObject: doc.id))
                     menu.addItem(.separator())
                 } else if let url = doc.fileURL {
-                    let revealItem = NSMenuItem(title: "Reveal in Finder", action: #selector(revealInFinderAction(_:)), keyEquivalent: "")
-                    revealItem.representedObject = url
-                    revealItem.target = self
-                    menu.addItem(revealItem)
+                    menu.addItem(menuItem("sidebar.context.revealInFinder", "Reveal in Finder", action: #selector(revealInFinderAction(_:)), representedObject: url))
 
-                    let copyItem = NSMenuItem(title: "Copy", action: nil, keyEquivalent: "")
+                    let copyItem = NSMenuItem(title: localized("sidebar.context.copy", "Copy"), action: nil, keyEquivalent: "")
                     copyItem.submenu = CopyActions.copySubmenu(for: url, target: self)
                     menu.addItem(copyItem)
 
                     menu.addItem(.separator())
                 }
 
-                let closeItem = NSMenuItem(title: "Close", action: #selector(closeOpenDocAction(_:)), keyEquivalent: "")
-                closeItem.representedObject = doc.id
-                closeItem.target = self
-                menu.addItem(closeItem)
+                menu.addItem(menuItem("sidebar.context.close", "Close", action: #selector(closeOpenDocAction(_:)), representedObject: doc.id))
 
             case .section(.recents):
                 if !workspace.recentFiles.isEmpty {
-                    let clearItem = NSMenuItem(title: "Clear Recents", action: #selector(clearRecentsAction(_:)), keyEquivalent: "")
-                    clearItem.target = self
-                    menu.addItem(clearItem)
+                    menu.addItem(menuItem("sidebar.context.clearRecents", "Clear Recents", action: #selector(clearRecentsAction(_:))))
                 }
             }
         }
@@ -988,10 +987,10 @@ struct FileExplorerOutlineView: NSViewRepresentable {
         @objc func newFileInFolderAction(_ sender: NSMenuItem) {
             guard let folderURL = sender.representedObject as? URL else { return }
             let alert = NSAlert()
-            alert.messageText = "New File"
-            alert.informativeText = "Enter a name for the new file:"
-            alert.addButton(withTitle: "Create")
-            alert.addButton(withTitle: "Cancel")
+            alert.messageText = localized("sidebar.alert.newFile.title", "New File")
+            alert.informativeText = localized("sidebar.alert.newFile.message", "Enter a name for the new file:")
+            alert.addButton(withTitle: localized("common.create", "Create"))
+            alert.addButton(withTitle: localized("common.cancel", "Cancel"))
 
             let input = NSTextField(frame: NSRect(x: 0, y: 0, width: 260, height: 24))
             input.stringValue = "Untitled.md"
@@ -1010,13 +1009,13 @@ struct FileExplorerOutlineView: NSViewRepresentable {
         @objc func newFolderAction(_ sender: NSMenuItem) {
             guard let parentURL = sender.representedObject as? URL else { return }
             let alert = NSAlert()
-            alert.messageText = "New Folder"
-            alert.informativeText = "Enter a name for the new folder:"
-            alert.addButton(withTitle: "Create")
-            alert.addButton(withTitle: "Cancel")
+            alert.messageText = localized("sidebar.alert.newFolder.title", "New Folder")
+            alert.informativeText = localized("sidebar.alert.newFolder.message", "Enter a name for the new folder:")
+            alert.addButton(withTitle: localized("common.create", "Create"))
+            alert.addButton(withTitle: localized("common.cancel", "Cancel"))
 
             let input = NSTextField(frame: NSRect(x: 0, y: 0, width: 260, height: 24))
-            input.stringValue = "New Folder"
+            input.stringValue = localized("sidebar.alert.newFolder.title", "New Folder")
             alert.accessoryView = input
             alert.window.initialFirstResponder = input
 
@@ -1030,10 +1029,10 @@ struct FileExplorerOutlineView: NSViewRepresentable {
         @objc func renameAction(_ sender: NSMenuItem) {
             guard let url = sender.representedObject as? URL else { return }
             let alert = NSAlert()
-            alert.messageText = "Rename"
-            alert.informativeText = "Enter a new name:"
-            alert.addButton(withTitle: "Rename")
-            alert.addButton(withTitle: "Cancel")
+            alert.messageText = localized("sidebar.alert.rename.title", "Rename")
+            alert.informativeText = localized("sidebar.alert.rename.message", "Enter a new name:")
+            alert.addButton(withTitle: localized("common.rename", "Rename"))
+            alert.addButton(withTitle: localized("common.cancel", "Cancel"))
 
             let input = NSTextField(frame: NSRect(x: 0, y: 0, width: 260, height: 24))
             input.stringValue = url.lastPathComponent
@@ -1055,11 +1054,15 @@ struct FileExplorerOutlineView: NSViewRepresentable {
         @objc func moveToTrashAction(_ sender: NSMenuItem) {
             guard let url = sender.representedObject as? URL else { return }
             let alert = NSAlert()
-            alert.messageText = "Move to Trash?"
-            alert.informativeText = "Are you sure you want to move \"\(url.lastPathComponent)\" to the Trash?"
+            alert.messageText = localized("sidebar.alert.moveToTrash.title", "Move to Trash?")
+            alert.informativeText = L10n.format(
+                "sidebar.alert.moveToTrash.message",
+                defaultValue: "Are you sure you want to move \"%@\" to the Trash?",
+                url.lastPathComponent
+            )
             alert.alertStyle = .warning
-            alert.addButton(withTitle: "Move to Trash")
-            alert.addButton(withTitle: "Cancel")
+            alert.addButton(withTitle: localized("common.moveToTrash", "Move to Trash"))
+            alert.addButton(withTitle: localized("common.cancel", "Cancel"))
 
             guard alert.runModal() == .alertFirstButtonReturn else { return }
             _ = workspace.deleteItem(at: url)

@@ -14,7 +14,13 @@ struct OpenDocument: Identifiable {
 
     var displayName: String {
         if let url = fileURL { return url.lastPathComponent }
-        if let n = untitledNumber, n > 1 { return "Untitled \(n)" }
-        return "Untitled"
+        if let n = untitledNumber, n > 1 {
+            return L10n.format(
+                "workspace.untitled.numbered",
+                defaultValue: "Untitled %@",
+                String(n)
+            )
+        }
+        return L10n.string("workspace.untitled.single", defaultValue: "Untitled")
     }
 }
