@@ -81,10 +81,10 @@ pre code {
 .code-numbered .code-line::before {
     content: counter(line);
     display: inline-block;
-    width: 2.5em;
+    width: 1.5em;
     text-align: right;
-    padding-right: 1em;
-    margin-right: 0.5em;
+    padding-right: 0.6em;
+    margin-right: 0.4em;
     color: #AEAEB2;
     user-select: none;
     -webkit-user-select: none;

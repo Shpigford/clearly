@@ -208,6 +208,16 @@ enum PreviewCSS {
         border-radius: 5px;
     }
 
+    .code-filename {
+        font-family: "SF Mono", SFMono-Regular, Menlo, monospace;
+        font-size: 0.8em;
+        padding: 0.5em 1.25em;
+        background: #EDEDF0;
+        border: none;
+        border-radius: 10px 10px 0 0;
+        color: #86868B;
+    }
+
     pre {
         position: relative;
         background-color: #F5F5F7;
@@ -218,10 +228,30 @@ enum PreviewCSS {
         overflow-x: auto;
     }
 
+    .code-filename + pre {
+        border-top-left-radius: 0;
+        border-top-right-radius: 0;
+        margin-top: 0;
+    }
+
+    .code-block-wrapper {
+        position: relative;
+        margin-bottom: 1.25em;
+    }
+
+    .code-block-wrapper > pre {
+        margin-bottom: 0;
+    }
+
+    .code-block-wrapper:hover .code-copy-btn {
+        opacity: 1;
+    }
+
     .code-copy-btn {
         position: absolute;
         top: 6px;
         right: 6px;
+        z-index: 1;
         width: 28px;
         height: 28px;
         padding: 0;
@@ -244,10 +274,6 @@ enum PreviewCSS {
 
     .code-copy-btn.copied {
         color: #34C759;
-    }
-
-    pre:hover .code-copy-btn {
-        opacity: 1;
     }
 
     .code-copy-btn:hover {
@@ -661,6 +687,10 @@ enum PreviewCSS {
             background-color: rgba(255, 255, 255, 0.06);
             color: #F5F5F7;
         }
+        .code-filename {
+            background: rgba(255, 255, 255, 0.07);
+            color: #AEAEB2;
+        }
         pre {
             background-color: rgba(255, 255, 255, 0.05);
             color: #F5F5F7;
@@ -774,6 +804,10 @@ enum PreviewCSS {
     }
 
     @media print {
+        .code-filename {
+            background: #EDEDF0 !important;
+            color: #86868B !important;
+        }
         .code-copy-btn { display: none !important; }
         .table-copy-btn { display: none !important; }
         .sort-indicator { display: none !important; }

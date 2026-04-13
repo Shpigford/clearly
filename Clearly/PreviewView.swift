@@ -3,8 +3,6 @@ import WebKit
 import Combine
 
 struct PreviewView: NSViewRepresentable {
-    private static let copyButtonContentWorld = WKContentWorld.world(name: "ClearlyCopyButtons")
-
     let markdown: String
     var fontSize: CGFloat = 18
     var mode: ViewMode
@@ -30,7 +28,6 @@ struct PreviewView: NSViewRepresentable {
         config.userContentController.add(context.coordinator, name: "linkClicked")
         config.userContentController.add(context.coordinator, name: "scrollSync")
         config.userContentController.add(context.coordinator, name: "copyToClipboard")
-        config.userContentController.add(context.coordinator, contentWorld: Self.copyButtonContentWorld, name: "copyToClipboard")
         config.userContentController.add(context.coordinator, name: "taskToggle")
         config.userContentController.add(context.coordinator, name: "clickToSource")
         config.userContentController.addUserScript(Self.copyButtonUserScript())
@@ -95,7 +92,6 @@ struct PreviewView: NSViewRepresentable {
         webView.configuration.userContentController.removeScriptMessageHandler(forName: "linkClicked")
         webView.configuration.userContentController.removeScriptMessageHandler(forName: "scrollSync")
         webView.configuration.userContentController.removeScriptMessageHandler(forName: "copyToClipboard")
-        webView.configuration.userContentController.removeScriptMessageHandler(forName: "copyToClipboard", contentWorld: Self.copyButtonContentWorld)
         webView.configuration.userContentController.removeScriptMessageHandler(forName: "taskToggle")
         webView.configuration.userContentController.removeScriptMessageHandler(forName: "clickToSource")
     }
@@ -551,9 +547,23 @@ struct PreviewView: NSViewRepresentable {
             var copyIcon = '\(copyIcon)';
             var checkIcon = '\(checkIcon)';
             document.querySelectorAll('pre').forEach(function(pre) {
-                if (pre.closest('.frontmatter') || pre.querySelector('.code-copy-btn')) return;
+                if (pre.closest('.frontmatter') || pre.closest('.code-block-wrapper')) return;
+                var wrapper = document.createElement('div');
+                wrapper.className = 'code-block-wrapper';
+                var prev = pre.previousElementSibling;
+                var hasFilename = prev && prev.classList.contains('code-filename');
+                if (hasFilename) {
+                    pre.parentNode.insertBefore(wrapper, prev);
+                    wrapper.appendChild(prev);
+                } else {
+                    pre.parentNode.insertBefore(wrapper, pre);
+                }
+                wrapper.appendChild(pre);
                 var btn = document.createElement('button');
                 btn.className = 'code-copy-btn';
+                if (hasFilename) {
+                    btn.style.top = (prev.offsetHeight + 6) + 'px';
+                }
                 btn.type = 'button';
                 btn.setAttribute('aria-label', 'Copy code');
                 btn.innerHTML = copyIcon;
@@ -561,7 +571,13 @@ struct PreviewView: NSViewRepresentable {
                     e.preventDefault();
                     e.stopPropagation();
                     var code = pre.querySelector('code');
-                    var text = code ? code.textContent : pre.textContent;
+                    var lines = code ? code.querySelectorAll('.code-line') : null;
+                    var text;
+                    if (lines && lines.length > 0) {
+                        text = Array.from(lines).map(function(l) { return l.textContent; }).join('\\n');
+                    } else {
+                        text = code ? code.textContent : pre.textContent;
+                    }
                     window.webkit.messageHandlers.copyToClipboard.postMessage(text);
                     btn.classList.add('copied');
                     btn.innerHTML = checkIcon;
@@ -570,15 +586,14 @@ struct PreviewView: NSViewRepresentable {
                         btn.innerHTML = copyIcon;
                     }, 1500);
                 });
-                pre.appendChild(btn);
+                wrapper.appendChild(btn);
             });
         })();
         """
         return WKUserScript(
             source: source,
             injectionTime: .atDocumentEnd,
-            forMainFrameOnly: true,
-            in: copyButtonContentWorld
+            forMainFrameOnly: true
         )
     }
 }
