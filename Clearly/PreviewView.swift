@@ -60,6 +60,7 @@ struct PreviewView: NSViewRepresentable {
     }
 
     func updateNSView(_ webView: WKWebView, context: Context) {
+        webView.isHidden = mode != .preview
         webView.underPageBackgroundColor = Theme.backgroundColor
         context.coordinator.fileURL = fileURL
         context.coordinator.positionSyncID = positionSyncID
