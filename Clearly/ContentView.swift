@@ -2,7 +2,9 @@ import SwiftUI
 
 extension Notification.Name {
     static let scrollEditorToLine = Notification.Name("scrollEditorToLine")
+    static let scrollPreviewToLine = Notification.Name("scrollPreviewToLine")
     static let flushEditorBuffer = Notification.Name("flushEditorBuffer")
+    static let navigateWikiLink = Notification.Name("navigateWikiLink")
 }
 
 enum ViewMode: String, CaseIterable {
@@ -80,9 +82,16 @@ struct HiddenToolbarBackground: ViewModifier {
 }
 
 struct ContentView: View {
+    private struct PendingWikiNavigation {
+        let fileURL: URL
+        let lineNumber: Int
+        let destinationMode: ViewMode
+    }
+
     @Bindable var workspace: WorkspaceManager
     @State private var mode: ViewMode
     @State private var positionSyncID = UUID().uuidString
+    @State private var pendingWikiNavigation: PendingWikiNavigation?
     @AppStorage("editorFontSize") private var fontSize: Double = 16
     @StateObject private var findState = FindState()
     @StateObject private var fileWatcher = FileWatcher()
@@ -103,6 +112,14 @@ struct ContentView: View {
     private var previewPane: some View {
         let editorFontSize = CGFloat(fontSize)
         let fileURL = workspace.currentFileURL
+        let _ = workspace.vaultIndexRevision
+        let allWikiFileNames: Set<String> = {
+            var names = Set<String>()
+            for index in workspace.activeVaultIndexes {
+                for file in index.allFiles() { names.insert(file.filename.lowercased()) }
+            }
+            return names
+        }()
         return PreviewView(
             markdown: workspace.currentFileText,
             fontSize: editorFontSize,
@@ -133,9 +150,12 @@ struct ContentView: View {
             },
             onClickToSource: { line in
                 mode = .edit
-                // Post a notification that EditorView can observe to scroll to line
                 NotificationCenter.default.post(name: .scrollEditorToLine, object: nil, userInfo: ["line": line])
-            }
+            },
+            onWikiLinkClicked: { target, heading in
+                navigateToWikiLink(target: target, heading: heading, destinationMode: .preview)
+            },
+            wikiFileNames: allWikiFileNames
         )
     }
 
@@ -263,6 +283,7 @@ struct ContentView: View {
                 findState.isVisible = false
                 setupFileWatcher()
                 outlineState.parseHeadings(from: workspace.currentFileText)
+                applyPendingWikiNavigationIfNeeded()
                 // New untitled docs always open in edit mode
                 if let newID, let doc = workspace.openDocuments.first(where: { $0.id == newID }), doc.isUntitled {
                     mode = .edit
@@ -286,6 +307,11 @@ struct ContentView: View {
                     outlineState.toggle()
                 }
             }
+            .onReceive(NotificationCenter.default.publisher(for: .navigateWikiLink)) { notification in
+                guard let target = notification.userInfo?["target"] as? String else { return }
+                let heading = notification.userInfo?["heading"] as? String
+                navigateToWikiLink(target: target, heading: heading, destinationMode: .edit)
+            }
     }
 
     private func setupFileWatcher() {
@@ -300,5 +326,54 @@ struct ContentView: View {
             workspace.externalFileDidChange(newText)
         }
         fileWatcher.watch(url, currentText: workspace.currentFileText)
+    }
+
+    private func navigateToWikiLink(target: String, heading: String?, destinationMode: ViewMode) {
+        for vaultIndex in workspace.activeVaultIndexes {
+            guard let file = vaultIndex.resolveWikiLink(name: target) else { continue }
+
+            let fileURL = vaultIndex.rootURL.appendingPathComponent(file.path)
+            let headingLine = heading.flatMap { vaultIndex.lineNumberForHeading(in: file.id, heading: $0) }
+
+            guard workspace.openFile(at: fileURL) else { return }
+
+            if let headingLine {
+                if workspace.currentFileURL == fileURL {
+                    scheduleWikiNavigation(lineNumber: headingLine, destinationMode: destinationMode)
+                } else {
+                    pendingWikiNavigation = PendingWikiNavigation(
+                        fileURL: fileURL,
+                        lineNumber: headingLine,
+                        destinationMode: destinationMode
+                    )
+                }
+            } else {
+                mode = destinationMode
+                pendingWikiNavigation = nil
+            }
+            return
+        }
+    }
+
+    private func applyPendingWikiNavigationIfNeeded() {
+        guard let pendingWikiNavigation,
+              workspace.currentFileURL == pendingWikiNavigation.fileURL else { return }
+        scheduleWikiNavigation(
+            lineNumber: pendingWikiNavigation.lineNumber,
+            destinationMode: pendingWikiNavigation.destinationMode
+        )
+        self.pendingWikiNavigation = nil
+    }
+
+    private func scheduleWikiNavigation(lineNumber: Int, destinationMode: ViewMode) {
+        mode = destinationMode
+        let notificationName: Notification.Name = destinationMode == .preview ? .scrollPreviewToLine : .scrollEditorToLine
+        DispatchQueue.main.async {
+            NotificationCenter.default.post(
+                name: notificationName,
+                object: nil,
+                userInfo: ["line": lineNumber]
+            )
+        }
     }
 }

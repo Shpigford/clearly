@@ -76,6 +76,12 @@ struct EditorView: NSViewRepresentable {
         context.coordinator.highlighter = highlighter
         textView.string = text
         textView.delegate = context.coordinator
+        textView.onWikiLinkClicked = { target, heading in
+            NotificationCenter.default.post(
+                name: .navigateWikiLink, object: nil,
+                userInfo: ["target": target, "heading": heading as Any]
+            )
+        }
 
         scrollView.documentView = textView
         context.coordinator.textView = textView

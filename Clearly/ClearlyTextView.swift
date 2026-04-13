@@ -38,6 +38,46 @@ class PersistentTextCheckingTextView: NSTextView {
 final class ClearlyTextView: PersistentTextCheckingTextView {
     var documentURL: URL?
     var onShowFind: (() -> Void)?
+    var onWikiLinkClicked: ((String, String?) -> Void)?
+
+    // MARK: - Wiki-Link Cmd+Click
+
+    private static let wikiLinkRegex = try! NSRegularExpression(
+        pattern: #"\[\[([^\]\|#\^]+?)(?:#([^\]\|]+?))?(?:\|[^\]]+?)?\]\]"#
+    )
+
+    override func mouseDown(with event: NSEvent) {
+        if event.modifierFlags.contains(.command) {
+            let point = convert(event.locationInWindow, from: nil)
+            let charIndex = characterIndex(for: point)
+            if charIndex < (string as NSString).length,
+               let (target, heading) = wikiLinkAt(charIndex: charIndex) {
+                onWikiLinkClicked?(target, heading)
+                return
+            }
+        }
+        super.mouseDown(with: event)
+    }
+
+    private func wikiLinkAt(charIndex: Int) -> (target: String, heading: String?)? {
+        let text = string as NSString
+        let searchStart = max(0, charIndex - 200)
+        let searchEnd = min(text.length, charIndex + 200)
+        let searchRange = NSRange(location: searchStart, length: searchEnd - searchStart)
+
+        for match in Self.wikiLinkRegex.matches(in: string, range: searchRange) {
+            guard NSLocationInRange(charIndex, match.range) else { continue }
+            let target = text.substring(with: match.range(at: 1))
+                .trimmingCharacters(in: .whitespaces)
+            var heading: String? = nil
+            if match.range(at: 2).location != NSNotFound {
+                heading = text.substring(with: match.range(at: 2))
+                    .trimmingCharacters(in: .whitespaces)
+            }
+            return (target, heading)
+        }
+        return nil
+    }
 
     // MARK: - Cursor
 

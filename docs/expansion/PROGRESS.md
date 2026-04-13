@@ -1,6 +1,6 @@
 # Expansion Progress
 
-## Status: Phase 1 - Completed
+## Status: Phase 2 - Completed
 
 ## Quick Reference
 - Research: `docs/expansion/RESEARCH.md`
@@ -38,13 +38,36 @@
 ---
 
 ### Phase 2: Wiki-Links
-**Status:** Not Started
+**Status:** Completed (2026-04-13)
 
 #### Tasks Completed
-- (none yet)
+- [x] Added `wikiLinkColor` (warm green) and `wikiLinkBrokenColor` (orange-red) to `Theme.swift`
+- [x] Added `.wikiLink` case to `HighlightStyle` enum in `MarkdownSyntaxHighlighter.swift`
+- [x] Added wiki-link regex pattern `(\[\[)([^\]\n]+?)(\]\])` to patterns array (after footnotes, before tables)
+- [x] Added `.wikiLink` switch cases to both `highlightAll` and `highlightAround` methods
+- [x] Added `processWikiLinks()` to `MarkdownRenderer.swift` pipeline (after processEmoji, before processCallouts)
+  - Handles `[[note]]`, `[[note|alias]]`, `[[note#heading]]`, `[[note#heading|alias]]`
+  - Uses `clearly://wiki/` custom URL scheme, `escapeHTML` for display text
+  - Renderer stays pure — no VaultIndex dependency
+- [x] Added `.wiki-link` and `.wiki-link-broken` CSS to `PreviewCSS.swift` in all 4 contexts (light, dark, print, export)
+  - Resolved: green with solid bottom border; Broken: orange-red with dashed border
+- [x] Added `onWikiLinkClicked` callback and `wikiFileNames` property to `PreviewView.swift`
+- [x] Modified `handleLinkClick` to detect `clearly://wiki/` scheme and call callback
+- [x] Injected broken-link detection JS: compares wiki-link targets against known file names, adds `.wiki-link-broken` class
+- [x] Wired `onWikiLinkClicked` and `wikiFileNames` in `ContentView.swift` previewPane
+- [x] Added Cmd+click wiki-link navigation to `ClearlyTextView.swift` (mouseDown override + regex detection)
+- [x] Added `.navigateWikiLink` notification for editor-to-ContentView communication
+- [x] Wired `onWikiLinkClicked` from ClearlyTextView via NotificationCenter in `EditorView.swift`
 
 #### Decisions Made
-- (none yet)
+- Wiki-link color is warm green (distinct from blue standard links) — visually signals "internal/connected"
+- Broken-link color is orange-red — signals "needs attention" without being alarm-red
+- Editor highlighting uses single color for all wiki-link content (no sub-parsing of heading/alias) — simpler, consistent
+- No broken-link coloring in editor (would require VaultIndex in hot path) — preview handles it via JS
+- Reuse existing `linkClicked` JS handler rather than adding new message handler — `clearly://wiki/` scheme detection in `handleLinkClick` is simpler
+- Editor Cmd+click uses regex scan on 400-char window around click point — avoids complex attribute/range tracking
+- File name comparison is case-insensitive (lowercased set) matching VaultIndex.resolveWikiLink behavior
+- Wiki-link JS broken detection skips marking when knownFiles set is empty (no vault index yet)
 
 #### Blockers
 - (none)
@@ -123,6 +146,15 @@
 
 ## Session Log
 
+### 2026-04-13 — Phase 2 Implementation
+- Implemented full wiki-link support across 8 files: Theme, Highlighter, Renderer, CSS, PreviewView, ContentView, ClearlyTextView, EditorView
+- Editor syntax highlighting: `[[brackets]]` in syntax color, content in green wiki-link color
+- Preview rendering: `[[note]]` → `<a href="clearly://wiki/note" class="wiki-link">note</a>` with code-block protection
+- Preview click handling: `clearly://wiki/` scheme detected in handleLinkClick, resolved via VaultIndex, opens via workspace.openFile
+- Broken-link detection: JS injected with known file names set, marks unresolved links with `.wiki-link-broken` class
+- Editor Cmd+click: mouseDown override on ClearlyTextView with regex-based wiki-link detection at click point
+- Build verified: `xcodebuild -scheme Clearly -configuration Debug build` succeeded
+
 ### 2026-04-13 — Phase 1 Implementation
 - Built all 6 tasks: GRDB dep → FileParser → VaultIndex → WorkspaceManager integration → QuickSwitcherPanel → Cmd+P shortcut
 - Fixed FTS5 external content bug (content='files' referenced non-existent column) — switched to standalone FTS
@@ -135,6 +167,14 @@
 ---
 
 ## Files Changed
+- `Clearly/Theme.swift` — `wikiLinkColor`, `wikiLinkBrokenColor`
+- `Clearly/MarkdownSyntaxHighlighter.swift` — `.wikiLink` enum case, pattern, two switch cases
+- `Shared/MarkdownRenderer.swift` — `processWikiLinks()` in pipeline
+- `Shared/PreviewCSS.swift` — `.wiki-link`, `.wiki-link-broken` CSS in 4 contexts
+- `Clearly/PreviewView.swift` — `onWikiLinkClicked` callback, `wikiFileNames`, broken-link JS, scheme handling
+- `Clearly/ContentView.swift` — wiki file names computation, callbacks, `.navigateWikiLink` notification handler
+- `Clearly/ClearlyTextView.swift` — `onWikiLinkClicked`, mouseDown override, regex detection
+- `Clearly/EditorView.swift` — wire onWikiLinkClicked via notification
 - `project.yml` — GRDB dependency, dev bundle IDs for Debug config
 - `Clearly/FileParser.swift` (new) — markdown parser for wiki-links, tags, headings
 - `Clearly/VaultIndex.swift` (new) — SQLite index with GRDB, FTS5, full schema
