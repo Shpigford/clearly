@@ -646,6 +646,13 @@ final class MarkdownSyntaxHighlighter: NSObject {
         DiagnosticLog.log("highlightAround(\(caller)): \(paragraphRange) in \(Int(elapsed))ms")
     }
 
+    // MARK: - Public Query
+
+    /// Returns true if the given character position is inside a code block, math block, or frontmatter.
+    func isInsideProtectedRange(at position: Int) -> Bool {
+        cachedProtectedRanges.contains { NSLocationInRange(position, $0.range) }
+    }
+
     private func applyProtectedBlockStyle(_ block: ProtectedRange, to textStorage: NSTextStorage, range: NSRange) {
         switch block.kind {
         case .code:

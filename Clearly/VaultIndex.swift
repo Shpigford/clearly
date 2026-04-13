@@ -292,15 +292,41 @@ final class VaultIndex {
     }
 
     func resolveWikiLink(name: String) -> IndexedFile? {
+        let normalizedName = name
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .replacingOccurrences(of: "\\", with: "/")
+        guard !normalizedName.isEmpty else { return nil }
+
         do {
             return try dbPool.read { db in
+                let pathCandidates: [String]
+                if normalizedName.contains("/") {
+                    let alreadyHasExtension = FileNode.markdownExtensions.contains((normalizedName as NSString).pathExtension.lowercased())
+                    if alreadyHasExtension {
+                        pathCandidates = [normalizedName]
+                    } else {
+                        pathCandidates = [normalizedName] + FileNode.markdownExtensions.map { "\(normalizedName).\($0)" }
+                    }
+
+                    for candidate in pathCandidates {
+                        let row = try Row.fetchOne(db, sql: """
+                            SELECT * FROM files
+                            WHERE LOWER(path) = LOWER(?)
+                            LIMIT 1
+                            """, arguments: [candidate])
+                        if let row {
+                            return Self.indexedFile(from: row)
+                        }
+                    }
+                }
+
                 // Case-insensitive match by filename, prefer shortest path for disambiguation
                 let row = try Row.fetchOne(db, sql: """
                     SELECT * FROM files
                     WHERE LOWER(filename) = LOWER(?)
                     ORDER BY LENGTH(path) ASC
                     LIMIT 1
-                    """, arguments: [name])
+                    """, arguments: [normalizedName])
                 return row.map(Self.indexedFile(from:))
             }
         } catch {

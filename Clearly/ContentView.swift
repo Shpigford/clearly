@@ -116,7 +116,11 @@ struct ContentView: View {
         let allWikiFileNames: Set<String> = {
             var names = Set<String>()
             for index in workspace.activeVaultIndexes {
-                for file in index.allFiles() { names.insert(file.filename.lowercased()) }
+                for file in index.allFiles() {
+                    names.insert(file.filename.lowercased())
+                    names.insert(file.path.lowercased())
+                    names.insert((file.path as NSString).deletingPathExtension.lowercased())
+                }
             }
             return names
         }()

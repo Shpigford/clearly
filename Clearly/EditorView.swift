@@ -155,6 +155,10 @@ struct EditorView: NSViewRepresentable {
         context.coordinator.lastPositionSyncID = positionSyncID
 
         // Restore scroll + focus when editing becomes visible or the document changes.
+        if didChangeDocument {
+            context.coordinator.cancelPendingBindingUpdate()
+        }
+
         if mode == .edit && (context.coordinator.lastMode != .edit || didChangeDocument) {
             findState?.activeMode = .edit
             let fraction = ScrollBridge.fraction(for: positionSyncID)
@@ -261,6 +265,7 @@ struct EditorView: NSViewRepresentable {
         /// updateNSView must not replace the text view's content — the text
         /// view is authoritative and the binding will catch up.
         var pendingBindingUpdates = 0
+        var pendingBindingUpdateToken: UUID?
 
         // Find state tracking
         var matchRanges: [NSRange] = []
@@ -304,6 +309,11 @@ struct EditorView: NSViewRepresentable {
             parent.text = textView.string
         }
 
+        func cancelPendingBindingUpdate() {
+            pendingBindingUpdates = 0
+            pendingBindingUpdateToken = nil
+        }
+
         func observeFindState(_ state: FindState) {
             findCancellables.removeAll()
 
@@ -332,9 +342,12 @@ struct EditorView: NSViewRepresentable {
                 .store(in: &findCancellables)
         }
 
+        var lastReplacementString: String?
+
         func textView(_ textView: NSTextView, shouldChangeTextIn affectedCharRange: NSRange, replacementString: String?) -> Bool {
             lastEditedRange = affectedCharRange
             lastReplacementLength = replacementString?.utf16.count ?? 0
+            lastReplacementString = replacementString
             return true
         }
 
@@ -354,7 +367,7 @@ struct EditorView: NSViewRepresentable {
             // triggered by the text view growing) BEFORE the async binding update fires,
             // see a mismatch between the old binding and the new text, and overwrite
             // the text view with the stale binding value — causing the cursor to jump.
-            pendingBindingUpdates += 1
+            pendingBindingUpdates = 1
 
             // Save scroll position before highlighting
             let scrollView = textView.enclosingScrollView
@@ -379,19 +392,93 @@ struct EditorView: NSViewRepresentable {
             // Re-apply find highlights after syntax highlighting
             restoreFindHighlightsIfNeeded()
 
+            // Wiki-link auto-complete trigger/update
+            handleWikiLinkCompletion(textView)
+
             // Update SwiftUI binding with a short debounce. The text view already shows
             // the correct content — the binding is only needed for preview, file saving,
             // and outline parsing, which are expensive on long documents and don't need
             // to run on every keystroke.
             editGeneration += 1
             let gen = editGeneration
+            let token = UUID()
+            pendingBindingUpdateToken = token
+            let scheduledPositionSyncID = lastPositionSyncID
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in
                 guard let self else { return }
-                self.pendingBindingUpdates -= 1
+                guard self.pendingBindingUpdateToken == token else { return }
+                self.pendingBindingUpdateToken = nil
+                self.pendingBindingUpdates = 0
                 guard gen == self.editGeneration else { return }
+                guard self.lastPositionSyncID == scheduledPositionSyncID else { return }
                 guard let textView = self.textView else { return }
                 self.parent.text = textView.string
             }
+        }
+
+        // MARK: - Wiki-Link Auto-Complete
+
+        private func handleWikiLinkCompletion(_ textView: NSTextView) {
+            let completion = WikiLinkCompletionManager.shared
+
+            if completion.isVisible {
+                let cursorLocation = textView.selectedRange().location
+
+                // Dismiss if cursor moved before the trigger
+                guard cursorLocation >= completion.triggerLocation + 2 else {
+                    completion.dismiss()
+                    return
+                }
+
+                let queryStart = completion.triggerLocation + 2
+                let queryLength = cursorLocation - queryStart
+
+                guard queryLength >= 0 else {
+                    completion.dismiss()
+                    return
+                }
+
+                let nsText = textView.string as NSString
+
+                // Check if `]]` was typed
+                if cursorLocation >= 2 {
+                    let lastTwo = nsText.substring(with: NSRange(location: cursorLocation - 2, length: 2))
+                    if lastTwo == "]]" {
+                        completion.dismiss()
+                        return
+                    }
+                }
+
+                let query: String
+                if queryLength == 0 {
+                    query = ""
+                } else {
+                    query = nsText.substring(with: NSRange(location: queryStart, length: queryLength))
+                }
+
+                if query.contains("\n") {
+                    completion.dismiss()
+                    return
+                }
+
+                completion.updateResults(query: query)
+                return
+            }
+
+            // Not visible — check if `[[` was just typed
+            guard let replacement = lastReplacementString, replacement.contains("[") else { return }
+
+            let cursorLocation = textView.selectedRange().location
+            guard cursorLocation >= 2 else { return }
+
+            let nsText = textView.string as NSString
+            let twoBack = nsText.substring(with: NSRange(location: cursorLocation - 2, length: 2))
+            guard twoBack == "[[" else { return }
+
+            // Don't trigger inside code blocks / math / frontmatter
+            if highlighter?.isInsideProtectedRange(at: cursorLocation - 2) == true { return }
+
+            completion.show(for: textView, triggerLocation: cursorLocation - 2)
         }
 
         private var scrollSuppressCount = 0

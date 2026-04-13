@@ -1,6 +1,6 @@
 # Expansion Progress
 
-## Status: Phase 2 - Completed
+## Status: Phase 3 - Completed
 
 ## Quick Reference
 - Research: `docs/expansion/RESEARCH.md`
@@ -75,13 +75,31 @@
 ---
 
 ### Phase 3: Wiki-Link Auto-Complete
-**Status:** Not Started
+**Status:** Completed (2026-04-13)
 
 #### Tasks Completed
-- (none yet)
+- [x] Created `Clearly/WikiLinkCompletionWindow.swift` — `WikiLinkCompletionManager` singleton with borderless NSPanel, NSTableView, fuzzy-matched file suggestions
+- [x] Panel uses `.borderless, .nonactivatingPanel` style (does NOT steal key focus from editor), `.floating` level, `NSVisualEffectView` with `.popover` material
+- [x] Positioned below cursor via `firstRect(forCharacterRange:actualRange:)` with screen-edge clamping and flip-above fallback
+- [x] Reuses `FuzzyMatcher.match()` from QuickSwitcherPanel for consistent matching behavior
+- [x] Cell view: doc icon + filename with highlighted match ranges (bold + accent color) + dimmed folder path
+- [x] `ClickableTableView` subclass with `acceptsFirstMouse` for click-to-select on non-key panel
+- [x] Added `isInsideProtectedRange(at:)` public method to `MarkdownSyntaxHighlighter.swift`
+- [x] Added `keyDown` override in `ClearlyTextView.swift` — intercepts Down/Up/Return/Tab/Escape when popup visible
+- [x] Added dismiss in `ClearlyTextView.mouseDown` — click anywhere in editor dismisses popup
+- [x] Added `handleWikiLinkCompletion` in `EditorView.swift` Coordinator — trigger detection (`[[` typed), query extraction, popup lifecycle
+- [x] Trigger detection checks actual text (two chars before cursor) — handles rapid typing, paste
+- [x] Protected range check prevents triggering inside code blocks, math blocks, frontmatter
+- [x] Completion insertion via `insertText(_:replacementRange:)` — integrates with undo system
+- [x] Dismiss on: Escape, `]]` typed, backspace past `[[`, click outside, newline in query
 
 #### Decisions Made
-- (none yet)
+- Panel does NOT become key (plain NSPanel, not KeyablePanel) — user keeps typing in editor, keyboard intercept in ClearlyTextView.keyDown
+- Child window via `addChildWindow(_:ordered:)` — moves with editor window, auto-hides on deactivation
+- Removed `@MainActor` from WikiLinkCompletionManager — Coordinator isn't `@MainActor`, and all NSView work is main-thread anyway
+- Dismiss before insertText in `insertSelectedCompletion` — prevents textDidChange from re-triggering popup
+- No pipe `|` special handling — query includes pipe, results go empty. Acceptable for v1
+- 300px wide panel, 32px rows, max 8 visible rows — narrower and smaller than QuickSwitcher's 580px/36px
 
 #### Blockers
 - (none)
@@ -146,6 +164,15 @@
 
 ## Session Log
 
+### 2026-04-13 — Phase 3 Implementation
+- Created WikiLinkCompletionWindow.swift (~280 lines): manager, panel, table, cell views, positioning, completion insertion
+- Added isInsideProtectedRange(at:) to MarkdownSyntaxHighlighter for code-block detection
+- Added keyDown override in ClearlyTextView for popup keyboard interception (Down/Up/Return/Tab/Escape)
+- Added mouseDown dismiss in ClearlyTextView
+- Added handleWikiLinkCompletion in EditorView Coordinator with trigger detection and query lifecycle
+- Fixed @MainActor isolation: removed from WikiLinkCompletionManager since Coordinator isn't @MainActor
+- Build verified: `xcodebuild -scheme Clearly -configuration Debug build` succeeded
+
 ### 2026-04-13 — Phase 2 Implementation
 - Implemented full wiki-link support across 8 files: Theme, Highlighter, Renderer, CSS, PreviewView, ContentView, ClearlyTextView, EditorView
 - Editor syntax highlighting: `[[brackets]]` in syntax color, content in green wiki-link color
@@ -167,6 +194,10 @@
 ---
 
 ## Files Changed
+- `Clearly/WikiLinkCompletionWindow.swift` (new) — WikiLinkCompletionManager, panel, table, cell views
+- `Clearly/MarkdownSyntaxHighlighter.swift` — `isInsideProtectedRange(at:)` public method
+- `Clearly/ClearlyTextView.swift` — `keyDown` override, mouseDown dismiss
+- `Clearly/EditorView.swift` — `lastReplacementString`, `handleWikiLinkCompletion`, wired in textDidChange
 - `Clearly/Theme.swift` — `wikiLinkColor`, `wikiLinkBrokenColor`
 - `Clearly/MarkdownSyntaxHighlighter.swift` — `.wikiLink` enum case, pattern, two switch cases
 - `Shared/MarkdownRenderer.swift` — `processWikiLinks()` in pipeline

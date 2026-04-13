@@ -47,9 +47,21 @@ final class ClearlyTextView: PersistentTextCheckingTextView {
     )
 
     override func mouseDown(with event: NSEvent) {
-        if event.modifierFlags.contains(.command) {
-            let point = convert(event.locationInWindow, from: nil)
-            let charIndex = characterIndex(for: point)
+        if WikiLinkCompletionManager.shared.isVisible {
+            WikiLinkCompletionManager.shared.dismiss()
+        }
+        if event.modifierFlags.contains(.command),
+           let lm = layoutManager, let tc = textContainer {
+            let viewPoint = convert(event.locationInWindow, from: nil)
+            let containerPoint = NSPoint(
+                x: viewPoint.x - textContainerInset.width,
+                y: viewPoint.y - textContainerInset.height
+            )
+            var fraction: CGFloat = 0
+            let charIndex = lm.characterIndex(
+                for: containerPoint, in: tc,
+                fractionOfDistanceBetweenInsertionPoints: &fraction
+            )
             if charIndex < (string as NSString).length,
                let (target, heading) = wikiLinkAt(charIndex: charIndex) {
                 onWikiLinkClicked?(target, heading)
@@ -155,6 +167,32 @@ final class ClearlyTextView: PersistentTextCheckingTextView {
 
     @objc func showFindPanel(_ sender: Any?) {
         onShowFind?()
+    }
+
+    // MARK: - Wiki-Link Completion Keyboard
+
+    override func keyDown(with event: NSEvent) {
+        let completion = WikiLinkCompletionManager.shared
+        guard completion.isVisible else {
+            super.keyDown(with: event)
+            return
+        }
+        switch event.keyCode {
+        case 125: completion.moveSelectionDown()          // Down arrow
+        case 126: completion.moveSelectionUp()            // Up arrow
+        case 36, 48:                                      // Return, Tab
+            if completion.hasSelection {
+                completion.insertSelectedCompletion()
+            } else {
+                completion.dismiss()
+                super.keyDown(with: event)                // Pass through so Enter inserts newline
+            }
+        case 53: completion.dismiss()                     // Escape
+        case 123, 124:                                    // Left, Right arrow
+            completion.dismiss()
+            super.keyDown(with: event)
+        default: super.keyDown(with: event)               // Pass through
+        }
     }
 
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
