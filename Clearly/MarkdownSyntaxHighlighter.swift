@@ -117,7 +117,7 @@ final class MarkdownSyntaxHighlighter: NSObject {
 
     // MARK: - Highlighting
 
-    func highlightAll(_ textStorage: NSTextStorage, caller: String = "") {
+    func highlightAll(_ textStorage: NSTextStorage, typography: EditorTypography = Theme.editorTypography, caller: String = "") {
         guard !isHighlighting else { return }
         isHighlighting = true
         defer { isHighlighting = false }
@@ -128,15 +128,11 @@ final class MarkdownSyntaxHighlighter: NSObject {
         let text = textStorage.string
 
         // Reset to default style
-        let paragraph = NSMutableParagraphStyle()
-        paragraph.minimumLineHeight = Theme.editorLineHeight
-        paragraph.maximumLineHeight = Theme.editorLineHeight
-
         textStorage.addAttributes([
-            .font: Theme.editorFont,
+            .font: typography.font,
             .foregroundColor: Theme.textColor,
-            .paragraphStyle: paragraph,
-            .baselineOffset: Theme.editorBaselineOffset
+            .paragraphStyle: typography.paragraphStyle,
+            .baselineOffset: typography.baselineOffset
         ], range: fullRange)
 
         // Track code block ranges to skip inner highlighting
@@ -163,7 +159,7 @@ final class MarkdownSyntaxHighlighter: NSObject {
                         textStorage.addAttribute(.foregroundColor, value: Theme.syntaxColor, range: syntaxRange)
                         textStorage.addAttributes([
                             .foregroundColor: Theme.headingColor,
-                            .font: NSFont.monospacedSystemFont(ofSize: Theme.editorFontSize + 4, weight: .bold)
+                            .font: typography.headingFont
                         ], range: contentRange)
                     }
 
@@ -176,7 +172,7 @@ final class MarkdownSyntaxHighlighter: NSObject {
                         textStorage.addAttribute(.foregroundColor, value: Theme.syntaxColor, range: closeRange)
                         textStorage.addAttributes([
                             .foregroundColor: Theme.boldColor,
-                            .font: NSFont.monospacedSystemFont(ofSize: Theme.editorFontSize, weight: .bold)
+                            .font: typography.boldFont
                         ], range: contentRange)
                     }
 
@@ -187,13 +183,9 @@ final class MarkdownSyntaxHighlighter: NSObject {
                         let closeRange = match.range(at: 3)
                         textStorage.addAttribute(.foregroundColor, value: Theme.syntaxColor, range: openRange)
                         textStorage.addAttribute(.foregroundColor, value: Theme.syntaxColor, range: closeRange)
-                        let boldItalicFont = NSFontManager.shared.convert(
-                            NSFont.monospacedSystemFont(ofSize: Theme.editorFontSize, weight: .bold),
-                            toHaveTrait: .italicFontMask
-                        )
                         textStorage.addAttributes([
                             .foregroundColor: Theme.boldColor,
-                            .font: boldItalicFont
+                            .font: typography.boldItalicFont
                         ], range: contentRange)
                     }
 
@@ -208,10 +200,9 @@ final class MarkdownSyntaxHighlighter: NSObject {
                         if closingRange.upperBound <= textStorage.length {
                             textStorage.addAttribute(.foregroundColor, value: Theme.syntaxColor, range: closingRange)
                         }
-                        let italicFont = NSFontManager.shared.convert(Theme.editorFont, toHaveTrait: .italicFontMask)
                         textStorage.addAttributes([
                             .foregroundColor: Theme.italicColor,
-                            .font: italicFont
+                            .font: typography.italicFont
                         ], range: contentRange)
                     }
 

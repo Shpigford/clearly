@@ -1,7 +1,19 @@
 import Foundation
 
+struct PreviewTypography: Equatable {
+    static let defaultBodyFontFamily = "system-ui, -apple-system, BlinkMacSystemFont, \"SF Pro Text\", \"SF Pro Display\", \"Helvetica Neue\", sans-serif"
+    static let defaultHeadingFontFamily = "system-ui, -apple-system, BlinkMacSystemFont, \"SF Pro Display\", \"Helvetica Neue\", sans-serif"
+    static let `default` = PreviewTypography(
+        bodyFontFamily: defaultBodyFontFamily,
+        headingFontFamily: defaultHeadingFontFamily
+    )
+
+    let bodyFontFamily: String
+    let headingFontFamily: String
+}
+
 enum PreviewCSS {
-    static func css(fontSize: CGFloat = 18, forExport: Bool = false) -> String {
+    static func css(fontSize: CGFloat = 18, typography: PreviewTypography = .default, forExport: Bool = false) -> String {
     let exportOverrides = forExport ? """
     .code-copy-btn { display: none !important; }
     .table-copy-btn { display: none !important; }
@@ -105,7 +117,7 @@ enum PreviewCSS {
     }
 
     body {
-        font-family: system-ui, -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "Helvetica Neue", sans-serif;
+        font-family: \(typography.bodyFontFamily);
         font-size: \(Int(fontSize))px;
         line-height: 1.75;
         max-width: 61em;
@@ -118,7 +130,7 @@ enum PreviewCSS {
     }
 
     h1, h2, h3, h4, h5, h6 {
-        font-family: system-ui, -apple-system, BlinkMacSystemFont, "SF Pro Display", "Helvetica Neue", sans-serif;
+        font-family: \(typography.headingFontFamily);
         line-height: 1.25;
         margin-top: 2em;
         margin-bottom: 0.75em;

@@ -83,6 +83,7 @@ struct ContentView: View {
     @State private var mode: ViewMode
     @State private var positionSyncID = UUID().uuidString
     @AppStorage("editorFontSize") private var fontSize: Double = 16
+    @AppStorage(TypographyPreferences.previewFontNameKey) private var previewFontName = ""
     @StateObject private var findState = FindState()
     @StateObject private var fileWatcher = FileWatcher()
     @StateObject private var outlineState = OutlineState()
@@ -102,9 +103,11 @@ struct ContentView: View {
     private var previewPane: some View {
         let editorFontSize = CGFloat(fontSize)
         let fileURL = workspace.currentFileURL
+        let previewTypography = TypographyPreferences.previewTypography(storedFontName: previewFontName.isEmpty ? nil : previewFontName)
         return PreviewView(
             markdown: workspace.currentFileText,
             fontSize: editorFontSize,
+            previewTypography: previewTypography,
             mode: mode,
             positionSyncID: positionSyncID,
             fileURL: fileURL,

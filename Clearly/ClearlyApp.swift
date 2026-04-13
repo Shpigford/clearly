@@ -1053,7 +1053,12 @@ struct ExportPDFCommand: View {
     var body: some View {
         Button("Export as PDF…") {
             guard let text else { return }
-            PDFExporter().exportPDF(markdown: text, fontSize: CGFloat(fontSize), fileURL: fileURL)
+            PDFExporter().exportPDF(
+                markdown: text,
+                fontSize: CGFloat(fontSize),
+                previewTypography: TypographyPreferences.previewTypography(),
+                fileURL: fileURL
+            )
         }
         .disabled(text == nil)
         .keyboardShortcut("e", modifiers: [.command, .shift])
@@ -1068,7 +1073,12 @@ struct PrintCommand: View {
     var body: some View {
         Button("Print…") {
             guard let text else { return }
-            PDFExporter().printHTML(markdown: text, fontSize: CGFloat(fontSize), fileURL: fileURL)
+            PDFExporter().printHTML(
+                markdown: text,
+                fontSize: CGFloat(fontSize),
+                previewTypography: TypographyPreferences.previewTypography(),
+                fileURL: fileURL
+            )
         }
         .disabled(text == nil)
         .keyboardShortcut("p", modifiers: .command)
