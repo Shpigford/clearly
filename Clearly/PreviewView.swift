@@ -78,6 +78,13 @@ struct PreviewView: NSViewRepresentable {
                 context.coordinator.performFind(query: findState?.query ?? "")
             }
         }
+
+        // Reset cursors when not in preview mode — prevents magnifier cursor
+        // from Preview's img { cursor: zoom-in } from bleeding into editor mode
+        if mode != .preview {
+            webView.evaluateJavaScript("document.querySelectorAll('img').forEach(function(img){img.style.cursor='default';})")
+        }
+
         context.coordinator.lastMode = mode
 
         if context.coordinator.lastContentKey != contentKey {
