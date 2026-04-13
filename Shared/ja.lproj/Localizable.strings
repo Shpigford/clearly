@@ -194,6 +194,7 @@
 "outline.empty.title" = "見出しがありません";
 "outline.empty.subtitle" = "# 見出しを追加してアウトラインを作成";
 "preview.toc.title" = "目次";
+"preview.copyCode" = "コードをコピー";
 
 "editor.context.textFormat" = "テキスト書式";
 "editor.context.headers" = "見出し";

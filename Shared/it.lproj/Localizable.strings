@@ -194,6 +194,7 @@
 "outline.empty.title" = "Nessuna intestazione";
 "outline.empty.subtitle" = "Aggiungi intestazioni con # per creare una struttura";
 "preview.toc.title" = "Indice";
+"preview.copyCode" = "Copia codice";
 
 "editor.context.textFormat" = "Formato testo";
 "editor.context.headers" = "Intestazioni";

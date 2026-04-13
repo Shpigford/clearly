@@ -14,6 +14,13 @@ struct PreviewView: NSViewRepresentable {
     var onClickToSource: ((Int) -> Void)?
     @Environment(\.colorScheme) private var colorScheme
 
+    private static func javaScriptStringLiteral(_ value: String) -> String {
+        value
+            .replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "'", with: "\\'")
+            .replacingOccurrences(of: "\n", with: "\\n")
+    }
+
     private var contentKey: String {
         "\(markdown)__\(fontSize)__\(colorScheme == .dark ? "dark" : "light")__\(LocalImageSupport.fileURLKeyFragment(fileURL))"
     }
@@ -548,10 +555,14 @@ struct PreviewView: NSViewRepresentable {
     private static func copyButtonUserScript() -> WKUserScript {
         let copyIcon = #"<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"18\" height=\"18\" viewBox=\"0 0 18 18\"><g fill=\"none\" stroke-linecap=\"round\" stroke-linejoin=\"round\" stroke-width=\"1.5\" stroke=\"currentColor\"><path d=\"M12.25 5.75H13.75C14.8546 5.75 15.75 6.6454 15.75 7.75V13.75C15.75 14.8546 14.8546 15.75 13.75 15.75H7.75C6.6454 15.75 5.75 14.8546 5.75 13.75V12.25\"></path><path d=\"M10.25 2.25H4.25C3.14543 2.25 2.25 3.14543 2.25 4.25V10.25C2.25 11.3546 3.14543 12.25 4.25 12.25H10.25C11.3546 12.25 12.25 11.3546 12.25 10.25V4.25C12.25 3.14543 11.3546 2.25 10.25 2.25Z\"></path></g></svg>"#
         let checkIcon = #"<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"12\" height=\"12\" viewBox=\"0 0 12 12\"><g fill=\"none\" stroke-linecap=\"round\" stroke-linejoin=\"round\" stroke-width=\"1.5\" stroke=\"currentColor\"><path d=\"m1.76,7.004l2.25,3L10.24,1.746\"></path></g></svg>"#
+        let copyCodeLabel = javaScriptStringLiteral(
+            L10n.string("preview.copyCode", defaultValue: "Copy code")
+        )
         let source = """
         (function() {
             var copyIcon = '\(copyIcon)';
             var checkIcon = '\(checkIcon)';
+            var copyCodeLabel = '\(copyCodeLabel)';
             document.querySelectorAll('pre').forEach(function(pre) {
                 if (pre.closest('.frontmatter') || pre.closest('.code-block-wrapper')) return;
                 var wrapper = document.createElement('div');
@@ -571,7 +582,7 @@ struct PreviewView: NSViewRepresentable {
                     btn.style.top = (prev.offsetHeight + 6) + 'px';
                 }
                 btn.type = 'button';
-                btn.setAttribute('aria-label', 'Copy code');
+                btn.setAttribute('aria-label', copyCodeLabel);
                 btn.innerHTML = copyIcon;
                 btn.addEventListener('click', function(e) {
                     e.preventDefault();

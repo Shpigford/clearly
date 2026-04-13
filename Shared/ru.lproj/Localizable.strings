@@ -194,6 +194,7 @@
 "outline.empty.title" = "Нет заголовков";
 "outline.empty.subtitle" = "Добавьте заголовки с #, чтобы построить структуру";
 "preview.toc.title" = "Оглавление";
+"preview.copyCode" = "Копировать код";
 
 "editor.context.textFormat" = "Формат текста";
 "editor.context.headers" = "Заголовки";

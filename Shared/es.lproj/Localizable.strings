@@ -194,6 +194,7 @@
 "outline.empty.title" = "Sin encabezados";
 "outline.empty.subtitle" = "Añade encabezados con # para crear un esquema";
 "preview.toc.title" = "Tabla de contenidos";
+"preview.copyCode" = "Copiar código";
 
 "editor.context.textFormat" = "Formato de texto";
 "editor.context.headers" = "Encabezados";

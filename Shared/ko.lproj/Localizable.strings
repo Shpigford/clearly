@@ -194,6 +194,7 @@
 "outline.empty.title" = "제목 없음";
 "outline.empty.subtitle" = "# 제목을 추가해 개요를 만드세요";
 "preview.toc.title" = "목차";
+"preview.copyCode" = "코드 복사";
 
 "editor.context.textFormat" = "텍스트 서식";
 "editor.context.headers" = "제목";

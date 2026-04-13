@@ -194,6 +194,7 @@
 "outline.empty.title" = "Keine Überschriften";
 "outline.empty.subtitle" = "Füge Überschriften mit # hinzu, um eine Gliederung zu erstellen";
 "preview.toc.title" = "Inhaltsverzeichnis";
+"preview.copyCode" = "Code kopieren";
 
 "editor.context.textFormat" = "Textformat";
 "editor.context.headers" = "Überschriften";

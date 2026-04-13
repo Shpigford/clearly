@@ -194,6 +194,7 @@
 "outline.empty.title" = "暫無標題";
 "outline.empty.subtitle" = "使用 # 標題建立大綱";
 "preview.toc.title" = "目錄";
+"preview.copyCode" = "複製程式碼";
 
 "editor.context.textFormat" = "文字格式";
 "editor.context.headers" = "標題";

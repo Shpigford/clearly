@@ -194,6 +194,7 @@
 "outline.empty.title" = "No headings";
 "outline.empty.subtitle" = "Add headings with # to build an outline";
 "preview.toc.title" = "Table of Contents";
+"preview.copyCode" = "Copy code";
 
 "editor.context.textFormat" = "Text Format";
 "editor.context.headers" = "Headers";

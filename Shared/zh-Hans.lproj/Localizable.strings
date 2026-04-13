@@ -194,6 +194,7 @@
 "outline.empty.title" = "暂无标题";
 "outline.empty.subtitle" = "使用 # 标题构建大纲";
 "preview.toc.title" = "目录";
+"preview.copyCode" = "复制代码";
 
 "editor.context.textFormat" = "文本格式";
 "editor.context.headers" = "标题";

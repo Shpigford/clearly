@@ -194,6 +194,7 @@
 "outline.empty.title" = "Aucun titre";
 "outline.empty.subtitle" = "Ajoutez des titres avec # pour créer un plan";
 "preview.toc.title" = "Table des matières";
+"preview.copyCode" = "Copier le code";
 
 "editor.context.textFormat" = "Format du texte";
 "editor.context.headers" = "Titres";
