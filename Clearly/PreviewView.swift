@@ -12,10 +12,16 @@ struct PreviewView: NSViewRepresentable {
     var outlineState: OutlineState?
     var onTaskToggle: ((Int, Bool) -> Void)?
     var onClickToSource: ((Int) -> Void)?
+    var onWikiLinkClicked: ((String, String?) -> Void)?
+    var wikiFileNames: Set<String>?
     @Environment(\.colorScheme) private var colorScheme
 
     private var contentKey: String {
-        "\(markdown)__\(fontSize)__\(colorScheme == .dark ? "dark" : "light")__\(LocalImageSupport.fileURLKeyFragment(fileURL))"
+        "\(markdown)__\(fontSize)__\(colorScheme == .dark ? "dark" : "light")__\(LocalImageSupport.fileURLKeyFragment(fileURL))__\(wikiFilesKey)"
+    }
+
+    private var wikiFilesKey: String {
+        (wikiFileNames ?? []).sorted().joined(separator: "\n")
     }
 
     func makeCoordinator() -> Coordinator {
@@ -41,6 +47,7 @@ struct PreviewView: NSViewRepresentable {
         context.coordinator.outlineState = outlineState
         context.coordinator.onTaskToggle = onTaskToggle
         context.coordinator.onClickToSource = onClickToSource
+        context.coordinator.onWikiLinkClicked = onWikiLinkClicked
         let coordinator = context.coordinator
         findState?.previewNavigateToNext = { [weak coordinator] in
             coordinator?.navigateToNextMatch()
@@ -54,6 +61,12 @@ struct PreviewView: NSViewRepresentable {
         outlineState?.scrollToPreviewAnchor = { [weak coordinator = context.coordinator] anchor in
             coordinator?.scrollToHeading(anchor: anchor)
         }
+        NotificationCenter.default.addObserver(
+            context.coordinator,
+            selector: #selector(Coordinator.handleScrollToLine(_:)),
+            name: .scrollPreviewToLine,
+            object: nil
+        )
 
         loadHTML(in: webView, context: context)
         return webView
@@ -95,6 +108,7 @@ struct PreviewView: NSViewRepresentable {
     }
 
     static func dismantleNSView(_ webView: WKWebView, coordinator: Coordinator) {
+        NotificationCenter.default.removeObserver(coordinator)
         webView.configuration.userContentController.removeScriptMessageHandler(forName: "linkClicked")
         webView.configuration.userContentController.removeScriptMessageHandler(forName: "scrollSync")
         webView.configuration.userContentController.removeScriptMessageHandler(forName: "copyToClipboard")
@@ -104,8 +118,17 @@ struct PreviewView: NSViewRepresentable {
 
     private func loadHTML(in webView: WKWebView, context: Context) {
         context.coordinator.lastContentKey = contentKey
+        context.coordinator.isLoadingContent = true
         let rawBody = MarkdownRenderer.renderHTML(markdown)
         let htmlBody = LocalImageSupport.resolveImageSources(in: rawBody, relativeTo: fileURL)
+        let wikiFilesJSON: String = {
+            guard let names = wikiFileNames, !names.isEmpty else { return "[]" }
+            guard let data = try? JSONSerialization.data(withJSONObject: Array(names)),
+                  var json = String(data: data, encoding: .utf8) else { return "[]" }
+            // Prevent </script> injection in HTML context
+            json = json.replacingOccurrences(of: "</", with: "<\\/")
+            return json
+        }()
         let scrollJS = """
         // Track scroll fraction for position sync between editor and preview.
         var _scrollTicking = false;
@@ -269,6 +292,18 @@ struct PreviewView: NSViewRepresentable {
                 if (popover) { popover.remove(); popover = null; }
             });
         });
+        // Wiki-link broken detection
+        (function() {
+            var knownFiles = new Set(\(wikiFilesJSON));
+            document.querySelectorAll('a.wiki-link').forEach(function(a) {
+                var href = a.getAttribute('href') || '';
+                if (!href.startsWith('clearly://wiki/')) return;
+                var target = decodeURIComponent(href.replace('clearly://wiki/', '').split('#')[0]);
+                if (knownFiles.size > 0 && !knownFiles.has(target.toLowerCase())) {
+                    a.classList.add('wiki-link-broken');
+                }
+            });
+        })();
         </script>
         \(MathSupport.scriptHTML(for: htmlBody))
         \(TableSupport.scriptHTML(for: htmlBody))
@@ -290,7 +325,10 @@ struct PreviewView: NSViewRepresentable {
         var outlineState: OutlineState?
         var onTaskToggle: ((Int, Bool) -> Void)?
         var onClickToSource: ((Int) -> Void)?
+        var onWikiLinkClicked: ((String, String?) -> Void)?
         var skipNextReload = false
+        var isLoadingContent = false
+        var pendingScrollLine: Int?
         weak var webView: WKWebView?
         private var findCancellables = Set<AnyCancellable>()
         private var matchCount = 0
@@ -345,6 +383,48 @@ struct PreviewView: NSViewRepresentable {
             })();
             """
             webView?.evaluateJavaScript(js)
+        }
+
+        @objc func handleScrollToLine(_ notification: Notification) {
+            guard let line = notification.userInfo?["line"] as? Int, line > 0 else { return }
+            pendingScrollLine = line
+            guard !isLoadingContent else { return }
+            scrollToPendingLine()
+        }
+
+        private func scrollToPendingLine() {
+            guard let line = pendingScrollLine else { return }
+            let js = """
+            (function() {
+                var targetLine = \(line);
+                var candidates = Array.from(document.querySelectorAll('[data-sourcepos]'));
+                var best = null;
+                for (var i = 0; i < candidates.length; i++) {
+                    var sp = candidates[i].getAttribute('data-sourcepos');
+                    if (!sp) continue;
+                    var match = /^(\\d+):/.exec(sp);
+                    if (!match) continue;
+                    var startLine = parseInt(match[1], 10);
+                    if (startLine === targetLine) {
+                        best = candidates[i];
+                        break;
+                    }
+                    if (startLine < targetLine) {
+                        best = candidates[i];
+                    } else if (best === null) {
+                        best = candidates[i];
+                        break;
+                    } else {
+                        break;
+                    }
+                }
+                if (best) {
+                    best.scrollIntoView({behavior:'smooth', block:'start'});
+                }
+            })();
+            """
+            webView?.evaluateJavaScript(js)
+            pendingScrollLine = nil
         }
 
         func performFind(query: String) {
@@ -464,6 +544,7 @@ struct PreviewView: NSViewRepresentable {
         }
 
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+            isLoadingContent = false
             if !didInitialLoad {
                 didInitialLoad = true
             }
@@ -480,6 +561,7 @@ struct PreviewView: NSViewRepresentable {
                !query.isEmpty {
                 performFind(query: query)
             }
+            scrollToPendingLine()
         }
 
         private func resolvedLinkURL(for href: String) -> URL? {
@@ -497,6 +579,16 @@ struct PreviewView: NSViewRepresentable {
         }
 
         private func handleLinkClick(_ href: String) {
+            if href.hasPrefix("clearly://wiki/") {
+                let remainder = String(href.dropFirst("clearly://wiki/".count))
+                let parts = remainder.components(separatedBy: "#")
+                let target = parts[0].removingPercentEncoding ?? parts[0]
+                let heading = parts.count > 1 ? (parts[1].removingPercentEncoding ?? parts[1]) : nil
+                DispatchQueue.main.async { [weak self] in
+                    self?.onWikiLinkClicked?(target, heading)
+                }
+                return
+            }
             guard let targetURL = resolvedLinkURL(for: href) else { return }
             NSWorkspace.shared.open(targetURL)
         }

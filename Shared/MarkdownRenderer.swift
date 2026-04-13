@@ -27,6 +27,7 @@ enum MarkdownRenderer {
         html = processHighlightMarks(html)
         html = processSuperSub(html)
         html = processEmoji(html)
+        html = processWikiLinks(html)
         html = processCallouts(html)
         html = processTOC(html)
         html = processCaptions(html)
@@ -241,6 +242,54 @@ enum MarkdownRenderer {
         }
         result += ns.substring(from: lastEnd)
         return result
+    }
+
+    // MARK: - Wiki-Links [[note]]
+
+    private static func processWikiLinks(_ html: String) -> String {
+        let (protectedHTML, segments) = protectCodeRegions(in: html)
+        guard let regex = try? NSRegularExpression(
+            pattern: #"\[\[([^\]\|#\^]+?)(?:#([^\]\|]+?))?(?:\|([^\]]+?))?\]\]"#
+        ) else {
+            return restoreProtectedSegments(in: protectedHTML, segments: segments)
+        }
+        let ns = protectedHTML as NSString
+        var result = ""
+        var lastEnd = 0
+        for match in regex.matches(in: protectedHTML, range: NSRange(location: 0, length: ns.length)) {
+            result += ns.substring(with: NSRange(location: lastEnd, length: match.range.location - lastEnd))
+
+            let target = ns.substring(with: match.range(at: 1))
+                .trimmingCharacters(in: .whitespaces)
+
+            var heading: String? = nil
+            if match.range(at: 2).location != NSNotFound {
+                heading = ns.substring(with: match.range(at: 2))
+                    .trimmingCharacters(in: .whitespaces)
+            }
+
+            let displayText: String
+            if match.range(at: 3).location != NSNotFound {
+                displayText = ns.substring(with: match.range(at: 3))
+                    .trimmingCharacters(in: .whitespaces)
+            } else if let heading {
+                displayText = "\(target) > \(heading)"
+            } else {
+                displayText = target
+            }
+
+            let encodedTarget = target.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? target
+            var href = "clearly://wiki/\(encodedTarget)"
+            if let heading {
+                let encodedHeading = heading.addingPercentEncoding(withAllowedCharacters: .urlFragmentAllowed) ?? heading
+                href += "#\(encodedHeading)"
+            }
+
+            result += "<a href=\"\(href)\" class=\"wiki-link\">\(escapeHTML(displayText))</a>"
+            lastEnd = match.range.location + match.range.length
+        }
+        result += ns.substring(from: lastEnd)
+        return restoreProtectedSegments(in: result, segments: segments)
     }
 
     // MARK: - Highlight/Mark ==text==

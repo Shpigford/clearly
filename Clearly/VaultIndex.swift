@@ -308,6 +308,25 @@ final class VaultIndex {
         }
     }
 
+    func lineNumberForHeading(in fileId: Int64, heading: String) -> Int? {
+        let normalized = heading.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalized.isEmpty else { return nil }
+
+        do {
+            return try dbPool.read { db in
+                let row = try Row.fetchOne(db, sql: """
+                    SELECT line_number FROM headings
+                    WHERE file_id = ? AND LOWER(text) = LOWER(?)
+                    ORDER BY line_number
+                    LIMIT 1
+                    """, arguments: [fileId, normalized])
+                return row?["line_number"]
+            }
+        } catch {
+            return nil
+        }
+    }
+
     // MARK: Read — Links
 
     func linksTo(fileId: Int64) -> [LinkRecord] {

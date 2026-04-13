@@ -82,6 +82,9 @@ final class MarkdownSyntaxHighlighter: NSObject {
         // Footnote markers: [^ref]
         add("(\\[\\^)([^\\]\n]+)(\\])", .footnote)
 
+        // Wiki-links: [[note]] or [[note|alias]] or [[note#heading]]
+        add(#"(\[\[)([^\]\n]+?)(\]\])"#, .wikiLink)
+
         // Table rows: lines with pipes
         add("^(\\|.+\\|)\\s*$", .syntax, options: .anchorsMatchLines)
 
@@ -113,6 +116,7 @@ final class MarkdownSyntaxHighlighter: NSObject {
         case frontmatter
         case highlight
         case footnote
+        case wikiLink
         case htmlTag
     }
 
@@ -323,6 +327,13 @@ final class MarkdownSyntaxHighlighter: NSObject {
 
                 case .footnote:
                     textStorage.addAttribute(.foregroundColor, value: Theme.footnoteColor, range: match.range)
+
+                case .wikiLink:
+                    if match.numberOfRanges >= 4 {
+                        textStorage.addAttribute(.foregroundColor, value: Theme.syntaxColor, range: match.range(at: 1))
+                        textStorage.addAttribute(.foregroundColor, value: Theme.wikiLinkColor, range: match.range(at: 2))
+                        textStorage.addAttribute(.foregroundColor, value: Theme.syntaxColor, range: match.range(at: 3))
+                    }
 
                 case .htmlTag:
                     textStorage.addAttribute(.foregroundColor, value: Theme.htmlTagColor, range: match.range)
@@ -611,6 +622,13 @@ final class MarkdownSyntaxHighlighter: NSObject {
 
                 case .footnote:
                     textStorage.addAttribute(.foregroundColor, value: Theme.footnoteColor, range: match.range)
+
+                case .wikiLink:
+                    if match.numberOfRanges >= 4 {
+                        textStorage.addAttribute(.foregroundColor, value: Theme.syntaxColor, range: match.range(at: 1))
+                        textStorage.addAttribute(.foregroundColor, value: Theme.wikiLinkColor, range: match.range(at: 2))
+                        textStorage.addAttribute(.foregroundColor, value: Theme.syntaxColor, range: match.range(at: 3))
+                    }
 
                 case .htmlTag:
                     textStorage.addAttribute(.foregroundColor, value: Theme.htmlTagColor, range: match.range)

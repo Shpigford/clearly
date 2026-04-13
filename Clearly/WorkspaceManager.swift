@@ -43,6 +43,7 @@ final class WorkspaceManager {
     private var accessedURLs: Set<URL> = []
 
     var activeVaultIndexes: [VaultIndex] { Array(vaultIndexes.values) }
+    private(set) var vaultIndexRevision: Int = 0
 
     // MARK: - UserDefaults Keys
 
@@ -434,6 +435,7 @@ final class WorkspaceManager {
         stopFSStream(for: location.id)
         vaultIndexes[location.id]?.close()
         vaultIndexes.removeValue(forKey: location.id)
+        vaultIndexRevision += 1
         if accessedURLs.contains(location.url) {
             location.url.stopAccessingSecurityScopedResource()
             accessedURLs.remove(location.url)
@@ -549,6 +551,24 @@ final class WorkspaceManager {
                     let relative = String(current.path.dropFirst(sourceURL.path.count))
                     currentFileURL = URL(fileURLWithPath: destURL.path + relative)
                 }
+            }
+            var recentsChanged = false
+            for idx in recentFiles.indices {
+                let recentURL = recentFiles[idx]
+                if recentURL == sourceURL {
+                    recentFiles[idx] = destURL
+                    recentsChanged = true
+                } else if recentURL.path.hasPrefix(sourceURL.path + "/") {
+                    let relative = String(recentURL.path.dropFirst(sourceURL.path.count))
+                    recentFiles[idx] = URL(fileURLWithPath: destURL.path + relative)
+                    recentsChanged = true
+                }
+            }
+            if recentsChanged {
+                persistRecents()
+            }
+            if let currentFileURL {
+                persistLastOpenFile(currentFileURL)
             }
             DiagnosticLog.log("Moved: \(sourceURL.lastPathComponent) → \(folderURL.lastPathComponent)/")
             return destURL
@@ -775,6 +795,7 @@ final class WorkspaceManager {
             return
         }
         vaultIndexes[location.id] = index
+        vaultIndexRevision += 1
         reindexVault(index)
     }
 
@@ -786,8 +807,11 @@ final class WorkspaceManager {
 
     private func reindexVault(_ index: VaultIndex?) {
         let showHiddenFiles = self.showHiddenFiles
-        DispatchQueue.global(qos: .utility).async { [weak index] in
+        DispatchQueue.global(qos: .utility).async { [weak self, weak index] in
             index?.indexAllFiles(showHiddenFiles: showHiddenFiles)
+            DispatchQueue.main.async {
+                self?.vaultIndexRevision += 1
+            }
         }
     }
 
