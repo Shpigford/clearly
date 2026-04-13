@@ -42,7 +42,7 @@ struct SettingsView: View {
     }
 
     private var editorFontChoices: [EditorFontChoice] {
-        TypographyPreferences.editorFontChoices(size: CGFloat(fontSize))
+        TypographyPreferences.editorFontChoices()
     }
 
     private var editorFontSelection: Binding<String> {

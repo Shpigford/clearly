@@ -74,7 +74,7 @@ final class TypographyPreferencesTests: XCTestCase {
     }
 
     func testEditorFontChoicesOnlyIncludeFixedPitchFonts() throws {
-        let choices = TypographyPreferences.editorFontChoices(size: 18)
+        let choices = TypographyPreferences.editorFontChoices()
 
         XCTAssertEqual(choices.first?.id, TypographyPreferences.defaultEditorFontChoiceID)
         XCTAssertFalse(choices.dropFirst().isEmpty)

@@ -89,9 +89,12 @@ enum TypographyPreferences {
             return
         }
 
-        if target == .editor,
-           let font = NSFont(name: fontName, size: Theme.editorFontSize),
-           !font.isFixedPitch {
+        guard let font = NSFont(name: fontName, size: Theme.editorFontSize) else {
+            defaults.removeObject(forKey: target.storageKey)
+            return
+        }
+
+        if target == .editor && !font.isFixedPitch {
             defaults.removeObject(forKey: target.storageKey)
             return
         }
@@ -107,7 +110,7 @@ enum TypographyPreferences {
         NSFont.monospacedSystemFont(ofSize: size, weight: .regular)
     }
 
-    static func editorFontChoices(size: CGFloat = Theme.editorFontSize) -> [EditorFontChoice] {
+    static func editorFontChoices() -> [EditorFontChoice] {
         cachedEditorFontChoices
     }
 
@@ -301,7 +304,23 @@ final class TypographyFontPanelController: NSObject, ObservableObject {
         let fontPanel = fontManager.fontPanel(true)
         fontPanel?.setPanelFont(currentFont, isMultiple: false)
         fontPanel?.makeKeyAndOrderFront(nil)
+        
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(fontPanelWillClose(_:)),
+            name: NSWindow.willCloseNotification,
+            object: fontPanel
+        )
+
         NSApp.activate(ignoringOtherApps: true)
+    }
+
+    @objc private func fontPanelWillClose(_ notification: Notification) {
+        let fontManager = NSFontManager.shared
+        if fontManager.target === self {
+            fontManager.target = nil
+        }
+        NotificationCenter.default.removeObserver(self, name: NSWindow.willCloseNotification, object: notification.object)
     }
 
     @objc func changeFont(_ sender: NSFontManager?) {
