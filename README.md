@@ -7,6 +7,19 @@
 <p align="center">A native markdown editor and document workspace for macOS.</p>
 
 <p align="center">
+  <a href="./README.md">English</a> ·
+  <a href="./readme/README.zh-Hans.md">简体中文</a> ·
+  <a href="./readme/README.zh-Hant.md">繁體中文</a> ·
+  <a href="./readme/README.ja.md">日本語</a> ·
+  <a href="./readme/README.ko.md">한국어</a> ·
+  <a href="./readme/README.es.md">Español</a> ·
+  <a href="./readme/README.ru.md">Русский</a> ·
+  <a href="./readme/README.fr.md">Français</a> ·
+  <a href="./readme/README.de.md">Deutsch</a> ·
+  <a href="./readme/README.it.md">Italiano</a>
+</p>
+
+<p align="center">
   <a href="https://github.com/Shpigford/clearly/releases/latest/download/Clearly.dmg">Download</a> &middot;
   <a href="https://clearly.md">Website</a> &middot;
   <a href="https://x.com/Shpigford">@Shpigford</a>
@@ -32,10 +45,11 @@ Open folders, browse your files, write with syntax highlighting, and preview ins
 - **Frontmatter support** — YAML frontmatter is formatted cleanly in both editor and preview
 - **Editor/Preview toggle** — switch between editor (⌘1) and preview (⌘2) with scroll position preserved
 - **PDF export** — export to PDF or print directly from the app
-- **Format shortcuts** — Cmd+B, Cmd+I, Cmd+K for bold, italic, and links
+- **Format shortcuts** — ⌘B, ⌘I, ⌘K for bold, italic, and links
 - **Scratchpad** — menubar app with a global hotkey for capturing quick notes without opening a document
 - **QuickLook** — preview .md files right in Finder
 - **Light & Dark** — follows system appearance or set manually
+- **Multilingual UI** — interface available in multiple languages
 
 ## Prerequisites
 
@@ -56,7 +70,7 @@ xcodegen generate        # generates Clearly.xcodeproj from project.yml
 open Clearly.xcodeproj   # opens in Xcode
 ```
 
-Then hit **Cmd+R** to build and run.
+Then hit **⌘R** to build and run.
 
 > **Note:** The Xcode project is generated from `project.yml`. If you change `project.yml`, re-run `xcodegen generate`. Don't edit the `.xcodeproj` directly.
 
@@ -145,7 +159,7 @@ Edit `Clearly/Theme.swift`. All colors use `NSColor(name:)` with dynamic light/d
 
 No automated test suite. Validate manually:
 
-1. Build and run the app (Cmd+R)
+1. Build and run the app (⌘R)
 2. Open a `.md` file and verify syntax highlighting
 3. Switch to preview mode (⌘2) and verify rendered output
 4. Test QuickLook by selecting a `.md` file in Finder and pressing Space
