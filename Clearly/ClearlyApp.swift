@@ -298,6 +298,10 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate {
                 NotificationCenter.default.post(name: .init("ClearlyToggleOutline"), object: nil)
                 return nil
             }
+            if chars == "b" && mods == [.command, .shift] {
+                NotificationCenter.default.post(name: .init("ClearlyToggleBacklinks"), object: nil)
+                return nil
+            }
             if chars == "f" && mods == [.command, .shift] {
                 QuickSwitcherManager.shared.toggle()
                 return nil
@@ -467,6 +471,10 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate {
         outlineItem.keyEquivalentModifierMask = [.command, .shift]
         outlineItem.target = self
 
+        let backlinksItem = NSMenuItem(title: "Toggle Backlinks", action: #selector(toggleBacklinksAction(_:)), keyEquivalent: "b")
+        backlinksItem.keyEquivalentModifierMask = [.command, .shift]
+        backlinksItem.target = self
+
         let editorItem = NSMenuItem(title: "Editor", action: #selector(switchToEditorAction(_:)), keyEquivalent: "1")
         editorItem.keyEquivalentModifierMask = [.command]
         editorItem.target = self
@@ -478,6 +486,7 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate {
         // Insert right after Toggle Sidebar (index 0)
         var insertIndex = 1
         viewMenu.insertItem(outlineItem, at: insertIndex); insertIndex += 1
+        viewMenu.insertItem(backlinksItem, at: insertIndex); insertIndex += 1
         viewMenu.insertItem(.separator(), at: insertIndex); insertIndex += 1
         viewMenu.insertItem(editorItem, at: insertIndex); insertIndex += 1
         viewMenu.insertItem(previewItem, at: insertIndex)
@@ -493,6 +502,10 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func toggleOutlineAction(_ sender: Any?) {
         NotificationCenter.default.post(name: .init("ClearlyToggleOutline"), object: nil)
+    }
+
+    @objc private func toggleBacklinksAction(_ sender: Any?) {
+        NotificationCenter.default.post(name: .init("ClearlyToggleBacklinks"), object: nil)
     }
 
     private func injectSpellingMenuIfNeeded() {

@@ -55,6 +55,7 @@ final class WorkspaceManager {
     private static let folderIconsKey = "folderIcons"
     private static let folderColorsKey = "folderColors"
     private static let showHiddenFilesKey = "showHiddenFiles"
+    private static let wikiLinkPattern = try! NSRegularExpression(pattern: "\\[\\[[^\\]]*\\]\\]")
 
     /// Custom folder icons keyed by folder path (URL.path → SF Symbol name).
     var folderIcons: [String: String] = [:]
@@ -302,6 +303,60 @@ final class WorkspaceManager {
         }
     }
 
+    @discardableResult
+    func insertWikiLink(in fileURL: URL, matching searchTerm: String, linkTarget: String, atLine lineNumber: Int) -> Bool {
+        guard !searchTerm.isEmpty, !linkTarget.isEmpty, lineNumber > 0 else { return false }
+
+        let openDocumentIndex = openDocuments.firstIndex(where: { $0.fileURL == fileURL })
+        let content: String
+
+        if let openDocumentIndex {
+            if activeDocumentIndex == openDocumentIndex {
+                snapshotActiveDocument()
+                content = currentFileText
+            } else {
+                content = openDocuments[openDocumentIndex].text
+            }
+        } else {
+            guard let data = try? Data(contentsOf: fileURL),
+                  let diskContent = String(data: data, encoding: .utf8) else {
+                DiagnosticLog.log("Failed to read backlink source: \(fileURL.lastPathComponent)")
+                return false
+            }
+            content = diskContent
+        }
+
+        guard let updatedContent = Self.replacingFirstUnlinkedMention(
+            in: content,
+            matching: searchTerm,
+            linkTarget: linkTarget,
+            atLine: lineNumber
+        ) else {
+            return false
+        }
+
+        do {
+            try updatedContent.write(to: fileURL, atomically: true, encoding: .utf8)
+
+            if let openDocumentIndex {
+                openDocuments[openDocumentIndex].text = updatedContent
+                openDocuments[openDocumentIndex].lastSavedText = updatedContent
+
+                if activeDocumentIndex == openDocumentIndex {
+                    currentFileURL = fileURL
+                    currentFileText = updatedContent
+                    lastSavedText = updatedContent
+                    isDirty = false
+                }
+            }
+
+            return true
+        } catch {
+            DiagnosticLog.log("Failed to write backlink source: \(error.localizedDescription)")
+            return false
+        }
+    }
+
     // MARK: - Save
 
     @discardableResult
@@ -396,6 +451,42 @@ final class WorkspaceManager {
         }
         autoSaveWork = work
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.0, execute: work)
+    }
+
+    private static func replacingFirstUnlinkedMention(
+        in content: String,
+        matching searchTerm: String,
+        linkTarget: String,
+        atLine lineNumber: Int
+    ) -> String? {
+        var lines = content.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
+        let lineIndex = lineNumber - 1
+        guard lines.indices.contains(lineIndex) else { return nil }
+        guard let range = firstUnlinkedOccurrence(in: lines[lineIndex], matching: searchTerm) else { return nil }
+
+        lines[lineIndex].replaceSubrange(range, with: "[[\(linkTarget)]]")
+        return lines.joined(separator: "\n")
+    }
+
+    private static func firstUnlinkedOccurrence(in line: String, matching term: String) -> Range<String.Index>? {
+        let nsLine = line as NSString
+        let wikiRanges = wikiLinkPattern.matches(in: line, range: NSRange(location: 0, length: nsLine.length)).map(\.range)
+
+        var searchStart = line.startIndex
+        while let range = line.range(of: term, options: .caseInsensitive, range: searchStart..<line.endIndex) {
+            let charRange = NSRange(range, in: line)
+            let isInsideWikiLink = wikiRanges.contains {
+                $0.location <= charRange.location && NSMaxRange($0) >= NSMaxRange(charRange)
+            }
+
+            if !isInsideWikiLink {
+                return range
+            }
+
+            searchStart = range.upperBound
+        }
+
+        return nil
     }
 
     // MARK: - Locations

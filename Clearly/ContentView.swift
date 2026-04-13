@@ -32,6 +32,10 @@ struct OutlineStateKey: FocusedValueKey {
     typealias Value = OutlineState
 }
 
+struct BacklinksStateKey: FocusedValueKey {
+    typealias Value = BacklinksState
+}
+
 extension FocusedValues {
     var viewMode: Binding<ViewMode>? {
         get { self[ViewModeKey.self] }
@@ -53,6 +57,10 @@ extension FocusedValues {
         get { self[OutlineStateKey.self] }
         set { self[OutlineStateKey.self] = newValue }
     }
+    var backlinksState: BacklinksState? {
+        get { self[BacklinksStateKey.self] }
+        set { self[BacklinksStateKey.self] = newValue }
+    }
 }
 
 struct FocusedValuesModifier: ViewModifier {
@@ -60,6 +68,7 @@ struct FocusedValuesModifier: ViewModifier {
     @Binding var mode: ViewMode
     var findState: FindState
     var outlineState: OutlineState
+    var backlinksState: BacklinksState
 
     func body(content: Content) -> some View {
         content
@@ -68,6 +77,7 @@ struct FocusedValuesModifier: ViewModifier {
             .focusedSceneValue(\.documentFileURL, workspace.currentFileURL)
             .focusedSceneValue(\.findState, findState)
             .focusedSceneValue(\.outlineState, outlineState)
+            .focusedSceneValue(\.backlinksState, backlinksState)
     }
 }
 
@@ -96,6 +106,7 @@ struct ContentView: View {
     @StateObject private var findState = FindState()
     @StateObject private var fileWatcher = FileWatcher()
     @StateObject private var outlineState = OutlineState()
+    @StateObject private var backlinksState = BacklinksState()
 
     init(workspace: WorkspaceManager) {
         self.workspace = workspace
@@ -213,6 +224,16 @@ struct ContentView: View {
 
                 Button {
                     withAnimation(Theme.Motion.smooth) {
+                        backlinksState.toggle()
+                    }
+                } label: {
+                    Image(systemName: "link")
+                }
+                .buttonStyle(ClearlyToolbarButtonStyle(isActive: backlinksState.isVisible))
+                .help("Backlinks (Shift+Cmd+B)")
+
+                Button {
+                    withAnimation(Theme.Motion.smooth) {
                         outlineState.toggle()
                     }
                 } label: {
@@ -260,6 +281,30 @@ struct ContentView: View {
                     .opacity(mode == .preview ? 1 : 0)
                     .allowsHitTesting(mode == .preview)
             }
+            .layoutPriority(1)
+
+            if backlinksState.isVisible {
+                Rectangle()
+                    .fill(Color.primary.opacity(0.08))
+                    .frame(height: 1)
+                BacklinksView(backlinksState: backlinksState) { backlink in
+                    let fileURL = backlink.vaultRootURL.appendingPathComponent(backlink.sourcePath)
+                    if workspace.openFile(at: fileURL) {
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+                            NotificationCenter.default.post(
+                                name: .scrollEditorToLine,
+                                object: nil,
+                                userInfo: ["line": backlink.lineNumber]
+                            )
+                        }
+                    }
+                } onLink: { backlink in
+                    linkBacklink(backlink)
+                }
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxHeight: 200)
+                .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
 
             bottomBar(words: words, chars: chars)
         }
@@ -277,16 +322,18 @@ struct ContentView: View {
                 UserDefaults.standard.set(newMode.rawValue, forKey: "viewMode")
             }
             .animation(Theme.Motion.smooth, value: mode)
-            .modifier(FocusedValuesModifier(workspace: workspace, mode: $mode, findState: findState, outlineState: outlineState))
+            .modifier(FocusedValuesModifier(workspace: workspace, mode: $mode, findState: findState, outlineState: outlineState, backlinksState: backlinksState))
             .onAppear {
                 setupFileWatcher()
                 outlineState.parseHeadings(from: workspace.currentFileText)
+                backlinksState.update(for: workspace.currentFileURL, using: workspace.activeVaultIndexes)
             }
             .onChange(of: workspace.activeDocumentID) { _, newID in
                 positionSyncID = UUID().uuidString
                 findState.isVisible = false
                 setupFileWatcher()
                 outlineState.parseHeadings(from: workspace.currentFileText)
+                backlinksState.update(for: workspace.currentFileURL, using: workspace.activeVaultIndexes)
                 applyPendingWikiNavigationIfNeeded()
                 // New untitled docs always open in edit mode
                 if let newID, let doc = workspace.openDocuments.first(where: { $0.id == newID }), doc.isUntitled {
@@ -311,6 +358,14 @@ struct ContentView: View {
                     outlineState.toggle()
                 }
             }
+            .onReceive(NotificationCenter.default.publisher(for: .init("ClearlyToggleBacklinks"))) { _ in
+                withAnimation(Theme.Motion.smooth) {
+                    backlinksState.toggle()
+                }
+            }
+            .onChange(of: workspace.vaultIndexRevision) { _, _ in
+                backlinksState.update(for: workspace.currentFileURL, using: workspace.activeVaultIndexes)
+            }
             .onReceive(NotificationCenter.default.publisher(for: .navigateWikiLink)) { notification in
                 guard let target = notification.userInfo?["target"] as? String else { return }
                 let heading = notification.userInfo?["heading"] as? String
@@ -330,6 +385,18 @@ struct ContentView: View {
             workspace.externalFileDidChange(newText)
         }
         fileWatcher.watch(url, currentText: workspace.currentFileText)
+    }
+
+    private func linkBacklink(_ backlink: Backlink) {
+        let fileURL = backlink.vaultRootURL.appendingPathComponent(backlink.sourcePath)
+        guard workspace.insertWikiLink(
+            in: fileURL,
+            matching: backlinksState.currentFilename,
+            linkTarget: backlinksState.currentLinkTarget,
+            atLine: backlink.lineNumber
+        ) else { return }
+
+        backlinksState.removeUnlinkedMention(backlink)
     }
 
     private func navigateToWikiLink(target: String, heading: String?, destinationMode: ViewMode) {

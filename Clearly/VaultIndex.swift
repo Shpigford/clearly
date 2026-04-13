@@ -519,6 +519,66 @@ final class VaultIndex {
         }
     }
 
+    // MARK: Read — Unlinked Mentions
+
+    func unlinkedMentions(for filename: String, excludingFileId: Int64) -> [(file: IndexedFile, lineNumber: Int, contextLine: String)] {
+        guard filename.count >= 3 else { return [] }
+
+        do {
+            return try dbPool.read { db in
+                // FTS5 phrase search for the filename
+                let ftsQuery = "\"\(filename.replacingOccurrences(of: "\"", with: "\"\""))\""
+                let rows = try Row.fetchAll(db, sql: """
+                    SELECT f.*, files_fts.content AS raw_content
+                    FROM files_fts
+                    JOIN files f ON f.id = files_fts.rowid
+                    WHERE files_fts MATCH ? AND f.id != ?
+                    LIMIT 30
+                    """, arguments: [ftsQuery, excludingFileId])
+
+                let wikiLinkPattern = try NSRegularExpression(pattern: "\\[\\[[^\\]]*\\]\\]")
+                let lowerFilename = filename.lowercased()
+                var results: [(file: IndexedFile, lineNumber: Int, contextLine: String)] = []
+
+                for row in rows {
+                    let file = Self.indexedFile(from: row)
+                    guard let content = row["raw_content"] as? String else { continue }
+
+                    let lines = content.components(separatedBy: "\n")
+                    for (index, line) in lines.enumerated() {
+                        guard line.lowercased().contains(lowerFilename) else { continue }
+
+                        // Check if ALL occurrences of filename on this line are inside [[...]]
+                        let nsLine = line as NSString
+                        let wikiRanges = wikiLinkPattern.matches(in: line, range: NSRange(location: 0, length: nsLine.length)).map(\.range)
+
+                        // Find all occurrences of filename in the line
+                        var searchStart = line.startIndex
+                        var hasUnlinkedOccurrence = false
+                        while let range = line.range(of: filename, options: .caseInsensitive, range: searchStart..<line.endIndex) {
+                            let charRange = NSRange(range, in: line)
+                            let isInsideWikiLink = wikiRanges.contains { $0.location <= charRange.location && NSMaxRange($0) >= NSMaxRange(charRange) }
+                            if !isInsideWikiLink {
+                                hasUnlinkedOccurrence = true
+                                break
+                            }
+                            searchStart = range.upperBound
+                        }
+
+                        if hasUnlinkedOccurrence {
+                            results.append((file: file, lineNumber: index + 1, contextLine: line.trimmingCharacters(in: .whitespaces)))
+                            if results.count >= 20 { return results }
+                            break // One mention per file is enough
+                        }
+                    }
+                }
+                return results
+            }
+        } catch {
+            return []
+        }
+    }
+
     // MARK: Read — Tags
 
     func allTags() -> [(tag: String, count: Int)] {
@@ -552,6 +612,13 @@ final class VaultIndex {
         } catch {
             return []
         }
+    }
+
+    // MARK: Read — File by URL
+
+    func file(forURL url: URL) -> IndexedFile? {
+        let relativePath = Self.relativePath(of: url, from: rootURL)
+        return file(forRelativePath: relativePath)
     }
 
     // MARK: Read — File by path

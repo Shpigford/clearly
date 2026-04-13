@@ -1,6 +1,6 @@
 # Expansion Progress
 
-## Status: Phase 4 - Completed
+## Status: Phase 5 - Completed
 
 ## Quick Reference
 - Research: `docs/expansion/RESEARCH.md`
@@ -138,13 +138,32 @@
 ---
 
 ### Phase 5: Backlinks Panel
-**Status:** Not Started
+**Status:** Completed (2026-04-13)
 
 #### Tasks Completed
-- (none yet)
+- [x] Created `Clearly/BacklinksState.swift` — `ObservableObject` with `@Published` isVisible/backlinks/unlinkedMentions, debounced update on utility queue, reads source files for context lines
+- [x] Created `Clearly/BacklinksView.swift` — SwiftUI view with "BACKLINKS" header + count badge, linked mentions list, collapsible unlinked mentions DisclosureGroup, empty state, hover-highlight rows (matches OutlineView patterns)
+- [x] Added `file(forURL:)` helper to `VaultIndex.swift` — resolves file URL to IndexedFile via relative path
+- [x] Added `unlinkedMentions(for:excludingFileId:)` to `VaultIndex.swift` — FTS5 phrase search → line scan → wiki-link bracket filtering, capped at 20 results, skips filenames < 3 chars
+- [x] Integrated BacklinksView into `ContentView.swift` — panel between editor ZStack and bottomBar, max 200px height, separator line, animated toggle
+- [x] Added toggle button in `bottomBar()` using `link` SF Symbol with `ClearlyToolbarButtonStyle(isActive:)` pattern
+- [x] Added `BacklinksStateKey` FocusedValueKey + extended FocusedValues + updated FocusedValuesModifier
+- [x] Backlinks update on: `.onAppear`, `activeDocumentID` change, `vaultIndexRevision` change
+- [x] Added Cmd+Shift+B shortcut in `ClearlyApp.swift` NSEvent monitor
+- [x] Added "Toggle Backlinks" menu item in View menu via `injectViewCommandsIfNeeded()`
+- [x] Added `toggleBacklinksAction` objc method for menu item
+- [x] Build verified: `xcodebuild -scheme Clearly -configuration Debug build` succeeded
 
 #### Decisions Made
-- (none yet)
+- Panel sits below editor, above bottom bar (not an inspector) — it's document-contextual, not a navigation tool
+- Fixed maxHeight 200px with ScrollView — no draggable divider (simpler, adequate for typical 0-10 backlinks)
+- SwiftUI for BacklinksView (read-only list, no AppKit bridging needed)
+- Context lines read from disk at stored lineNumber (the `context` column in links table is unpopulated)
+- Unlinked mentions deduplicated: files already in linked results are skipped
+- One unlinked mention per file (first match) — prevents noisy results
+- "Link" button for unlinked mentions deferred — it's a write operation that deserves focused work
+- Visibility persisted to UserDefaults ("backlinksVisible") matching OutlineState pattern
+- Debounce 0.3s on utility queue (matches OutlineState's 0.4s debounce pattern)
 
 #### Blockers
 - (none)
@@ -180,6 +199,14 @@
 ---
 
 ## Session Log
+
+### 2026-04-13 — Phase 5 Implementation
+- Created BacklinksState.swift (~100 lines): ObservableObject with debounced update, linked + unlinked mention resolution, disk-based context line reading
+- Created BacklinksView.swift (~115 lines): SwiftUI panel with header, linked/unlinked sections, hover-highlighted clickable rows, DisclosureGroup for unlinked
+- Added `file(forURL:)` and `unlinkedMentions(for:excludingFileId:)` to VaultIndex.swift — FTS5 phrase search + wiki-link bracket filtering
+- Integrated into ContentView.swift: state object, layout between editor and bottomBar, toggle button, FocusedValueKey, notification listeners, vaultIndexRevision watcher
+- Added Cmd+Shift+B shortcut and "Toggle Backlinks" View menu item in ClearlyApp.swift
+- Build verified: `xcodebuild -scheme Clearly -configuration Debug build` succeeded
 
 ### 2026-04-13 — Phase 4 Implementation
 - Added `MatchExcerpt`, `SearchFileGroup` types and `searchFilesGrouped(query:)` to VaultIndex.swift (~100 lines)
@@ -218,6 +245,11 @@
 ---
 
 ## Files Changed
+- `Clearly/BacklinksState.swift` (new) — ObservableObject with debounced update, linked/unlinked mention queries
+- `Clearly/BacklinksView.swift` (new) — SwiftUI panel with linked/unlinked sections, hover rows, empty state
+- `Clearly/VaultIndex.swift` — `file(forURL:)`, `unlinkedMentions(for:excludingFileId:)` methods
+- `Clearly/ContentView.swift` — BacklinksStateKey, FocusedValues, BacklinksView layout, toggle button, notification listeners
+- `Clearly/ClearlyApp.swift` — Cmd+Shift+B shortcut, "Toggle Backlinks" menu item, toggleBacklinksAction
 - `Clearly/VaultIndex.swift` — `MatchExcerpt`, `SearchFileGroup` types, `searchFilesGrouped(query:)` method
 - `Clearly/QuickSwitcherPanel.swift` — content match support (FTS5 results, scroll-to-line, snippet display)
 - `Clearly/ClearlyApp.swift` — Cmd+Shift+F shortcut, `injectGlobalSearchIfNeeded()` View menu item
