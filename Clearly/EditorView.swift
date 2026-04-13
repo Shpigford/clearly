@@ -148,7 +148,10 @@ struct EditorView: NSViewRepresentable {
             let docHeight = scrollView.documentView?.frame.height ?? 1
             let viewportHeight = scrollView.contentView.bounds.height
             let maxScroll = max(1, docHeight - viewportHeight)
-            scrollView.contentView.setBoundsOrigin(NSPoint(x: 0, y: fraction * maxScroll))
+            // Denormalize from "progress from top" back to NSTextView Y coordinates.
+            // fraction = 0 → y = maxScroll (document bottom at viewport bottom → doc top at viewport top)
+            // fraction = 1 → y = 0 (document top at viewport bottom → doc bottom at viewport top)
+            scrollView.contentView.setBoundsOrigin(NSPoint(x: 0, y: (1.0 - fraction) * maxScroll))
             scrollView.reflectScrolledClipView(scrollView.contentView)
             DispatchQueue.main.async {
                 textView.window?.makeFirstResponder(textView)
@@ -392,7 +395,10 @@ struct EditorView: NSViewRepresentable {
             let docHeight = scrollView.documentView?.frame.height ?? 1
             let viewportHeight = clipView.bounds.height
             let maxScroll = max(1, docHeight - viewportHeight)
-            ScrollBridge.setFraction(clipView.bounds.origin.y / maxScroll, for: parent.positionSyncID)
+            // NSTextView uses flipped Y coordinates (origin at bottom-left).
+            // Normalize to "progress from top" so preview (positive 0–1 fraction) stays in sync.
+            // fraction = 0 → top of document, fraction = 1 → bottom of document.
+            ScrollBridge.setFraction((maxScroll - clipView.bounds.origin.y) / maxScroll, for: parent.positionSyncID)
         }
 
         // MARK: - Find
