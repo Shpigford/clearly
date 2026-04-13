@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+## [1.16.0] - 2026-04-12
+- Redesigned UI with refined sidebar, toolbar, and file explorer styling
+
 ## [1.15.0] - 2026-04-11
 - Tables get captions, sortable columns, sticky headers, and a copy-as-TSV button
 - Code blocks get syntax highlighting for 27+ languages, line numbers, diff highlighting, and filename headers
