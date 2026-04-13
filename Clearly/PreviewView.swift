@@ -548,10 +548,15 @@ struct PreviewView: NSViewRepresentable {
         let checkIcon = #"<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"12\" height=\"12\" viewBox=\"0 0 12 12\"><g fill=\"none\" stroke-linecap=\"round\" stroke-linejoin=\"round\" stroke-width=\"1.5\" stroke=\"currentColor\"><path d=\"m1.76,7.004l2.25,3L10.24,1.746\"></path></g></svg>"#
         let source = """
         (function() {
-            var copyIcon = '\(copyIcon)';
-            var checkIcon = '\(checkIcon)';
+            function wrap(el, wrapper) {
+                el.parentNode.insertBefore(wrapper, el);
+                wrapper.appendChild(el);
+            }
             document.querySelectorAll('pre').forEach(function(pre) {
                 if (pre.closest('.frontmatter') || pre.querySelector('.code-copy-btn')) return;
+                var wrapper = document.createElement('div');
+                wrapper.className = 'pre-wrapper';
+                wrap(pre, wrapper);
                 var btn = document.createElement('button');
                 btn.className = 'code-copy-btn';
                 btn.type = 'button';

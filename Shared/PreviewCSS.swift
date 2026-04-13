@@ -215,7 +215,14 @@ enum PreviewCSS {
         border-radius: 10px;
         padding: 1.125em 1.25em;
         margin-bottom: 1.25em;
+        overflow-x: visible;
+        overflow-y: hidden;
+    }
+
+    .pre-wrapper {
+        position: relative;
         overflow-x: auto;
+        overflow-y: hidden;
     }
 
     .code-copy-btn {
