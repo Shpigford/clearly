@@ -289,6 +289,9 @@ struct ContentView: View {
     }
 
     private func setupFileWatcher() {
+        fileWatcher.liveCurrentText = { [workspace] in
+            workspace.liveCurrentFileText()
+        }
         guard let url = workspace.currentFileURL else {
             fileWatcher.watch(nil, currentText: nil)
             return

@@ -74,6 +74,10 @@ class SidebarViewController: NSViewController {
         outlineView.menu = menu
         outlineView.doubleAction = nil
 
+        // Drag and drop
+        outlineView.registerForDraggedTypes([.fileURL])
+        outlineView.setDraggingSourceOperationMask(.move, forLocal: true)
+
         sv.documentView = outlineView
         coordinator.outlineView = outlineView
         outlineView.colorCoordinator = coordinator

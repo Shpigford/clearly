@@ -127,6 +127,7 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate {
     private var commandQMonitor: Any?
     private var showHiddenFilesMonitor: Any?
     private var sidebarToggleMonitor: Any?
+    private var quickSwitcherMonitor: Any?
     private var themeObserver: Any?
     private var isProgrammaticallyClosingWindows = false
     private(set) var mainWindow: NSWindow?
@@ -300,6 +301,21 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate {
             return event
         }
 
+        quickSwitcherMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+            let mods = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+            let chars = event.charactersIgnoringModifiers?.lowercased() ?? ""
+            if chars == "p" && mods == [.command] {
+                QuickSwitcherManager.shared.toggle()
+                return nil
+            }
+            return event
+        }
+
+        // Inject Quick Open menu item once (View menu isn't wiped by SwiftUI)
+        DispatchQueue.main.async { [weak self] in
+            self?.injectQuickOpenIfNeeded()
+        }
+
     }
 
     // MARK: - Open files from Finder
@@ -358,6 +374,10 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate {
             NSEvent.removeMonitor(sidebarToggleMonitor)
             self.sidebarToggleMonitor = nil
         }
+        if let quickSwitcherMonitor {
+            NSEvent.removeMonitor(quickSwitcherMonitor)
+            self.quickSwitcherMonitor = nil
+        }
         if let themeObserver {
             NotificationCenter.default.removeObserver(themeObserver)
             self.themeObserver = nil
@@ -391,6 +411,23 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func toggleSidebarMenuAction(_ sender: Any?) {
         doToggleSidebar()
+    }
+
+    private func injectQuickOpenIfNeeded() {
+        guard let viewMenu = NSApp.mainMenu?.item(withTitle: "View")?.submenu else { return }
+        guard !viewMenu.items.contains(where: { $0.title == "Quick Open…" }) else { return }
+
+        let item = NSMenuItem(title: "Quick Open…", action: #selector(quickOpenAction(_:)), keyEquivalent: "p")
+        item.keyEquivalentModifierMask = [.command]
+        item.target = self
+
+        // Insert after Toggle Sidebar + separator (index 2)
+        let insertAt = min(2, viewMenu.items.count)
+        viewMenu.insertItem(item, at: insertAt)
+    }
+
+    @objc private func quickOpenAction(_ sender: Any?) {
+        QuickSwitcherManager.shared.toggle()
     }
 
     private func injectViewCommandsIfNeeded() {
@@ -516,7 +553,10 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate {
         }
         isProgrammaticallyClosingWindows = false
 
-        Task { @MainActor in ScratchpadManager.shared.closeAll() }
+        Task { @MainActor in
+            ScratchpadManager.shared.closeAll()
+            QuickSwitcherManager.shared.dismiss()
+        }
         updateActivationPolicy()
     }
 
@@ -832,9 +872,6 @@ struct ClearlyApp: App {
             CommandGroup(after: .textEditing) {
                 FindCommand()
             }
-            CommandGroup(after: .textFormatting) {
-                FontSizeCommands()
-            }
             CommandGroup(replacing: .help) {
                 Button("Clearly Help") {
                     NSWorkspace.shared.open(URL(string: "https://github.com/Shpigford/clearly/issues")!)
@@ -861,7 +898,9 @@ struct ClearlyApp: App {
                     }
                 }
             }
-            CommandMenu("Format") {
+            CommandGroup(replacing: .textFormatting) {
+                FontSizeCommands()
+                Divider()
                 Button("Bold") {
                     NSApp.sendAction(#selector(ClearlyTextView.toggleBold(_:)), to: nil, from: nil)
                 }
@@ -1071,7 +1110,7 @@ struct PrintCommand: View {
             PDFExporter().printHTML(markdown: text, fontSize: CGFloat(fontSize), fileURL: fileURL)
         }
         .disabled(text == nil)
-        .keyboardShortcut("p", modifiers: .command)
+        .keyboardShortcut("p", modifiers: [.command, .shift])
     }
 }
 

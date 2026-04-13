@@ -8,6 +8,7 @@ final class FileWatcher: ObservableObject {
     private var currentText: String?
     private var lastKnownDiskText: String?
     var onChange: ((String) -> Void)?
+    var liveCurrentText: (() -> String?)?
 
     func watch(_ url: URL?, currentText: String? = nil) {
         stopMonitoring()
@@ -89,6 +90,9 @@ final class FileWatcher: ObservableObject {
             guard let self else { return }
             guard newText != self.lastKnownDiskText else { return }
 
+            if let liveCurrentText = self.liveCurrentText?() {
+                self.currentText = liveCurrentText
+            }
             let hasUnsavedChanges = self.currentText != self.lastKnownDiskText
             self.lastKnownDiskText = newText
 

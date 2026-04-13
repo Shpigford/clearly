@@ -190,20 +190,20 @@ class FlatSectionOutlineView: NSOutlineView {
 
     // Click on expandable rows toggles expansion
     override func mouseDown(with event: NSEvent) {
-        let point = convert(event.locationInWindow, from: nil)
-        let row = self.row(at: point)
-        if row >= 0, let item = self.item(atRow: row) {
-            let isExpandable = self.dataSource?.outlineView?(self, isItemExpandable: item) ?? false
-            if isExpandable {
-                if isItemExpanded(item) {
-                    collapseItem(item)
-                } else {
-                    expandItem(item)
-                }
-                return
+        let startPoint = convert(event.locationInWindow, from: nil)
+        let clickedRow = self.row(at: startPoint)
+
+        // Always let super handle tracking (enables drag initiation)
+        super.mouseDown(with: event)
+
+        // If clicked on expandable row and didn't drag, toggle expansion
+        if clickedRow >= 0, let item = self.item(atRow: clickedRow),
+           self.dataSource?.outlineView?(self, isItemExpandable: item) ?? false {
+            let endPoint = convert(NSApp.currentEvent?.locationInWindow ?? event.locationInWindow, from: nil)
+            if hypot(endPoint.x - startPoint.x, endPoint.y - startPoint.y) < 5 {
+                if isItemExpanded(item) { collapseItem(item) } else { expandItem(item) }
             }
         }
-        super.mouseDown(with: event)
     }
 
     // Allow buttons inside cell views to receive clicks
@@ -254,6 +254,10 @@ struct FileExplorerOutlineView: NSViewRepresentable {
         let menu = NSMenu()
         menu.delegate = context.coordinator
         outlineView.menu = menu
+
+        // Drag and drop
+        outlineView.registerForDraggedTypes([.fileURL])
+        outlineView.setDraggingSourceOperationMask(.move, forLocal: true)
 
         // Double-click does nothing extra (single-click selects)
         outlineView.doubleAction = nil
@@ -532,6 +536,71 @@ struct FileExplorerOutlineView: NSViewRepresentable {
                 }
             }
             return nil
+        }
+
+        // MARK: - Drag and Drop
+
+        func outlineView(_ outlineView: NSOutlineView, pasteboardWriterForItem item: Any) -> NSPasteboardWriting? {
+            guard let outlineItem = item as? OutlineItem else { return nil }
+            switch outlineItem.kind {
+            case .fileNode(let node):
+                return node.url as NSURL
+            default:
+                return nil
+            }
+        }
+
+        private func draggedURLs(from info: NSDraggingInfo) -> [URL] {
+            guard let items = info.draggingPasteboard.pasteboardItems else { return [] }
+            return items.compactMap { item in
+                guard let str = item.string(forType: .fileURL) else { return nil }
+                return URL(string: str)
+            }
+        }
+
+        func outlineView(_ outlineView: NSOutlineView, validateDrop info: NSDraggingInfo, proposedItem item: Any?, proposedChildIndex index: Int) -> NSDragOperation {
+            // Determine the actual drop target folder
+            let target: OutlineItem
+            if index == NSOutlineViewDropOnItemIndex,
+               let proposed = item as? OutlineItem, proposed.isDirectory {
+                target = proposed
+            } else {
+                // Proposed "between" rows — retarget to the folder row under the cursor
+                let point = outlineView.convert(info.draggingLocation, from: nil)
+                let row = outlineView.row(at: point)
+                guard row >= 0,
+                      let hovered = outlineView.item(atRow: row) as? OutlineItem,
+                      hovered.isDirectory else { return [] }
+                target = hovered
+            }
+
+            guard let targetURL = target.url else { return [] }
+            let urls = draggedURLs(from: info)
+            guard !urls.isEmpty else { return [] }
+
+            for sourceURL in urls {
+                // Prevent dropping item into its current parent (no-op)
+                if sourceURL.deletingLastPathComponent().path == targetURL.path { return [] }
+                // Prevent dropping a folder into itself or a descendant
+                if targetURL.path == sourceURL.path || targetURL.path.hasPrefix(sourceURL.path + "/") { return [] }
+            }
+
+            outlineView.setDropItem(target, dropChildIndex: NSOutlineViewDropOnItemIndex)
+            return .move
+        }
+
+        func outlineView(_ outlineView: NSOutlineView, acceptDrop info: NSDraggingInfo, item: Any?, childIndex index: Int) -> Bool {
+            guard let target = item as? OutlineItem, let targetURL = target.url else { return false }
+            let urls = draggedURLs(from: info)
+            guard !urls.isEmpty else { return false }
+
+            var success = true
+            for sourceURL in urls {
+                if workspace.moveItem(at: sourceURL, into: targetURL) == nil {
+                    success = false
+                }
+            }
+            return success
         }
 
         // MARK: - Data Source

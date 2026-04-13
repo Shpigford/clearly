@@ -19,6 +19,9 @@ packages:
   KeyboardShortcuts:
     url: https://github.com/sindresorhus/KeyboardShortcuts
     from: "2.1.0"
+  GRDB:
+    url: https://github.com/groue/GRDB.swift.git
+    from: "7.0.0"
 
 targets:
   Clearly:
@@ -47,6 +50,7 @@ targets:
         product: cmark
       - package: Sparkle
       - package: KeyboardShortcuts
+      - package: GRDB
       - target: ClearlyQuickLook
         embed: true
     settings:
@@ -62,6 +66,9 @@ targets:
         ENABLE_HARDENED_RUNTIME: YES
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
       configs:
+        Debug:
+          PRODUCT_BUNDLE_IDENTIFIER: com.sabotage.clearly.dev
+          PRODUCT_NAME: "Clearly Dev"
         Release:
           CODE_SIGN_STYLE: Manual
           CODE_SIGN_IDENTITY: "Developer ID Application"
@@ -100,6 +107,8 @@ targets:
         CODE_SIGN_ENTITLEMENTS: ClearlyQuickLook/ClearlyQuickLook.entitlements
         INFOPLIST_FILE: ClearlyQuickLook/Info.plist
       configs:
+        Debug:
+          PRODUCT_BUNDLE_IDENTIFIER: com.sabotage.clearly.dev.quicklook
         Release:
           CODE_SIGN_STYLE: Manual
           CODE_SIGN_IDENTITY: "Developer ID Application"
