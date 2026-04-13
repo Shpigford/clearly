@@ -186,6 +186,14 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValid
                 self?.updateWindowAppearance()
             }
         }
+
+        // Listen for tag filter requests (from sidebar tag clicks and preview tag links)
+        NotificationCenter.default.addObserver(
+            forName: .init("ClearlyFilterByTag"), object: nil, queue: .main
+        ) { notification in
+            guard let tag = notification.userInfo?["tag"] as? String else { return }
+            QuickSwitcherManager.shared.show(tagFilter: tag)
+        }
     }
 
     private func updateWindowAppearance() {

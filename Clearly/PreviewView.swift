@@ -13,6 +13,7 @@ struct PreviewView: NSViewRepresentable {
     var onTaskToggle: ((Int, Bool) -> Void)?
     var onClickToSource: ((Int) -> Void)?
     var onWikiLinkClicked: ((String, String?) -> Void)?
+    var onTagClicked: ((String) -> Void)?
     var wikiFileNames: Set<String>?
     @Environment(\.colorScheme) private var colorScheme
 
@@ -48,6 +49,7 @@ struct PreviewView: NSViewRepresentable {
         context.coordinator.onTaskToggle = onTaskToggle
         context.coordinator.onClickToSource = onClickToSource
         context.coordinator.onWikiLinkClicked = onWikiLinkClicked
+        context.coordinator.onTagClicked = onTagClicked
         let coordinator = context.coordinator
         findState?.previewNavigateToNext = { [weak coordinator] in
             coordinator?.navigateToNextMatch()
@@ -119,7 +121,7 @@ struct PreviewView: NSViewRepresentable {
     private func loadHTML(in webView: WKWebView, context: Context) {
         context.coordinator.lastContentKey = contentKey
         context.coordinator.isLoadingContent = true
-        let rawBody = MarkdownRenderer.renderHTML(markdown)
+        let rawBody = MarkdownRenderer.renderHTML(markdown, appLinkURLs: true)
         let htmlBody = LocalImageSupport.resolveImageSources(in: rawBody, relativeTo: fileURL)
         let wikiFilesJSON: String = {
             guard let names = wikiFileNames, !names.isEmpty else { return "[]" }
@@ -326,6 +328,7 @@ struct PreviewView: NSViewRepresentable {
         var onTaskToggle: ((Int, Bool) -> Void)?
         var onClickToSource: ((Int) -> Void)?
         var onWikiLinkClicked: ((String, String?) -> Void)?
+        var onTagClicked: ((String) -> Void)?
         var skipNextReload = false
         var isLoadingContent = false
         var pendingScrollLine: Int?
@@ -586,6 +589,14 @@ struct PreviewView: NSViewRepresentable {
                 let heading = parts.count > 1 ? (parts[1].removingPercentEncoding ?? parts[1]) : nil
                 DispatchQueue.main.async { [weak self] in
                     self?.onWikiLinkClicked?(target, heading)
+                }
+                return
+            }
+            if href.hasPrefix("clearly://tag/") {
+                let tagName = String(href.dropFirst("clearly://tag/".count))
+                    .removingPercentEncoding ?? String(href.dropFirst("clearly://tag/".count))
+                DispatchQueue.main.async { [weak self] in
+                    self?.onTagClicked?(tagName)
                 }
                 return
             }

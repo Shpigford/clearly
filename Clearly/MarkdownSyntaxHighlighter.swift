@@ -85,6 +85,9 @@ final class MarkdownSyntaxHighlighter: NSObject {
         // Wiki-links: [[note]] or [[note|alias]] or [[note#heading]]
         add(#"(\[\[)([^\]\n]+?)(\]\])"#, .wikiLink)
 
+        // Tags: #tag (not headings, not inside code blocks)
+        add(#"(?:^|(?<=\s))#([\p{L}\p{N}_\-/]*[\p{L}_\-/][\p{L}\p{N}_\-/]*)"#, .tag)
+
         // Table rows: lines with pipes
         add("^(\\|.+\\|)\\s*$", .syntax, options: .anchorsMatchLines)
 
@@ -117,6 +120,7 @@ final class MarkdownSyntaxHighlighter: NSObject {
         case highlight
         case footnote
         case wikiLink
+        case tag
         case htmlTag
     }
 
@@ -333,6 +337,13 @@ final class MarkdownSyntaxHighlighter: NSObject {
                         textStorage.addAttribute(.foregroundColor, value: Theme.syntaxColor, range: match.range(at: 1))
                         textStorage.addAttribute(.foregroundColor, value: Theme.wikiLinkColor, range: match.range(at: 2))
                         textStorage.addAttribute(.foregroundColor, value: Theme.syntaxColor, range: match.range(at: 3))
+                    }
+
+                case .tag:
+                    let hashRange = NSRange(location: match.range.location, length: 1)
+                    textStorage.addAttribute(.foregroundColor, value: Theme.syntaxColor, range: hashRange)
+                    if match.numberOfRanges >= 2 {
+                        textStorage.addAttribute(.foregroundColor, value: Theme.tagColor, range: match.range(at: 1))
                     }
 
                 case .htmlTag:
@@ -628,6 +639,13 @@ final class MarkdownSyntaxHighlighter: NSObject {
                         textStorage.addAttribute(.foregroundColor, value: Theme.syntaxColor, range: match.range(at: 1))
                         textStorage.addAttribute(.foregroundColor, value: Theme.wikiLinkColor, range: match.range(at: 2))
                         textStorage.addAttribute(.foregroundColor, value: Theme.syntaxColor, range: match.range(at: 3))
+                    }
+
+                case .tag:
+                    let hashRange = NSRange(location: match.range.location, length: 1)
+                    textStorage.addAttribute(.foregroundColor, value: Theme.syntaxColor, range: hashRange)
+                    if match.numberOfRanges >= 2 {
+                        textStorage.addAttribute(.foregroundColor, value: Theme.tagColor, range: match.range(at: 1))
                     }
 
                 case .htmlTag:

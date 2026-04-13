@@ -170,6 +170,13 @@ struct ContentView: View {
             onWikiLinkClicked: { target, heading in
                 navigateToWikiLink(target: target, heading: heading, destinationMode: .preview)
             },
+            onTagClicked: { tagName in
+                NotificationCenter.default.post(
+                    name: .init("ClearlyFilterByTag"),
+                    object: nil,
+                    userInfo: ["tag": tagName]
+                )
+            },
             wikiFileNames: allWikiFileNames
         )
     }
