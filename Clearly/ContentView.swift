@@ -2,6 +2,7 @@ import SwiftUI
 
 extension Notification.Name {
     static let scrollEditorToLine = Notification.Name("scrollEditorToLine")
+    static let flushEditorBuffer = Notification.Name("flushEditorBuffer")
 }
 
 enum ViewMode: String, CaseIterable {

@@ -78,6 +78,11 @@ struct PreviewView: NSViewRepresentable {
         }
         context.coordinator.lastMode = mode
 
+        // Skip expensive content rendering when preview is hidden.
+        // When content changes while hidden, lastContentKey stays stale,
+        // so the normal key comparison below will trigger a reload once visible.
+        guard mode == .preview else { return }
+
         if context.coordinator.lastContentKey != contentKey {
             if context.coordinator.skipNextReload {
                 // Task toggle already updated the DOM; just sync the content key

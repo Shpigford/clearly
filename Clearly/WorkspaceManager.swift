@@ -815,8 +815,20 @@ final class WorkspaceManager {
     /// Save current stored properties back into the openDocuments array.
     private func snapshotActiveDocument() {
         guard let idx = activeDocumentIndex else { return }
+        flushActiveEditorBuffer()
         openDocuments[idx].text = currentFileText
         openDocuments[idx].lastSavedText = lastSavedText
+    }
+
+    private func flushActiveEditorBuffer() {
+        let flush = {
+            NotificationCenter.default.post(name: .flushEditorBuffer, object: nil)
+        }
+        if Thread.isMainThread {
+            flush()
+        } else {
+            DispatchQueue.main.sync(execute: flush)
+        }
     }
 
     /// Restore stored properties from the active document in openDocuments.

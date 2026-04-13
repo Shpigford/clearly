@@ -36,6 +36,8 @@ final class OutlineState: ObservableObject {
         options: []
     )
 
+    private var parseWork: DispatchWorkItem?
+
     init() {
         self.isVisible = UserDefaults.standard.bool(forKey: "outlineVisible")
     }
@@ -45,6 +47,15 @@ final class OutlineState: ObservableObject {
     }
 
     func parseHeadings(from text: String) {
+        parseWork?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            self?.performParse(from: text)
+        }
+        parseWork = work
+        DispatchQueue.global(qos: .userInitiated).asyncAfter(deadline: .now() + 0.4, execute: work)
+    }
+
+    private func performParse(from text: String) {
         let nsText = text as NSString
         let fullRange = NSRange(location: 0, length: nsText.length)
 

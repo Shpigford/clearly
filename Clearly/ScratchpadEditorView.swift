@@ -140,9 +140,17 @@ struct ScratchpadEditorView: NSViewRepresentable {
         var lastColorScheme: ColorScheme?
         var lastFontSize: CGFloat?
         var onSave: (() -> Void)?
+        var lastEditedRange: NSRange?
+        var lastReplacementLength: Int = 0
 
         init(_ parent: ScratchpadEditorView) {
             self.parent = parent
+        }
+
+        func textView(_ textView: NSTextView, shouldChangeTextIn affectedCharRange: NSRange, replacementString: String?) -> Bool {
+            lastEditedRange = affectedCharRange
+            lastReplacementLength = replacementString?.utf16.count ?? 0
+            return true
         }
 
         func textDidChange(_ notification: Notification) {
@@ -150,7 +158,12 @@ struct ScratchpadEditorView: NSViewRepresentable {
             if isUpdating { return }
 
             isHighlighting = true
-            highlighter?.highlightAll(textView.textStorage!, caller: "scratchpad-textDidChange")
+            if let editedRange = lastEditedRange {
+                highlighter?.highlightAround(textView.textStorage!, editedRange: editedRange, replacementLength: lastReplacementLength, caller: "scratchpad-textDidChange")
+                lastEditedRange = nil
+            } else {
+                highlighter?.highlightAll(textView.textStorage!, caller: "scratchpad-textDidChange-fallback")
+            }
             isHighlighting = false
 
             let newText = textView.string

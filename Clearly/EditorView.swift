@@ -61,7 +61,7 @@ struct EditorView: NSViewRepresentable {
         textView.isHorizontallyResizable = false
         textView.autoresizingMask = [.width]
         textView.textContainer?.widthTracksTextView = true
-        textView.layoutManager?.allowsNonContiguousLayout = false
+        textView.layoutManager?.allowsNonContiguousLayout = true
 
         // Insertion point color
         textView.insertionPointColor = Theme.textColor
@@ -120,6 +120,13 @@ struct EditorView: NSViewRepresentable {
             context.coordinator,
             selector: #selector(Coordinator.handleScrollToLine(_:)),
             name: .scrollEditorToLine,
+            object: nil
+        )
+
+        NotificationCenter.default.addObserver(
+            context.coordinator,
+            selector: #selector(Coordinator.flushEditorBuffer(_:)),
+            name: .flushEditorBuffer,
             object: nil
         )
 
@@ -232,6 +239,8 @@ struct EditorView: NSViewRepresentable {
         var isUpdating = false
         var isHighlightingInProgress = false
         var highlighter: MarkdownSyntaxHighlighter?
+        var lastEditedRange: NSRange?
+        var lastReplacementLength: Int = 0
         weak var textView: NSTextView?
         var lastMode: ViewMode?
         var lastPositionSyncID: String?
@@ -284,6 +293,11 @@ struct EditorView: NSViewRepresentable {
             }
         }
 
+        @objc func flushEditorBuffer(_ notification: Notification) {
+            guard let textView else { return }
+            parent.text = textView.string
+        }
+
         func observeFindState(_ state: FindState) {
             findCancellables.removeAll()
 
@@ -312,6 +326,12 @@ struct EditorView: NSViewRepresentable {
                 .store(in: &findCancellables)
         }
 
+        func textView(_ textView: NSTextView, shouldChangeTextIn affectedCharRange: NSRange, replacementString: String?) -> Bool {
+            lastEditedRange = affectedCharRange
+            lastReplacementLength = replacementString?.utf16.count ?? 0
+            return true
+        }
+
         func textDidChange(_ notification: Notification) {
             guard let textView = notification.object as? NSTextView else { return }
 
@@ -334,9 +354,14 @@ struct EditorView: NSViewRepresentable {
             let scrollView = textView.enclosingScrollView
             let savedOrigin = scrollView?.contentView.bounds.origin
 
-            // Highlight synchronously so colors appear on the same frame as the keystroke
+            // Highlight only the affected range for performance on long documents
             isHighlightingInProgress = true
-            highlighter?.highlightAll(textView.textStorage!, caller: "textDidChange")
+            if let editedRange = lastEditedRange {
+                highlighter?.highlightAround(textView.textStorage!, editedRange: editedRange, replacementLength: lastReplacementLength, caller: "textDidChange")
+                lastEditedRange = nil
+            } else {
+                highlighter?.highlightAll(textView.textStorage!, caller: "textDidChange-fallback")
+            }
             isHighlightingInProgress = false
 
             // Restore scroll position that highlighting may have disturbed
@@ -348,11 +373,13 @@ struct EditorView: NSViewRepresentable {
             // Re-apply find highlights after syntax highlighting
             restoreFindHighlightsIfNeeded()
 
-            // Update SwiftUI binding asynchronously to prevent re-entrant updateNSView.
-            // Use a generation counter to coalesce rapid updates.
+            // Update SwiftUI binding with a short debounce. The text view already shows
+            // the correct content — the binding is only needed for preview, file saving,
+            // and outline parsing, which are expensive on long documents and don't need
+            // to run on every keystroke.
             editGeneration += 1
             let gen = editGeneration
-            DispatchQueue.main.async { [weak self] in
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in
                 guard let self else { return }
                 self.pendingBindingUpdates -= 1
                 guard gen == self.editGeneration else { return }
