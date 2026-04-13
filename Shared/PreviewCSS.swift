@@ -653,7 +653,7 @@ enum PreviewCSS {
     @media (prefers-color-scheme: dark) {
         body {
             color: #F5F5F7;
-            background-color: #1C1C1E;
+            background-color: #323236;
         }
         a { color: #0A84FF; }
         h6 { color: rgba(245, 245, 247, 0.55); }

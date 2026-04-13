@@ -14,6 +14,7 @@ struct FileExplorerView: View {
                 FileExplorerOutlineView(workspace: workspace)
             }
         }
+        .background(Color.clear)
     }
 }
 
@@ -21,55 +22,188 @@ struct FileExplorerView: View {
 
 struct FileExplorerEmptyView: View {
     var workspace: WorkspaceManager
+    @State private var iconOpacity: Double = 0.15
 
     var body: some View {
-        VStack(spacing: 12) {
-            Spacer()
-            Image(systemName: "folder.badge.plus")
-                .font(.system(size: 32))
-                .foregroundStyle(.quaternary)
-            Text("No Locations")
-                .font(.headline)
-                .foregroundStyle(.secondary)
-            Text("Add a folder to browse your markdown files")
-                .font(.caption)
-                .foregroundStyle(.tertiary)
-                .multilineTextAlignment(.center)
-            Button("Add Location…") {
-                workspace.showOpenPanel()
+        GeometryReader { geo in
+            VStack(spacing: 12) {
+                Image(systemName: "folder.badge.plus")
+                    .font(.system(size: 40))
+                    .foregroundStyle(.quaternary)
+                    .opacity(iconOpacity)
+                    .onAppear {
+                        withAnimation(.easeInOut(duration: 1.5).repeatForever(autoreverses: true)) {
+                            iconOpacity = 0.30
+                        }
+                    }
+                Text("No Locations")
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundStyle(.secondary)
+                Text("Add a folder to browse your Markdown files")
+                    .font(.system(size: 12))
+                    .foregroundStyle(.tertiary)
+                    .multilineTextAlignment(.center)
+                Button("Add Location…") {
+                    workspace.showOpenPanel()
+                }
+                .controlSize(.small)
+                .tint(.accentColor)
             }
-            .controlSize(.small)
-            Spacer()
+            .frame(maxWidth: .infinity)
+            .padding()
+            .position(x: geo.size.width / 2, y: geo.size.height * 0.4)
         }
-        .frame(maxWidth: .infinity)
-        .padding()
     }
 }
 
-// MARK: - Row view that keeps blue selection when editor has focus
+// MARK: - Custom row view with full drawing control
 
-class AlwaysEmphasizedRowView: NSTableRowView {
+class ClearlySidebarRowView: NSTableRowView {
+    /// Optional tint color from a parent folder's color
+    var folderTintColor: NSColor?
+
     override var isEmphasized: Bool {
         get { true }
         set { }
+    }
+
+    // Prevent AppKit from changing text to white on selection
+    override var interiorBackgroundStyle: NSView.BackgroundStyle {
+        return .normal
+    }
+
+    override func drawSelection(in dirtyRect: NSRect) {
+        guard isSelected else { return }
+        let isDark = effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+        if let tint = folderTintColor {
+            tint.withAlphaComponent(isDark ? 0.20 : 0.12).setFill()
+        } else {
+            NSColor.black.withAlphaComponent(isDark ? 0.15 : 0.06).setFill()
+        }
+        let selectionRect = bounds.insetBy(dx: 4, dy: 1)
+        let path = NSBezierPath(roundedRect: selectionRect, xRadius: 6, yRadius: 6)
+        path.fill()
+    }
+
+    override func drawBackground(in dirtyRect: NSRect) {
+        // Tinted backgrounds are drawn at the outline view level as grouped rects
+    }
+
+    override func drawSeparator(in dirtyRect: NSRect) {
+        // No row separators
     }
 }
 
 // MARK: - Custom outline view (flatten indentation for leaf section children)
 
 class FlatSectionOutlineView: NSOutlineView {
+    weak var colorCoordinator: FileExplorerOutlineView.Coordinator?
+
+    override func drawBackground(inClipRect clipRect: NSRect) {
+        super.drawBackground(inClipRect: clipRect)
+        guard let coordinator = colorCoordinator else { return }
+
+        let isDark = effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+        let visibleRows = rows(in: clipRect)
+        guard visibleRows.length > 0 else { return }
+
+        // Group consecutive rows by their folder color
+        var currentColor: NSColor?
+        var groupStartRow = -1
+
+        func flushGroup(endRow: Int) {
+            guard let color = currentColor, groupStartRow >= 0 else { return }
+            let startRect = rect(ofRow: groupStartRow)
+            let endRect = rect(ofRow: endRow)
+            let groupRect = NSRect(
+                x: startRect.origin.x,
+                y: startRect.origin.y,
+                width: startRect.width,
+                height: endRect.maxY - startRect.origin.y - 1
+            ).insetBy(dx: 4, dy: 0)
+            color.withAlphaComponent(isDark ? 0.06 : 0.04).setFill()
+            let path = NSBezierPath(roundedRect: groupRect, xRadius: 6, yRadius: 6)
+            path.fill()
+        }
+
+        for row in visibleRows.location..<(visibleRows.location + visibleRows.length) {
+            guard let item = self.item(atRow: row) as? FileExplorerOutlineView.OutlineItem,
+                  let url = item.url else {
+                flushGroup(endRow: row - 1)
+                currentColor = nil
+                groupStartRow = -1
+                continue
+            }
+
+            let rowColor = coordinator.folderColorForURL(url)
+
+            if rowColor != currentColor {
+                if currentColor != nil {
+                    flushGroup(endRow: row - 1)
+                }
+                currentColor = rowColor
+                groupStartRow = rowColor != nil ? row : -1
+            }
+        }
+        // Flush final group
+        if currentColor != nil {
+            flushGroup(endRow: visibleRows.location + visibleRows.length - 1)
+        }
+    }
+
     override func frameOfCell(atColumn column: Int, row: Int) -> NSRect {
         var frame = super.frameOfCell(atColumn: column, row: row)
         let level = self.level(forRow: row)
-        // Only adjust level-1 items that are not expandable (recents, open docs)
-        let item = self.item(atRow: row)
-        let expandable = self.dataSource?.outlineView?(self, isItemExpandable: item!) ?? false
-        if level == 1 && !expandable {
-            let indent = CGFloat(level) * self.indentationPerLevel
-            frame.origin.x -= indent
-            frame.size.width += indent
-        }
+
+        // The system adds indentation (level * indentationPerLevel) + disclosure button width (~18px).
+        // We hide the disclosure button, so reclaim that 18px.
+        // For level 0 (sections) and level 1 (top folders/recents): flush left.
+        // For level 2+: indent relative to level 1.
+        let disclosureSpace: CGFloat = 18
+        let systemIndent = CGFloat(level) * self.indentationPerLevel + disclosureSpace
+        let desiredIndent: CGFloat = level <= 1 ? 0 : CGFloat(level - 1) * self.indentationPerLevel
+        let shift = systemIndent - desiredIndent
+        frame.origin.x -= shift
+        frame.size.width += shift
         return frame
+    }
+
+    // Hide the disclosure triangles — folders expand/collapse on click
+    override func makeView(withIdentifier identifier: NSUserInterfaceItemIdentifier, owner: Any?) -> NSView? {
+        if identifier == NSOutlineView.disclosureButtonIdentifier {
+            // Must return an NSButton (AppKit sends button messages to it)
+            // Make it truly invisible: transparent, no bezel, zero size
+            let btn = NSButton(frame: NSRect(x: 0, y: 0, width: 0, height: 0))
+            btn.identifier = identifier
+            btn.isBordered = false
+            btn.isTransparent = true
+            btn.title = ""
+            btn.image = nil
+            btn.alphaValue = 0
+            btn.translatesAutoresizingMaskIntoConstraints = false
+            btn.widthAnchor.constraint(equalToConstant: 0).isActive = true
+            btn.heightAnchor.constraint(equalToConstant: 0).isActive = true
+            return btn
+        }
+        return super.makeView(withIdentifier: identifier, owner: owner)
+    }
+
+    // Click on expandable rows toggles expansion
+    override func mouseDown(with event: NSEvent) {
+        let point = convert(event.locationInWindow, from: nil)
+        let row = self.row(at: point)
+        if row >= 0, let item = self.item(atRow: row) {
+            let isExpandable = self.dataSource?.outlineView?(self, isItemExpandable: item) ?? false
+            if isExpandable {
+                if isItemExpanded(item) {
+                    collapseItem(item)
+                } else {
+                    expandItem(item)
+                }
+                return
+            }
+        }
+        super.mouseDown(with: event)
     }
 
     // Allow buttons inside cell views to receive clicks
@@ -96,11 +230,13 @@ struct FileExplorerOutlineView: NSViewRepresentable {
 
         let outlineView = FlatSectionOutlineView()
         outlineView.headerView = nil
-        outlineView.style = .sourceList
-        outlineView.indentationPerLevel = 10
-        outlineView.rowSizeStyle = .small
-        outlineView.selectionHighlightStyle = .sourceList
+        outlineView.style = .plain
+        outlineView.indentationPerLevel = 14
+        outlineView.rowSizeStyle = .custom
+        outlineView.rowHeight = 28
+        outlineView.selectionHighlightStyle = .regular
         outlineView.floatsGroupRows = false
+        outlineView.intercellSpacing = NSSize(width: 0, height: 0)
 
         let column = NSTableColumn(identifier: NSUserInterfaceItemIdentifier("name"))
         column.isEditable = false
@@ -182,7 +318,7 @@ struct FileExplorerOutlineView: NSViewRepresentable {
 
     // MARK: - Coordinator
 
-    final class Coordinator: NSObject, NSOutlineViewDataSource, NSOutlineViewDelegate, NSMenuDelegate {
+    final class Coordinator: NSObject, NSOutlineViewDataSource, NSOutlineViewDelegate, NSMenuDelegate, NSPopoverDelegate {
         var workspace: WorkspaceManager
         weak var outlineView: NSOutlineView?
 
@@ -254,6 +390,29 @@ struct FileExplorerOutlineView: NSViewRepresentable {
             let item = OutlineItem(.openDocument(doc))
             openDocItems[doc.id] = item
             return item
+        }
+
+        // MARK: - Folder Color Lookup
+
+        /// Finds the folder color for a URL by checking the URL and its parent folders
+        func folderColorForURL(_ url: URL) -> NSColor? {
+            // Check the URL's own path first
+            if let colorName = workspace.folderColors[url.path],
+               let color = Theme.folderColor(named: colorName) {
+                return color
+            }
+            // Walk up parent directories to find an inherited color
+            var parent = url.deletingLastPathComponent()
+            for _ in 0..<20 { // safety limit
+                if let colorName = workspace.folderColors[parent.path],
+                   let color = Theme.folderColor(named: colorName) {
+                    return color
+                }
+                let next = parent.deletingLastPathComponent()
+                if next.path == parent.path { break }
+                parent = next
+            }
+            return nil
         }
 
         // MARK: - Change Detection
@@ -446,7 +605,11 @@ struct FileExplorerOutlineView: NSViewRepresentable {
         }
 
         func outlineView(_ outlineView: NSOutlineView, rowViewForItem item: Any) -> NSTableRowView? {
-            return AlwaysEmphasizedRowView()
+            let rowView = ClearlySidebarRowView()
+            if let outlineItem = item as? OutlineItem, let url = outlineItem.url {
+                rowView.folderTintColor = folderColorForURL(url)
+            }
+            return rowView
         }
 
         func outlineView(_ outlineView: NSOutlineView, shouldSelectItem item: Any) -> Bool {
@@ -482,8 +645,8 @@ struct FileExplorerOutlineView: NSViewRepresentable {
 
                 if isSection {
                     NSLayoutConstraint.activate([
-                        textField.leadingAnchor.constraint(equalTo: cell.leadingAnchor, constant: 2),
-                        textField.trailingAnchor.constraint(equalTo: cell.trailingAnchor, constant: -4),
+                        textField.leadingAnchor.constraint(equalTo: cell.leadingAnchor, constant: 8),
+                        textField.trailingAnchor.constraint(equalTo: cell.trailingAnchor, constant: -12),
                         textField.centerYAnchor.constraint(equalTo: cell.centerYAnchor),
                     ])
                 } else {
@@ -493,12 +656,12 @@ struct FileExplorerOutlineView: NSViewRepresentable {
                     cell.imageView = imageView
 
                     NSLayoutConstraint.activate([
-                        imageView.leadingAnchor.constraint(equalTo: cell.leadingAnchor, constant: 2),
+                        imageView.leadingAnchor.constraint(equalTo: cell.leadingAnchor, constant: 8),
                         imageView.centerYAnchor.constraint(equalTo: cell.centerYAnchor),
-                        imageView.widthAnchor.constraint(equalToConstant: 16),
-                        imageView.heightAnchor.constraint(equalToConstant: 16),
+                        imageView.widthAnchor.constraint(equalToConstant: 18),
+                        imageView.heightAnchor.constraint(equalToConstant: 18),
                         textField.leadingAnchor.constraint(equalTo: imageView.trailingAnchor, constant: 4),
-                        textField.trailingAnchor.constraint(equalTo: cell.trailingAnchor, constant: -4),
+                        textField.trailingAnchor.constraint(equalTo: cell.trailingAnchor, constant: -12),
                         textField.centerYAnchor.constraint(equalTo: cell.centerYAnchor),
                     ])
                 }
@@ -513,48 +676,55 @@ struct FileExplorerOutlineView: NSViewRepresentable {
 
             switch outlineItem.kind {
             case .section(let section):
-                cell.textField?.stringValue = section.rawValue
-                cell.textField?.font = .systemFont(ofSize: 11, weight: .semibold)
+                let sectionAttr = NSMutableAttributedString(string: section.rawValue)
+                sectionAttr.addAttributes([
+                    .font: NSFont.systemFont(ofSize: 10, weight: .semibold),
+                    .foregroundColor: NSColor.tertiaryLabelColor,
+                    .kern: 0
+                ], range: NSRange(location: 0, length: sectionAttr.length))
+                cell.textField?.attributedStringValue = sectionAttr
 
                 if section == .locations {
                     let addBtn = NSButton(frame: .zero)
                     addBtn.bezelStyle = .inline
                     addBtn.isBordered = false
-                    addBtn.image = NSImage(systemSymbolName: "plus", accessibilityDescription: "Add Location")
+                    let btnConfig = NSImage.SymbolConfiguration(pointSize: 11, weight: .bold)
+                    addBtn.image = NSImage(systemSymbolName: "folder.badge.plus", accessibilityDescription: "Add Location")?.withSymbolConfiguration(btnConfig)
                     addBtn.imagePosition = .imageOnly
                     addBtn.toolTip = "Add Location (⌘O)"
                     addBtn.target = self
                     addBtn.action = #selector(addLocationAction(_:))
                     addBtn.tag = addButtonTag
                     addBtn.translatesAutoresizingMaskIntoConstraints = false
-                    addBtn.contentTintColor = .secondaryLabelColor
+                    addBtn.contentTintColor = .tertiaryLabelColor
                     cell.addSubview(addBtn)
                     NSLayoutConstraint.activate([
-                        addBtn.trailingAnchor.constraint(equalTo: cell.trailingAnchor, constant: -4),
+                        addBtn.trailingAnchor.constraint(equalTo: cell.trailingAnchor, constant: -7),
                         addBtn.centerYAnchor.constraint(equalTo: cell.centerYAnchor),
-                        addBtn.widthAnchor.constraint(equalToConstant: 16),
-                        addBtn.heightAnchor.constraint(equalToConstant: 16),
+                        addBtn.widthAnchor.constraint(equalToConstant: 14),
+                        addBtn.heightAnchor.constraint(equalToConstant: 14),
                     ])
                 } else if section == .recents {
                     let clearBtn = NSButton(frame: .zero)
                     clearBtn.bezelStyle = .inline
                     clearBtn.isBordered = false
-                    clearBtn.image = NSImage(systemSymbolName: "xmark", accessibilityDescription: "Clear Recents")
+                    let clearConfig = NSImage.SymbolConfiguration(pointSize: 11, weight: .bold)
+                    clearBtn.image = NSImage(systemSymbolName: "xmark", accessibilityDescription: "Clear Recents")?.withSymbolConfiguration(clearConfig)
                     clearBtn.imagePosition = .imageOnly
                     clearBtn.toolTip = "Clear Recents"
                     clearBtn.target = self
                     clearBtn.action = #selector(clearRecentsAction(_:))
                     clearBtn.tag = addButtonTag
                     clearBtn.translatesAutoresizingMaskIntoConstraints = false
-                    clearBtn.contentTintColor = .secondaryLabelColor
+                    clearBtn.contentTintColor = .tertiaryLabelColor
                     clearBtn.isHidden = workspace.recentFiles.isEmpty
                     self.clearRecentsButton = clearBtn
                     cell.addSubview(clearBtn)
                     NSLayoutConstraint.activate([
-                        clearBtn.trailingAnchor.constraint(equalTo: cell.trailingAnchor, constant: -4),
+                        clearBtn.trailingAnchor.constraint(equalTo: cell.trailingAnchor, constant: -7),
                         clearBtn.centerYAnchor.constraint(equalTo: cell.centerYAnchor),
-                        clearBtn.widthAnchor.constraint(equalToConstant: 16),
-                        clearBtn.heightAnchor.constraint(equalToConstant: 16),
+                        clearBtn.widthAnchor.constraint(equalToConstant: 10),
+                        clearBtn.heightAnchor.constraint(equalToConstant: 10),
                     ])
                 }
 
@@ -564,8 +734,11 @@ struct FileExplorerOutlineView: NSViewRepresentable {
                     attributes: [.font: NSFont.systemFont(ofSize: 12, weight: .medium), .foregroundColor: NSColor.labelColor]
                 )
                 let locIcon = workspace.folderIcons[loc.url.path] ?? "folder"
-                cell.imageView?.image = NSImage(systemSymbolName: locIcon, accessibilityDescription: "Folder")
-                cell.imageView?.contentTintColor = .secondaryLabelColor
+                let config = NSImage.SymbolConfiguration(pointSize: 13, weight: .medium)
+                cell.imageView?.image = NSImage(systemSymbolName: locIcon, accessibilityDescription: "Folder")?.withSymbolConfiguration(config)
+                cell.imageView?.symbolConfiguration = config
+                let locColor = folderColorForURL(loc.url)
+                cell.imageView?.contentTintColor = locColor ?? .secondaryLabelColor
                 cell.imageView?.isHidden = false
 
             case .fileNode(let node):
@@ -573,13 +746,17 @@ struct FileExplorerOutlineView: NSViewRepresentable {
                     string: node.name,
                     attributes: [.font: NSFont.systemFont(ofSize: 12), .foregroundColor: NSColor.labelColor]
                 )
+                let config = NSImage.SymbolConfiguration(pointSize: 13, weight: .medium)
+                let nodeColor = folderColorForURL(node.url)
                 if node.isDirectory {
                     let nodeIcon = workspace.folderIcons[node.url.path] ?? "folder"
-                    cell.imageView?.image = NSImage(systemSymbolName: nodeIcon, accessibilityDescription: "Folder")
-                    cell.imageView?.contentTintColor = .secondaryLabelColor
+                    cell.imageView?.image = NSImage(systemSymbolName: nodeIcon, accessibilityDescription: "Folder")?.withSymbolConfiguration(config)
+                    cell.imageView?.symbolConfiguration = config
+                    cell.imageView?.contentTintColor = nodeColor ?? .secondaryLabelColor
                 } else {
-                    cell.imageView?.image = NSImage(systemSymbolName: "doc.text", accessibilityDescription: "File")
-                    cell.imageView?.contentTintColor = .tertiaryLabelColor
+                    cell.imageView?.image = NSImage(systemSymbolName: "doc.text", accessibilityDescription: "File")?.withSymbolConfiguration(config)
+                    cell.imageView?.symbolConfiguration = config
+                    cell.imageView?.contentTintColor = nodeColor?.withAlphaComponent(0.6) ?? .tertiaryLabelColor
                 }
                 cell.imageView?.isHidden = false
                 if node.isHidden { cell.alphaValue = 0.5 }
@@ -593,22 +770,25 @@ struct FileExplorerOutlineView: NSViewRepresentable {
                 )
                 attributed.append(NSAttributedString(
                     string: "  \(parentName)",
-                    attributes: [.font: NSFont.systemFont(ofSize: 10), .foregroundColor: NSColor.tertiaryLabelColor]
+                    attributes: [.font: NSFont.systemFont(ofSize: 9), .foregroundColor: NSColor.tertiaryLabelColor]
                 ))
                 cell.textField?.font = .systemFont(ofSize: 12)
                 cell.textField?.attributedStringValue = attributed
-                cell.imageView?.image = NSImage(systemSymbolName: "doc.text", accessibilityDescription: "File")
+                let recentConfig = NSImage.SymbolConfiguration(pointSize: 13, weight: .medium)
+                cell.imageView?.image = NSImage(systemSymbolName: "doc.text", accessibilityDescription: "File")?.withSymbolConfiguration(recentConfig)
+                cell.imageView?.symbolConfiguration = recentConfig
                 cell.imageView?.contentTintColor = .tertiaryLabelColor
                 cell.imageView?.isHidden = false
 
             case .openDocument(let doc):
-                let prefix = doc.isDirty ? "● " : ""
                 cell.textField?.attributedStringValue = NSAttributedString(
-                    string: prefix + doc.displayName,
+                    string: doc.displayName,
                     attributes: [.font: NSFont.systemFont(ofSize: 12), .foregroundColor: NSColor.labelColor]
                 )
+                let docConfig = NSImage.SymbolConfiguration(pointSize: 13, weight: .medium)
                 let iconName = doc.isUntitled ? "doc.text" : "doc.text.fill"
-                cell.imageView?.image = NSImage(systemSymbolName: iconName, accessibilityDescription: "Document")
+                cell.imageView?.image = NSImage(systemSymbolName: iconName, accessibilityDescription: "Document")?.withSymbolConfiguration(docConfig)
+                cell.imageView?.symbolConfiguration = docConfig
                 cell.imageView?.contentTintColor = doc.isUntitled ? .secondaryLabelColor : .tertiaryLabelColor
                 cell.imageView?.isHidden = false
             }
@@ -667,17 +847,10 @@ struct FileExplorerOutlineView: NSViewRepresentable {
 
                 menu.addItem(.separator())
 
-                let changeIconItem = NSMenuItem(title: "Change Icon…", action: #selector(changeIconAction(_:)), keyEquivalent: "")
+                let changeIconItem = NSMenuItem(title: "Customize…", action: #selector(changeIconAction(_:)), keyEquivalent: "")
                 changeIconItem.representedObject = loc.url
                 changeIconItem.target = self
                 menu.addItem(changeIconItem)
-
-                if workspace.folderIcons[loc.url.path] != nil {
-                    let resetIconItem = NSMenuItem(title: "Reset Icon", action: #selector(resetIconAction(_:)), keyEquivalent: "")
-                    resetIconItem.representedObject = loc.url
-                    resetIconItem.target = self
-                    menu.addItem(resetIconItem)
-                }
 
                 menu.addItem(.separator())
 
@@ -709,17 +882,10 @@ struct FileExplorerOutlineView: NSViewRepresentable {
 
                     menu.addItem(.separator())
 
-                    let changeIconItem = NSMenuItem(title: "Change Icon…", action: #selector(changeIconAction(_:)), keyEquivalent: "")
+                    let changeIconItem = NSMenuItem(title: "Customize…", action: #selector(changeIconAction(_:)), keyEquivalent: "")
                     changeIconItem.representedObject = node.url
                     changeIconItem.target = self
                     menu.addItem(changeIconItem)
-
-                    if workspace.folderIcons[node.url.path] != nil {
-                        let resetIconItem = NSMenuItem(title: "Reset Icon", action: #selector(resetIconAction(_:)), keyEquivalent: "")
-                        resetIconItem.representedObject = node.url
-                        resetIconItem.target = self
-                        menu.addItem(resetIconItem)
-                    }
 
                     menu.addItem(.separator())
                 } else {
@@ -966,25 +1132,45 @@ struct FileExplorerOutlineView: NSViewRepresentable {
 
             let rowRect = outlineView.rect(ofRow: clickedRow)
             let currentIcon = workspace.folderIcons[url.path]
+            let currentColor = workspace.folderColors[url.path]
 
-            let picker = IconPickerView(currentIcon: currentIcon) { [weak self] selectedIcon in
-                guard let self else { return }
-                if let selectedIcon {
-                    self.workspace.setFolderIcon(selectedIcon, for: url.path)
-                } else {
-                    self.workspace.removeFolderIcon(for: url.path)
+            let pickerState = IconPickerState(icon: currentIcon, color: currentColor)
+            let picker = IconPickerView(
+                state: pickerState,
+                onSelectIcon: { [weak self] selectedIcon in
+                    guard let self else { return }
+                    if let selectedIcon {
+                        self.workspace.setFolderIcon(selectedIcon, for: url.path)
+                    } else {
+                        self.workspace.removeFolderIcon(for: url.path)
+                    }
+                    self.outlineView?.reloadData()
+                    self.selectCurrentFile()
+                },
+                onSelectColor: { [weak self] selectedColor in
+                    guard let self else { return }
+                    if let selectedColor {
+                        self.workspace.setFolderColor(selectedColor, for: url.path)
+                    } else {
+                        self.workspace.removeFolderColor(for: url.path)
+                    }
+                    self.outlineView?.reloadData()
+                    self.selectCurrentFile()
                 }
-                self.iconPopover?.close()
-                self.iconPopover = nil
-                outlineView.reloadData()
-            }
+            )
 
             let hostingController = NSHostingController(rootView: picker)
             let popover = NSPopover()
             popover.contentViewController = hostingController
             popover.behavior = .transient
+            popover.delegate = self
             iconPopover = popover
             popover.show(relativeTo: rowRect, of: outlineView, preferredEdge: .maxX)
+        }
+
+        func popoverDidClose(_ notification: Notification) {
+            iconPopover = nil
+            outlineView?.reloadData()
         }
 
         @objc func resetIconAction(_ sender: NSMenuItem) {

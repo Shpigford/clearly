@@ -138,54 +138,37 @@ struct ContentView: View {
         )
     }
 
-    private var mainContent: some View {
-        let text = workspace.currentFileText
-        let words = text.split { $0.isWhitespace || $0.isNewline }.count
-        let chars = text.count
+    // MARK: - Bottom toolbar (Things-style)
 
-        return VStack(spacing: 0) {
-            if findState.isVisible {
-                FindBarView(findState: findState)
-                Divider()
-            }
-            ZStack {
-                editorPane
-                    .opacity(mode == .edit ? 1 : 0)
-                    .allowsHitTesting(mode == .edit)
-                previewPane
-                    .opacity(mode == .preview ? 1 : 0)
-                    .allowsHitTesting(mode == .preview)
-            }
-        }
-        .safeAreaInset(edge: .bottom, spacing: 0) {
-            if mode != .preview {
-                statusBar(words: words, chars: chars)
-            }
-        }
-        .inspector(isPresented: $outlineState.isVisible) {
-            OutlineView(outlineState: outlineState)
-                .inspectorColumnWidth(min: 180, ideal: 200, max: 280)
-        }
-        .frame(minWidth: 500, minHeight: 400)
-        .background(Theme.backgroundColorSwiftUI)
-    }
+    private func bottomBar(words: Int, chars: Int) -> some View {
+        HStack(spacing: 0) {
+            // Edit/Preview on the left
+            ClearlySegmentedControl(
+                selection: $mode,
+                items: [
+                    (value: .edit, icon: "pencil", label: "Edit"),
+                    (value: .preview, icon: "eye", label: "Preview")
+                ]
+            )
+            .padding(.leading, 12)
 
-    @ToolbarContentBuilder
-    private var contentToolbar: some ToolbarContent {
-        Group {
-            ToolbarItem(placement: .principal) {
-                Picker("Mode", selection: $mode) {
-                    Image(systemName: "pencil")
-                        .tag(ViewMode.edit)
-                    Image(systemName: "eye")
-                        .tag(ViewMode.preview)
-                }
-                .pickerStyle(.segmented)
-                .frame(width: 100)
-                .help("Toggle Editor/Preview (Cmd+1/Cmd+2)")
+            Spacer()
+
+            // Word/char count centered
+            HStack(spacing: 0) {
+                Text("\(words) words")
+                Text(" \u{00B7} ")
+                Text("\(chars) characters")
             }
-            if workspace.activeDocumentID != nil {
-                ToolbarItem(placement: .automatic) {
+            .font(.system(size: 11))
+            .tracking(0.3)
+            .foregroundStyle(.tertiary)
+
+            Spacer()
+
+            // Right-side actions
+            HStack(spacing: 4) {
+                if workspace.activeDocumentID != nil {
                     Menu {
                         if let url = workspace.currentFileURL {
                             Button("Copy File Path") { CopyActions.copyFilePath(url) }
@@ -199,28 +182,68 @@ struct ContentView: View {
                     } label: {
                         Image(systemName: "doc.on.doc")
                     }
+                    .buttonStyle(ClearlyToolbarButtonStyle())
                     .help("Copy document content")
                 }
-            }
-            ToolbarItem(placement: .automatic) {
+
                 Button {
-                    withAnimation(.easeInOut(duration: 0.2)) {
+                    withAnimation(Theme.Motion.smooth) {
                         outlineState.toggle()
                     }
                 } label: {
                     Image(systemName: "list.bullet.indent")
                 }
+                .buttonStyle(ClearlyToolbarButtonStyle(isActive: outlineState.isVisible))
                 .help("Document Outline (Shift+Cmd+O)")
-            }
-            ToolbarItem(placement: .automatic) {
+
                 Button {
                     findState.present()
                 } label: {
                     Image(systemName: "magnifyingglass")
                 }
+                .buttonStyle(ClearlyToolbarButtonStyle())
                 .help("Find (Cmd+F)")
             }
+            .padding(.trailing, 12)
         }
+        .frame(height: 40)
+        .overlay(alignment: .top) {
+            Rectangle()
+                .fill(Color.primary.opacity(0.06))
+                .frame(height: 1)
+        }
+    }
+
+    private var mainContent: some View {
+        let text = workspace.currentFileText
+        let words = text.split { $0.isWhitespace || $0.isNewline }.count
+        let chars = text.count
+
+        return VStack(spacing: 0) {
+            if findState.isVisible {
+                FindBarView(findState: findState)
+                    .transition(.move(edge: .top).combined(with: .opacity))
+                Rectangle()
+                    .fill(Color.primary.opacity(0.08))
+                    .frame(height: 1)
+            }
+            ZStack {
+                editorPane
+                    .opacity(mode == .edit ? 1 : 0)
+                    .allowsHitTesting(mode == .edit)
+                previewPane
+                    .opacity(mode == .preview ? 1 : 0)
+                    .allowsHitTesting(mode == .preview)
+            }
+
+            bottomBar(words: words, chars: chars)
+        }
+        .inspector(isPresented: $outlineState.isVisible) {
+            OutlineView(outlineState: outlineState)
+                .inspectorColumnWidth(min: 180, ideal: 200, max: 280)
+        }
+        .frame(minWidth: 500, minHeight: 400)
+        .background(Theme.backgroundColorSwiftUI)
     }
 
     var body: some View {
@@ -228,9 +251,7 @@ struct ContentView: View {
             .onChange(of: mode) { _, newMode in
                 UserDefaults.standard.set(newMode.rawValue, forKey: "viewMode")
             }
-            .toolbar { contentToolbar }
-            .modifier(HiddenToolbarBackground())
-            .animation(.easeInOut(duration: 0.15), value: mode)
+            .animation(Theme.Motion.smooth, value: mode)
             .modifier(FocusedValuesModifier(workspace: workspace, mode: $mode, findState: findState, outlineState: outlineState))
             .onAppear {
                 setupFileWatcher()
@@ -254,18 +275,16 @@ struct ContentView: View {
                 fileWatcher.updateCurrentText(newText)
                 outlineState.parseHeadings(from: newText)
             }
-    }
-
-    private func statusBar(words: Int, chars: Int) -> some View {
-        HStack(spacing: 12) {
-            Text("\(words) words")
-            Text("\(chars) characters")
-        }
-        .font(.caption)
-        .foregroundStyle(.tertiary)
-        .padding(.horizontal, 16)
-        .padding(.vertical, 6)
-        .background(Theme.backgroundColorSwiftUI)
+            .onReceive(NotificationCenter.default.publisher(for: .init("ClearlySetViewMode"))) { notification in
+                if let modeStr = notification.object as? String, let newMode = ViewMode(rawValue: modeStr) {
+                    mode = newMode
+                }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .init("ClearlyToggleOutline"))) { _ in
+                withAnimation(Theme.Motion.smooth) {
+                    outlineState.toggle()
+                }
+            }
     }
 
     private func setupFileWatcher() {

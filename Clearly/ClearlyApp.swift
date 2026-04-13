@@ -3,6 +3,30 @@ import SwiftUI
 import Sparkle
 #endif
 
+private var trafficLightConstraintsInstalled = false
+
+func repositionTrafficLights(in window: NSWindow) {
+    guard !trafficLightConstraintsInstalled else { return }
+    guard let closeButton = window.standardWindowButton(.closeButton),
+          let minimizeButton = window.standardWindowButton(.miniaturizeButton),
+          let zoomButton = window.standardWindowButton(.zoomButton),
+          let titlebarView = closeButton.superview else { return }
+
+    let buttons = [closeButton, minimizeButton, zoomButton]
+    let xPositions: [CGFloat] = [14, 34, 54]
+    let topInset: CGFloat = 14
+
+    for (button, xPos) in zip(buttons, xPositions) {
+        button.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            button.leadingAnchor.constraint(equalTo: titlebarView.leadingAnchor, constant: xPos),
+            button.topAnchor.constraint(equalTo: titlebarView.topAnchor, constant: topInset),
+        ])
+    }
+
+    trafficLightConstraintsInstalled = true
+}
+
 func activateDocumentApp() {
     if NSApp.activationPolicy() != .regular {
         NSApp.setActivationPolicy(.regular)
@@ -14,12 +38,8 @@ func activateDocumentApp() {
 @MainActor
 final class WindowRouter {
     static let shared = WindowRouter()
-    static let sceneID = "main"
     static let mainWindowIdentifier = NSUserInterfaceItemIdentifier("ClearlyMainWindow")
-    private static let openRetryCount = 5
-    private static let openRetryDelay: TimeInterval = 0.05
-
-    var openMainWindow: (() -> Void)?
+    static let launcherWindowIdentifier = NSUserInterfaceItemIdentifier("ClearlyLauncherWindow")
 
     func showMainWindow() {
         activateDocumentApp()
@@ -29,9 +49,9 @@ final class WindowRouter {
             return
         }
 
-        openMainWindow?()
-
-        presentOpenedMainWindow(retriesRemaining: Self.openRetryCount)
+        if let appDelegate = NSApp.delegate as? ClearlyAppDelegate {
+            appDelegate.createMainWindow()
+        }
     }
 
     private func present(_ window: NSWindow) {
@@ -42,23 +62,12 @@ final class WindowRouter {
         window.orderFrontRegardless()
     }
 
-    private func presentOpenedMainWindow(retriesRemaining: Int) {
-        DispatchQueue.main.asyncAfter(deadline: .now() + Self.openRetryDelay) { [weak self] in
-            guard let self else { return }
-            if let window = self.visibleDocumentWindows().first {
-                self.present(window)
-                return
-            }
-            guard retriesRemaining > 0 else { return }
-            self.presentOpenedMainWindow(retriesRemaining: retriesRemaining - 1)
-        }
-    }
-
     private func visibleDocumentWindows() -> [NSWindow] {
         NSApp.windows.filter { Self.isVisibleMainDocumentWindow($0) }
     }
 
     static func isUserFacingDocumentWindow(_ window: NSWindow) -> Bool {
+        guard window.identifier != Self.launcherWindowIdentifier else { return false }
         guard !(window is NSPanel), !window.isSheet, window.level != .floating else { return false }
         return window.frame.width >= 50 && window.frame.height >= 50
     }
@@ -76,57 +85,37 @@ final class WindowRouter {
     }
 }
 
-struct MainWindowBridge: View {
-    @Environment(\.openWindow) private var openWindow
-
-    var body: some View {
-        MainWindowMarker()
-            .frame(width: 0, height: 0)
-            .allowsHitTesting(false)
-            .onAppear {
-                WindowRouter.shared.openMainWindow = { openWindow(id: WindowRouter.sceneID) }
-            }
-    }
-}
-
-struct MainWindowMarker: NSViewRepresentable {
-    func makeCoordinator() -> Coordinator {
-        Coordinator()
-    }
-
+struct LauncherSceneMarker: NSViewRepresentable {
     func makeNSView(context: Context) -> NSView {
         let view = NSView()
         DispatchQueue.main.async {
-            view.window?.identifier = WindowRouter.mainWindowIdentifier
-            context.coordinator.attach(to: view.window)
+            configure(view.window)
         }
         return view
     }
 
     func updateNSView(_ nsView: NSView, context: Context) {
         DispatchQueue.main.async {
-            nsView.window?.identifier = WindowRouter.mainWindowIdentifier
-            context.coordinator.attach(to: nsView.window)
+            configure(nsView.window)
         }
     }
 
-    final class Coordinator {
-        private let delegate = WindowDelegate()
-        private weak var window: NSWindow?
+    private func configure(_ window: NSWindow?) {
+        guard let window else { return }
+        window.identifier = WindowRouter.launcherWindowIdentifier
+        window.isExcludedFromWindowsMenu = true
+        window.titleVisibility = .hidden
+        window.titlebarAppearsTransparent = true
+        window.isOpaque = false
+        window.backgroundColor = .clear
+        window.hasShadow = false
+        window.ignoresMouseEvents = true
+        window.setContentSize(NSSize(width: 1, height: 1))
+        window.setFrameOrigin(NSPoint(x: -10_000, y: -10_000))
+        window.orderOut(nil)
 
-        func attach(to window: NSWindow?) {
-            guard let window else { return }
-            guard self.window !== window else { return }
-            self.window = window
-            window.delegate = delegate
-        }
-    }
-
-    private final class WindowDelegate: NSObject, NSWindowDelegate {
-        func windowShouldClose(_ sender: NSWindow) -> Bool {
-            guard let appDelegate = NSApp.delegate as? ClearlyAppDelegate else { return true }
-            return appDelegate.shouldCloseMainWindow(sender)
-        }
+        guard let appDelegate = NSApp.delegate as? ClearlyAppDelegate else { return }
+        appDelegate.ensureMainWindowIfNeeded()
     }
 }
 
@@ -137,7 +126,93 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate {
     private var observers: [Any] = []
     private var commandQMonitor: Any?
     private var showHiddenFilesMonitor: Any?
+    private var sidebarToggleMonitor: Any?
+    private var themeObserver: Any?
     private var isProgrammaticallyClosingWindows = false
+    private(set) var mainWindow: NSWindow?
+
+    private(set) var splitViewController: ClearlySplitViewController?
+
+    func createMainWindow() {
+        guard mainWindow == nil else {
+            mainWindow?.makeKeyAndOrderFront(nil)
+            return
+        }
+
+        let workspace = WorkspaceManager.shared
+
+        // Build the split view controller (AppKit, like Things/Bear/Mail)
+        let splitVC = ClearlySplitViewController(workspace: workspace)
+        self.splitViewController = splitVC
+
+        let window = NSWindow(contentViewController: splitVC)
+        window.identifier = WindowRouter.mainWindowIdentifier
+        window.styleMask = [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView]
+        window.titlebarAppearsTransparent = true
+        window.titleVisibility = .hidden
+        window.isMovableByWindowBackground = true
+        window.minSize = NSSize(width: 600, height: 400)
+        window.setContentSize(NSSize(width: 960, height: 900))
+        window.center()
+        window.setFrameAutosaveName("ClearlyMainWindow")
+
+        // Empty toolbar triggers macOS 26's larger ~26pt corner radius
+        let toolbar = NSToolbar(identifier: "ClearlyMainToolbar")
+        toolbar.showsBaselineSeparator = false
+        toolbar.displayMode = .iconOnly
+        window.toolbar = toolbar
+
+        let themePreference = UserDefaults.standard.string(forKey: "themePreference") ?? "system"
+        let appearance: NSAppearance? = switch themePreference {
+            case "light": NSAppearance(named: .aqua)
+            case "dark": NSAppearance(named: .darkAqua)
+            default: nil
+        }
+        window.appearance = appearance
+        window.delegate = mainWindowDelegate
+
+        self.mainWindow = window
+        window.makeKeyAndOrderFront(nil)
+
+        // Observe theme preference changes
+        if let themeObserver {
+            NotificationCenter.default.removeObserver(themeObserver)
+        }
+        themeObserver = NotificationCenter.default.addObserver(
+            forName: UserDefaults.didChangeNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in
+                self?.updateWindowAppearance()
+            }
+        }
+    }
+
+    private func updateWindowAppearance() {
+        guard let window = mainWindow else { return }
+        let pref = UserDefaults.standard.string(forKey: "themePreference") ?? "system"
+        let appearance: NSAppearance? = switch pref {
+            case "light": NSAppearance(named: .aqua)
+            case "dark": NSAppearance(named: .darkAqua)
+            default: nil
+        }
+        window.appearance = appearance
+    }
+
+    private let mainWindowDelegate = MainWindowDelegateImpl()
+
+    private class MainWindowDelegateImpl: NSObject, NSWindowDelegate {
+        func windowShouldClose(_ sender: NSWindow) -> Bool {
+            guard let appDelegate = NSApp.delegate as? ClearlyAppDelegate else { return true }
+            return appDelegate.shouldCloseMainWindow(sender)
+        }
+
+        func windowWillClose(_ notification: Notification) {
+            guard let appDelegate = NSApp.delegate as? ClearlyAppDelegate else { return }
+            if let window = notification.object as? NSWindow, window === appDelegate.mainWindow {
+                appDelegate.handleMainWindowWillClose()
+            }
+        }
+    }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         // A normal Launch Services open activates the app and opens a document window.
@@ -150,10 +225,25 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate {
             }
         }
 
+        // Active launches should open the main window. Background/login-item launches should not.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
+            guard let self, self.isForegroundActivation else { return }
+            self.createMainWindow()
+        }
+
         // Watch multiple signals — window close, app deactivate, main window change
         let nc = NotificationCenter.default
-        observers.append(nc.addObserver(forName: NSWindow.willCloseNotification, object: nil, queue: .main) { [weak self] _ in
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { self?.updateActivationPolicy() }
+        observers.append(nc.addObserver(forName: NSWindow.willCloseNotification, object: nil, queue: .main) { [weak self] notification in
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                if let window = notification.object as? NSWindow, window === self.mainWindow {
+                    self.handleMainWindowWillClose()
+                    return
+                }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in
+                    self?.updateActivationPolicy()
+                }
+            }
         })
         observers.append(nc.addObserver(forName: NSApplication.didResignActiveNotification, object: nil, queue: .main) { [weak self] _ in
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { self?.updateActivationPolicy() }
@@ -184,6 +274,32 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate {
             return nil
         }
 
+        // Cmd+Shift+L toggles sidebar, Cmd+1/2 switches mode, Cmd+Shift+O toggles outline
+        sidebarToggleMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            guard let self else { return event }
+            guard event.type == .keyDown else { return event }
+            let mods = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+            let chars = event.charactersIgnoringModifiers?.lowercased() ?? ""
+
+            if chars == "l" && mods == [.command, .shift] {
+                self.doToggleSidebar()
+                return nil
+            }
+            if chars == "1" && mods == [.command] {
+                NotificationCenter.default.post(name: .init("ClearlySetViewMode"), object: "edit")
+                return nil
+            }
+            if chars == "2" && mods == [.command] {
+                NotificationCenter.default.post(name: .init("ClearlySetViewMode"), object: "preview")
+                return nil
+            }
+            if chars == "o" && mods == [.command, .shift] {
+                NotificationCenter.default.post(name: .init("ClearlyToggleOutline"), object: nil)
+                return nil
+            }
+            return event
+        }
+
     }
 
     // MARK: - Open files from Finder
@@ -205,8 +321,7 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate {
             }
         }
         if openedDirectory {
-            workspace.isSidebarVisible = true
-            UserDefaults.standard.set(true, forKey: "sidebarVisible")
+            setSidebarVisible(true, animated: false)
         }
         if openedDirectory || openedFile {
             WindowRouter.shared.showMainWindow()
@@ -218,7 +333,7 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate {
     // MARK: - Prevent default new window on reactivation
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
-        if !flag {
+        if !hasDocumentWindows() {
             WindowRouter.shared.showMainWindow()
         }
         return true
@@ -239,6 +354,14 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate {
             NSEvent.removeMonitor(showHiddenFilesMonitor)
             self.showHiddenFilesMonitor = nil
         }
+        if let sidebarToggleMonitor {
+            NSEvent.removeMonitor(sidebarToggleMonitor)
+            self.sidebarToggleMonitor = nil
+        }
+        if let themeObserver {
+            NotificationCenter.default.removeObserver(themeObserver)
+            self.themeObserver = nil
+        }
     }
 
     // MARK: - Spelling and Grammar menu injection
@@ -249,6 +372,65 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate {
     /// The guard on `contains(where:)` makes this a no-op in the common case.
     func applicationWillUpdate(_ notification: Notification) {
         injectSpellingMenuIfNeeded()
+        injectSidebarToggleIfNeeded()
+        injectViewCommandsIfNeeded()
+    }
+
+    private func injectSidebarToggleIfNeeded() {
+        guard let viewMenu = NSApp.mainMenu?.item(withTitle: "View")?.submenu else { return }
+        guard !viewMenu.items.contains(where: { $0.title == "Toggle Sidebar" }) else { return }
+
+        let sidebarItem = NSMenuItem(title: "Toggle Sidebar", action: #selector(toggleSidebarMenuAction(_:)), keyEquivalent: "l")
+        sidebarItem.keyEquivalentModifierMask = [.command, .shift]
+        sidebarItem.target = self
+
+        // Insert at the beginning of the View menu
+        viewMenu.insertItem(sidebarItem, at: 0)
+        viewMenu.insertItem(.separator(), at: 1)
+    }
+
+    @objc private func toggleSidebarMenuAction(_ sender: Any?) {
+        doToggleSidebar()
+    }
+
+    private func injectViewCommandsIfNeeded() {
+        guard let viewMenu = NSApp.mainMenu?.item(withTitle: "View")?.submenu else { return }
+
+        // Remove tab bar items (system-injected, we don't use tabs)
+        viewMenu.items.removeAll { $0.title == "Show Tab Bar" || $0.title == "Show All Tabs" || $0.title == "Hide Tab Bar" }
+
+        guard !viewMenu.items.contains(where: { $0.title == "Toggle Outline" }) else { return }
+
+        let outlineItem = NSMenuItem(title: "Toggle Outline", action: #selector(toggleOutlineAction(_:)), keyEquivalent: "o")
+        outlineItem.keyEquivalentModifierMask = [.command, .shift]
+        outlineItem.target = self
+
+        let editorItem = NSMenuItem(title: "Editor", action: #selector(switchToEditorAction(_:)), keyEquivalent: "1")
+        editorItem.keyEquivalentModifierMask = [.command]
+        editorItem.target = self
+
+        let previewItem = NSMenuItem(title: "Preview", action: #selector(switchToPreviewAction(_:)), keyEquivalent: "2")
+        previewItem.keyEquivalentModifierMask = [.command]
+        previewItem.target = self
+
+        // Insert right after Toggle Sidebar (index 0)
+        var insertIndex = 1
+        viewMenu.insertItem(outlineItem, at: insertIndex); insertIndex += 1
+        viewMenu.insertItem(.separator(), at: insertIndex); insertIndex += 1
+        viewMenu.insertItem(editorItem, at: insertIndex); insertIndex += 1
+        viewMenu.insertItem(previewItem, at: insertIndex)
+    }
+
+    @objc private func switchToEditorAction(_ sender: Any?) {
+        NotificationCenter.default.post(name: .init("ClearlySetViewMode"), object: "edit")
+    }
+
+    @objc private func switchToPreviewAction(_ sender: Any?) {
+        NotificationCenter.default.post(name: .init("ClearlySetViewMode"), object: "preview")
+    }
+
+    @objc private func toggleOutlineAction(_ sender: Any?) {
+        NotificationCenter.default.post(name: .init("ClearlyToggleOutline"), object: nil)
     }
 
     private func injectSpellingMenuIfNeeded() {
@@ -291,6 +473,37 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate {
         if hasDocumentWindows() && NSApp.activationPolicy() != .regular {
             NSApp.setActivationPolicy(.regular)
         }
+        if isForegroundActivation, !hasDocumentWindows(), mainWindow == nil {
+            createMainWindow()
+        }
+    }
+
+    func applicationDidBecomeActive(_ notification: Notification) {
+        guard isForegroundActivation, !hasDocumentWindows(), mainWindow == nil else { return }
+        createMainWindow()
+    }
+
+    func applicationDidUnhide(_ notification: Notification) {
+        guard isForegroundActivation, !hasDocumentWindows(), mainWindow == nil else { return }
+        createMainWindow()
+    }
+
+    func ensureMainWindowIfNeeded() {
+        guard isForegroundActivation, !hasDocumentWindows(), mainWindow == nil else { return }
+        createMainWindow()
+    }
+
+    func handleMainWindowWillClose() {
+        mainWindow = nil
+        splitViewController = nil
+        if let themeObserver {
+            NotificationCenter.default.removeObserver(themeObserver)
+            self.themeObserver = nil
+        }
+        hideLauncherWindow()
+        DispatchQueue.main.async { [weak self] in
+            self?.updateActivationPolicy()
+        }
     }
 
     func closeDocumentWindowsToMenuBar() {
@@ -320,8 +533,12 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate {
                 NSApp.setActivationPolicy(.regular)
             }
         } else {
+            hideLauncherWindow()
             if NSApp.activationPolicy() != .accessory {
                 NSApp.setActivationPolicy(.accessory)
+            }
+            if NSApp.isActive {
+                NSApp.hide(nil)
             }
         }
     }
@@ -330,6 +547,37 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate {
     /// MenuBarExtra panel, sheet, or internal SwiftUI bookkeeping window.
     private func hasDocumentWindows() -> Bool {
         NSApp.windows.contains { WindowRouter.isVisibleUserFacingDocumentWindow($0) }
+    }
+
+    private var isForegroundActivation: Bool {
+        guard NSApp.isActive else { return false }
+        return NSWorkspace.shared.frontmostApplication?.processIdentifier == ProcessInfo.processInfo.processIdentifier
+    }
+
+    private func hideLauncherWindow() {
+        for window in NSApp.windows where window.identifier == WindowRouter.launcherWindowIdentifier {
+            window.setFrameOrigin(NSPoint(x: -10_000, y: -10_000))
+            window.orderOut(nil)
+        }
+    }
+
+    private func persistSidebarVisibility(_ visible: Bool) {
+        let workspace = WorkspaceManager.shared
+        workspace.isSidebarVisible = visible
+        UserDefaults.standard.set(visible, forKey: "sidebarVisible")
+    }
+
+    func setSidebarVisible(_ visible: Bool, animated: Bool = true) {
+        splitViewController?.setSidebarVisible(visible, animated: animated)
+        persistSidebarVisibility(visible)
+    }
+
+    func doToggleSidebar() {
+        if let sidebarItem = splitViewController?.splitViewItems.first {
+            setSidebarVisible(sidebarItem.isCollapsed)
+        } else {
+            setSidebarVisible(!WorkspaceManager.shared.isSidebarVisible, animated: false)
+        }
     }
 
     func shouldCloseToMenuBar(for event: NSEvent) -> Bool {
@@ -355,48 +603,110 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate {
     }
 }
 
-// MARK: - Main View (NavigationSplitView: sidebar + detail)
 
-struct MainView: View {
-    @Bindable var workspace: WorkspaceManager
-    @State private var columnVisibility: NavigationSplitViewVisibility
+
+// MARK: - Custom split view with soft divider
+
+private class SoftDividerSplitView: NSSplitView {
+    override var dividerColor: NSColor {
+        return .separatorColor
+    }
+}
+
+// MARK: - NSSplitViewController (AppKit sidebar, like Things/Bear/Mail)
+
+@MainActor
+class ClearlySplitViewController: NSSplitViewController {
+    let workspace: WorkspaceManager
+    private var needsInitialCollapse = false
 
     init(workspace: WorkspaceManager) {
         self.workspace = workspace
-        _columnVisibility = State(initialValue: workspace.isSidebarVisible ? .all : .detailOnly)
+        super.init(nibName: nil, bundle: nil)
     }
 
-    private var windowTitle: String {
-        if let doc = workspace.openDocuments.first(where: { $0.id == workspace.activeDocumentID }) {
-            return doc.displayName
-        }
-        return "Clearly"
+    required init?(coder: NSCoder) { fatalError() }
+
+    override func loadView() {
+        // Set custom split view before super creates one
+        let customSplit = SoftDividerSplitView()
+        customSplit.isVertical = true
+        customSplit.dividerStyle = .thin
+        self.splitView = customSplit
+        super.loadView()
     }
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+
+        // Sidebar — pure AppKit, no NSHostingView (avoids opaque white background)
+        let sidebarVC = SidebarViewController(workspace: workspace)
+        let sidebarItem = NSSplitViewItem(contentListWithViewController: sidebarVC)
+        sidebarItem.canCollapse = true
+        sidebarItem.minimumThickness = 180
+        sidebarItem.maximumThickness = 300
+        addSplitViewItem(sidebarItem)
+
+        // Detail
+        // Detail
+        let detailHost = NSHostingController(rootView:
+            DetailView(workspace: workspace)
+        )
+        let detailItem = NSSplitViewItem(viewController: detailHost)
+        detailItem.minimumThickness = 400
+        addSplitViewItem(detailItem)
+
+        if !workspace.isSidebarVisible {
+            needsInitialCollapse = true
+        }
+    }
+
+    override func viewDidAppear() {
+        super.viewDidAppear()
+        if needsInitialCollapse {
+            needsInitialCollapse = false
+            splitViewItems.first?.isCollapsed = true
+        }
+    }
+
+    func setSidebarVisible(_ visible: Bool, animated: Bool) {
+        guard let sidebarItem = splitViewItems.first else { return }
+        let targetCollapsed = !visible
+        guard sidebarItem.isCollapsed != targetCollapsed else { return }
+
+        if animated {
+            NSAnimationContext.runAnimationGroup { context in
+                context.duration = 0.2
+                context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+                sidebarItem.animator().isCollapsed = targetCollapsed
+            }
+        } else {
+            sidebarItem.isCollapsed = targetCollapsed
+        }
+    }
+
+    override func toggleSidebar(_ sender: Any?) {
+        guard let appDelegate = NSApp.delegate as? ClearlyAppDelegate,
+              let sidebarItem = splitViewItems.first else { return }
+        appDelegate.setSidebarVisible(sidebarItem.isCollapsed)
+    }
+}
+
+// MARK: - Detail view (editor/preview + header bar)
+
+struct DetailView: View {
+    @Bindable var workspace: WorkspaceManager
 
     var body: some View {
-        NavigationSplitView(columnVisibility: $columnVisibility) {
-            FileExplorerView(workspace: workspace)
-                .navigationSplitViewColumnWidth(min: 180, ideal: 220, max: 300)
-        } detail: {
-            if workspace.activeDocumentID != nil {
-                ContentView(workspace: workspace)
-            } else {
-                NoFileView(workspace: workspace)
-            }
-        }
-        .navigationTitle(windowTitle)
-        .onChange(of: columnVisibility) { _, newValue in
-            let visible = (newValue != .detailOnly)
-            workspace.isSidebarVisible = visible
-            UserDefaults.standard.set(visible, forKey: "sidebarVisible")
-        }
-        .onChange(of: workspace.isSidebarVisible) { _, visible in
-            withAnimation {
-                columnVisibility = visible ? .all : .detailOnly
-            }
+        if workspace.activeDocumentID != nil {
+            ContentView(workspace: workspace)
+        } else {
+            NoFileView(workspace: workspace)
         }
     }
 }
+
+
 
 // MARK: - Empty State (no file open)
 
@@ -404,27 +714,36 @@ struct NoFileView: View {
     var workspace: WorkspaceManager
 
     var body: some View {
-        VStack(spacing: 16) {
-            Image(systemName: "doc.text")
-                .font(.system(size: 48))
-                .foregroundStyle(.quaternary)
-            Text("No File Open")
-                .font(.title2)
-                .foregroundStyle(.secondary)
-            Text("Create a new document with ⌘N or open a file with ⌘O")
-                .font(.body)
-                .foregroundStyle(.tertiary)
-            HStack(spacing: 12) {
-                Button("New Document") {
-                    workspace.createUntitledDocument()
-                }
-                .keyboardShortcut(.defaultAction)
-                Button("Open…") {
-                    workspace.showOpenPanel()
+        GeometryReader { geo in
+            VStack(spacing: 0) {
+                Image(systemName: "doc.text")
+                    .font(.system(size: 40))
+                    .foregroundStyle(.quaternary)
+                    .padding(.bottom, 12)
+                Text("No File Open")
+                    .font(.system(size: 20, weight: .medium, design: .default))
+                    .foregroundStyle(.secondary)
+                    .tracking(-0.2)
+                    .padding(.bottom, 6)
+                Text("Create a new document or open an existing file")
+                    .font(.system(size: 13))
+                    .foregroundStyle(.tertiary)
+                    .padding(.bottom, 20)
+                HStack(spacing: 12) {
+                    Button("New Document") {
+                        workspace.createUntitledDocument()
+                    }
+                    .keyboardShortcut(.defaultAction)
+                    .buttonStyle(.borderedProminent)
+                    .tint(.accentColor)
+                    Button("Open\u{2026}") {
+                        workspace.showOpenPanel()
+                    }
+                    .buttonStyle(.bordered)
                 }
             }
+            .position(x: geo.size.width / 2, y: geo.size.height * 0.4)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Theme.backgroundColorSwiftUI)
     }
 }
@@ -460,13 +779,12 @@ struct ClearlyApp: App {
     }
 
     var body: some Scene {
-        Window("Clearly", id: WindowRouter.sceneID) {
-            MainView(workspace: workspace)
-                .preferredColorScheme(resolvedColorScheme)
-                .background(MainWindowBridge())
+        Window("Clearly", id: "launcher") {
+            LauncherSceneMarker()
+                .frame(width: 0, height: 0)
+                .hidden()
         }
-        .windowToolbarStyle(.unified(showsTitle: true))
-        .defaultSize(width: 920, height: 900)
+        .defaultSize(width: 1, height: 1)
         .commands {
             // Replace New/Open with our own
             CommandGroup(replacing: .newItem) {
@@ -503,20 +821,8 @@ struct ClearlyApp: App {
             }
             // View menu — sidebar, editor/preview modes, outline
             CommandGroup(before: .toolbar) {
-                Button("Toggle Sidebar") {
-                    NSApp.sendAction(#selector(NSSplitViewController.toggleSidebar(_:)), to: nil, from: nil)
-                }
-                .keyboardShortcut("l", modifiers: [.command, .shift])
-
-                Divider()
-
-                ViewModeCommands()
-
-                Divider()
-
-                OutlineToggleCommand()
-
-                Divider()
+                // Toggle Sidebar, Editor/Preview, and Toggle Outline
+                // are handled via AppKit menu injection in AppDelegate
 
                 Button(workspace.showHiddenFiles ? "Hide Hidden Files" : "Show Hidden Files") {
                     workspace.toggleShowHiddenFiles()

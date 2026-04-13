@@ -49,10 +49,13 @@ final class WorkspaceManager {
     private static let sidebarVisibleKey = "sidebarVisible"
     private static let launchBehaviorKey = "launchBehavior"
     private static let folderIconsKey = "folderIcons"
+    private static let folderColorsKey = "folderColors"
     private static let showHiddenFilesKey = "showHiddenFiles"
 
     /// Custom folder icons keyed by folder path (URL.path → SF Symbol name).
     var folderIcons: [String: String] = [:]
+    /// Custom folder colors keyed by folder path (URL.path → color name).
+    var folderColors: [String: String] = [:]
 
     private enum DirtyDocumentDisposition {
         case save
@@ -66,6 +69,7 @@ final class WorkspaceManager {
         isSidebarVisible = UserDefaults.standard.bool(forKey: Self.sidebarVisibleKey)
         showHiddenFiles = UserDefaults.standard.bool(forKey: Self.showHiddenFilesKey)
         folderIcons = UserDefaults.standard.dictionary(forKey: Self.folderIconsKey) as? [String: String] ?? [:]
+        folderColors = UserDefaults.standard.dictionary(forKey: Self.folderColorsKey) as? [String: String] ?? [:]
         restoreLocations()
         restoreRecents()
 
@@ -560,7 +564,7 @@ final class WorkspaceManager {
             // Don't add duplicate locations
             guard !locations.contains(where: { $0.url == url }) else { return }
             addLocation(url: url)
-            if !isSidebarVisible { toggleSidebar() }
+            showSidebar()
             presentMainWindow()
         } else {
             _ = openFile(at: url)
@@ -577,6 +581,18 @@ final class WorkspaceManager {
     func removeFolderIcon(for folderPath: String) {
         folderIcons.removeValue(forKey: folderPath)
         UserDefaults.standard.set(folderIcons, forKey: Self.folderIconsKey)
+    }
+
+    // MARK: - Folder Colors
+
+    func setFolderColor(_ colorName: String, for folderPath: String) {
+        folderColors[folderPath] = colorName
+        UserDefaults.standard.set(folderColors, forKey: Self.folderColorsKey)
+    }
+
+    func removeFolderColor(for folderPath: String) {
+        folderColors.removeValue(forKey: folderPath)
+        UserDefaults.standard.set(folderColors, forKey: Self.folderColorsKey)
     }
 
     // MARK: - Persistence: Locations
@@ -852,6 +868,17 @@ final class WorkspaceManager {
     private func presentMainWindow() {
         Task { @MainActor in
             WindowRouter.shared.showMainWindow()
+        }
+    }
+
+    private func showSidebar() {
+        Task { @MainActor in
+            if let appDelegate = NSApp.delegate as? ClearlyAppDelegate {
+                appDelegate.setSidebarVisible(true, animated: false)
+            } else {
+                isSidebarVisible = true
+                UserDefaults.standard.set(true, forKey: Self.sidebarVisibleKey)
+            }
         }
     }
 

@@ -25,7 +25,7 @@ struct SettingsView: View {
                     Label("About", systemImage: "info.circle")
                 }
         }
-        .frame(width: 400, height: 340)
+        .frame(width: 420, height: 360)
     }
 
     @State private var launchAtLogin = SMAppService.mainApp.status == .enabled
@@ -45,8 +45,9 @@ struct SettingsView: View {
                 Text("Font Size")
                 Slider(value: $fontSize, in: 12...24, step: 1)
                 Text("\(Int(fontSize))")
+                    .font(.system(size: 13, weight: .medium))
                     .monospacedDigit()
-                    .frame(width: 24, alignment: .trailing)
+                    .frame(width: 30, alignment: .trailing)
             }
             KeyboardShortcuts.Recorder("New Scratchpad:", name: .newScratchpad)
             Toggle("Launch at Login", isOn: $launchAtLogin)
@@ -75,8 +76,7 @@ struct SettingsView: View {
             }
 
             Text("Clearly")
-                .font(.title)
-                .fontWeight(.bold)
+                .font(.system(size: 24, weight: .semibold))
 
             Text("Version \(appVersion)")
                 .font(.subheadline)
@@ -91,20 +91,24 @@ struct SettingsView: View {
                 Button("Check for Updates") {
                     updater.checkForUpdates()
                 }
+                .buttonStyle(.bordered)
                 #endif
 
                 Button("Website") {
                     NSWorkspace.shared.open(URL(string: "https://clearly.md")!)
                 }
+                .buttonStyle(.bordered)
 
                 Button("GitHub") {
                     NSWorkspace.shared.open(URL(string: "https://github.com/Shpigford/clearly")!)
                 }
+                .buttonStyle(.bordered)
             }
 
             Text("Free and open source under the MIT License.")
                 .font(.caption)
                 .foregroundStyle(.tertiary)
+                .padding(.bottom, 24)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
