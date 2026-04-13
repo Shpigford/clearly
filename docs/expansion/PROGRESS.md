@@ -1,6 +1,6 @@
 # Expansion Progress
 
-## Status: Phase 3 - Completed
+## Status: Phase 4 - Completed
 
 ## Quick Reference
 - Research: `docs/expansion/RESEARCH.md`
@@ -107,13 +107,30 @@
 ---
 
 ### Phase 4: Global Search
-**Status:** Not Started
+**Status:** Completed (2026-04-13)
 
 #### Tasks Completed
-- (none yet)
+- [x] Added `MatchExcerpt` and `SearchFileGroup` types to `VaultIndex.swift`
+- [x] Added `searchFilesGrouped(query:)` to `VaultIndex.swift` — FTS5 MATCH with bm25 ranking, filename LIKE matching, line-level excerpt extraction (capped at 5 per file), quoted phrase support
+- [x] Enhanced `QuickSwitcherPanel.swift` with FTS5 content search below fuzzy filename matches
+  - Content matches shown with `text.magnifyingglass` icon + context snippet
+  - Filename matches (fuzzy) shown first, content matches (FTS5) appended after
+  - Deduplication: files already matched by name are skipped in content results
+  - Content results capped at 30, filename results capped at 20
+  - Selecting a content match opens file + scrolls to matching line via `.scrollEditorToLine`
+- [x] Added Cmd+Shift+F shortcut in `Clearly/ClearlyApp.swift` — opens Quick Switcher (same as Cmd+P)
+- [x] Added "Search All Files…" menu item in View menu via `injectGlobalSearchIfNeeded()`
+- [x] Scroll-to-line reuses existing `.scrollEditorToLine` notification (no EditorView changes needed)
+- [x] Build verified: `xcodebuild -scheme Clearly -configuration Debug build` succeeded
 
 #### Decisions Made
-- (none yet)
+- Integrated into existing Quick Switcher (Cmd+P) instead of separate sidebar search — simpler, unified search surface
+- Cmd+Shift+F opens the same Quick Switcher as Cmd+P (common "search in project" shortcut)
+- Content search requires 2+ character query (FTS5 is pointless for single chars)
+- Line numbers extracted by scanning file content from FTS `content` column — avoids disk I/O, stays in SQLite read
+- Quoted phrases preserved as FTS5 phrase queries, bare terms get prefix matching (`"term"*`)
+- Scroll-to-line uses 0.15s delay after `openFile` to let document load — matches wiki-link navigation pattern
+- Content match items use `text.magnifyingglass` icon to distinguish from filename matches
 
 #### Blockers
 - (none)
@@ -164,6 +181,13 @@
 
 ## Session Log
 
+### 2026-04-13 — Phase 4 Implementation
+- Added `MatchExcerpt`, `SearchFileGroup` types and `searchFilesGrouped(query:)` to VaultIndex.swift (~100 lines)
+- Enhanced QuickSwitcherPanel.swift: content matches via FTS5 appended below fuzzy filename matches, scroll-to-line on selection
+- Added Cmd+Shift+F shortcut (opens Quick Switcher) and "Search All Files…" View menu item in ClearlyApp.swift
+- Initially built sidebar-based search, then pivoted to Quick Switcher integration (simpler, unified UX)
+- Build verified: `xcodebuild -scheme Clearly -configuration Debug build` succeeded
+
 ### 2026-04-13 — Phase 3 Implementation
 - Created WikiLinkCompletionWindow.swift (~280 lines): manager, panel, table, cell views, positioning, completion insertion
 - Added isInsideProtectedRange(at:) to MarkdownSyntaxHighlighter for code-block detection
@@ -194,6 +218,9 @@
 ---
 
 ## Files Changed
+- `Clearly/VaultIndex.swift` — `MatchExcerpt`, `SearchFileGroup` types, `searchFilesGrouped(query:)` method
+- `Clearly/QuickSwitcherPanel.swift` — content match support (FTS5 results, scroll-to-line, snippet display)
+- `Clearly/ClearlyApp.swift` — Cmd+Shift+F shortcut, `injectGlobalSearchIfNeeded()` View menu item
 - `Clearly/WikiLinkCompletionWindow.swift` (new) — WikiLinkCompletionManager, panel, table, cell views
 - `Clearly/MarkdownSyntaxHighlighter.swift` — `isInsideProtectedRange(at:)` public method
 - `Clearly/ClearlyTextView.swift` — `keyDown` override, mouseDown dismiss

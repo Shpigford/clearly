@@ -18,6 +18,18 @@ struct SearchResult {
     let snippet: String
 }
 
+struct MatchExcerpt {
+    let lineNumber: Int        // 1-based
+    let contextLine: String    // the line containing the match
+}
+
+struct SearchFileGroup {
+    let file: IndexedFile
+    let vaultRootURL: URL
+    let matchesFilename: Bool
+    let excerpts: [MatchExcerpt]
+}
+
 struct LinkRecord {
     let id: Int64
     let sourceFileId: Int64
@@ -284,6 +296,125 @@ final class VaultIndex {
                         file: Self.indexedFile(from: row),
                         snippet: row["snippet"] ?? ""
                     )
+                }
+            }
+        } catch {
+            return []
+        }
+    }
+
+    func searchFilesGrouped(query: String) -> [SearchFileGroup] {
+        guard !query.trimmingCharacters(in: .whitespaces).isEmpty else { return [] }
+
+        // Parse quoted phrases and bare terms
+        let trimmed = query.trimmingCharacters(in: .whitespaces)
+        var ftsTerms: [String] = []
+        var searchTerms: [String] = [] // plain terms for line matching
+
+        let quoteRegex = try! NSRegularExpression(pattern: #""([^"]+)""#)
+        let matches = quoteRegex.matches(in: trimmed, range: NSRange(trimmed.startIndex..., in: trimmed))
+        var coveredRanges = Set<Range<String.Index>>()
+
+        for match in matches {
+            if let range = Range(match.range(at: 1), in: trimmed) {
+                let phrase = String(trimmed[range])
+                ftsTerms.append("\"\(phrase.replacingOccurrences(of: "\"", with: "\"\""))\"")
+                searchTerms.append(phrase.lowercased())
+                coveredRanges.insert(Range(match.range, in: trimmed)!)
+            }
+        }
+
+        // Bare (unquoted) terms
+        var remaining = trimmed
+        for range in coveredRanges.sorted(by: { $0.lowerBound > $1.lowerBound }) {
+            remaining.removeSubrange(range)
+        }
+        for word in remaining.components(separatedBy: .whitespaces) where !word.isEmpty {
+            let escaped = word.replacingOccurrences(of: "\"", with: "\"\"")
+            ftsTerms.append("\"\(escaped)\"*")
+            searchTerms.append(word.lowercased())
+        }
+
+        guard !ftsTerms.isEmpty else { return [] }
+        let ftsQuery = ftsTerms.joined(separator: " ")
+
+        do {
+            return try dbPool.read { db in
+                // FTS5 content search
+                let contentRows = try Row.fetchAll(db, sql: """
+                    SELECT f.*, highlight(files_fts, 1, '<<', '>>') AS highlighted_content
+                    FROM files_fts
+                    JOIN files f ON f.id = files_fts.rowid
+                    WHERE files_fts MATCH ?
+                    ORDER BY bm25(files_fts)
+                    LIMIT 50
+                    """, arguments: [ftsQuery])
+
+                var resultsByFileId: [Int64: SearchFileGroup] = [:]
+                var orderedIds: [Int64] = []
+
+                for row in contentRows {
+                    let file = Self.indexedFile(from: row)
+                    let highlightedContent: String = row["highlighted_content"] ?? ""
+                    let filenameMatches = searchTerms.contains { file.filename.lowercased().contains($0) }
+
+                    // Find matching lines from FTS-highlighted content so stemmed/tokenized
+                    // matches still produce excerpts and scroll targets.
+                    let lines = highlightedContent.components(separatedBy: "\n")
+                    var excerpts: [MatchExcerpt] = []
+                    for (i, line) in lines.enumerated() {
+                        if line.contains("<<") {
+                            excerpts.append(MatchExcerpt(
+                                lineNumber: i + 1,
+                                contextLine: String(
+                                    line
+                                        .replacingOccurrences(of: "<<", with: "")
+                                        .replacingOccurrences(of: ">>", with: "")
+                                        .prefix(200)
+                                )
+                            ))
+                            if excerpts.count >= 5 { break }
+                        }
+                    }
+
+                    resultsByFileId[file.id] = SearchFileGroup(
+                        file: file,
+                        vaultRootURL: rootURL,
+                        matchesFilename: filenameMatches,
+                        excerpts: excerpts
+                    )
+                    orderedIds.append(file.id)
+                }
+
+                // Filename-only matches (not already in content results)
+                let existingIds = Set(orderedIds)
+                for term in searchTerms {
+                    let likePattern = "%\(term)%"
+                    let nameRows = try Row.fetchAll(db, sql: """
+                        SELECT * FROM files
+                        WHERE LOWER(filename) LIKE LOWER(?)
+                        LIMIT 20
+                        """, arguments: [likePattern])
+                    for row in nameRows {
+                        let file = Self.indexedFile(from: row)
+                        guard !existingIds.contains(file.id) else { continue }
+                        if resultsByFileId[file.id] == nil {
+                            resultsByFileId[file.id] = SearchFileGroup(
+                                file: file,
+                                vaultRootURL: self.rootURL,
+                                matchesFilename: true,
+                                excerpts: []
+                            )
+                            orderedIds.append(file.id)
+                        }
+                    }
+                }
+
+                // Sort: filename matches first, then content-only, preserving bm25 order within
+                let groups = orderedIds.compactMap { resultsByFileId[$0] }
+                return groups.sorted { a, b in
+                    if a.matchesFilename != b.matchesFilename { return a.matchesFilename }
+                    return false // preserve bm25 order
                 }
             }
         } catch {

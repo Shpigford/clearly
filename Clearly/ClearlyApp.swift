@@ -298,6 +298,10 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate {
                 NotificationCenter.default.post(name: .init("ClearlyToggleOutline"), object: nil)
                 return nil
             }
+            if chars == "f" && mods == [.command, .shift] {
+                QuickSwitcherManager.shared.toggle()
+                return nil
+            }
             return event
         }
 
@@ -394,6 +398,27 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate {
         injectSpellingMenuIfNeeded()
         injectSidebarToggleIfNeeded()
         injectViewCommandsIfNeeded()
+        injectGlobalSearchIfNeeded()
+    }
+
+    private func injectGlobalSearchIfNeeded() {
+        guard let viewMenu = NSApp.mainMenu?.item(withTitle: "View")?.submenu else { return }
+        guard !viewMenu.items.contains(where: { $0.title == "Search All Files…" }) else { return }
+
+        let item = NSMenuItem(title: "Search All Files…", action: #selector(globalSearchAction(_:)), keyEquivalent: "f")
+        item.keyEquivalentModifierMask = [.command, .shift]
+        item.target = self
+
+        if let quickOpenIndex = viewMenu.items.firstIndex(where: { $0.title == "Quick Open…" }) {
+            viewMenu.insertItem(item, at: quickOpenIndex + 1)
+        } else {
+            let insertAt = min(3, viewMenu.items.count)
+            viewMenu.insertItem(item, at: insertAt)
+        }
+    }
+
+    @objc private func globalSearchAction(_ sender: Any?) {
+        QuickSwitcherManager.shared.toggle()
     }
 
     private func injectSidebarToggleIfNeeded() {

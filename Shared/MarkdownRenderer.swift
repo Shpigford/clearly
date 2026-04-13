@@ -247,11 +247,11 @@ enum MarkdownRenderer {
     // MARK: - Wiki-Links [[note]]
 
     private static func processWikiLinks(_ html: String) -> String {
-        let (protectedHTML, segments) = protectCodeRegions(in: html)
+        let (protectedHTML, segments) = protectWikiLinkRegions(in: html)
         guard let regex = try? NSRegularExpression(
             pattern: #"\[\[([^\]\|#\^]+?)(?:#([^\]\|]+?))?(?:\|([^\]]+?))?\]\]"#
         ) else {
-            return restoreProtectedSegments(in: protectedHTML, segments: segments)
+            return restoreWikiLinkRegions(in: protectedHTML, segments: segments)
         }
         let ns = protectedHTML as NSString
         var result = ""
@@ -289,7 +289,41 @@ enum MarkdownRenderer {
             lastEnd = match.range.location + match.range.length
         }
         result += ns.substring(from: lastEnd)
-        return restoreProtectedSegments(in: result, segments: segments)
+        return restoreWikiLinkRegions(in: result, segments: segments)
+    }
+
+    private static func protectWikiLinkRegions(in html: String) -> (html: String, segments: [String]) {
+        guard let regex = try? NSRegularExpression(
+            pattern: #"<(pre|code|a|script|style)\b[^>]*>[\s\S]*?<\/\1>"#,
+            options: [.caseInsensitive]
+        ) else {
+            return (html, [])
+        }
+
+        var protectedHTML = html
+        var segments: [String] = []
+        let matches = regex.matches(in: html, range: NSRange(html.startIndex..., in: html)).reversed()
+
+        for match in matches {
+            guard let range = Range(match.range, in: protectedHTML) else { continue }
+            let segment = String(protectedHTML[range])
+            let token = "__CLEARLY_PROTECTED_WIKILINK_\(segments.count)__"
+            segments.append(segment)
+            protectedHTML.replaceSubrange(range, with: token)
+        }
+
+        return (protectedHTML, segments)
+    }
+
+    private static func restoreWikiLinkRegions(in html: String, segments: [String]) -> String {
+        var restored = html
+        for (index, segment) in segments.enumerated() {
+            restored = restored.replacingOccurrences(
+                of: "__CLEARLY_PROTECTED_WIKILINK_\(index)__",
+                with: segment
+            )
+        }
+        return restored
     }
 
     // MARK: - Highlight/Mark ==text==

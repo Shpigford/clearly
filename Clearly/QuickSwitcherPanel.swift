@@ -93,6 +93,23 @@ struct QuickSwitcherItem {
     let score: Int
     let matchedRanges: [Range<String.Index>]
     let isCreateNew: Bool
+    let lineNumber: Int?           // for content matches: line to scroll to
+    let contextSnippet: String?    // for content matches: matching line text
+
+    init(filename: String, relativePath: String, fullURL: URL, score: Int,
+         matchedRanges: [Range<String.Index>], isCreateNew: Bool,
+         lineNumber: Int? = nil, contextSnippet: String? = nil) {
+        self.filename = filename
+        self.relativePath = relativePath
+        self.fullURL = fullURL
+        self.score = score
+        self.matchedRanges = matchedRanges
+        self.isCreateNew = isCreateNew
+        self.lineNumber = lineNumber
+        self.contextSnippet = contextSnippet
+    }
+
+    var isContentMatch: Bool { lineNumber != nil }
 
     var displayPath: String {
         let dir = (relativePath as NSString).deletingLastPathComponent
@@ -306,8 +323,8 @@ final class QuickSwitcherManager: NSObject {
                 )
             }
         } else {
-            // Fuzzy match
-            items = allFiles.compactMap { file in
+            // Fuzzy match on filenames
+            var nameMatches = allFiles.compactMap { file -> QuickSwitcherItem? in
                 guard let result = FuzzyMatcher.match(query: query, target: file.filename) else { return nil }
                 return QuickSwitcherItem(
                     filename: file.filename,
@@ -319,11 +336,35 @@ final class QuickSwitcherManager: NSObject {
                 )
             }
             .sorted { $0.score > $1.score }
+            if nameMatches.count > 20 { nameMatches = Array(nameMatches.prefix(20)) }
 
-            // Limit results
-            if items.count > 50 { items = Array(items.prefix(50)) }
+            // Content matches via FTS5 (only if query is 2+ chars)
+            var contentMatches: [QuickSwitcherItem] = []
+            if query.count >= 2 {
+                let nameMatchURLs = Set(nameMatches.map(\.fullURL))
+                for index in WorkspaceManager.shared.activeVaultIndexes {
+                    for group in index.searchFilesGrouped(query: query) {
+                        let fileURL = group.vaultRootURL.appendingPathComponent(group.file.path)
+                        guard !nameMatchURLs.contains(fileURL) else { continue }
+                        let excerpt = group.excerpts.first
+                        contentMatches.append(QuickSwitcherItem(
+                            filename: group.file.filename,
+                            relativePath: group.file.path,
+                            fullURL: fileURL,
+                            score: 0,
+                            matchedRanges: [],
+                            isCreateNew: false,
+                            lineNumber: excerpt?.lineNumber,
+                            contextSnippet: excerpt?.contextLine.trimmingCharacters(in: .whitespaces)
+                        ))
+                    }
+                }
+                if contentMatches.count > 30 { contentMatches = Array(contentMatches.prefix(30)) }
+            }
 
-            // Add create-on-miss if no results
+            items = nameMatches + contentMatches
+
+            // Add create-on-miss if no results at all
             if items.isEmpty {
                 let createName = query.hasSuffix(".md") ? query : "\(query).md"
                 items = [QuickSwitcherItem(
@@ -388,6 +429,19 @@ final class QuickSwitcherManager: NSObject {
             }
         } else {
             WorkspaceManager.shared.openFile(at: item.fullURL)
+            if let line = item.lineNumber {
+                let currentMode = ViewMode(rawValue: UserDefaults.standard.string(forKey: "viewMode") ?? "") ?? .edit
+                let notificationName: Notification.Name = currentMode == .preview
+                    ? .scrollPreviewToLine
+                    : .scrollEditorToLine
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+                    NotificationCenter.default.post(
+                        name: notificationName,
+                        object: nil,
+                        userInfo: ["line": line]
+                    )
+                }
+            }
         }
 
         dismiss()
@@ -467,22 +521,37 @@ extension QuickSwitcherManager: NSTableViewDelegate {
             guard row < items.count else { return nil }
             let item = items[row]
 
-            let cellID = NSUserInterfaceItemIdentifier("QuickSwitcherCell")
-            let cell: QuickSwitcherCellView
-            if let reused = tableView.makeView(withIdentifier: cellID, owner: nil) as? QuickSwitcherCellView {
-                cell = reused
+            if item.isContentMatch {
+                let cellID = NSUserInterfaceItemIdentifier("QuickSwitcherContentCell")
+                let cell: QuickSwitcherContentCellView
+                if let reused = tableView.makeView(withIdentifier: cellID, owner: nil) as? QuickSwitcherContentCellView {
+                    cell = reused
+                } else {
+                    cell = QuickSwitcherContentCellView()
+                    cell.identifier = cellID
+                }
+                cell.configure(with: item)
+                return cell
             } else {
-                cell = QuickSwitcherCellView()
-                cell.identifier = cellID
+                let cellID = NSUserInterfaceItemIdentifier("QuickSwitcherCell")
+                let cell: QuickSwitcherCellView
+                if let reused = tableView.makeView(withIdentifier: cellID, owner: nil) as? QuickSwitcherCellView {
+                    cell = reused
+                } else {
+                    cell = QuickSwitcherCellView()
+                    cell.identifier = cellID
+                }
+                cell.configure(with: item)
+                return cell
             }
-
-            cell.configure(with: item)
-            return cell
         }
     }
 
     nonisolated func tableView(_ tableView: NSTableView, heightOfRow row: Int) -> CGFloat {
-        36
+        MainActor.assumeIsolated {
+            guard row < items.count else { return 36 }
+            return items[row].isContentMatch ? 52 : 36
+        }
     }
 
     nonisolated func tableView(_ tableView: NSTableView, rowViewForRow row: Int) -> NSTableRowView? {
@@ -573,6 +642,113 @@ private class QuickSwitcherCellView: NSView {
                 .foregroundColor: NSColor.tertiaryLabelColor,
             ])
         }
+    }
+}
+
+// MARK: - Content Match Cell View (two-line: filename + snippet)
+
+private class QuickSwitcherContentCellView: NSView {
+    private let iconView = NSImageView()
+    private let nameLabel = NSTextField(labelWithString: "")
+    private let snippetLabel = NSTextField(labelWithString: "")
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        setup()
+    }
+
+    required init?(coder: NSCoder) {
+        super.init(coder: coder)
+        setup()
+    }
+
+    private func setup() {
+        iconView.translatesAutoresizingMaskIntoConstraints = false
+        iconView.imageScaling = .scaleProportionallyDown
+        addSubview(iconView)
+
+        nameLabel.translatesAutoresizingMaskIntoConstraints = false
+        nameLabel.lineBreakMode = .byTruncatingTail
+        nameLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        addSubview(nameLabel)
+
+        snippetLabel.translatesAutoresizingMaskIntoConstraints = false
+        snippetLabel.lineBreakMode = .byTruncatingTail
+        snippetLabel.maximumNumberOfLines = 1
+        snippetLabel.cell?.truncatesLastVisibleLine = true
+        snippetLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        addSubview(snippetLabel)
+
+        NSLayoutConstraint.activate([
+            iconView.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 12),
+            iconView.topAnchor.constraint(equalTo: topAnchor, constant: 12),
+            iconView.widthAnchor.constraint(equalToConstant: 16),
+            iconView.heightAnchor.constraint(equalToConstant: 16),
+
+            nameLabel.leadingAnchor.constraint(equalTo: iconView.trailingAnchor, constant: 8),
+            nameLabel.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor, constant: -12),
+            nameLabel.topAnchor.constraint(equalTo: topAnchor, constant: 8),
+
+            snippetLabel.leadingAnchor.constraint(equalTo: nameLabel.leadingAnchor),
+            snippetLabel.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor, constant: -12),
+            snippetLabel.topAnchor.constraint(equalTo: nameLabel.bottomAnchor, constant: 2),
+        ])
+    }
+
+    func configure(with item: QuickSwitcherItem) {
+        iconView.image = NSImage(systemSymbolName: "text.magnifyingglass", accessibilityDescription: "Content match")
+        iconView.contentTintColor = .tertiaryLabelColor
+
+        // Filename + path
+        let nameAttr = NSMutableAttributedString(string: item.filename, attributes: [
+            .font: NSFont.systemFont(ofSize: 13, weight: .regular),
+            .foregroundColor: NSColor.labelColor,
+        ])
+        let displayPath = item.displayPath
+        if !displayPath.isEmpty {
+            nameAttr.append(NSAttributedString(string: "  \(displayPath)", attributes: [
+                .font: NSFont.systemFont(ofSize: 11),
+                .foregroundColor: NSColor.tertiaryLabelColor,
+            ]))
+        }
+        nameLabel.attributedStringValue = nameAttr
+
+        // Snippet (markdown stripped)
+        let raw = item.contextSnippet ?? ""
+        let stripped = Self.stripMarkdown(raw)
+        let truncated = String(stripped.prefix(120))
+        snippetLabel.attributedStringValue = NSAttributedString(string: truncated, attributes: [
+            .font: NSFont.systemFont(ofSize: 11),
+            .foregroundColor: NSColor.secondaryLabelColor,
+        ])
+    }
+
+    private static func stripMarkdown(_ text: String) -> String {
+        var s = text
+        // Headings
+        s = s.replacingOccurrences(of: #"^#{1,6}\s+"#, with: "", options: .regularExpression)
+        // Bold/italic markers
+        s = s.replacingOccurrences(of: #"\*{1,3}|_{1,3}"#, with: "", options: .regularExpression)
+        // Strikethrough
+        s = s.replacingOccurrences(of: "~~", with: "")
+        // Inline code
+        s = s.replacingOccurrences(of: "`", with: "")
+        // Links: [text](url) → text
+        s = s.replacingOccurrences(of: #"\[([^\]]*)\]\([^\)]*\)"#, with: "$1", options: .regularExpression)
+        // Images: ![alt](url) → alt
+        s = s.replacingOccurrences(of: #"!\[([^\]]*)\]\([^\)]*\)"#, with: "$1", options: .regularExpression)
+        // Wiki-links: [[target|alias]] → alias, [[target]] → target
+        s = s.replacingOccurrences(of: #"\[\[(?:[^\]|]*\|)?([^\]]*)\]\]"#, with: "$1", options: .regularExpression)
+        // HTML tags
+        s = s.replacingOccurrences(of: #"<[^>]+>"#, with: "", options: .regularExpression)
+        // Blockquote markers
+        s = s.replacingOccurrences(of: #"^>\s?"#, with: "", options: .regularExpression)
+        // List markers
+        s = s.replacingOccurrences(of: #"^[\-\*\+]\s"#, with: "", options: .regularExpression)
+        s = s.replacingOccurrences(of: #"^\d+\.\s"#, with: "", options: .regularExpression)
+        // Task checkboxes
+        s = s.replacingOccurrences(of: #"\[[ x]\]\s?"#, with: "", options: .regularExpression)
+        return s.trimmingCharacters(in: .whitespaces)
     }
 }
 
