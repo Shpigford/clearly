@@ -129,6 +129,12 @@ enum Theme {
             : NSColor(red: 0.7, green: 0.35, blue: 0.25, alpha: 1)
     }
 
+    static let tagColor = NSColor(name: "themeTag") { appearance in
+        appearance.isDark
+            ? NSColor(red: 0.55, green: 0.70, blue: 0.85, alpha: 1)
+            : NSColor(red: 0.25, green: 0.45, blue: 0.70, alpha: 1)
+    }
+
     static let htmlTagColor = NSColor(name: "themeHTMLTag") { appearance in
         appearance.isDark
             ? NSColor(red: 0.5, green: 0.5, blue: 0.5, alpha: 1)

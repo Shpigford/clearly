@@ -1,6 +1,6 @@
 # Expansion Progress
 
-## Status: Phase 5 - Completed
+## Status: Phase 6 - Completed
 
 ## Quick Reference
 - Research: `docs/expansion/RESEARCH.md`
@@ -171,13 +171,43 @@
 ---
 
 ### Phase 6: Tags
-**Status:** Not Started
+**Status:** Completed (2026-04-13)
 
 #### Tasks Completed
-- (none yet)
+- [x] Added `tagColor` (soft blue) to `Theme.swift` — distinct from wiki-link green and regular link blue
+- [x] Added `.tag` case to `HighlightStyle` enum in `MarkdownSyntaxHighlighter.swift`
+- [x] Added tag regex pattern `(?:^|(?<=\s))#(tag_name)` to patterns array (after wiki-links, before tables)
+- [x] Added `.tag` switch cases to both `highlightAll` and `highlightAround` methods — `#` in syntax color, name in tag color
+- [x] Added `processTags()` to `MarkdownRenderer.swift` pipeline (after processWikiLinks, before processCallouts)
+  - Uses `clearly://tag/` URL scheme, protects `<pre>`, `<code>`, `<a>`, `<script>`, `<style>`, `<span>` blocks
+  - Renders as `<a href="clearly://tag/name" class="md-tag">#name</a>`
+- [x] Added `.md-tag` CSS to `PreviewCSS.swift` in all 4 contexts (light, dark, print, export)
+  - Pill-like appearance: subtle background, rounded corners, blue color
+- [x] Added `onTagClicked` callback and `clearly://tag/` URL handling to `PreviewView.swift`
+- [x] Wired `onTagClicked` in `ContentView.swift` — posts `ClearlyFilterByTag` notification
+- [x] Added `tags` section to `FileExplorerView.swift` sidebar (between LOCATIONS and RECENTS)
+  - New `Section.tags` enum case, `OutlineItem.Kind.tagEntry(tag:count:)`
+  - Tag items cache, `refreshCachedTags()` aggregates across all vault indexes
+  - Data source: numberOfChildren, child, isExpandable, shouldSelect all handle tags
+  - Delegate: viewFor renders `#tagname count` with `number` SF Symbol
+  - Selection opens Quick Switcher with `#tag` query
+  - Autosave persistence for tag expansion state
+  - Context menu: no actions for tags (intentional for v1)
+- [x] Added `show(withQuery:)` to `QuickSwitcherManager` for pre-filled search
+- [x] Added tag-based filtering in Quick Switcher: `#` prefix triggers `VaultIndex.filesForTag()` lookup
+- [x] Added `ClearlyFilterByTag` notification observer in `ClearlyApp.swift`
+- [x] Build verified: `xcodebuild -scheme Clearly -configuration Debug build` succeeded
 
 #### Decisions Made
-- (none yet)
+- Tag color is soft blue (distinct from green wiki-links) — visually signals "category/label"
+- CSS class is `.md-tag` (not `.tag`) to avoid collision with generic HTML tag names
+- `clearly://tag/` URL scheme matches `clearly://wiki/` pattern — reuses existing `linkClicked` handler
+- Tags section in sidebar between LOCATIONS and RECENTS — knowledge-layer grouping
+- Tag click opens Quick Switcher pre-filled with `#tag` (not inline file tree filtering) — simpler, reuses existing infrastructure
+- No keyboard shortcut for tag toggle — tags are always visible in sidebar; toggle via sidebar visibility (Cmd+Shift+L)
+- No context menu for tags in v1 — no clear actions needed yet
+- Tag protection in MarkdownRenderer includes `<span>` to avoid re-processing already-rendered tags
+- Vault revision change triggers tag cache refresh in sidebar coordinator
 
 #### Blockers
 - (none)
@@ -199,6 +229,18 @@
 ---
 
 ## Session Log
+
+### 2026-04-13 — Phase 6 Implementation
+- Added `tagColor` to Theme.swift (soft blue, light/dark adaptive)
+- Added `.tag` pattern + enum case + 2 switch cases to MarkdownSyntaxHighlighter.swift
+- Added `processTags()` with protect/restore helpers to MarkdownRenderer.swift (~50 lines)
+- Added `.md-tag` CSS in all 4 contexts (light, dark, print, export) in PreviewCSS.swift
+- Added `onTagClicked` callback + `clearly://tag/` handling in PreviewView.swift
+- Wired `onTagClicked` from ContentView.swift via `ClearlyFilterByTag` notification
+- Added TAGS section to FileExplorerView.swift sidebar: Section.tags, OutlineItem.Kind.tagEntry, full data source/delegate, vault revision tracking, cached tags refresh
+- Added `show(withQuery:)` to QuickSwitcherManager + tag-based filtering when query starts with `#`
+- Added `ClearlyFilterByTag` notification observer in ClearlyApp.swift → opens Quick Switcher with `#tag`
+- Build verified: `xcodebuild -scheme Clearly -configuration Debug build` succeeded
 
 ### 2026-04-13 — Phase 5 Implementation
 - Created BacklinksState.swift (~100 lines): ObservableObject with debounced update, linked + unlinked mention resolution, disk-based context line reading
@@ -245,6 +287,15 @@
 ---
 
 ## Files Changed
+- `Clearly/Theme.swift` — `tagColor` (soft blue, light/dark)
+- `Clearly/MarkdownSyntaxHighlighter.swift` — `.tag` enum case, regex pattern, 2 switch cases (highlightAll + highlightAround)
+- `Shared/MarkdownRenderer.swift` — `processTags()`, `protectTagRegions()`, `restoreTagRegions()` in pipeline
+- `Shared/PreviewCSS.swift` — `.md-tag` styles in light, dark, print, export contexts
+- `Clearly/PreviewView.swift` — `onTagClicked` callback, `clearly://tag/` URL handling in `handleLinkClick`
+- `Clearly/ContentView.swift` — `onTagClicked` wired to `ClearlyFilterByTag` notification
+- `Clearly/FileExplorerView.swift` — `tags` Section, `tagEntry` OutlineItem.Kind, tag cache, data source/delegate methods, context menu, persistence
+- `Clearly/QuickSwitcherPanel.swift` — `show(withQuery:)`, tag-based filtering when query starts with `#`
+- `Clearly/ClearlyApp.swift` — `ClearlyFilterByTag` notification observer → Quick Switcher
 - `Clearly/BacklinksState.swift` (new) — ObservableObject with debounced update, linked/unlinked mention queries
 - `Clearly/BacklinksView.swift` (new) — SwiftUI panel with linked/unlinked sections, hover rows, empty state
 - `Clearly/VaultIndex.swift` — `file(forURL:)`, `unlinkedMentions(for:excludingFileId:)` methods

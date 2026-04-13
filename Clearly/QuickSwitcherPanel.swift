@@ -123,6 +123,11 @@ struct QuickSwitcherItem {
 final class QuickSwitcherManager: NSObject {
     static let shared = QuickSwitcherManager()
 
+    private enum TagFilterMode {
+        case contains
+        case exact(String)
+    }
+
     private var panel: NSPanel?
     private var searchField: NSTextField?
     private var tableView: NSTableView?
@@ -131,6 +136,7 @@ final class QuickSwitcherManager: NSObject {
 
     private var items: [QuickSwitcherItem] = []
     private var allFiles: [(filename: String, path: String, url: URL)] = []
+    private var tagFilterMode: TagFilterMode = .contains
 
     var isVisible: Bool { panel?.isVisible ?? false }
 
@@ -142,13 +148,22 @@ final class QuickSwitcherManager: NSObject {
         }
     }
 
-    func show() {
+    func show(withQuery query: String = "") {
+        show(withQuery: query, tagFilterMode: .contains)
+    }
+
+    func show(tagFilter tag: String) {
+        show(withQuery: "#\(tag)", tagFilterMode: .exact(tag))
+    }
+
+    private func show(withQuery query: String, tagFilterMode: TagFilterMode) {
         if panel == nil {
             createPanel()
         }
+        self.tagFilterMode = tagFilterMode
         refreshFileList()
-        searchField?.stringValue = ""
-        updateResults(query: "")
+        searchField?.stringValue = query
+        updateResults(query: query)
         positionPanel()
         panel?.makeKeyAndOrderFront(nil)
         searchField?.becomeFirstResponder()
@@ -227,6 +242,7 @@ final class QuickSwitcherManager: NSObject {
         tableView.selectionHighlightStyle = .regular
         tableView.dataSource = self
         tableView.delegate = self
+        tableView.action = #selector(tableClicked)
         tableView.doubleAction = #selector(tableDoubleClicked)
         tableView.target = self
         self.tableView = tableView
@@ -322,6 +338,43 @@ final class QuickSwitcherManager: NSObject {
                     isCreateNew: false
                 )
             }
+        } else if query.hasPrefix("#") && query.count >= 2 {
+            // Tag filter: show files matching the tag
+            let tagQuery = String(query.dropFirst()).lowercased()
+            var tagResults: [QuickSwitcherItem] = []
+            for index in WorkspaceManager.shared.activeVaultIndexes {
+                // Find tags that match the query
+                let matchingTags = index.allTags().filter { entry in
+                    switch tagFilterMode {
+                    case .contains:
+                        return entry.tag.lowercased().contains(tagQuery)
+                    case .exact(let selectedTag):
+                        if selectedTag.lowercased() == tagQuery {
+                            return entry.tag.compare(selectedTag, options: [.caseInsensitive]) == .orderedSame
+                        }
+                        return entry.tag.lowercased().contains(tagQuery)
+                    }
+                }
+                var seenURLs = Set<URL>()
+                for tagEntry in matchingTags {
+                    for file in index.filesForTag(tag: tagEntry.tag) {
+                        let fileURL = index.rootURL.appendingPathComponent(file.path)
+                        guard !seenURLs.contains(fileURL) else { continue }
+                        seenURLs.insert(fileURL)
+                        tagResults.append(QuickSwitcherItem(
+                            filename: file.filename,
+                            relativePath: file.path,
+                            fullURL: fileURL,
+                            score: 100,
+                            matchedRanges: [],
+                            isCreateNew: false,
+                            contextSnippet: "#\(tagEntry.tag)"
+                        ))
+                    }
+                }
+            }
+            tagResults.sort { $0.filename.lowercased() < $1.filename.lowercased() }
+            items = tagResults
         } else {
             // Fuzzy match on filenames
             var nameMatches = allFiles.compactMap { file -> QuickSwitcherItem? in
@@ -445,6 +498,11 @@ final class QuickSwitcherManager: NSObject {
         }
 
         dismiss()
+    }
+
+    @objc private func tableClicked() {
+        guard let tableView, tableView.clickedRow >= 0 else { return }
+        openSelectedItem()
     }
 
     @objc private func tableDoubleClicked() {
