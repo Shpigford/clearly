@@ -193,7 +193,9 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValid
             forName: .init("ClearlyFilterByTag"), object: nil, queue: .main
         ) { notification in
             guard let tag = notification.userInfo?["tag"] as? String else { return }
-            QuickSwitcherManager.shared.show(tagFilter: tag)
+            Task { @MainActor in
+                QuickSwitcherManager.shared.show(tagFilter: tag)
+            }
         }
     }
 
