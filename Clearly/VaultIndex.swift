@@ -44,7 +44,7 @@ struct LinkRecord {
 
 // MARK: - VaultIndex
 
-final class VaultIndex {
+final class VaultIndex: @unchecked Sendable {
 
     private let dbPool: DatabasePool
     let rootURL: URL
@@ -55,6 +55,21 @@ final class VaultIndex {
         self.rootURL = locationURL
 
         let indexDir = Self.indexDirectory()
+        try FileManager.default.createDirectory(at: indexDir, withIntermediateDirectories: true)
+
+        let hash = Self.pathHash(locationURL.standardizedFileURL.path)
+        let dbPath = indexDir.appendingPathComponent("\(hash).sqlite").path
+
+        dbPool = try DatabasePool(path: dbPath)
+
+        try migrate()
+    }
+
+    /// Init with explicit bundle identifier — used by ClearlyMCP to open the main app's index
+    init(locationURL: URL, bundleIdentifier: String) throws {
+        self.rootURL = locationURL
+
+        let indexDir = Self.indexDirectory(bundleIdentifier: bundleIdentifier)
         try FileManager.default.createDirectory(at: indexDir, withIntermediateDirectories: true)
 
         let hash = Self.pathHash(locationURL.standardizedFileURL.path)
@@ -647,6 +662,20 @@ final class VaultIndex {
         let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
         let appName = Bundle.main.bundleIdentifier ?? "com.sabotage.clearly"
         return dir.appendingPathComponent("\(appName)/indexes")
+    }
+
+    /// Index directory for a specific bundle identifier — resolves sandbox container path for non-sandboxed callers (ClearlyMCP CLI)
+    private static func indexDirectory(bundleIdentifier: String) -> URL {
+        // Try sandbox container path first (where the sandboxed app stores its index)
+        let home = FileManager.default.homeDirectoryForCurrentUser
+        let containerPath = home
+            .appendingPathComponent("Library/Containers/\(bundleIdentifier)/Data/Library/Application Support/\(bundleIdentifier)/indexes")
+        if FileManager.default.fileExists(atPath: containerPath.path) {
+            return containerPath
+        }
+        // Fall back to standard Application Support (non-sandboxed or not yet created)
+        let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+        return dir.appendingPathComponent("\(bundleIdentifier)/indexes")
     }
 
     private static func pathHash(_ path: String) -> String {

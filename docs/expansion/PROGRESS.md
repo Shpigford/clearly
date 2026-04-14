@@ -1,6 +1,6 @@
 # Expansion Progress
 
-## Status: Phase 6 - Completed
+## Status: Phase 7 - Completed
 
 ## Quick Reference
 - Research: `docs/expansion/RESEARCH.md`
@@ -215,13 +215,33 @@
 ---
 
 ### Phase 7: MCP Server
-**Status:** Not Started
+**Status:** Completed (2026-04-13)
 
 #### Tasks Completed
-- (none yet)
+- [x] Added `init(locationURL:bundleIdentifier:)` and `indexDirectory(bundleIdentifier:)` to `VaultIndex.swift` — lets CLI binary open the same SQLite index the sandboxed app creates
+- [x] Added `@unchecked Sendable` to `VaultIndex` — safe because `DatabasePool` handles concurrency; needed for MCP SDK's `@Sendable` closure requirements
+- [x] Added `persistVaultsConfig()` to `WorkspaceManager.swift` — writes `~/.config/clearly/vaults.json` with active vault paths for AI agent discovery
+- [x] Added MCP Swift SDK (`modelcontextprotocol/swift-sdk` v0.11.0+) to `project.yml` packages
+- [x] Added `ClearlyMCP` tool target to `project.yml` — sources: `ClearlyMCP/`, plus `VaultIndex.swift`, `FileParser.swift`, `FileNode.swift`, `DiagnosticLog.swift`, `FrontmatterSupport.swift`
+- [x] Created `ClearlyMCP/main.swift` — CLI entry point with `--vault <path>` and `--test` flags, opens VaultIndex with explicit bundle ID
+- [x] Created `ClearlyMCP/Tools.swift` — MCP server with 3 tools:
+  - `search_notes(query, limit?)` — FTS5 ranked search via `searchFilesGrouped()`, BM25 ranking, context snippets
+  - `get_backlinks(note_path)` — linked mentions via `linksTo()` + unlinked mentions via `unlinkedMentions()`, resolves paths and wiki-link names
+  - `get_tags(tag?)` — all tags with counts via `allTags()`, or files for a tag via `filesForTag()`
+- [x] Added MCP Settings tab to `SettingsView.swift` — binary status indicator, vault selector, "Copy Claude Desktop Config" button, "Test Connection" button
+- [x] Added `installMCPHelperIfNeeded()` to `ClearlyApp.swift` — copies bundled binary to `~/Library/Application Support/Clearly/ClearlyMCP` on launch (direct distribution only, `#if canImport(Sparkle)`)
+- [x] Added `postCompileScripts` to Clearly target in `project.yml` — copies ClearlyMCP binary to `Contents/Resources/Helpers/`
+- [x] Build verified: both `xcodebuild -scheme ClearlyMCP` and `xcodebuild -scheme Clearly` succeed
+- [x] Binary verified: `./ClearlyMCP --vault /path --test` prints file/tag counts and exits 0
 
 #### Decisions Made
-- (none yet)
+- **Only 3 tools, not 6+**: Cut `read_note`, `list_notes`, `create_note`, `update_note`, `get_metadata` — all thin wrappers over file system operations agents already have. Only expose computed knowledge (ranked search, link graph, tag aggregation) that agents can't derive from raw files.
+- **Read-only index access**: CLI opens the app's SQLite database via WAL mode. No write tools → no concurrent write contention.
+- **Sandbox container resolution**: `indexDirectory(bundleIdentifier:)` tries `~/Library/Containers/{id}/Data/...` first (where sandboxed app stores index), falls back to `~/Library/Application Support/`.
+- **Swift 6.0 for ClearlyMCP target only**: MCP SDK requires Swift 6.0. Main app stays Swift 5.9. `SWIFT_STRICT_CONCURRENCY: minimal` avoids Sendable issues with shared source files.
+- **`vaults.json` for zero-MCP discovery**: Written to `~/.config/clearly/vaults.json` — any AI agent with file access can find vault paths without MCP.
+- **Direct distribution bundles automatically**: Binary copied from `Contents/Resources/Helpers/` to App Support on launch. No user action.
+- **No App Store download flow in v1**: Settings tab shows status for both builds, but one-click download from GitHub Releases deferred.
 
 #### Blockers
 - (none)
@@ -229,6 +249,20 @@
 ---
 
 ## Session Log
+
+### 2026-04-13 — Phase 7 Implementation
+- Added `init(locationURL:bundleIdentifier:)` overload to VaultIndex.swift for CLI database access
+- Added `@unchecked Sendable` to VaultIndex (thread-safe via DatabasePool)
+- Added sandbox container path resolution in `indexDirectory(bundleIdentifier:)`
+- Added `persistVaultsConfig()` to WorkspaceManager.swift — writes ~/.config/clearly/vaults.json
+- Added MCP Swift SDK package + ClearlyMCP tool target to project.yml (Swift 6.0, SWIFT_STRICT_CONCURRENCY: minimal)
+- Created ClearlyMCP/main.swift — CLI entry point with --vault/--test args
+- Created ClearlyMCP/Tools.swift — 3 MCP tools (search_notes, get_backlinks, get_tags) using VaultIndex read APIs
+- Added MCP tab to SettingsView.swift — status, vault picker, copy config, test connection
+- Added installMCPHelperIfNeeded() to ClearlyApp.swift — auto-installs binary on launch (Sparkle builds)
+- Added postCompileScripts to project.yml — copies ClearlyMCP into app bundle Helpers/
+- Build verified: both ClearlyMCP and Clearly schemes succeed
+- Binary verified: ./ClearlyMCP --vault /path --test outputs file/tag counts
 
 ### 2026-04-13 — Phase 6 Implementation
 - Added `tagColor` to Theme.swift (soft blue, light/dark adaptive)
@@ -287,6 +321,13 @@
 ---
 
 ## Files Changed
+- `project.yml` — MCP Swift SDK package, ClearlyMCP tool target, postCompileScripts for bundling, ClearlyMCP dependency on Clearly
+- `ClearlyMCP/main.swift` (new) — CLI entry point with --vault/--test args, VaultIndex init with explicit bundle ID
+- `ClearlyMCP/Tools.swift` (new) — MCP server setup, 3 tool handlers (search_notes, get_backlinks, get_tags), Value extensions
+- `Clearly/VaultIndex.swift` — `@unchecked Sendable`, `init(locationURL:bundleIdentifier:)`, `indexDirectory(bundleIdentifier:)` with sandbox container resolution
+- `Clearly/WorkspaceManager.swift` — `persistVaultsConfig()` writes ~/.config/clearly/vaults.json, called from persistLocations() and restoreLocations()
+- `Clearly/SettingsView.swift` — MCP tab with status indicator, vault selector, copy config, test connection
+- `Clearly/ClearlyApp.swift` — `installMCPHelperIfNeeded()` copies binary to App Support on launch
 - `Clearly/Theme.swift` — `tagColor` (soft blue, light/dark)
 - `Clearly/MarkdownSyntaxHighlighter.swift` — `.tag` enum case, regex pattern, 2 switch cases (highlightAll + highlightAround)
 - `Shared/MarkdownRenderer.swift` — `processTags()`, `protectTagRegions()`, `restoreTagRegions()` in pipeline

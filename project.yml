@@ -22,6 +22,9 @@ packages:
   GRDB:
     url: https://github.com/groue/GRDB.swift.git
     from: "7.0.0"
+  MCP:
+    url: https://github.com/modelcontextprotocol/swift-sdk.git
+    from: "0.11.0"
 
 targets:
   Clearly:
@@ -53,6 +56,15 @@ targets:
       - package: GRDB
       - target: ClearlyQuickLook
         embed: true
+      - target: ClearlyMCP
+        embed: false
+    postCompileScripts:
+      - script: |
+          HELPERS_DIR="${BUILT_PRODUCTS_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/Helpers"
+          mkdir -p "$HELPERS_DIR"
+          cp "${BUILT_PRODUCTS_DIR}/ClearlyMCP" "$HELPERS_DIR/ClearlyMCP"
+        name: "Copy MCP Helper"
+        basedOnDependencyAnalysis: false
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.sabotage.clearly
@@ -109,6 +121,33 @@ targets:
       configs:
         Debug:
           PRODUCT_BUNDLE_IDENTIFIER: com.sabotage.clearly.dev.quicklook
+        Release:
+          CODE_SIGN_STYLE: Manual
+          CODE_SIGN_IDENTITY: "Developer ID Application"
+
+  ClearlyMCP:
+    type: tool
+    platform: macOS
+    sources:
+      - path: ClearlyMCP
+      - path: Clearly/VaultIndex.swift
+      - path: Clearly/FileParser.swift
+      - path: Clearly/FileNode.swift
+      - path: Clearly/DiagnosticLog.swift
+      - path: Shared/FrontmatterSupport.swift
+    dependencies:
+      - package: GRDB
+      - package: MCP
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.sabotage.clearly.mcp
+        PRODUCT_NAME: ClearlyMCP
+        MARKETING_VERSION: "1.16.0"
+        CURRENT_PROJECT_VERSION: "1"
+        SWIFT_VERSION: "6.0"
+        SWIFT_STRICT_CONCURRENCY: minimal
+        ENABLE_HARDENED_RUNTIME: YES
+      configs:
         Release:
           CODE_SIGN_STYLE: Manual
           CODE_SIGN_IDENTITY: "Developer ID Application"

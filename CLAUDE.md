@@ -19,14 +19,15 @@ Open in Xcode: `open Clearly.xcodeproj` (gitignored, so regenerate with xcodegen
 
 - Deployment target: macOS 14.0
 - Swift 5.9, Xcode 16+
-- Dependencies: `cmark-gfm` (GFM markdown → HTML), `Sparkle` (auto-updates, direct distribution only) via Swift Package Manager
+- Dependencies: `cmark-gfm` (GFM markdown → HTML), `Sparkle` (auto-updates, direct distribution only), `GRDB` (SQLite + FTS5), `MCP` (Model Context Protocol SDK) via Swift Package Manager
 
 ## Architecture
 
-**Two targets** defined in `project.yml`:
+**Three targets** defined in `project.yml`:
 
 1. **Clearly** (main app) — document-based SwiftUI app
 2. **ClearlyQuickLook** (app extension) — QLPreviewProvider for Finder previews
+3. **ClearlyMCP** (command-line tool) — MCP server exposing vault index to AI agents. Shares `VaultIndex.swift`, `FileParser.swift`, `FileNode.swift`, `DiagnosticLog.swift` with the main app, plus `FrontmatterSupport.swift` from `Shared/`. Uses `init(locationURL:bundleIdentifier:)` to open the same SQLite index the sandboxed app creates. Exposes 3 tools: `search_notes` (FTS5 ranked search), `get_backlinks` (linked + unlinked mentions), `get_tags` (tag aggregation). Read-only index access via WAL mode.
 
 **Shared code** lives in `Shared/` and is compiled into both targets:
 - `MarkdownRenderer.swift` — wraps `cmark_gfm_markdown_to_html()` for GFM rendering. Post-processing pipeline (in order): math (`$...$` → KaTeX spans), highlight marks (`==text==` → `<mark>`), superscript/subscript, emoji shortcodes, callouts/admonitions (`[!TYPE]` blockquotes), TOC generation, table captions, code filename headers. All post-processing that touches inline syntax must use `protectCodeRegions()`/`restoreProtectedSegments()` to avoid transforming content inside `<pre>`/`<code>` tags.

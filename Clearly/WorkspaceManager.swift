@@ -763,6 +763,19 @@ final class WorkspaceManager {
         if let data = try? JSONEncoder().encode(stored) {
             UserDefaults.standard.set(data, forKey: Self.locationBookmarksKey)
         }
+        persistVaultsConfig()
+    }
+
+    /// Write vault paths to Application Support for MCP binary discovery
+    private func persistVaultsConfig() {
+        guard let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first else { return }
+        let appName = Bundle.main.bundleIdentifier ?? "com.sabotage.clearly"
+        let appDir = appSupport.appendingPathComponent(appName)
+        try? FileManager.default.createDirectory(at: appDir, withIntermediateDirectories: true)
+        let vaultsFile = appDir.appendingPathComponent("vaults.json")
+        let paths = locations.map { $0.url.path }
+        let data = try? JSONSerialization.data(withJSONObject: ["vaults": paths], options: [.prettyPrinted])
+        try? data?.write(to: vaultsFile, options: .atomic)
     }
 
     private func restoreLocations() {
@@ -804,6 +817,7 @@ final class WorkspaceManager {
         if !stored.isEmpty {
             persistLocations() // Re-persist in case any bookmarks were refreshed
         }
+        persistVaultsConfig()
     }
 
     // MARK: - Persistence: Recents

@@ -369,35 +369,21 @@ MCP makes Clearly visible to the AI ecosystem (Claude Desktop, ChatGPT, Cursor).
 
 ### Tasks
 
-- [ ] Add MCP Swift SDK dependency to `project.yml`:
-  ```yaml
-  MCP:
-    url: https://github.com/modelcontextprotocol/swift-sdk.git
-    from: "0.11.0"
-  ```
-- [ ] Add `ClearlyMCP` target to `project.yml`:
-  - `type: commandLineTool`
-  - Sources: `ClearlyMCP/` + `Shared/` (for shared model types)
-  - Dependencies: GRDB, MCP SDK
-- [ ] Create `ClearlyMCP/` directory with:
-  - `main.swift` — entry point, parse `--vault` argument, open VaultIndex (read-only), start MCP server on stdio
-  - `MCPTools.swift` — implement tool handlers:
-    - `search_notes(query)` → FTS5 search, return file names + matching context
-    - `read_note(path)` → return full file content
-    - `list_notes(folder?)` → list all notes, optional folder filter
-  - `--test` flag: verify index is readable, print success/failure, exit
-- [ ] Companion binary distribution:
-  - **Direct download**: Bundle binary at `Contents/Helpers/ClearlyMCP` in app bundle. On first launch, copy to `~/Library/Application Support/Clearly/ClearlyMCP`. Update on app updates.
-  - **App Store**: One-click "Install MCP Helper" button in Settings downloads the binary from GitHub Releases via `URLSession`, writes to `~/Library/Application Support/Clearly/ClearlyMCP`, sets executable permission. No terminal needed.
-- [ ] Create MCP Settings panel in `Clearly/SettingsView.swift`:
-  - New "MCP" tab/section
-  - **Detection**: Check known paths for companion binary
-  - **Direct download state**: Green checkmark, version, vault path selector
-  - **App Store state**: One-click "Install MCP Helper" button (downloads + installs automatically)
-  - **"Copy Claude Desktop Config"** button: generates JSON with resolved binary path + vault path, copies to clipboard
-  - **"Test Connection"** button: runs binary with `--test`, shows result
-  - **Auto-detect Claude Desktop**: check if config file exists, offer to add config (with confirmation)
-- [ ] Run `xcodegen generate` after project.yml changes
+- [x] Add `init(locationURL:bundleIdentifier:)` to `VaultIndex.swift` — lets CLI binary open the sandboxed app's index
+- [x] Add `@unchecked Sendable` to `VaultIndex` — needed for MCP SDK's `@Sendable` closures
+- [x] Add `persistVaultsConfig()` to `WorkspaceManager.swift` — writes `~/.config/clearly/vaults.json`
+- [x] Add MCP Swift SDK (`from: "0.11.0"`) to `project.yml` packages
+- [x] Add `ClearlyMCP` tool target to `project.yml` — sources: `ClearlyMCP/`, `VaultIndex.swift`, `FileParser.swift`, `FileNode.swift`, `DiagnosticLog.swift`, `FrontmatterSupport.swift`
+- [x] Create `ClearlyMCP/main.swift` — entry point with `--vault` and `--test` flags
+- [x] Create `ClearlyMCP/Tools.swift` — 3 MCP tools only:
+  - `search_notes(query, limit?)` → FTS5 ranked search with BM25, snippets
+  - `get_backlinks(note_path)` → linked mentions + unlinked mentions
+  - `get_tags(tag?)` → all tags with counts, or files for a tag
+  - Cut: `read_note`, `list_notes`, `create_note`, `update_note`, `get_metadata` (thin wrappers over file system access)
+- [x] Add MCP Settings tab to `SettingsView.swift` — status, vault selector, copy config, test connection
+- [x] Add `installMCPHelperIfNeeded()` to `ClearlyApp.swift` — auto-installs binary on launch (direct distribution)
+- [x] Add `postCompileScripts` to Clearly target — copies ClearlyMCP binary into app bundle
+- [x] Run `xcodegen generate` and verify both targets build
 
 ### Success Criteria
 - Direct download build: MCP binary auto-installed to App Support on first launch. No user action needed.

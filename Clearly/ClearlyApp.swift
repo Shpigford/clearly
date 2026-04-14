@@ -196,6 +196,26 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValid
         }
     }
 
+    private func installMCPHelperIfNeeded() {
+        #if canImport(Sparkle)
+        guard let source = Bundle.main.url(forResource: "ClearlyMCP", withExtension: nil, subdirectory: "Helpers") else { return }
+        let installDir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+            .appendingPathComponent("Clearly")
+        let installed = installDir.appendingPathComponent("ClearlyMCP")
+
+        try? FileManager.default.createDirectory(at: installDir, withIntermediateDirectories: true)
+
+        let shouldCopy = !FileManager.default.fileExists(atPath: installed.path)
+            || (try? Data(contentsOf: source)) != (try? Data(contentsOf: installed))
+
+        if shouldCopy {
+            try? FileManager.default.removeItem(at: installed)
+            try? FileManager.default.copyItem(at: source, to: installed)
+            try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: installed.path)
+        }
+        #endif
+    }
+
     private func updateWindowAppearance() {
         guard let window = mainWindow else { return }
         let pref = UserDefaults.standard.string(forKey: "themePreference") ?? "system"
@@ -224,6 +244,8 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValid
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        installMCPHelperIfNeeded()
+
         // A normal Launch Services open activates the app and opens a document window.
         // Login-item launch stays inactive with no document windows, so collapse to
         // menubar-only only in that state instead of guessing from parent PID.
