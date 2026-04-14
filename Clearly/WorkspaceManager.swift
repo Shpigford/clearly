@@ -902,7 +902,7 @@ final class WorkspaceManager {
         guard let data = UserDefaults.standard.data(forKey: Self.locationBookmarksKey),
               let stored = try? JSONDecoder().decode([StoredBookmark].self, from: data) else { return }
 
-        var didRefreshBookmarks = false
+        var didMutateStoredBookmarks = false
         for bookmark in stored {
             var isStale = false
             guard let url = try? URL(
@@ -910,28 +910,24 @@ final class WorkspaceManager {
                 options: .withSecurityScope,
                 relativeTo: nil,
                 bookmarkDataIsStale: &isStale
-            ) else { continue }
+            ) else {
+                didMutateStoredBookmarks = true
+                continue
+            }
 
             var bookmarkData = bookmark.bookmarkData
             if isStale {
                 if let refreshed = try? url.bookmarkData(options: .withSecurityScope, includingResourceValuesForKeys: nil, relativeTo: nil) {
                     bookmarkData = refreshed
-                    didRefreshBookmarks = true
+                    didMutateStoredBookmarks = true
                 }
             }
 
-            guard url.startAccessingSecurityScopedResource() else { continue }
-            accessedURLs.insert(url)
-
-            // Verify we can actually read the directory — stale bookmarks can resolve
-            // and grant scoped access but still fail at the filesystem level (e.g. after
-            // an app upgrade or iCloud permission change).
-            if (try? FileManager.default.contentsOfDirectory(at: url, includingPropertiesForKeys: nil)) == nil {
-                DiagnosticLog.log("Location bookmark resolved but directory unreadable, skipping: \(url.lastPathComponent)")
-                url.stopAccessingSecurityScopedResource()
-                accessedURLs.remove(url)
+            guard url.startAccessingSecurityScopedResource() else {
+                didMutateStoredBookmarks = true
                 continue
             }
+            accessedURLs.insert(url)
 
             let location = BookmarkedLocation(
                 id: bookmark.id,
@@ -944,12 +940,32 @@ final class WorkspaceManager {
             startFSStream(for: location)
             openVaultIndex(for: location)
             loadTree(for: bookmark.id, at: url)
+            validateRestoredLocationAccess(for: location)
         }
 
-        if didRefreshBookmarks {
+        if didMutateStoredBookmarks {
             persistLocations()
         }
         persistVaultsConfig()
+    }
+
+    private func validateRestoredLocationAccess(for location: BookmarkedLocation) {
+        DispatchQueue.global(qos: .utility).async { [weak self] in
+            let canReadDirectory = (try? FileManager.default.contentsOfDirectory(
+                at: location.url,
+                includingPropertiesForKeys: nil,
+                options: []
+            )) != nil
+
+            guard !canReadDirectory else { return }
+
+            DispatchQueue.main.async {
+                guard let self,
+                      let existing = self.locations.first(where: { $0.id == location.id }) else { return }
+                DiagnosticLog.log("Location bookmark unreadable after restore, removing: \(existing.url.lastPathComponent)")
+                self.removeLocation(existing)
+            }
+        }
     }
 
     // MARK: - Persistence: Recents
