@@ -98,6 +98,7 @@
 "sidebar.empty.subtitle" = "添加一个文件夹以浏览 Markdown 文件";
 "sidebar.addLocation" = "添加位置…";
 "sidebar.section.locations" = "位置";
+"sidebar.section.tags" = "标签";
 "sidebar.section.recents" = "最近";
 "sidebar.tooltip.addLocation" = "添加位置（⌘O）";
 "sidebar.tooltip.clearRecents" = "清空最近";

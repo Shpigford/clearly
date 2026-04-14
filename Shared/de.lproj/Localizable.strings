@@ -98,6 +98,7 @@
 "sidebar.empty.subtitle" = "Füge einen Ordner hinzu, um deine Markdown Dateien zu durchsuchen";
 "sidebar.addLocation" = "Ort hinzufügen…";
 "sidebar.section.locations" = "ORTE";
+"sidebar.section.tags" = "TAGS";
 "sidebar.section.recents" = "ZULETZT";
 "sidebar.tooltip.addLocation" = "Ort hinzufügen (⌘O)";
 "sidebar.tooltip.clearRecents" = "Zuletzt löschen";

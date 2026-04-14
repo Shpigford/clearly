@@ -98,6 +98,7 @@
 "sidebar.empty.subtitle" = "Añade una carpeta para explorar tus archivos Markdown";
 "sidebar.addLocation" = "Añadir ubicación…";
 "sidebar.section.locations" = "UBICACIONES";
+"sidebar.section.tags" = "ETIQUETAS";
 "sidebar.section.recents" = "RECIENTES";
 "sidebar.tooltip.addLocation" = "Añadir ubicación (⌘O)";
 "sidebar.tooltip.clearRecents" = "Borrar recientes";

@@ -98,6 +98,7 @@
 "sidebar.empty.subtitle" = "Добавьте папку для просмотра ваших Markdown файлов";
 "sidebar.addLocation" = "Добавить расположение…";
 "sidebar.section.locations" = "РАСПОЛОЖЕНИЯ";
+"sidebar.section.tags" = "ТЕГИ";
 "sidebar.section.recents" = "НЕДАВНИЕ";
 "sidebar.tooltip.addLocation" = "Добавить расположение (⌘O)";
 "sidebar.tooltip.clearRecents" = "Очистить недавние";

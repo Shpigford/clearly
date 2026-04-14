@@ -98,6 +98,7 @@
 "sidebar.empty.subtitle" = "Markdown ファイルを閲覧するフォルダを追加してください";
 "sidebar.addLocation" = "場所を追加…";
 "sidebar.section.locations" = "場所";
+"sidebar.section.tags" = "タグ";
 "sidebar.section.recents" = "最近";
 "sidebar.tooltip.addLocation" = "場所を追加（⌘O）";
 "sidebar.tooltip.clearRecents" = "最近を消去";

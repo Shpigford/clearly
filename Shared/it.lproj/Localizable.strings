@@ -98,6 +98,7 @@
 "sidebar.empty.subtitle" = "Aggiungi una cartella per sfogliare i tuoi file Markdown";
 "sidebar.addLocation" = "Aggiungi posizione…";
 "sidebar.section.locations" = "POSIZIONI";
+"sidebar.section.tags" = "TAG";
 "sidebar.section.recents" = "RECENTI";
 "sidebar.tooltip.addLocation" = "Aggiungi posizione (⌘O)";
 "sidebar.tooltip.clearRecents" = "Cancella recenti";

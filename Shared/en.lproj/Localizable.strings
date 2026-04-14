@@ -98,6 +98,7 @@
 "sidebar.empty.subtitle" = "Add a folder to browse your Markdown files";
 "sidebar.addLocation" = "Add Location…";
 "sidebar.section.locations" = "LOCATIONS";
+"sidebar.section.tags" = "TAGS";
 "sidebar.section.recents" = "RECENTS";
 "sidebar.tooltip.addLocation" = "Add Location (⌘O)";
 "sidebar.tooltip.clearRecents" = "Clear Recents";

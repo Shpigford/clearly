@@ -290,6 +290,8 @@ struct FileExplorerOutlineView: NSViewRepresentable {
             switch self {
             case .locations:
                 return L10n.string("sidebar.section.locations", defaultValue: "LOCATIONS")
+            case .tags:
+                return L10n.string("sidebar.section.tags", defaultValue: "TAGS")
             case .recents:
                 return L10n.string("sidebar.section.recents", defaultValue: "RECENTS")
             }

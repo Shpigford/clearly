@@ -98,6 +98,7 @@
 "sidebar.empty.subtitle" = "Markdown 파일을 탐색할 폴더를 추가하세요";
 "sidebar.addLocation" = "위치 추가…";
 "sidebar.section.locations" = "위치";
+"sidebar.section.tags" = "태그";
 "sidebar.section.recents" = "최근";
 "sidebar.tooltip.addLocation" = "위치 추가（⌘O）";
 "sidebar.tooltip.clearRecents" = "최근 항목 지우기";
