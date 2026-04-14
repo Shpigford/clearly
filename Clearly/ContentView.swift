@@ -106,6 +106,7 @@ struct ContentView: View {
     @State private var positionSyncID = UUID().uuidString
     @State private var pendingWikiNavigation: PendingWikiNavigation?
     @AppStorage("editorFontSize") private var fontSize: Double = 16
+    @AppStorage("previewFontFamily") private var previewFontFamily = "sanFrancisco"
     @StateObject private var findState = FindState()
     @StateObject private var fileWatcher = FileWatcher()
     @StateObject private var outlineState = OutlineState()
@@ -139,6 +140,7 @@ struct ContentView: View {
         return PreviewView(
             markdown: workspace.currentFileText,
             fontSize: editorFontSize,
+            fontFamily: previewFontFamily,
             mode: workspace.currentViewMode,
             positionSyncID: positionSyncID,
             fileURL: fileURL,

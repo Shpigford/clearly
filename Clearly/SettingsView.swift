@@ -10,6 +10,7 @@ struct SettingsView: View {
     let updater: SPUUpdater
     #endif
     @AppStorage("editorFontSize") private var fontSize: Double = 16
+    @AppStorage("previewFontFamily") private var previewFontFamily = "sanFrancisco"
     @AppStorage("themePreference") private var themePreference = "system"
     @AppStorage("launchBehavior") private var launchBehavior = "lastFile"
 
@@ -54,6 +55,11 @@ struct SettingsView: View {
                     .font(.system(size: 13, weight: .medium))
                     .monospacedDigit()
                     .frame(width: 30, alignment: .trailing)
+            }
+            Picker("Preview Font", selection: $previewFontFamily) {
+                Text("San Francisco").tag("sanFrancisco")
+                Text("New York").tag("newYork")
+                Text("SF Mono").tag("sfMono")
             }
             KeyboardShortcuts.Recorder("New Scratchpad:", name: .newScratchpad)
             Toggle("Launch at Login", isOn: $launchAtLogin)

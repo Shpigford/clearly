@@ -553,7 +553,20 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValid
         viewMenu.insertItem(lineNumbersItem, at: insertIndex); insertIndex += 1
         viewMenu.insertItem(.separator(), at: insertIndex); insertIndex += 1
         viewMenu.insertItem(editorItem, at: insertIndex); insertIndex += 1
-        viewMenu.insertItem(previewItem, at: insertIndex)
+        viewMenu.insertItem(previewItem, at: insertIndex); insertIndex += 1
+
+        // Preview Font submenu
+        viewMenu.insertItem(.separator(), at: insertIndex); insertIndex += 1
+        let fontSubmenu = NSMenu(title: "Preview Font")
+        for (title, value) in [("San Francisco", "sanFrancisco"), ("New York", "newYork"), ("SF Mono", "sfMono")] {
+            let item = NSMenuItem(title: title, action: #selector(setPreviewFontAction(_:)), keyEquivalent: "")
+            item.target = self
+            item.representedObject = value
+            fontSubmenu.addItem(item)
+        }
+        let fontMenuItem = NSMenuItem(title: "Preview Font", action: nil, keyEquivalent: "")
+        fontMenuItem.submenu = fontSubmenu
+        viewMenu.insertItem(fontMenuItem, at: insertIndex)
     }
 
     @objc private func switchToEditorAction(_ sender: Any?) {
@@ -574,6 +587,11 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValid
 
     @objc private func toggleLineNumbersAction(_ sender: Any?) {
         NotificationCenter.default.post(name: .init("ClearlyToggleLineNumbers"), object: nil)
+    }
+
+    @objc private func setPreviewFontAction(_ sender: NSMenuItem) {
+        guard let value = sender.representedObject as? String else { return }
+        UserDefaults.standard.set(value, forKey: "previewFontFamily")
     }
 
     private func injectSpellingMenuIfNeeded() {
@@ -635,9 +653,11 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValid
         let workspace = WorkspaceManager.shared
         guard workspace.activeDocumentID != nil else { return }
         let fontSize = UserDefaults.standard.double(forKey: "editorFontSize")
+        let fontFamily = UserDefaults.standard.string(forKey: "previewFontFamily") ?? "sanFrancisco"
         PDFExporter().exportPDF(
             markdown: workspace.currentFileText,
             fontSize: CGFloat(fontSize > 0 ? fontSize : 16),
+            fontFamily: fontFamily,
             fileURL: workspace.currentFileURL
         )
     }
@@ -646,9 +666,11 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValid
         let workspace = WorkspaceManager.shared
         guard workspace.activeDocumentID != nil else { return }
         let fontSize = UserDefaults.standard.double(forKey: "editorFontSize")
+        let fontFamily = UserDefaults.standard.string(forKey: "previewFontFamily") ?? "sanFrancisco"
         PDFExporter().printHTML(
             markdown: workspace.currentFileText,
             fontSize: CGFloat(fontSize > 0 ? fontSize : 16),
+            fontFamily: fontFamily,
             fileURL: workspace.currentFileURL
         )
     }
@@ -660,6 +682,11 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValid
         }
         if menuItem.action == #selector(toggleLineNumbersAction(_:)) {
             menuItem.state = UserDefaults.standard.bool(forKey: "showLineNumbers") ? .on : .off
+            return true
+        }
+        if menuItem.action == #selector(setPreviewFontAction(_:)) {
+            let current = UserDefaults.standard.string(forKey: "previewFontFamily") ?? "sanFrancisco"
+            menuItem.state = (menuItem.representedObject as? String) == current ? .on : .off
             return true
         }
         return true
