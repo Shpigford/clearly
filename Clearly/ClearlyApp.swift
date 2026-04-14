@@ -125,6 +125,7 @@ struct LauncherSceneMarker: NSViewRepresentable {
 final class ClearlyAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     private var observers: [Any] = []
     private var commandQMonitor: Any?
+    private var closeTabMonitor: Any?
     private var showHiddenFilesMonitor: Any?
     private var sidebarToggleMonitor: Any?
     private var quickSwitcherMonitor: Any?
@@ -156,12 +157,6 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValid
         window.setContentSize(NSSize(width: 960, height: 900))
         window.center()
         window.setFrameAutosaveName("ClearlyMainWindow")
-
-        // Empty toolbar triggers macOS 26's larger ~26pt corner radius
-        let toolbar = NSToolbar(identifier: "ClearlyMainToolbar")
-        toolbar.showsBaselineSeparator = false
-        toolbar.displayMode = .iconOnly
-        window.toolbar = toolbar
 
         let themePreference = UserDefaults.standard.string(forKey: "themePreference") ?? "system"
         let appearance: NSAppearance? = switch themePreference {
@@ -298,6 +293,20 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValid
             return nil
         }
 
+        closeTabMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+            let mods = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+            let chars = event.charactersIgnoringModifiers?.lowercased() ?? ""
+            guard chars == "w" && mods == [.command] else { return event }
+            guard let window = event.window,
+                  window.identifier == WindowRouter.mainWindowIdentifier else { return event }
+            let workspace = WorkspaceManager.shared
+            if let activeID = workspace.activeDocumentID {
+                workspace.closeDocument(activeID)
+                return nil
+            }
+            return event
+        }
+
         showHiddenFilesMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
             guard let self else { return event }
             guard self.shouldToggleHiddenFiles(for: event) else { return event }
@@ -305,23 +314,39 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValid
             return nil
         }
 
-        // Cmd+Shift+L toggles sidebar, Cmd+1/2 switches mode, Cmd+Shift+O toggles outline
+        // Cmd+L toggles sidebar, Cmd+Shift+L jumps to line, Cmd+1/2 switches mode
         sidebarToggleMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
             guard let self else { return event }
             guard event.type == .keyDown else { return event }
             let mods = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
             let chars = event.charactersIgnoringModifiers?.lowercased() ?? ""
 
-            if chars == "l" && mods == [.command, .shift] {
+            if chars == "l" && mods == [.command] {
                 self.doToggleSidebar()
                 return nil
             }
+            if chars == "l" && mods == [.command, .shift] {
+                NotificationCenter.default.post(name: .init("ClearlyJumpToLine"), object: nil)
+                return nil
+            }
             if chars == "1" && mods == [.command] {
-                NotificationCenter.default.post(name: .init("ClearlySetViewMode"), object: "edit")
+                WorkspaceManager.shared.currentViewMode = .edit
                 return nil
             }
             if chars == "2" && mods == [.command] {
-                NotificationCenter.default.post(name: .init("ClearlySetViewMode"), object: "preview")
+                WorkspaceManager.shared.currentViewMode = .preview
+                return nil
+            }
+            if chars == "t" && mods == [.command] {
+                WorkspaceManager.shared.createUntitledDocument()
+                return nil
+            }
+            if chars == "[" && mods == [.command, .shift] {
+                WorkspaceManager.shared.selectPreviousTab()
+                return nil
+            }
+            if chars == "]" && mods == [.command, .shift] {
+                WorkspaceManager.shared.selectNextTab()
                 return nil
             }
             if chars == "o" && mods == [.command, .shift] {
@@ -371,7 +396,7 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValid
                     workspace.addLocation(url: url)
                 }
             } else {
-                openedFile = workspace.openFile(at: url) || openedFile
+                openedFile = workspace.openFileInNewTab(at: url) || openedFile
             }
         }
         if openedDirectory {
@@ -403,6 +428,10 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValid
         if let commandQMonitor {
             NSEvent.removeMonitor(commandQMonitor)
             self.commandQMonitor = nil
+        }
+        if let closeTabMonitor {
+            NSEvent.removeMonitor(closeTabMonitor)
+            self.closeTabMonitor = nil
         }
         if let showHiddenFilesMonitor {
             NSEvent.removeMonitor(showHiddenFilesMonitor)
@@ -461,7 +490,7 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValid
         guard !viewMenu.items.contains(where: { $0.title == "Toggle Sidebar" }) else { return }
 
         let sidebarItem = NSMenuItem(title: "Toggle Sidebar", action: #selector(toggleSidebarMenuAction(_:)), keyEquivalent: "l")
-        sidebarItem.keyEquivalentModifierMask = [.command, .shift]
+        sidebarItem.keyEquivalentModifierMask = [.command]
         sidebarItem.target = self
 
         // Insert at the beginning of the View menu
@@ -506,6 +535,9 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValid
         backlinksItem.keyEquivalentModifierMask = [.command, .shift]
         backlinksItem.target = self
 
+        let lineNumbersItem = NSMenuItem(title: "Line Numbers", action: #selector(toggleLineNumbersAction(_:)), keyEquivalent: "")
+        lineNumbersItem.target = self
+
         let editorItem = NSMenuItem(title: "Editor", action: #selector(switchToEditorAction(_:)), keyEquivalent: "1")
         editorItem.keyEquivalentModifierMask = [.command]
         editorItem.target = self
@@ -518,17 +550,31 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValid
         var insertIndex = 1
         viewMenu.insertItem(outlineItem, at: insertIndex); insertIndex += 1
         viewMenu.insertItem(backlinksItem, at: insertIndex); insertIndex += 1
+        viewMenu.insertItem(lineNumbersItem, at: insertIndex); insertIndex += 1
         viewMenu.insertItem(.separator(), at: insertIndex); insertIndex += 1
         viewMenu.insertItem(editorItem, at: insertIndex); insertIndex += 1
-        viewMenu.insertItem(previewItem, at: insertIndex)
+        viewMenu.insertItem(previewItem, at: insertIndex); insertIndex += 1
+
+        // Preview Font submenu
+        viewMenu.insertItem(.separator(), at: insertIndex); insertIndex += 1
+        let fontSubmenu = NSMenu(title: "Preview Font")
+        for (title, value) in [("San Francisco", "sanFrancisco"), ("New York", "newYork"), ("SF Mono", "sfMono")] {
+            let item = NSMenuItem(title: title, action: #selector(setPreviewFontAction(_:)), keyEquivalent: "")
+            item.target = self
+            item.representedObject = value
+            fontSubmenu.addItem(item)
+        }
+        let fontMenuItem = NSMenuItem(title: "Preview Font", action: nil, keyEquivalent: "")
+        fontMenuItem.submenu = fontSubmenu
+        viewMenu.insertItem(fontMenuItem, at: insertIndex)
     }
 
     @objc private func switchToEditorAction(_ sender: Any?) {
-        NotificationCenter.default.post(name: .init("ClearlySetViewMode"), object: "edit")
+        WorkspaceManager.shared.currentViewMode = .edit
     }
 
     @objc private func switchToPreviewAction(_ sender: Any?) {
-        NotificationCenter.default.post(name: .init("ClearlySetViewMode"), object: "preview")
+        WorkspaceManager.shared.currentViewMode = .preview
     }
 
     @objc private func toggleOutlineAction(_ sender: Any?) {
@@ -537,6 +583,15 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValid
 
     @objc private func toggleBacklinksAction(_ sender: Any?) {
         NotificationCenter.default.post(name: .init("ClearlyToggleBacklinks"), object: nil)
+    }
+
+    @objc private func toggleLineNumbersAction(_ sender: Any?) {
+        NotificationCenter.default.post(name: .init("ClearlyToggleLineNumbers"), object: nil)
+    }
+
+    @objc private func setPreviewFontAction(_ sender: NSMenuItem) {
+        guard let value = sender.representedObject as? String else { return }
+        UserDefaults.standard.set(value, forKey: "previewFontFamily")
     }
 
     private func injectSpellingMenuIfNeeded() {
@@ -598,9 +653,11 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValid
         let workspace = WorkspaceManager.shared
         guard workspace.activeDocumentID != nil else { return }
         let fontSize = UserDefaults.standard.double(forKey: "editorFontSize")
+        let fontFamily = UserDefaults.standard.string(forKey: "previewFontFamily") ?? "sanFrancisco"
         PDFExporter().exportPDF(
             markdown: workspace.currentFileText,
             fontSize: CGFloat(fontSize > 0 ? fontSize : 16),
+            fontFamily: fontFamily,
             fileURL: workspace.currentFileURL
         )
     }
@@ -609,9 +666,11 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValid
         let workspace = WorkspaceManager.shared
         guard workspace.activeDocumentID != nil else { return }
         let fontSize = UserDefaults.standard.double(forKey: "editorFontSize")
+        let fontFamily = UserDefaults.standard.string(forKey: "previewFontFamily") ?? "sanFrancisco"
         PDFExporter().printHTML(
             markdown: workspace.currentFileText,
             fontSize: CGFloat(fontSize > 0 ? fontSize : 16),
+            fontFamily: fontFamily,
             fileURL: workspace.currentFileURL
         )
     }
@@ -620,6 +679,15 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValid
         if menuItem.action == #selector(exportPDFAction(_:)) ||
            menuItem.action == #selector(printDocumentAction(_:)) {
             return WorkspaceManager.shared.activeDocumentID != nil
+        }
+        if menuItem.action == #selector(toggleLineNumbersAction(_:)) {
+            menuItem.state = UserDefaults.standard.bool(forKey: "showLineNumbers") ? .on : .off
+            return true
+        }
+        if menuItem.action == #selector(setPreviewFontAction(_:)) {
+            let current = UserDefaults.standard.string(forKey: "previewFontFamily") ?? "sanFrancisco"
+            menuItem.state = (menuItem.representedObject as? String) == current ? .on : .off
+            return true
         }
         return true
     }
@@ -806,10 +874,10 @@ class ClearlySplitViewController: NSSplitViewController {
         addSplitViewItem(sidebarItem)
 
         // Detail
-        // Detail
         let detailHost = NSHostingController(rootView:
             DetailView(workspace: workspace)
         )
+        detailHost.safeAreaRegions = []
         let detailItem = NSSplitViewItem(viewController: detailHost)
         detailItem.minimumThickness = 400
         addSplitViewItem(detailItem)
@@ -856,10 +924,14 @@ struct DetailView: View {
     @Bindable var workspace: WorkspaceManager
 
     var body: some View {
-        if workspace.activeDocumentID != nil {
-            ContentView(workspace: workspace)
-        } else {
-            NoFileView(workspace: workspace)
+        VStack(spacing: 0) {
+            TabBarView(workspace: workspace)
+
+            if workspace.activeDocumentID != nil {
+                ContentView(workspace: workspace)
+            } else {
+                NoFileView(workspace: workspace)
+            }
         }
     }
 }
@@ -950,6 +1022,11 @@ struct ClearlyApp: App {
                     workspace.createUntitledDocument()
                 }
                 .keyboardShortcut("n", modifiers: .command)
+
+                Button("New Tab") {
+                    workspace.createUntitledDocument()
+                }
+                .keyboardShortcut("t", modifiers: .command)
 
                 Button("Open…") {
                     workspace.showOpenPanel()

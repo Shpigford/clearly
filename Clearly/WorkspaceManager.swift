@@ -22,6 +22,7 @@ final class WorkspaceManager {
     var currentFileURL: URL?
     var currentFileText: String = ""
     var isDirty: Bool = false
+    var currentViewMode: ViewMode = .edit
 
     // MARK: - Open Documents
 
@@ -38,12 +39,15 @@ final class WorkspaceManager {
 
     private var fsStreams: [UUID: FSEventStreamRef] = [:]
     @ObservationIgnored private var vaultIndexes: [UUID: VaultIndex] = [:]
+    @ObservationIgnored private var refreshWork: [UUID: DispatchWorkItem] = [:]
+    @ObservationIgnored private var treeBuildGeneration: [UUID: Int] = [:]
     private var autoSaveWork: DispatchWorkItem?
     private var lastSavedText: String = ""
     private var accessedURLs: Set<URL> = []
 
     var activeVaultIndexes: [VaultIndex] { Array(vaultIndexes.values) }
     private(set) var vaultIndexRevision: Int = 0
+    private(set) var treeRevision: Int = 0
 
     // MARK: - UserDefaults Keys
 
@@ -88,6 +92,7 @@ final class WorkspaceManager {
 
     deinit {
         autoSaveWork?.cancel()
+        refreshWork.values.forEach { $0.cancel() }
         for index in vaultIndexes.values { index.close() }
         vaultIndexes.removeAll()
         stopAllFSStreams()
@@ -106,8 +111,10 @@ final class WorkspaceManager {
     func toggleShowHiddenFiles() {
         showHiddenFiles.toggle()
         UserDefaults.standard.set(showHiddenFiles, forKey: Self.showHiddenFilesKey)
-        for index in locations.indices {
-            locations[index].fileTree = FileNode.buildTree(at: locations[index].url, showHiddenFiles: showHiddenFiles)
+        for location in locations {
+            refreshWork[location.id]?.cancel()
+            refreshWork.removeValue(forKey: location.id)
+            loadTree(for: location.id, at: location.url)
         }
         reindexAllVaults()
     }
@@ -190,6 +197,22 @@ final class WorkspaceManager {
         return true
     }
 
+    func selectNextTab() {
+        guard let id = activeDocumentID,
+              let idx = openDocuments.firstIndex(where: { $0.id == id }),
+              openDocuments.count > 1 else { return }
+        let next = (idx + 1) % openDocuments.count
+        switchToDocument(openDocuments[next].id)
+    }
+
+    func selectPreviousTab() {
+        guard let id = activeDocumentID,
+              let idx = openDocuments.firstIndex(where: { $0.id == id }),
+              openDocuments.count > 1 else { return }
+        let prev = (idx - 1 + openDocuments.count) % openDocuments.count
+        switchToDocument(openDocuments[prev].id)
+    }
+
     @discardableResult
     func prepareForAppTermination() -> Bool {
         snapshotActiveDocument()
@@ -239,9 +262,10 @@ final class WorkspaceManager {
 
     // MARK: - Open File
 
+    /// Opens a file by replacing the active tab's content (no new tab created).
     @discardableResult
     func openFile(at url: URL) -> Bool {
-        // If already open, just switch to it
+        // If already open in a tab, just switch to it
         if let existing = openDocuments.first(where: { $0.fileURL == url }) {
             return switchToDocument(existing.id)
         }
@@ -250,6 +274,66 @@ final class WorkspaceManager {
         guard saveFileBacked() else { return false }
 
         // Load new file
+        guard let data = try? Data(contentsOf: url),
+              let text = String(data: data, encoding: .utf8) else {
+            DiagnosticLog.log("Failed to read file: \(url.lastPathComponent)")
+            return false
+        }
+
+        if let idx = activeDocumentIndex {
+            // If the active document is dirty and untitled, prompt before replacing
+            snapshotActiveDocument()
+            let activeDoc = openDocuments[idx]
+            if activeDoc.isDirty && activeDoc.isUntitled {
+                switch promptToSaveChanges(for: activeDoc) {
+                case .save:
+                    guard saveDocument(at: idx, treatCancelAsFailure: true) else { return false }
+                case .discard:
+                    break
+                case .cancel:
+                    return false
+                }
+            }
+            // Replace the active tab's content in place
+            openDocuments[idx].fileURL = url
+            openDocuments[idx].text = text
+            openDocuments[idx].lastSavedText = text
+            openDocuments[idx].untitledNumber = nil
+            currentFileURL = url
+            currentFileText = text
+            lastSavedText = text
+            isDirty = false
+        } else {
+            // No active document — create one
+            let doc = OpenDocument(
+                id: UUID(),
+                fileURL: url,
+                text: text,
+                lastSavedText: text,
+                untitledNumber: nil
+            )
+            openDocuments.append(doc)
+            activateDocument(doc)
+        }
+
+        addToRecents(url)
+        persistLastOpenFile(url)
+
+        DiagnosticLog.log("Opened file: \(url.lastPathComponent)")
+        presentMainWindow()
+        return true
+    }
+
+    /// Opens a file in a new tab (Cmd+click or Cmd+T then navigate).
+    @discardableResult
+    func openFileInNewTab(at url: URL) -> Bool {
+        // If already open in a tab, just switch to it
+        if let existing = openDocuments.first(where: { $0.fileURL == url }) {
+            return switchToDocument(existing.id)
+        }
+
+        guard saveFileBacked() else { return false }
+
         guard let data = try? Data(contentsOf: url),
               let text = String(data: data, encoding: .utf8) else {
             DiagnosticLog.log("Failed to read file: \(url.lastPathComponent)")
@@ -271,7 +355,7 @@ final class WorkspaceManager {
         addToRecents(url)
         persistLastOpenFile(url)
 
-        DiagnosticLog.log("Opened file: \(url.lastPathComponent)")
+        DiagnosticLog.log("Opened file in new tab: \(url.lastPathComponent)")
         presentMainWindow()
         return true
     }
@@ -489,6 +573,31 @@ final class WorkspaceManager {
         return nil
     }
 
+    private func nextTreeBuildGeneration(for locationID: UUID) -> Int {
+        let generation = (treeBuildGeneration[locationID] ?? 0) + 1
+        treeBuildGeneration[locationID] = generation
+        return generation
+    }
+
+    private func loadTree(for locationID: UUID, at url: URL, reindex index: VaultIndex? = nil) {
+        let generation = nextTreeBuildGeneration(for: locationID)
+        let showHidden = showHiddenFiles
+
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            let tree = FileNode.buildTree(at: url, showHiddenFiles: showHidden)
+            DispatchQueue.main.async {
+                guard let self,
+                      self.treeBuildGeneration[locationID] == generation,
+                      let idx = self.locations.firstIndex(where: { $0.id == locationID }) else { return }
+                self.locations[idx].fileTree = tree
+                self.treeRevision += 1
+                if let index {
+                    self.reindexVault(index)
+                }
+            }
+        }
+    }
+
     // MARK: - Locations
 
     func addLocation(url: URL) {
@@ -507,11 +616,10 @@ final class WorkspaceManager {
         }
         accessedURLs.insert(url)
 
-        let tree = FileNode.buildTree(at: url, showHiddenFiles: showHiddenFiles)
         let location = BookmarkedLocation(
             url: url,
             bookmarkData: bookmarkData,
-            fileTree: tree,
+            fileTree: [],
             isAccessible: true
         )
         locations.append(location)
@@ -520,10 +628,12 @@ final class WorkspaceManager {
         openVaultIndex(for: location)
 
         DiagnosticLog.log("Added location: \(url.lastPathComponent)")
+        loadTree(for: location.id, at: url)
     }
 
     func removeLocation(_ location: BookmarkedLocation) {
         stopFSStream(for: location.id)
+        treeBuildGeneration.removeValue(forKey: location.id)
         vaultIndexes[location.id]?.close()
         vaultIndexes.removeValue(forKey: location.id)
         vaultIndexRevision += 1
@@ -536,11 +646,21 @@ final class WorkspaceManager {
     }
 
     func refreshTree(for locationID: UUID) {
-        guard let index = locations.firstIndex(where: { $0.id == locationID }) else { return }
-        locations[index].fileTree = FileNode.buildTree(at: locations[index].url, showHiddenFiles: showHiddenFiles)
+        refreshWork[locationID]?.cancel()
 
-        // Re-index on file system changes (hash check makes this efficient)
-        reindexVault(vaultIndexes[locationID])
+        let work = DispatchWorkItem { [weak self] in
+            guard let self,
+                  let idx = self.locations.firstIndex(where: { $0.id == locationID }) else { return }
+            self.refreshWork.removeValue(forKey: locationID)
+            self.loadTree(
+                for: locationID,
+                at: self.locations[idx].url,
+                reindex: self.vaultIndexes[locationID]
+            )
+        }
+
+        refreshWork[locationID] = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3, execute: work)
     }
 
     // MARK: - Recents
@@ -801,17 +921,17 @@ final class WorkspaceManager {
             guard url.startAccessingSecurityScopedResource() else { continue }
             accessedURLs.insert(url)
 
-            let tree = FileNode.buildTree(at: url, showHiddenFiles: showHiddenFiles)
             let location = BookmarkedLocation(
                 id: bookmark.id,
                 url: url,
                 bookmarkData: bookmarkData,
-                fileTree: tree,
+                fileTree: [],
                 isAccessible: true
             )
             locations.append(location)
             startFSStream(for: location)
             openVaultIndex(for: location)
+            loadTree(for: bookmark.id, at: url)
         }
 
         if !stored.isEmpty {
@@ -956,6 +1076,9 @@ final class WorkspaceManager {
     }
 
     private func stopFSStream(for locationID: UUID) {
+        refreshWork[locationID]?.cancel()
+        refreshWork.removeValue(forKey: locationID)
+        treeBuildGeneration.removeValue(forKey: locationID)
         guard let stream = fsStreams.removeValue(forKey: locationID) else { return }
         FSEventStreamStop(stream)
         FSEventStreamInvalidate(stream)
@@ -1022,6 +1145,7 @@ final class WorkspaceManager {
         flushActiveEditorBuffer()
         openDocuments[idx].text = currentFileText
         openDocuments[idx].lastSavedText = lastSavedText
+        openDocuments[idx].viewMode = currentViewMode
     }
 
     private func flushActiveEditorBuffer() {
@@ -1048,6 +1172,7 @@ final class WorkspaceManager {
         currentFileText = doc.text
         lastSavedText = doc.lastSavedText
         isDirty = doc.isDirty
+        currentViewMode = doc.viewMode
     }
 
     /// Set the given document as active and sync stored properties.
@@ -1057,6 +1182,7 @@ final class WorkspaceManager {
         currentFileText = doc.text
         lastSavedText = doc.lastSavedText
         isDirty = doc.isDirty
+        currentViewMode = doc.viewMode
     }
 
     private func persistLastOpenFile(_ url: URL) {

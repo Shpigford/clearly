@@ -7,11 +7,6 @@ extension Notification.Name {
     static let navigateWikiLink = Notification.Name("navigateWikiLink")
 }
 
-enum ViewMode: String, CaseIterable {
-    case edit
-    case preview
-}
-
 struct ViewModeKey: FocusedValueKey {
     typealias Value = Binding<ViewMode>
 }
@@ -34,6 +29,10 @@ struct OutlineStateKey: FocusedValueKey {
 
 struct BacklinksStateKey: FocusedValueKey {
     typealias Value = BacklinksState
+}
+
+struct JumpToLineStateKey: FocusedValueKey {
+    typealias Value = JumpToLineState
 }
 
 extension FocusedValues {
@@ -61,23 +60,28 @@ extension FocusedValues {
         get { self[BacklinksStateKey.self] }
         set { self[BacklinksStateKey.self] = newValue }
     }
+    var jumpToLineState: JumpToLineState? {
+        get { self[JumpToLineStateKey.self] }
+        set { self[JumpToLineStateKey.self] = newValue }
+    }
 }
 
 struct FocusedValuesModifier: ViewModifier {
-    var workspace: WorkspaceManager
-    @Binding var mode: ViewMode
+    @Bindable var workspace: WorkspaceManager
     var findState: FindState
     var outlineState: OutlineState
     var backlinksState: BacklinksState
+    var jumpToLineState: JumpToLineState
 
     func body(content: Content) -> some View {
         content
-            .focusedSceneValue(\.viewMode, $mode)
+            .focusedSceneValue(\.viewMode, $workspace.currentViewMode)
             .focusedSceneValue(\.documentText, workspace.currentFileText)
             .focusedSceneValue(\.documentFileURL, workspace.currentFileURL)
             .focusedSceneValue(\.findState, findState)
             .focusedSceneValue(\.outlineState, outlineState)
             .focusedSceneValue(\.backlinksState, backlinksState)
+            .focusedSceneValue(\.jumpToLineState, jumpToLineState)
     }
 }
 
@@ -99,25 +103,31 @@ struct ContentView: View {
     }
 
     @Bindable var workspace: WorkspaceManager
-    @State private var mode: ViewMode
     @State private var positionSyncID = UUID().uuidString
     @State private var pendingWikiNavigation: PendingWikiNavigation?
     @AppStorage("editorFontSize") private var fontSize: Double = 16
+    @AppStorage("previewFontFamily") private var previewFontFamily = "sanFrancisco"
     @StateObject private var findState = FindState()
     @StateObject private var fileWatcher = FileWatcher()
     @StateObject private var outlineState = OutlineState()
     @StateObject private var backlinksState = BacklinksState()
+    @StateObject private var jumpToLineState = JumpToLineState()
+    @AppStorage("showLineNumbers") private var showLineNumbers = false
+    @State private var isFullscreen = false
+    @Environment(\.colorScheme) private var colorScheme
 
-    init(workspace: WorkspaceManager) {
-        self.workspace = workspace
-        let storedMode = UserDefaults.standard.string(forKey: "viewMode")
-        self._mode = State(initialValue: ViewMode(rawValue: storedMode ?? "") ?? .edit)
+    private var hasTabBar: Bool { workspace.openDocuments.count >= 2 }
+
+    private var contentExtraTopInset: CGFloat {
+        var inset: CGFloat = hasTabBar ? 16 : 0
+        if isFullscreen { inset += 16 }
+        return inset
     }
 
     private var editorPane: some View {
         let editorFontSize = CGFloat(fontSize)
         let fileURL = workspace.currentFileURL
-        return EditorView(text: $workspace.currentFileText, fontSize: editorFontSize, fileURL: fileURL, mode: mode, positionSyncID: positionSyncID, findState: findState, outlineState: outlineState)
+        return EditorView(text: $workspace.currentFileText, fontSize: editorFontSize, fileURL: fileURL, mode: workspace.currentViewMode, positionSyncID: positionSyncID, findState: findState, outlineState: outlineState, extraTopInset: contentExtraTopInset, showLineNumbers: showLineNumbers, jumpToLineState: jumpToLineState)
     }
 
     private var previewPane: some View {
@@ -138,7 +148,8 @@ struct ContentView: View {
         return PreviewView(
             markdown: workspace.currentFileText,
             fontSize: editorFontSize,
-            mode: mode,
+            fontFamily: previewFontFamily,
+            mode: workspace.currentViewMode,
             positionSyncID: positionSyncID,
             fileURL: fileURL,
             findState: findState,
@@ -163,8 +174,8 @@ struct ContentView: View {
                 }
                 workspace.currentFileText = lines.joined(separator: "\n")
             },
-            onClickToSource: { line in
-                mode = .edit
+            onClickToSource: { [workspace] line in
+                workspace.currentViewMode = .edit
                 NotificationCenter.default.post(name: .scrollEditorToLine, object: nil, userInfo: ["line": line])
             },
             onWikiLinkClicked: { target, heading in
@@ -177,7 +188,8 @@ struct ContentView: View {
                     userInfo: ["tag": tagName]
                 )
             },
-            wikiFileNames: allWikiFileNames
+            wikiFileNames: allWikiFileNames,
+            extraTopInset: contentExtraTopInset
         )
     }
 
@@ -187,7 +199,7 @@ struct ContentView: View {
         HStack(spacing: 0) {
             // Edit/Preview on the left
             ClearlySegmentedControl(
-                selection: $mode,
+                selection: $workspace.currentViewMode,
                 items: [
                     (value: .edit, icon: "pencil", label: "Edit"),
                     (value: .preview, icon: "eye", label: "Preview")
@@ -280,15 +292,22 @@ struct ContentView: View {
                     .fill(Color.primary.opacity(0.08))
                     .frame(height: 1)
             }
+            if jumpToLineState.isVisible {
+                JumpToLineBar(state: jumpToLineState)
+                    .transition(.move(edge: .top).combined(with: .opacity))
+                Rectangle()
+                    .fill(Color.primary.opacity(0.08))
+                    .frame(height: 1)
+            }
             ZStack {
                 editorPane
-                    .opacity(mode == .edit ? 1 : 0)
-                    .allowsHitTesting(mode == .edit)
+                    .opacity(workspace.currentViewMode == .edit ? 1 : 0)
+                    .allowsHitTesting(workspace.currentViewMode == .edit)
                 previewPane
-                    .opacity(mode == .preview ? 1 : 0)
-                    .allowsHitTesting(mode == .preview)
+                    .opacity(workspace.currentViewMode == .preview ? 1 : 0)
+                    .allowsHitTesting(workspace.currentViewMode == .preview)
             }
-            .layoutPriority(1)
+                        .layoutPriority(1)
 
             if backlinksState.isVisible {
                 Rectangle()
@@ -315,37 +334,48 @@ struct ContentView: View {
 
             bottomBar(words: words, chars: chars)
         }
-        .inspector(isPresented: $outlineState.isVisible) {
-            OutlineView(outlineState: outlineState)
-                .inspectorColumnWidth(min: 180, ideal: 200, max: 280)
-        }
         .frame(minWidth: 500, minHeight: 400)
         .background(Theme.backgroundColorSwiftUI)
     }
 
     var body: some View {
-        mainContent
-            .onChange(of: mode) { _, newMode in
-                UserDefaults.standard.set(newMode.rawValue, forKey: "viewMode")
+        HStack(spacing: 0) {
+            mainContent
+
+            if outlineState.isVisible {
+                Rectangle()
+                    .fill(Color.primary.opacity(colorScheme == .dark ? Theme.separatorOpacityDark : Theme.separatorOpacity))
+                    .frame(width: 1)
+                OutlineView(outlineState: outlineState)
+                    .frame(width: 200)
             }
-            .animation(Theme.Motion.smooth, value: mode)
-            .modifier(FocusedValuesModifier(workspace: workspace, mode: $mode, findState: findState, outlineState: outlineState, backlinksState: backlinksState))
+        }
+            .animation(Theme.Motion.smooth, value: workspace.currentViewMode)
+            .modifier(FocusedValuesModifier(workspace: workspace, findState: findState, outlineState: outlineState, backlinksState: backlinksState, jumpToLineState: jumpToLineState))
             .onAppear {
                 setupFileWatcher()
                 outlineState.parseHeadings(from: workspace.currentFileText)
                 backlinksState.update(for: workspace.currentFileURL, using: workspace.activeVaultIndexes)
+                isFullscreen = NSApp.mainWindow?.styleMask.contains(.fullScreen) ?? false
+            }
+            .onReceive(NotificationCenter.default.publisher(for: NSWindow.didEnterFullScreenNotification)) { _ in
+                isFullscreen = true
+            }
+            .onReceive(NotificationCenter.default.publisher(for: NSWindow.didExitFullScreenNotification)) { _ in
+                isFullscreen = false
             }
             .onChange(of: workspace.activeDocumentID) { _, newID in
                 positionSyncID = UUID().uuidString
                 findState.isVisible = false
+                jumpToLineState.dismiss()
                 setupFileWatcher()
                 outlineState.parseHeadings(from: workspace.currentFileText)
                 backlinksState.update(for: workspace.currentFileURL, using: workspace.activeVaultIndexes)
                 applyPendingWikiNavigationIfNeeded()
-                // New untitled docs always open in edit mode
-                if let newID, let doc = workspace.openDocuments.first(where: { $0.id == newID }), doc.isUntitled {
-                    mode = .edit
-                }
+            }
+            .onChange(of: workspace.currentViewMode) { _, newMode in
+                guard newMode != .edit else { return }
+                jumpToLineState.dismiss()
             }
             .onChange(of: workspace.currentFileURL) { _, _ in
                 setupFileWatcher()
@@ -355,11 +385,6 @@ struct ContentView: View {
                 fileWatcher.updateCurrentText(newText)
                 outlineState.parseHeadings(from: newText)
             }
-            .onReceive(NotificationCenter.default.publisher(for: .init("ClearlySetViewMode"))) { notification in
-                if let modeStr = notification.object as? String, let newMode = ViewMode(rawValue: modeStr) {
-                    mode = newMode
-                }
-            }
             .onReceive(NotificationCenter.default.publisher(for: .init("ClearlyToggleOutline"))) { _ in
                 withAnimation(Theme.Motion.smooth) {
                     outlineState.toggle()
@@ -368,6 +393,15 @@ struct ContentView: View {
             .onReceive(NotificationCenter.default.publisher(for: .init("ClearlyToggleBacklinks"))) { _ in
                 withAnimation(Theme.Motion.smooth) {
                     backlinksState.toggle()
+                }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .init("ClearlyToggleLineNumbers"))) { _ in
+                showLineNumbers.toggle()
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .init("ClearlyJumpToLine"))) { _ in
+                guard workspace.currentViewMode == .edit else { return }
+                withAnimation(Theme.Motion.smooth) {
+                    jumpToLineState.present()
                 }
             }
             .onChange(of: workspace.vaultIndexRevision) { _, _ in
@@ -426,7 +460,7 @@ struct ContentView: View {
                     )
                 }
             } else {
-                mode = destinationMode
+                workspace.currentViewMode = destinationMode
                 pendingWikiNavigation = nil
             }
             return
@@ -444,7 +478,7 @@ struct ContentView: View {
     }
 
     private func scheduleWikiNavigation(lineNumber: Int, destinationMode: ViewMode) {
-        mode = destinationMode
+        workspace.currentViewMode = destinationMode
         let notificationName: Notification.Name = destinationMode == .preview ? .scrollPreviewToLine : .scrollEditorToLine
         DispatchQueue.main.async {
             NotificationCenter.default.post(
