@@ -195,6 +195,20 @@
 "outline.empty.subtitle" = "使用 # 標題建立大綱";
 "preview.toc.title" = "目錄";
 "preview.copyCode" = "複製程式碼";
+"app.menu.view.quickOpen" = "快速打開…";
+"app.menu.view.searchAllFiles" = "搜尋所有檔案…";
+"app.menu.toggleBacklinks" = "切換反向連結";
+"content.backlinks.help" = "反向連結 (⇧⌘B)";
+"backlinks.title" = "反向連結";
+"backlinks.empty" = "目前檔案沒有被其他文件連結";
+"backlinks.unlinkedFormat" = "未連結提及 (%lld)";
+"backlinks.link" = "連結";
+"quickSwitcher.searchPlaceholder" = "搜尋筆記…";
+"quickSwitcher.createFormat" = "建立 %@";
+"quickSwitcher.accessibility.create" = "建立";
+"quickSwitcher.accessibility.document" = "文件";
+"quickSwitcher.accessibility.contentMatch" = "內容符合";
+"wikiLinkCompletion.accessibility.document" = "文件";
 
 "editor.context.textFormat" = "文字格式";
 "editor.context.headers" = "標題";

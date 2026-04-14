@@ -195,6 +195,20 @@
 "outline.empty.subtitle" = "# 제목을 추가해 개요를 만드세요";
 "preview.toc.title" = "목차";
 "preview.copyCode" = "코드 복사";
+"app.menu.view.quickOpen" = "빠른 열기…";
+"app.menu.view.searchAllFiles" = "모든 파일 검색…";
+"app.menu.toggleBacklinks" = "백링크 전환";
+"content.backlinks.help" = "백링크 (⇧⌘B)";
+"backlinks.title" = "백링크";
+"backlinks.empty" = "이 파일을 링크하는 다른 문서가 없습니다";
+"backlinks.unlinkedFormat" = "연결되지 않은 언급 (%lld)";
+"backlinks.link" = "링크";
+"quickSwitcher.searchPlaceholder" = "노트 검색…";
+"quickSwitcher.createFormat" = "%@ 만들기";
+"quickSwitcher.accessibility.create" = "만들기";
+"quickSwitcher.accessibility.document" = "문서";
+"quickSwitcher.accessibility.contentMatch" = "내용 일치";
+"wikiLinkCompletion.accessibility.document" = "문서";
 
 "editor.context.textFormat" = "텍스트 서식";
 "editor.context.headers" = "제목";

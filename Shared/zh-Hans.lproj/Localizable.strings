@@ -195,6 +195,20 @@
 "outline.empty.subtitle" = "使用 # 标题构建大纲";
 "preview.toc.title" = "目录";
 "preview.copyCode" = "复制代码";
+"app.menu.view.quickOpen" = "快速打开…";
+"app.menu.view.searchAllFiles" = "搜索所有文件…";
+"app.menu.toggleBacklinks" = "切换反向链接";
+"content.backlinks.help" = "反向链接 (⇧⌘B)";
+"backlinks.title" = "反向链接";
+"backlinks.empty" = "当前文件没有被其他文档链接";
+"backlinks.unlinkedFormat" = "未链接提及 (%lld)";
+"backlinks.link" = "链接";
+"quickSwitcher.searchPlaceholder" = "搜索笔记…";
+"quickSwitcher.createFormat" = "创建 %@";
+"quickSwitcher.accessibility.create" = "创建";
+"quickSwitcher.accessibility.document" = "文档";
+"quickSwitcher.accessibility.contentMatch" = "内容匹配";
+"wikiLinkCompletion.accessibility.document" = "文档";
 
 "editor.context.textFormat" = "文本格式";
 "editor.context.headers" = "标题";

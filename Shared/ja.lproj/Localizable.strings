@@ -195,6 +195,20 @@
 "outline.empty.subtitle" = "# 見出しを追加してアウトラインを作成";
 "preview.toc.title" = "目次";
 "preview.copyCode" = "コードをコピー";
+"app.menu.view.quickOpen" = "クイックオープン…";
+"app.menu.view.searchAllFiles" = "すべてのファイルを検索…";
+"app.menu.toggleBacklinks" = "バックリンクを切り替え";
+"content.backlinks.help" = "バックリンク (⇧⌘B)";
+"backlinks.title" = "バックリンク";
+"backlinks.empty" = "このファイルにリンクしている他のドキュメントはありません";
+"backlinks.unlinkedFormat" = "未リンクの言及 (%lld)";
+"backlinks.link" = "リンク";
+"quickSwitcher.searchPlaceholder" = "ノートを検索…";
+"quickSwitcher.createFormat" = "%@ を作成";
+"quickSwitcher.accessibility.create" = "作成";
+"quickSwitcher.accessibility.document" = "ドキュメント";
+"quickSwitcher.accessibility.contentMatch" = "内容の一致";
+"wikiLinkCompletion.accessibility.document" = "ドキュメント";
 
 "editor.context.textFormat" = "テキスト書式";
 "editor.context.headers" = "見出し";

@@ -190,20 +190,20 @@ class FlatSectionOutlineView: NSOutlineView {
 
     // Click on expandable rows toggles expansion
     override func mouseDown(with event: NSEvent) {
-        let point = convert(event.locationInWindow, from: nil)
-        let row = self.row(at: point)
-        if row >= 0, let item = self.item(atRow: row) {
-            let isExpandable = self.dataSource?.outlineView?(self, isItemExpandable: item) ?? false
-            if isExpandable {
-                if isItemExpanded(item) {
-                    collapseItem(item)
-                } else {
-                    expandItem(item)
-                }
-                return
+        let startPoint = convert(event.locationInWindow, from: nil)
+        let clickedRow = self.row(at: startPoint)
+
+        // Always let super handle tracking (enables drag initiation)
+        super.mouseDown(with: event)
+
+        // If clicked on expandable row and didn't drag, toggle expansion
+        if clickedRow >= 0, let item = self.item(atRow: clickedRow),
+           self.dataSource?.outlineView?(self, isItemExpandable: item) ?? false {
+            let endPoint = convert(NSApp.currentEvent?.locationInWindow ?? event.locationInWindow, from: nil)
+            if hypot(endPoint.x - startPoint.x, endPoint.y - startPoint.y) < 5 {
+                if isItemExpanded(item) { collapseItem(item) } else { expandItem(item) }
             }
         }
-        super.mouseDown(with: event)
     }
 
     // Allow buttons inside cell views to receive clicks
@@ -255,6 +255,10 @@ struct FileExplorerOutlineView: NSViewRepresentable {
         menu.delegate = context.coordinator
         outlineView.menu = menu
 
+        // Drag and drop
+        outlineView.registerForDraggedTypes([.fileURL])
+        outlineView.setDraggingSourceOperationMask(.move, forLocal: true)
+
         // Double-click does nothing extra (single-click selects)
         outlineView.doubleAction = nil
 
@@ -279,6 +283,7 @@ struct FileExplorerOutlineView: NSViewRepresentable {
     /// Root-level sections
     enum Section: String, CaseIterable {
         case locations = "LOCATIONS"
+        case tags = "TAGS"
         case recents = "RECENTS"
 
         var localizedTitle: String {
@@ -299,6 +304,7 @@ struct FileExplorerOutlineView: NSViewRepresentable {
             case fileNode(FileNode)
             case recentFile(URL)
             case openDocument(OpenDocument)
+            case tagEntry(tag: String, count: Int)
         }
         var kind: Kind
 
@@ -313,6 +319,7 @@ struct FileExplorerOutlineView: NSViewRepresentable {
             case .fileNode(let node): return node.url
             case .recentFile(let url): return url
             case .openDocument(let doc): return doc.fileURL
+            case .tagEntry: return nil
             }
         }
 
@@ -320,7 +327,7 @@ struct FileExplorerOutlineView: NSViewRepresentable {
             switch kind {
             case .fileNode(let node): return node.isDirectory
             case .location: return true
-            case .section, .recentFile, .openDocument: return false
+            case .section, .recentFile, .openDocument, .tagEntry: return false
             }
         }
     }
@@ -337,6 +344,10 @@ struct FileExplorerOutlineView: NSViewRepresentable {
         private var nodeItems: [URL: OutlineItem] = [:]
         private var recentItems: [URL: OutlineItem] = [:]
         private var openDocItems: [UUID: OutlineItem] = [:]
+        private var tagItems: [String: OutlineItem] = [:]
+        private var cachedTags: [(tag: String, count: Int)] = []
+        private var lastVaultRevision: Int = 0
+        private var hadTagsBefore = false
 
         // Track state to avoid redundant reloads (updateNSView fires on every SwiftUI render)
         private var lastLocationCount = 0
@@ -417,6 +428,16 @@ struct FileExplorerOutlineView: NSViewRepresentable {
             return item
         }
 
+        func item(forTag tag: String, count: Int) -> OutlineItem {
+            if let existing = tagItems[tag] {
+                existing.kind = .tagEntry(tag: tag, count: count)
+                return existing
+            }
+            let item = OutlineItem(.tagEntry(tag: tag, count: count))
+            tagItems[tag] = item
+            return item
+        }
+
         // MARK: - Folder Color Lookup
 
         /// Finds the folder color for a URL by checking the URL and its parent folders
@@ -448,20 +469,38 @@ struct FileExplorerOutlineView: NSViewRepresentable {
             let openCount = workspace.openDocuments.count
             let treeHash = workspace.locations.reduce(0) { $0 ^ $1.fileTree.hashValue }
             let activeID = workspace.activeDocumentID
+            let vaultRev = workspace.vaultIndexRevision
 
             let changed = locCount != lastLocationCount
                 || recCount != lastRecentCount
                 || openCount != lastOpenDocCount
                 || treeHash != lastLocationTreeHash
                 || activeID != lastActiveDocumentID
+                || vaultRev != lastVaultRevision
+
+            if vaultRev != lastVaultRevision {
+                refreshCachedTags()
+            }
 
             lastLocationCount = locCount
             lastRecentCount = recCount
             lastOpenDocCount = openCount
             lastLocationTreeHash = treeHash
             lastActiveDocumentID = activeID
+            lastVaultRevision = vaultRev
 
             return changed
+        }
+
+        private func refreshCachedTags() {
+            var merged: [String: Int] = [:]
+            for index in workspace.activeVaultIndexes {
+                for entry in index.allTags() {
+                    merged[entry.tag, default: 0] += entry.count
+                }
+            }
+            cachedTags = merged.map { (tag: $0.key, count: $0.value) }
+                .sorted { $0.tag < $1.tag }
         }
 
         // MARK: - Reload
@@ -479,14 +518,20 @@ struct FileExplorerOutlineView: NSViewRepresentable {
                 }
             }
             selectCurrentFile()
+            hadTagsBefore = !cachedTags.isEmpty
             _ = dataDidChange()
         }
 
         func reloadIfNeeded() {
             guard dataDidChange() else { return }
             guard let outlineView else { return }
+            let tagsJustAppeared = !hadTagsBefore && !cachedTags.isEmpty
+            hadTagsBefore = !cachedTags.isEmpty
             outlineView.reloadData()
             // autosaveExpandedItems handles restoration automatically
+            if tagsJustAppeared {
+                outlineView.expandItem(item(for: .tags))
+            }
             selectCurrentFile()
             clearRecentsButton?.isHidden = workspace.recentFiles.isEmpty
         }
@@ -534,6 +579,7 @@ struct FileExplorerOutlineView: NSViewRepresentable {
             case .fileNode(let node): return "node:\(node.url.path)"
             case .recentFile(let url): return "recent:\(url.path)"
             case .openDocument(let doc): return "openDoc:\(doc.id.uuidString)"
+            case .tagEntry(let tag, _): return "tag:\(tag)"
             }
         }
 
@@ -562,11 +608,86 @@ struct FileExplorerOutlineView: NSViewRepresentable {
                 for loc in workspace.locations {
                     if let node = findNode(in: loc.fileTree) { return item(for: node) }
                 }
+            } else if key.hasPrefix("tag:") {
+                let tag = String(key.dropFirst("tag:".count))
+                if let entry = cachedTags.first(where: { $0.tag == tag }) {
+                    return item(forTag: entry.tag, count: entry.count)
+                }
             }
             return nil
         }
 
+        // MARK: - Drag and Drop
+
+        func outlineView(_ outlineView: NSOutlineView, pasteboardWriterForItem item: Any) -> NSPasteboardWriting? {
+            guard let outlineItem = item as? OutlineItem else { return nil }
+            switch outlineItem.kind {
+            case .fileNode(let node):
+                return node.url as NSURL
+            default:
+                return nil
+            }
+        }
+
+        private func draggedURLs(from info: NSDraggingInfo) -> [URL] {
+            guard let items = info.draggingPasteboard.pasteboardItems else { return [] }
+            return items.compactMap { item in
+                guard let str = item.string(forType: .fileURL) else { return nil }
+                return URL(string: str)
+            }
+        }
+
+        func outlineView(_ outlineView: NSOutlineView, validateDrop info: NSDraggingInfo, proposedItem item: Any?, proposedChildIndex index: Int) -> NSDragOperation {
+            // Determine the actual drop target folder
+            let target: OutlineItem
+            if index == NSOutlineViewDropOnItemIndex,
+               let proposed = item as? OutlineItem, proposed.isDirectory {
+                target = proposed
+            } else {
+                // Proposed "between" rows — retarget to the folder row under the cursor
+                let point = outlineView.convert(info.draggingLocation, from: nil)
+                let row = outlineView.row(at: point)
+                guard row >= 0,
+                      let hovered = outlineView.item(atRow: row) as? OutlineItem,
+                      hovered.isDirectory else { return [] }
+                target = hovered
+            }
+
+            guard let targetURL = target.url else { return [] }
+            let urls = draggedURLs(from: info)
+            guard !urls.isEmpty else { return [] }
+
+            for sourceURL in urls {
+                // Prevent dropping item into its current parent (no-op)
+                if sourceURL.deletingLastPathComponent().path == targetURL.path { return [] }
+                // Prevent dropping a folder into itself or a descendant
+                if targetURL.path == sourceURL.path || targetURL.path.hasPrefix(sourceURL.path + "/") { return [] }
+            }
+
+            outlineView.setDropItem(target, dropChildIndex: NSOutlineViewDropOnItemIndex)
+            return .move
+        }
+
+        func outlineView(_ outlineView: NSOutlineView, acceptDrop info: NSDraggingInfo, item: Any?, childIndex index: Int) -> Bool {
+            guard let target = item as? OutlineItem, let targetURL = target.url else { return false }
+            let urls = draggedURLs(from: info)
+            guard !urls.isEmpty else { return false }
+
+            var success = true
+            for sourceURL in urls {
+                if workspace.moveItem(at: sourceURL, into: targetURL) == nil {
+                    success = false
+                }
+            }
+            return success
+        }
+
         // MARK: - Data Source
+
+        /// Sections to display — hides TAGS when no tags exist.
+        private var visibleSections: [Section] {
+            Section.allCases.filter { $0 != .tags || !cachedTags.isEmpty }
+        }
 
         /// Open documents shown at the top of RECENTS.
         private var recentSectionOpenDocs: [OpenDocument] {
@@ -581,29 +702,34 @@ struct FileExplorerOutlineView: NSViewRepresentable {
 
         func outlineView(_ outlineView: NSOutlineView, numberOfChildrenOfItem item: Any?) -> Int {
             guard let item = item as? OutlineItem else {
-                return Section.allCases.count
+                return visibleSections.count
             }
             switch item.kind {
             case .section(.locations):
                 return workspace.locations.count
+            case .section(.tags):
+                return cachedTags.count
             case .section(.recents):
                 return recentSectionOpenDocs.count + recentHistoryFiles.count
             case .location(let loc):
                 return loc.fileTree.count
             case .fileNode(let node):
                 return node.children?.count ?? 0
-            case .recentFile, .openDocument:
+            case .recentFile, .openDocument, .tagEntry:
                 return 0
             }
         }
 
         func outlineView(_ outlineView: NSOutlineView, child index: Int, ofItem item: Any?) -> Any {
             guard let item = item as? OutlineItem else {
-                return self.item(for: Section.allCases[index])
+                return self.item(for: visibleSections[index])
             }
             switch item.kind {
             case .section(.locations):
                 return self.item(for: workspace.locations[index])
+            case .section(.tags):
+                let entry = cachedTags[index]
+                return self.item(forTag: entry.tag, count: entry.count)
             case .section(.recents):
                 let openDocs = recentSectionOpenDocs
                 if index < openDocs.count {
@@ -614,7 +740,7 @@ struct FileExplorerOutlineView: NSViewRepresentable {
                 return self.item(for: loc.fileTree[index])
             case .fileNode(let node):
                 return self.item(for: node.children![index])
-            case .recentFile, .openDocument:
+            case .recentFile, .openDocument, .tagEntry:
                 fatalError("Leaf items have no children")
             }
         }
@@ -623,10 +749,11 @@ struct FileExplorerOutlineView: NSViewRepresentable {
             guard let item = item as? OutlineItem else { return false }
             switch item.kind {
             case .section(.locations): return true
+            case .section(.tags): return true
             case .section(.recents): return true
             case .location: return true
             case .fileNode(let node): return node.isDirectory
-            case .recentFile, .openDocument: return false
+            case .recentFile, .openDocument, .tagEntry: return false
             }
         }
 
@@ -652,6 +779,7 @@ struct FileExplorerOutlineView: NSViewRepresentable {
             case .fileNode(let node): return !node.isDirectory
             case .recentFile: return true
             case .openDocument: return true
+            case .tagEntry: return true
             }
         }
 
@@ -844,6 +972,22 @@ struct FileExplorerOutlineView: NSViewRepresentable {
                 cell.imageView?.symbolConfiguration = docConfig
                 cell.imageView?.contentTintColor = doc.isUntitled ? .secondaryLabelColor : .tertiaryLabelColor
                 cell.imageView?.isHidden = false
+
+            case .tagEntry(let tag, let count):
+                let tagAttr = NSMutableAttributedString(
+                    string: tag,
+                    attributes: [.font: NSFont.systemFont(ofSize: 12), .foregroundColor: NSColor.labelColor]
+                )
+                tagAttr.append(NSAttributedString(
+                    string: "  \(count)",
+                    attributes: [.font: NSFont.systemFont(ofSize: 9), .foregroundColor: NSColor.tertiaryLabelColor]
+                ))
+                cell.textField?.attributedStringValue = tagAttr
+                let tagConfig = NSImage.SymbolConfiguration(pointSize: 13, weight: .medium)
+                cell.imageView?.image = NSImage(systemSymbolName: "number", accessibilityDescription: "Tag")?.withSymbolConfiguration(tagConfig)
+                cell.imageView?.symbolConfiguration = tagConfig
+                cell.imageView?.contentTintColor = .secondaryLabelColor
+                cell.imageView?.isHidden = false
             }
 
             return cell
@@ -863,6 +1007,12 @@ struct FileExplorerOutlineView: NSViewRepresentable {
                 workspace.openFile(at: node.url)
             case .recentFile(let url):
                 workspace.openFile(at: url)
+            case .tagEntry(let tag, _):
+                NotificationCenter.default.post(
+                    name: .init("ClearlyFilterByTag"),
+                    object: nil,
+                    userInfo: ["tag": tag]
+                )
             default:
                 break
             }
@@ -960,6 +1110,12 @@ struct FileExplorerOutlineView: NSViewRepresentable {
                 if !workspace.recentFiles.isEmpty {
                     menu.addItem(menuItem("sidebar.context.clearRecents", "Clear Recents", action: #selector(clearRecentsAction(_:))))
                 }
+
+            case .section(.tags):
+                break
+
+            case .tagEntry:
+                break
             }
         }
 

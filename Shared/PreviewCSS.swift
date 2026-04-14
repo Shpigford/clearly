@@ -4,6 +4,9 @@ enum PreviewCSS {
     static func css(fontSize: CGFloat = 18, forExport: Bool = false) -> String {
     let tocTitle = L10n.string("preview.toc.title", defaultValue: "Table of Contents")
     let exportOverrides = forExport ? """
+    .wiki-link { color: #34855A !important; border-bottom: none !important; }
+    .wiki-link-broken { color: #B35C3A !important; border-bottom: none !important; }
+    .md-tag { color: #3A6EA5 !important; background: rgba(58, 110, 165, 0.06) !important; }
     .code-copy-btn { display: none !important; }
     .table-copy-btn { display: none !important; }
     .sort-indicator { display: none !important; }
@@ -198,6 +201,34 @@ enum PreviewCSS {
     }
     a:hover {
         text-decoration: underline;
+    }
+    .wiki-link {
+        color: #34855A;
+        text-decoration: none;
+        border-bottom: 1px solid rgba(52, 133, 90, 0.3);
+    }
+    .wiki-link:hover {
+        text-decoration: none;
+        border-bottom-color: #34855A;
+    }
+    .wiki-link-broken {
+        color: #B35C3A;
+        border-bottom: 1px dashed rgba(179, 92, 58, 0.4);
+    }
+    .wiki-link-broken:hover {
+        text-decoration: none;
+        border-bottom-color: #B35C3A;
+    }
+    .md-tag {
+        color: #3A6EA5;
+        text-decoration: none;
+        background: rgba(58, 110, 165, 0.08);
+        padding: 1px 5px;
+        border-radius: 3px;
+        font-size: 0.9em;
+    }
+    .md-tag:hover {
+        background: rgba(58, 110, 165, 0.15);
     }
 
     code {
@@ -683,6 +714,12 @@ enum PreviewCSS {
             background-color: #323236;
         }
         a { color: #0A84FF; }
+        .wiki-link { color: #5ABF80; border-bottom-color: rgba(90, 191, 128, 0.3); }
+        .wiki-link:hover { border-bottom-color: #5ABF80; }
+        .wiki-link-broken { color: #D97A57; border-bottom-color: rgba(217, 122, 87, 0.4); }
+        .wiki-link-broken:hover { border-bottom-color: #D97A57; }
+        .md-tag { color: #7AB0D9; background: rgba(122, 176, 217, 0.12); }
+        .md-tag:hover { background: rgba(122, 176, 217, 0.2); }
         h6 { color: rgba(245, 245, 247, 0.55); }
         code {
             background-color: rgba(255, 255, 255, 0.06);
@@ -805,6 +842,9 @@ enum PreviewCSS {
     }
 
     @media print {
+        .wiki-link { color: #34855A !important; border-bottom: none !important; }
+        .wiki-link-broken { color: #B35C3A !important; border-bottom: none !important; }
+        .md-tag { color: #3A6EA5 !important; background: rgba(58, 110, 165, 0.06) !important; }
         .code-filename {
             background: #EDEDF0 !important;
             color: #86868B !important;

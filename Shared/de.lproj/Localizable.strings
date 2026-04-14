@@ -195,6 +195,20 @@
 "outline.empty.subtitle" = "Füge Überschriften mit # hinzu, um eine Gliederung zu erstellen";
 "preview.toc.title" = "Inhaltsverzeichnis";
 "preview.copyCode" = "Code kopieren";
+"app.menu.view.quickOpen" = "Schnell öffnen…";
+"app.menu.view.searchAllFiles" = "Alle Dateien durchsuchen…";
+"app.menu.toggleBacklinks" = "Rückverweise ein-/ausblenden";
+"content.backlinks.help" = "Rückverweise (⇧⌘B)";
+"backlinks.title" = "Rückverweise";
+"backlinks.empty" = "Keine anderen Dokumente verweisen auf diese Datei";
+"backlinks.unlinkedFormat" = "Nicht verknüpfte Erwähnungen (%lld)";
+"backlinks.link" = "Verknüpfen";
+"quickSwitcher.searchPlaceholder" = "Notizen durchsuchen…";
+"quickSwitcher.createFormat" = "%@ erstellen";
+"quickSwitcher.accessibility.create" = "Erstellen";
+"quickSwitcher.accessibility.document" = "Dokument";
+"quickSwitcher.accessibility.contentMatch" = "Inhaltstreffer";
+"wikiLinkCompletion.accessibility.document" = "Dokument";
 
 "editor.context.textFormat" = "Textformat";
 "editor.context.headers" = "Überschriften";

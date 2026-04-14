@@ -82,6 +82,12 @@ final class MarkdownSyntaxHighlighter: NSObject {
         // Footnote markers: [^ref]
         add("(\\[\\^)([^\\]\n]+)(\\])", .footnote)
 
+        // Wiki-links: [[note]] or [[note|alias]] or [[note#heading]]
+        add(#"(\[\[)([^\]\n]+?)(\]\])"#, .wikiLink)
+
+        // Tags: #tag (not headings, not inside code blocks)
+        add(#"(?:^|(?<=\s))#([\p{L}\p{N}_\-/]*[\p{L}_\-/][\p{L}\p{N}_\-/]*)"#, .tag)
+
         // Table rows: lines with pipes
         add("^(\\|.+\\|)\\s*$", .syntax, options: .anchorsMatchLines)
 
@@ -113,6 +119,8 @@ final class MarkdownSyntaxHighlighter: NSObject {
         case frontmatter
         case highlight
         case footnote
+        case wikiLink
+        case tag
         case htmlTag
     }
 
@@ -323,6 +331,20 @@ final class MarkdownSyntaxHighlighter: NSObject {
 
                 case .footnote:
                     textStorage.addAttribute(.foregroundColor, value: Theme.footnoteColor, range: match.range)
+
+                case .wikiLink:
+                    if match.numberOfRanges >= 4 {
+                        textStorage.addAttribute(.foregroundColor, value: Theme.syntaxColor, range: match.range(at: 1))
+                        textStorage.addAttribute(.foregroundColor, value: Theme.wikiLinkColor, range: match.range(at: 2))
+                        textStorage.addAttribute(.foregroundColor, value: Theme.syntaxColor, range: match.range(at: 3))
+                    }
+
+                case .tag:
+                    let hashRange = NSRange(location: match.range.location, length: 1)
+                    textStorage.addAttribute(.foregroundColor, value: Theme.syntaxColor, range: hashRange)
+                    if match.numberOfRanges >= 2 {
+                        textStorage.addAttribute(.foregroundColor, value: Theme.tagColor, range: match.range(at: 1))
+                    }
 
                 case .htmlTag:
                     textStorage.addAttribute(.foregroundColor, value: Theme.htmlTagColor, range: match.range)
@@ -612,6 +634,20 @@ final class MarkdownSyntaxHighlighter: NSObject {
                 case .footnote:
                     textStorage.addAttribute(.foregroundColor, value: Theme.footnoteColor, range: match.range)
 
+                case .wikiLink:
+                    if match.numberOfRanges >= 4 {
+                        textStorage.addAttribute(.foregroundColor, value: Theme.syntaxColor, range: match.range(at: 1))
+                        textStorage.addAttribute(.foregroundColor, value: Theme.wikiLinkColor, range: match.range(at: 2))
+                        textStorage.addAttribute(.foregroundColor, value: Theme.syntaxColor, range: match.range(at: 3))
+                    }
+
+                case .tag:
+                    let hashRange = NSRange(location: match.range.location, length: 1)
+                    textStorage.addAttribute(.foregroundColor, value: Theme.syntaxColor, range: hashRange)
+                    if match.numberOfRanges >= 2 {
+                        textStorage.addAttribute(.foregroundColor, value: Theme.tagColor, range: match.range(at: 1))
+                    }
+
                 case .htmlTag:
                     textStorage.addAttribute(.foregroundColor, value: Theme.htmlTagColor, range: match.range)
 
@@ -626,6 +662,13 @@ final class MarkdownSyntaxHighlighter: NSObject {
 
         let elapsed = (CACurrentMediaTime() - startTime) * 1000
         DiagnosticLog.log("highlightAround(\(caller)): \(paragraphRange) in \(Int(elapsed))ms")
+    }
+
+    // MARK: - Public Query
+
+    /// Returns true if the given character position is inside a code block, math block, or frontmatter.
+    func isInsideProtectedRange(at position: Int) -> Bool {
+        cachedProtectedRanges.contains { NSLocationInRange(position, $0.range) }
     }
 
     private func applyProtectedBlockStyle(_ block: ProtectedRange, to textStorage: NSTextStorage, range: NSRange) {

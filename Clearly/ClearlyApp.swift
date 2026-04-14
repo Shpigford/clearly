@@ -122,11 +122,12 @@ struct LauncherSceneMarker: NSViewRepresentable {
 // MARK: - App Delegate (dock icon management + file open handling)
 
 @MainActor
-final class ClearlyAppDelegate: NSObject, NSApplicationDelegate {
+final class ClearlyAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     private var observers: [Any] = []
     private var commandQMonitor: Any?
     private var showHiddenFilesMonitor: Any?
     private var sidebarToggleMonitor: Any?
+    private var quickSwitcherMonitor: Any?
     private var themeObserver: Any?
     private var languageObserver: Any?
     private var isProgrammaticallyClosingWindows = false
@@ -186,6 +187,34 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate {
                 self?.updateWindowAppearance()
             }
         }
+
+        // Listen for tag filter requests (from sidebar tag clicks and preview tag links)
+        NotificationCenter.default.addObserver(
+            forName: .init("ClearlyFilterByTag"), object: nil, queue: .main
+        ) { notification in
+            guard let tag = notification.userInfo?["tag"] as? String else { return }
+            QuickSwitcherManager.shared.show(tagFilter: tag)
+        }
+    }
+
+    private func installMCPHelperIfNeeded() {
+        #if canImport(Sparkle)
+        guard let source = Bundle.main.url(forResource: "ClearlyMCP", withExtension: nil, subdirectory: "Helpers") else { return }
+        let installDir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+            .appendingPathComponent("Clearly")
+        let installed = installDir.appendingPathComponent("ClearlyMCP")
+
+        try? FileManager.default.createDirectory(at: installDir, withIntermediateDirectories: true)
+
+        let shouldCopy = !FileManager.default.fileExists(atPath: installed.path)
+            || (try? Data(contentsOf: source)) != (try? Data(contentsOf: installed))
+
+        if shouldCopy {
+            try? FileManager.default.removeItem(at: installed)
+            try? FileManager.default.copyItem(at: source, to: installed)
+            try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: installed.path)
+        }
+        #endif
     }
 
     private func updateWindowAppearance() {
@@ -216,6 +245,8 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        installMCPHelperIfNeeded()
+
         // A normal Launch Services open activates the app and opens a document window.
         // Login-item launch stays inactive with no document windows, so collapse to
         // menubar-only only in that state instead of guessing from parent PID.
@@ -304,7 +335,30 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate {
                 NotificationCenter.default.post(name: .init("ClearlyToggleOutline"), object: nil)
                 return nil
             }
+            if chars == "b" && mods == [.command, .shift] {
+                NotificationCenter.default.post(name: .init("ClearlyToggleBacklinks"), object: nil)
+                return nil
+            }
+            if chars == "f" && mods == [.command, .shift] {
+                QuickSwitcherManager.shared.toggle()
+                return nil
+            }
             return event
+        }
+
+        quickSwitcherMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+            let mods = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+            let chars = event.charactersIgnoringModifiers?.lowercased() ?? ""
+            if chars == "p" && mods == [.command] {
+                QuickSwitcherManager.shared.toggle()
+                return nil
+            }
+            return event
+        }
+
+        // Inject Quick Open menu item once (View menu isn't wiped by SwiftUI)
+        DispatchQueue.main.async { [weak self] in
+            self?.injectQuickOpenIfNeeded()
         }
 
     }
@@ -365,6 +419,10 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate {
             NSEvent.removeMonitor(sidebarToggleMonitor)
             self.sidebarToggleMonitor = nil
         }
+        if let quickSwitcherMonitor {
+            NSEvent.removeMonitor(quickSwitcherMonitor)
+            self.quickSwitcherMonitor = nil
+        }
         if let themeObserver {
             NotificationCenter.default.removeObserver(themeObserver)
             self.themeObserver = nil
@@ -387,6 +445,8 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate {
         injectViewCommandsIfNeeded()
         refreshLocalizedMenuTitles()
         refreshSwiftUICommandMenuTitles()
+        injectGlobalSearchIfNeeded()
+        injectExportPrintIfNeeded()
     }
 
     private func menuContainingAnyAction(_ selectors: [Selector]) -> NSMenu? {
@@ -397,6 +457,16 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate {
                 return selectors.contains(action)
             }
         }?.submenu
+    }
+
+    private func topLevelMenu(key: String, defaultValue: String) -> NSMenu? {
+        guard let mainMenu = NSApp.mainMenu else { return nil }
+        let candidates = localizationsForKey(key, defaultValue: defaultValue)
+        return mainMenu.items.first(where: { candidates.contains($0.title) })?.submenu
+    }
+
+    private func fileMenu() -> NSMenu? {
+        topLevelMenu(key: "app.menu.file", defaultValue: "File")
     }
 
     private func editMenu() -> NSMenu? {
@@ -411,6 +481,30 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate {
             #selector(NSWindow.toggleToolbarShown(_:)),
             #selector(NSWindow.toggleFullScreen(_:))
         ])
+    }
+
+    private func injectGlobalSearchIfNeeded() {
+        guard let viewMenu = viewMenu() else { return }
+        guard !viewMenu.items.contains(where: { $0.action == #selector(globalSearchAction(_:)) }) else { return }
+
+        let item = NSMenuItem(
+            title: L10n.string("app.menu.view.searchAllFiles", defaultValue: "Search All Files…"),
+            action: #selector(globalSearchAction(_:)),
+            keyEquivalent: "f"
+        )
+        item.keyEquivalentModifierMask = [.command, .shift]
+        item.target = self
+
+        if let quickOpenIndex = viewMenu.items.firstIndex(where: { $0.action == #selector(quickOpenAction(_:)) }) {
+            viewMenu.insertItem(item, at: quickOpenIndex + 1)
+        } else {
+            let insertAt = min(3, viewMenu.items.count)
+            viewMenu.insertItem(item, at: insertAt)
+        }
+    }
+
+    @objc private func globalSearchAction(_ sender: Any?) {
+        QuickSwitcherManager.shared.toggle()
     }
 
     private func injectSidebarToggleIfNeeded() {
@@ -489,6 +583,11 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate {
         )
         updateMenuItemTitle(
             in: viewMenu,
+            action: #selector(toggleBacklinksAction(_:)),
+            title: L10n.string("app.menu.toggleBacklinks", defaultValue: "Toggle Backlinks")
+        )
+        updateMenuItemTitle(
+            in: viewMenu,
             action: #selector(switchToEditorAction(_:)),
             title: L10n.string("app.menu.view.editor", defaultValue: "Editor")
         )
@@ -496,6 +595,28 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate {
             in: viewMenu,
             action: #selector(switchToPreviewAction(_:)),
             title: L10n.string("app.menu.view.preview", defaultValue: "Preview")
+        )
+        updateMenuItemTitle(
+            in: viewMenu,
+            action: #selector(quickOpenAction(_:)),
+            title: L10n.string("app.menu.view.quickOpen", defaultValue: "Quick Open…")
+        )
+        updateMenuItemTitle(
+            in: viewMenu,
+            action: #selector(globalSearchAction(_:)),
+            title: L10n.string("app.menu.view.searchAllFiles", defaultValue: "Search All Files…")
+        )
+
+        let fileMenu = fileMenu()
+        updateMenuItemTitle(
+            in: fileMenu,
+            action: #selector(exportPDFAction(_:)),
+            title: L10n.string("app.menu.exportPdf", defaultValue: "Export as PDF…")
+        )
+        updateMenuItemTitle(
+            in: fileMenu,
+            action: #selector(printDocumentAction(_:)),
+            title: L10n.string("app.menu.print", defaultValue: "Print…")
         )
 
         guard let editMenu = editMenu(),
@@ -537,6 +658,27 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate {
         )
     }
 
+    private func injectQuickOpenIfNeeded() {
+        guard let viewMenu = viewMenu() else { return }
+        guard !viewMenu.items.contains(where: { $0.action == #selector(quickOpenAction(_:)) }) else { return }
+
+        let item = NSMenuItem(
+            title: L10n.string("app.menu.view.quickOpen", defaultValue: "Quick Open…"),
+            action: #selector(quickOpenAction(_:)),
+            keyEquivalent: "p"
+        )
+        item.keyEquivalentModifierMask = [.command]
+        item.target = self
+
+        // Insert after Toggle Sidebar + separator (index 2)
+        let insertAt = min(2, viewMenu.items.count)
+        viewMenu.insertItem(item, at: insertAt)
+    }
+
+    @objc private func quickOpenAction(_ sender: Any?) {
+        QuickSwitcherManager.shared.toggle()
+    }
+
     private func injectViewCommandsIfNeeded() {
         guard let viewMenu = viewMenu() else { return }
         guard !viewMenu.items.contains(where: { $0.action == #selector(toggleOutlineAction(_:)) }) else { return }
@@ -548,6 +690,14 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate {
         )
         outlineItem.keyEquivalentModifierMask = [.command, .shift]
         outlineItem.target = self
+
+        let backlinksItem = NSMenuItem(
+            title: L10n.string("app.menu.toggleBacklinks", defaultValue: "Toggle Backlinks"),
+            action: #selector(toggleBacklinksAction(_:)),
+            keyEquivalent: "b"
+        )
+        backlinksItem.keyEquivalentModifierMask = [.command, .shift]
+        backlinksItem.target = self
 
         let editorItem = NSMenuItem(
             title: L10n.string("app.menu.view.editor", defaultValue: "Editor"),
@@ -568,6 +718,7 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate {
         // Insert right after Toggle Sidebar (index 0)
         var insertIndex = 1
         viewMenu.insertItem(outlineItem, at: insertIndex); insertIndex += 1
+        viewMenu.insertItem(backlinksItem, at: insertIndex); insertIndex += 1
         viewMenu.insertItem(.separator(), at: insertIndex); insertIndex += 1
         viewMenu.insertItem(editorItem, at: insertIndex); insertIndex += 1
         viewMenu.insertItem(previewItem, at: insertIndex)
@@ -583,6 +734,10 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func toggleOutlineAction(_ sender: Any?) {
         NotificationCenter.default.post(name: .init("ClearlyToggleOutline"), object: nil)
+    }
+
+    @objc private func toggleBacklinksAction(_ sender: Any?) {
+        NotificationCenter.default.post(name: .init("ClearlyToggleBacklinks"), object: nil)
     }
 
     private func injectSpellingMenuIfNeeded() {
@@ -617,6 +772,63 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate {
         spellingItem.submenu = spellingMenu
         editMenu.addItem(.separator())
         editMenu.addItem(spellingItem)
+    }
+
+    // MARK: - Export / Print menu injection
+
+    private func injectExportPrintIfNeeded() {
+        guard let fileMenu = fileMenu() else { return }
+        guard !fileMenu.items.contains(where: { $0.action == #selector(exportPDFAction(_:)) }) else { return }
+
+        let exportItem = NSMenuItem(
+            title: L10n.string("app.menu.exportPdf", defaultValue: "Export as PDF…"),
+            action: #selector(exportPDFAction(_:)),
+            keyEquivalent: "e"
+        )
+        exportItem.keyEquivalentModifierMask = [.command, .shift]
+        exportItem.target = self
+
+        let printItem = NSMenuItem(
+            title: L10n.string("app.menu.print", defaultValue: "Print…"),
+            action: #selector(printDocumentAction(_:)),
+            keyEquivalent: "p"
+        )
+        printItem.keyEquivalentModifierMask = [.command, .shift]
+        printItem.target = self
+
+        fileMenu.addItem(.separator())
+        fileMenu.addItem(exportItem)
+        fileMenu.addItem(printItem)
+    }
+
+    @objc private func exportPDFAction(_ sender: Any?) {
+        let workspace = WorkspaceManager.shared
+        guard workspace.activeDocumentID != nil else { return }
+        let fontSize = UserDefaults.standard.double(forKey: "editorFontSize")
+        PDFExporter().exportPDF(
+            markdown: workspace.currentFileText,
+            fontSize: CGFloat(fontSize > 0 ? fontSize : 16),
+            fileURL: workspace.currentFileURL
+        )
+    }
+
+    @objc private func printDocumentAction(_ sender: Any?) {
+        let workspace = WorkspaceManager.shared
+        guard workspace.activeDocumentID != nil else { return }
+        let fontSize = UserDefaults.standard.double(forKey: "editorFontSize")
+        PDFExporter().printHTML(
+            markdown: workspace.currentFileText,
+            fontSize: CGFloat(fontSize > 0 ? fontSize : 16),
+            fileURL: workspace.currentFileURL
+        )
+    }
+
+    @objc func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
+        if menuItem.action == #selector(exportPDFAction(_:)) ||
+           menuItem.action == #selector(printDocumentAction(_:)) {
+            return WorkspaceManager.shared.activeDocumentID != nil
+        }
+        return true
     }
 
     func applicationWillBecomeActive(_ notification: Notification) {
@@ -736,7 +948,10 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate {
         }
         isProgrammaticallyClosingWindows = false
 
-        Task { @MainActor in ScratchpadManager.shared.closeAll() }
+        Task { @MainActor in
+            ScratchpadManager.shared.closeAll()
+            QuickSwitcherManager.shared.dismiss()
+        }
         updateActivationPolicy()
     }
 
@@ -1061,12 +1276,7 @@ struct ClearlyApp: App {
                 CheckForUpdatesView(updater: updaterController.updater)
             }
             #endif
-            CommandGroup(after: .importExport) {
-                ExportPDFCommand()
-            }
-            CommandGroup(replacing: .printItem) {
-                PrintCommand()
-            }
+            CommandGroup(replacing: .printItem) { }
             // View menu — sidebar, editor/preview modes, outline
             CommandGroup(before: .toolbar) {
                 // Toggle Sidebar, Editor/Preview, and Toggle Outline
@@ -1085,9 +1295,6 @@ struct ClearlyApp: App {
 
             CommandGroup(after: .textEditing) {
                 FindCommand()
-            }
-            CommandGroup(after: .textFormatting) {
-                FontSizeCommands()
             }
             CommandGroup(replacing: .help) {
                 Button(L10n.string("app.menu.help.clearlyHelp", defaultValue: "Clearly Help")) {
@@ -1115,7 +1322,9 @@ struct ClearlyApp: App {
                     }
                 }
             }
-            CommandMenu(L10n.string("app.menu.format", defaultValue: "Format")) {
+            CommandGroup(replacing: .textFormatting) {
+                FontSizeCommands()
+                Divider()
                 Button(L10n.string("app.menu.format.bold", defaultValue: "Bold")) {
                     NSApp.sendAction(#selector(ClearlyTextView.toggleBold(_:)), to: nil, from: nil)
                 }
@@ -1299,38 +1508,6 @@ struct CheckForUpdatesView: View {
     }
 }
 #endif
-
-// MARK: - Export / Print Commands
-
-struct ExportPDFCommand: View {
-    @FocusedValue(\.documentText) var text
-    @FocusedValue(\.documentFileURL) var fileURL
-    @AppStorage("editorFontSize") private var fontSize: Double = 16
-
-    var body: some View {
-        Button(L10n.string("app.menu.exportPdf", defaultValue: "Export as PDF…")) {
-            guard let text else { return }
-            PDFExporter().exportPDF(markdown: text, fontSize: CGFloat(fontSize), fileURL: fileURL)
-        }
-        .disabled(text == nil)
-        .keyboardShortcut("e", modifiers: [.command, .shift])
-    }
-}
-
-struct PrintCommand: View {
-    @FocusedValue(\.documentText) var text
-    @FocusedValue(\.documentFileURL) var fileURL
-    @AppStorage("editorFontSize") private var fontSize: Double = 16
-
-    var body: some View {
-        Button(L10n.string("app.menu.print", defaultValue: "Print…")) {
-            guard let text else { return }
-            PDFExporter().printHTML(markdown: text, fontSize: CGFloat(fontSize), fileURL: fileURL)
-        }
-        .disabled(text == nil)
-        .keyboardShortcut("p", modifiers: .command)
-    }
-}
 
 #if canImport(Sparkle)
 final class CheckForUpdatesViewModel: ObservableObject {

@@ -195,6 +195,20 @@
 "outline.empty.subtitle" = "Aggiungi intestazioni con # per creare una struttura";
 "preview.toc.title" = "Indice";
 "preview.copyCode" = "Copia codice";
+"app.menu.view.quickOpen" = "Apertura rapida…";
+"app.menu.view.searchAllFiles" = "Cerca in tutti i file…";
+"app.menu.toggleBacklinks" = "Attiva o disattiva backlink";
+"content.backlinks.help" = "Backlink (⇧⌘B)";
+"backlinks.title" = "Backlink";
+"backlinks.empty" = "Nessun altro documento collega questo file";
+"backlinks.unlinkedFormat" = "Menzioni senza collegamento (%lld)";
+"backlinks.link" = "Collega";
+"quickSwitcher.searchPlaceholder" = "Cerca nelle note…";
+"quickSwitcher.createFormat" = "Crea %@";
+"quickSwitcher.accessibility.create" = "Crea";
+"quickSwitcher.accessibility.document" = "Documento";
+"quickSwitcher.accessibility.contentMatch" = "Corrispondenza contenuto";
+"wikiLinkCompletion.accessibility.document" = "Documento";
 
 "editor.context.textFormat" = "Formato testo";
 "editor.context.headers" = "Intestazioni";

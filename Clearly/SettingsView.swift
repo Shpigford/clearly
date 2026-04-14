@@ -22,12 +22,18 @@ struct SettingsView: View {
                     Label(L10n.string("settings.tab.general", defaultValue: "General"), systemImage: "gearshape")
                 }
 
+            mcpSettings
+                .tabItem {
+                    Label("MCP", systemImage: "network")
+                }
+
             aboutView
                 .tabItem {
                     Label(L10n.string("settings.tab.about", defaultValue: "About"), systemImage: "info.circle")
                 }
         }
-        .frame(width: 420, height: 360)
+        .frame(width: 420)
+        .fixedSize(horizontal: false, vertical: true)
     }
 
     @State private var launchAtLogin = SMAppService.mainApp.status == .enabled
@@ -99,6 +105,76 @@ struct SettingsView: View {
         }
         .formStyle(.grouped)
     }
+
+    // MARK: - MCP Settings
+
+    @State private var mcpCopied = false
+
+    private var mcpBinaryPath: String {
+        let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+        return appSupport.appendingPathComponent("Clearly/ClearlyMCP").path
+    }
+
+    private var mcpBundleIdentifier: String {
+        Bundle.main.bundleIdentifier ?? "com.sabotage.clearly"
+    }
+
+    private var mcpBinaryInstalled: Bool {
+        FileManager.default.isExecutableFile(atPath: mcpBinaryPath)
+    }
+
+    private var mcpSettings: some View {
+        Form {
+            // Status
+            HStack {
+                Text("MCP Helper")
+                Spacer()
+                if mcpBinaryInstalled {
+                    Image(systemName: "checkmark.circle.fill")
+                        .foregroundStyle(.green)
+                    Text("Installed")
+                        .foregroundStyle(.secondary)
+                } else {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundStyle(.red)
+                    Text("Not Installed")
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            // Copy config
+            Button(mcpCopied ? "Copied!" : "Copy MCP Config") {
+                copyMCPConfig()
+            }
+
+            // Help text
+            Text("The MCP server lets AI agents search your notes, explore backlinks, and browse tags. It automatically discovers all your vaults. Copy the config and add it to any MCP-compatible app (Claude Desktop, Cursor, Windsurf, etc.).")
+                .font(.caption)
+                .foregroundStyle(.tertiary)
+        }
+        .formStyle(.grouped)
+    }
+
+    private func copyMCPConfig() {
+        let config = """
+        {
+          "mcpServers": {
+            "clearly": {
+              "command": "\(mcpBinaryPath)",
+              "args": ["--bundle-id", "\(mcpBundleIdentifier)"]
+            }
+          }
+        }
+        """
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(config, forType: .string)
+        mcpCopied = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+            mcpCopied = false
+        }
+    }
+
+    // MARK: - About
 
     private var aboutView: some View {
         VStack(spacing: 16) {

@@ -117,6 +117,24 @@ enum Theme {
             : NSColor(red: 0.3, green: 0.4, blue: 0.7, alpha: 1)
     }
 
+    static let wikiLinkColor = NSColor(name: "themeWikiLink") { appearance in
+        appearance.isDark
+            ? NSColor(red: 0.35, green: 0.75, blue: 0.50, alpha: 1)
+            : NSColor(red: 0.2, green: 0.55, blue: 0.35, alpha: 1)
+    }
+
+    static let wikiLinkBrokenColor = NSColor(name: "themeWikiLinkBroken") { appearance in
+        appearance.isDark
+            ? NSColor(red: 0.85, green: 0.45, blue: 0.35, alpha: 1)
+            : NSColor(red: 0.7, green: 0.35, blue: 0.25, alpha: 1)
+    }
+
+    static let tagColor = NSColor(name: "themeTag") { appearance in
+        appearance.isDark
+            ? NSColor(red: 0.55, green: 0.70, blue: 0.85, alpha: 1)
+            : NSColor(red: 0.25, green: 0.45, blue: 0.70, alpha: 1)
+    }
+
     static let htmlTagColor = NSColor(name: "themeHTMLTag") { appearance in
         appearance.isDark
             ? NSColor(red: 0.5, green: 0.5, blue: 0.5, alpha: 1)

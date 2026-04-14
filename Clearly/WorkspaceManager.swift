@@ -38,9 +38,13 @@ final class WorkspaceManager {
 
     private var fsStreams: [UUID: FSEventStreamRef] = [:]
     private let fsEventQueue = DispatchQueue(label: "com.sabotage.clearly.fs-events")
+    @ObservationIgnored private var vaultIndexes: [UUID: VaultIndex] = [:]
     private var autoSaveWork: DispatchWorkItem?
     private var lastSavedText: String = ""
     private var accessedURLs: Set<URL> = []
+
+    var activeVaultIndexes: [VaultIndex] { Array(vaultIndexes.values) }
+    private(set) var vaultIndexRevision: Int = 0
 
     // MARK: - UserDefaults Keys
 
@@ -52,6 +56,7 @@ final class WorkspaceManager {
     private static let folderIconsKey = "folderIcons"
     private static let folderColorsKey = "folderColors"
     private static let showHiddenFilesKey = "showHiddenFiles"
+    private static let wikiLinkPattern = try! NSRegularExpression(pattern: "\\[\\[[^\\]]*\\]\\]")
 
     /// Custom folder icons keyed by folder path (URL.path → SF Symbol name).
     var folderIcons: [String: String] = [:]
@@ -84,6 +89,8 @@ final class WorkspaceManager {
 
     deinit {
         autoSaveWork?.cancel()
+        for index in vaultIndexes.values { index.close() }
+        vaultIndexes.removeAll()
         stopAllFSStreams()
         for url in accessedURLs {
             url.stopAccessingSecurityScopedResource()
@@ -103,6 +110,7 @@ final class WorkspaceManager {
         for index in locations.indices {
             locations[index].fileTree = FileNode.buildTree(at: locations[index].url, showHiddenFiles: showHiddenFiles)
         }
+        reindexAllVaults()
     }
 
     // MARK: - Open Documents
@@ -296,6 +304,60 @@ final class WorkspaceManager {
         }
     }
 
+    @discardableResult
+    func insertWikiLink(in fileURL: URL, matching searchTerm: String, linkTarget: String, atLine lineNumber: Int) -> Bool {
+        guard !searchTerm.isEmpty, !linkTarget.isEmpty, lineNumber > 0 else { return false }
+
+        let openDocumentIndex = openDocuments.firstIndex(where: { $0.fileURL == fileURL })
+        let content: String
+
+        if let openDocumentIndex {
+            if activeDocumentIndex == openDocumentIndex {
+                snapshotActiveDocument()
+                content = currentFileText
+            } else {
+                content = openDocuments[openDocumentIndex].text
+            }
+        } else {
+            guard let data = try? Data(contentsOf: fileURL),
+                  let diskContent = String(data: data, encoding: .utf8) else {
+                DiagnosticLog.log("Failed to read backlink source: \(fileURL.lastPathComponent)")
+                return false
+            }
+            content = diskContent
+        }
+
+        guard let updatedContent = Self.replacingFirstUnlinkedMention(
+            in: content,
+            matching: searchTerm,
+            linkTarget: linkTarget,
+            atLine: lineNumber
+        ) else {
+            return false
+        }
+
+        do {
+            try updatedContent.write(to: fileURL, atomically: true, encoding: .utf8)
+
+            if let openDocumentIndex {
+                openDocuments[openDocumentIndex].text = updatedContent
+                openDocuments[openDocumentIndex].lastSavedText = updatedContent
+
+                if activeDocumentIndex == openDocumentIndex {
+                    currentFileURL = fileURL
+                    currentFileText = updatedContent
+                    lastSavedText = updatedContent
+                    isDirty = false
+                }
+            }
+
+            return true
+        } catch {
+            DiagnosticLog.log("Failed to write backlink source: \(error.localizedDescription)")
+            return false
+        }
+    }
+
     // MARK: - Save
 
     @discardableResult
@@ -392,6 +454,42 @@ final class WorkspaceManager {
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.0, execute: work)
     }
 
+    private static func replacingFirstUnlinkedMention(
+        in content: String,
+        matching searchTerm: String,
+        linkTarget: String,
+        atLine lineNumber: Int
+    ) -> String? {
+        var lines = content.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
+        let lineIndex = lineNumber - 1
+        guard lines.indices.contains(lineIndex) else { return nil }
+        guard let range = firstUnlinkedOccurrence(in: lines[lineIndex], matching: searchTerm) else { return nil }
+
+        lines[lineIndex].replaceSubrange(range, with: "[[\(linkTarget)]]")
+        return lines.joined(separator: "\n")
+    }
+
+    private static func firstUnlinkedOccurrence(in line: String, matching term: String) -> Range<String.Index>? {
+        let nsLine = line as NSString
+        let wikiRanges = wikiLinkPattern.matches(in: line, range: NSRange(location: 0, length: nsLine.length)).map(\.range)
+
+        var searchStart = line.startIndex
+        while let range = line.range(of: term, options: .caseInsensitive, range: searchStart..<line.endIndex) {
+            let charRange = NSRange(range, in: line)
+            let isInsideWikiLink = wikiRanges.contains {
+                $0.location <= charRange.location && NSMaxRange($0) >= NSMaxRange(charRange)
+            }
+
+            if !isInsideWikiLink {
+                return range
+            }
+
+            searchStart = range.upperBound
+        }
+
+        return nil
+    }
+
     // MARK: - Locations
 
     func addLocation(url: URL) {
@@ -420,12 +518,16 @@ final class WorkspaceManager {
         locations.append(location)
         persistLocations()
         startFSStream(for: location)
+        openVaultIndex(for: location)
 
         DiagnosticLog.log("Added location: \(url.lastPathComponent)")
     }
 
     func removeLocation(_ location: BookmarkedLocation) {
         stopFSStream(for: location.id)
+        vaultIndexes[location.id]?.close()
+        vaultIndexes.removeValue(forKey: location.id)
+        vaultIndexRevision += 1
         if accessedURLs.contains(location.url) {
             location.url.stopAccessingSecurityScopedResource()
             accessedURLs.remove(location.url)
@@ -437,6 +539,9 @@ final class WorkspaceManager {
     func refreshTree(for locationID: UUID) {
         guard let index = locations.firstIndex(where: { $0.id == locationID }) else { return }
         locations[index].fileTree = FileNode.buildTree(at: locations[index].url, showHiddenFiles: showHiddenFiles)
+
+        // Re-index on file system changes (hash check makes this efficient)
+        reindexVault(vaultIndexes[locationID])
     }
 
     // MARK: - Recents
@@ -505,6 +610,62 @@ final class WorkspaceManager {
             return newURL
         } catch {
             DiagnosticLog.log("Failed to rename: \(error.localizedDescription)")
+            return nil
+        }
+    }
+
+    func moveItem(at sourceURL: URL, into folderURL: URL) -> URL? {
+        let destURL = folderURL.appendingPathComponent(sourceURL.lastPathComponent)
+
+        guard !FileManager.default.fileExists(atPath: destURL.path) else {
+            DiagnosticLog.log("Move failed — \(sourceURL.lastPathComponent) already exists in \(folderURL.lastPathComponent)")
+            return nil
+        }
+
+        do {
+            try FileManager.default.moveItem(at: sourceURL, to: destURL)
+            // Update open document references if the moved item (or children) are open
+            for idx in openDocuments.indices {
+                if let fileURL = openDocuments[idx].fileURL {
+                    if fileURL == sourceURL {
+                        openDocuments[idx].fileURL = destURL
+                    } else if fileURL.path.hasPrefix(sourceURL.path + "/") {
+                        // Child of a moved folder
+                        let relative = String(fileURL.path.dropFirst(sourceURL.path.count))
+                        openDocuments[idx].fileURL = URL(fileURLWithPath: destURL.path + relative)
+                    }
+                }
+            }
+            if let current = currentFileURL {
+                if current == sourceURL {
+                    currentFileURL = destURL
+                } else if current.path.hasPrefix(sourceURL.path + "/") {
+                    let relative = String(current.path.dropFirst(sourceURL.path.count))
+                    currentFileURL = URL(fileURLWithPath: destURL.path + relative)
+                }
+            }
+            var recentsChanged = false
+            for idx in recentFiles.indices {
+                let recentURL = recentFiles[idx]
+                if recentURL == sourceURL {
+                    recentFiles[idx] = destURL
+                    recentsChanged = true
+                } else if recentURL.path.hasPrefix(sourceURL.path + "/") {
+                    let relative = String(recentURL.path.dropFirst(sourceURL.path.count))
+                    recentFiles[idx] = URL(fileURLWithPath: destURL.path + relative)
+                    recentsChanged = true
+                }
+            }
+            if recentsChanged {
+                persistRecents()
+            }
+            if let currentFileURL {
+                persistLastOpenFile(currentFileURL)
+            }
+            DiagnosticLog.log("Moved: \(sourceURL.lastPathComponent) → \(folderURL.lastPathComponent)/")
+            return destURL
+        } catch {
+            DiagnosticLog.log("Failed to move: \(error.localizedDescription)")
             return nil
         }
     }
@@ -606,6 +767,19 @@ final class WorkspaceManager {
         if let data = try? JSONEncoder().encode(stored) {
             UserDefaults.standard.set(data, forKey: Self.locationBookmarksKey)
         }
+        persistVaultsConfig()
+    }
+
+    /// Write vault paths to Application Support for MCP binary discovery
+    private func persistVaultsConfig() {
+        guard let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first else { return }
+        let appName = Bundle.main.bundleIdentifier ?? "com.sabotage.clearly"
+        let appDir = appSupport.appendingPathComponent(appName)
+        try? FileManager.default.createDirectory(at: appDir, withIntermediateDirectories: true)
+        let vaultsFile = appDir.appendingPathComponent("vaults.json")
+        let paths = locations.map { $0.url.path }
+        let data = try? JSONSerialization.data(withJSONObject: ["vaults": paths], options: [.prettyPrinted])
+        try? data?.write(to: vaultsFile, options: .atomic)
     }
 
     private func restoreLocations() {
@@ -641,11 +815,13 @@ final class WorkspaceManager {
             )
             locations.append(location)
             startFSStream(for: location)
+            openVaultIndex(for: location)
         }
 
         if !stored.isEmpty {
             persistLocations() // Re-persist in case any bookmarks were refreshed
         }
+        persistVaultsConfig()
     }
 
     // MARK: - Persistence: Recents
@@ -718,6 +894,34 @@ final class WorkspaceManager {
         // Only open if file still exists
         guard FileManager.default.fileExists(atPath: url.path) else { return }
         openFile(at: url)
+    }
+
+    // MARK: - Vault Index
+
+    private func openVaultIndex(for location: BookmarkedLocation) {
+        guard let index = try? VaultIndex(locationURL: location.url) else {
+            DiagnosticLog.log("Failed to create vault index for: \(location.url.lastPathComponent)")
+            return
+        }
+        vaultIndexes[location.id] = index
+        vaultIndexRevision += 1
+        reindexVault(index)
+    }
+
+    private func reindexAllVaults() {
+        for index in vaultIndexes.values {
+            reindexVault(index)
+        }
+    }
+
+    private func reindexVault(_ index: VaultIndex?) {
+        let showHiddenFiles = self.showHiddenFiles
+        DispatchQueue.global(qos: .utility).async { [weak self, weak index] in
+            index?.indexAllFiles(showHiddenFiles: showHiddenFiles)
+            DispatchQueue.main.async {
+                self?.vaultIndexRevision += 1
+            }
+        }
     }
 
     // MARK: - FSEventStream
@@ -833,6 +1037,11 @@ final class WorkspaceManager {
         } else {
             DispatchQueue.main.sync(execute: flush)
         }
+    }
+
+    func liveCurrentFileText() -> String {
+        flushActiveEditorBuffer()
+        return currentFileText
     }
 
     /// Restore stored properties from the active document in openDocuments.

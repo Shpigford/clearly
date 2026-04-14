@@ -195,6 +195,20 @@
 "outline.empty.subtitle" = "Add headings with # to build an outline";
 "preview.toc.title" = "Table of Contents";
 "preview.copyCode" = "Copy code";
+"app.menu.view.quickOpen" = "Quick Open…";
+"app.menu.view.searchAllFiles" = "Search All Files…";
+"app.menu.toggleBacklinks" = "Toggle Backlinks";
+"content.backlinks.help" = "Backlinks (⇧⌘B)";
+"backlinks.title" = "Backlinks";
+"backlinks.empty" = "No other documents link to this file";
+"backlinks.unlinkedFormat" = "Unlinked (%lld)";
+"backlinks.link" = "Link";
+"quickSwitcher.searchPlaceholder" = "Search notes…";
+"quickSwitcher.createFormat" = "Create %@";
+"quickSwitcher.accessibility.create" = "Create";
+"quickSwitcher.accessibility.document" = "Document";
+"quickSwitcher.accessibility.contentMatch" = "Content match";
+"wikiLinkCompletion.accessibility.document" = "Document";
 
 "editor.context.textFormat" = "Text Format";
 "editor.context.headers" = "Headers";

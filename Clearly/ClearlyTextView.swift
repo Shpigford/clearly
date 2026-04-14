@@ -38,6 +38,58 @@ class PersistentTextCheckingTextView: NSTextView {
 final class ClearlyTextView: PersistentTextCheckingTextView {
     var documentURL: URL?
     var onShowFind: (() -> Void)?
+    var onWikiLinkClicked: ((String, String?) -> Void)?
+
+    // MARK: - Wiki-Link Cmd+Click
+
+    private static let wikiLinkRegex = try! NSRegularExpression(
+        pattern: #"\[\[([^\]\|#\^]+?)(?:#([^\]\|]+?))?(?:\|[^\]]+?)?\]\]"#
+    )
+
+    override func mouseDown(with event: NSEvent) {
+        if WikiLinkCompletionManager.shared.isVisible {
+            WikiLinkCompletionManager.shared.dismiss()
+        }
+        if event.modifierFlags.contains(.command),
+           let lm = layoutManager, let tc = textContainer {
+            let viewPoint = convert(event.locationInWindow, from: nil)
+            let containerPoint = NSPoint(
+                x: viewPoint.x - textContainerInset.width,
+                y: viewPoint.y - textContainerInset.height
+            )
+            var fraction: CGFloat = 0
+            let charIndex = lm.characterIndex(
+                for: containerPoint, in: tc,
+                fractionOfDistanceBetweenInsertionPoints: &fraction
+            )
+            if charIndex < (string as NSString).length,
+               let (target, heading) = wikiLinkAt(charIndex: charIndex) {
+                onWikiLinkClicked?(target, heading)
+                return
+            }
+        }
+        super.mouseDown(with: event)
+    }
+
+    private func wikiLinkAt(charIndex: Int) -> (target: String, heading: String?)? {
+        let text = string as NSString
+        let searchStart = max(0, charIndex - 200)
+        let searchEnd = min(text.length, charIndex + 200)
+        let searchRange = NSRange(location: searchStart, length: searchEnd - searchStart)
+
+        for match in Self.wikiLinkRegex.matches(in: string, range: searchRange) {
+            guard NSLocationInRange(charIndex, match.range) else { continue }
+            let target = text.substring(with: match.range(at: 1))
+                .trimmingCharacters(in: .whitespaces)
+            var heading: String? = nil
+            if match.range(at: 2).location != NSNotFound {
+                heading = text.substring(with: match.range(at: 2))
+                    .trimmingCharacters(in: .whitespaces)
+            }
+            return (target, heading)
+        }
+        return nil
+    }
 
     // MARK: - Cursor
 
@@ -115,6 +167,32 @@ final class ClearlyTextView: PersistentTextCheckingTextView {
 
     @objc func showFindPanel(_ sender: Any?) {
         onShowFind?()
+    }
+
+    // MARK: - Wiki-Link Completion Keyboard
+
+    override func keyDown(with event: NSEvent) {
+        let completion = WikiLinkCompletionManager.shared
+        guard completion.isVisible else {
+            super.keyDown(with: event)
+            return
+        }
+        switch event.keyCode {
+        case 125: completion.moveSelectionDown()          // Down arrow
+        case 126: completion.moveSelectionUp()            // Up arrow
+        case 36, 48:                                      // Return, Tab
+            if completion.hasSelection {
+                completion.insertSelectedCompletion()
+            } else {
+                completion.dismiss()
+                super.keyDown(with: event)                // Pass through so Enter inserts newline
+            }
+        case 53: completion.dismiss()                     // Escape
+        case 123, 124:                                    // Left, Right arrow
+            completion.dismiss()
+            super.keyDown(with: event)
+        default: super.keyDown(with: event)               // Pass through
+        }
     }
 
     override func performKeyEquivalent(with event: NSEvent) -> Bool {

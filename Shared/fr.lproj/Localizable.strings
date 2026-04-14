@@ -195,6 +195,20 @@
 "outline.empty.subtitle" = "Ajoutez des titres avec # pour créer un plan";
 "preview.toc.title" = "Table des matières";
 "preview.copyCode" = "Copier le code";
+"app.menu.view.quickOpen" = "Ouverture rapide…";
+"app.menu.view.searchAllFiles" = "Rechercher dans tous les fichiers…";
+"app.menu.toggleBacklinks" = "Basculer les rétroliens";
+"content.backlinks.help" = "Rétroliens (⇧⌘B)";
+"backlinks.title" = "Rétroliens";
+"backlinks.empty" = "Aucun autre document ne pointe vers ce fichier";
+"backlinks.unlinkedFormat" = "Mentions sans lien (%lld)";
+"backlinks.link" = "Lier";
+"quickSwitcher.searchPlaceholder" = "Rechercher des notes…";
+"quickSwitcher.createFormat" = "Créer %@";
+"quickSwitcher.accessibility.create" = "Créer";
+"quickSwitcher.accessibility.document" = "Document";
+"quickSwitcher.accessibility.contentMatch" = "Correspondance de contenu";
+"wikiLinkCompletion.accessibility.document" = "Document";
 
 "editor.context.textFormat" = "Format du texte";
 "editor.context.headers" = "Titres";

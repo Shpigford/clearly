@@ -195,6 +195,20 @@
 "outline.empty.subtitle" = "Добавьте заголовки с #, чтобы построить структуру";
 "preview.toc.title" = "Оглавление";
 "preview.copyCode" = "Копировать код";
+"app.menu.view.quickOpen" = "Быстрое открытие…";
+"app.menu.view.searchAllFiles" = "Искать во всех файлах…";
+"app.menu.toggleBacklinks" = "Переключить обратные ссылки";
+"content.backlinks.help" = "Обратные ссылки (⇧⌘B)";
+"backlinks.title" = "Обратные ссылки";
+"backlinks.empty" = "На этот файл не ссылаются другие документы";
+"backlinks.unlinkedFormat" = "Упоминания без ссылки (%lld)";
+"backlinks.link" = "Связать";
+"quickSwitcher.searchPlaceholder" = "Искать заметки…";
+"quickSwitcher.createFormat" = "Создать %@";
+"quickSwitcher.accessibility.create" = "Создать";
+"quickSwitcher.accessibility.document" = "Документ";
+"quickSwitcher.accessibility.contentMatch" = "Совпадение по содержимому";
+"wikiLinkCompletion.accessibility.document" = "Документ";
 
 "editor.context.textFormat" = "Формат текста";
 "editor.context.headers" = "Заголовки";

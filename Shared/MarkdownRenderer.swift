@@ -2,7 +2,7 @@ import Foundation
 import cmark
 
 enum MarkdownRenderer {
-    static func renderHTML(_ markdown: String) -> String {
+    static func renderHTML(_ markdown: String, appLinkURLs: Bool = false) -> String {
         guard !markdown.isEmpty else { return "" }
 
         let frontmatter = FrontmatterSupport.extract(from: markdown)
@@ -27,6 +27,8 @@ enum MarkdownRenderer {
         html = processHighlightMarks(html)
         html = processSuperSub(html)
         html = processEmoji(html)
+        html = processWikiLinks(html, appLinkURLs: appLinkURLs)
+        html = processTags(html, appLinkURLs: appLinkURLs)
         html = processCallouts(html)
         html = processTOC(html)
         html = processCaptions(html)
@@ -241,6 +243,150 @@ enum MarkdownRenderer {
         }
         result += ns.substring(from: lastEnd)
         return result
+    }
+
+    // MARK: - Wiki-Links [[note]]
+
+    private static func processWikiLinks(_ html: String, appLinkURLs: Bool) -> String {
+        let (protectedHTML, segments) = protectWikiLinkRegions(in: html)
+        guard let regex = try? NSRegularExpression(
+            pattern: #"\[\[([^\]\|#\^]+?)(?:#([^\]\|]+?))?(?:\|([^\]]+?))?\]\]"#
+        ) else {
+            return restoreWikiLinkRegions(in: protectedHTML, segments: segments)
+        }
+        let ns = protectedHTML as NSString
+        var result = ""
+        var lastEnd = 0
+        for match in regex.matches(in: protectedHTML, range: NSRange(location: 0, length: ns.length)) {
+            result += ns.substring(with: NSRange(location: lastEnd, length: match.range.location - lastEnd))
+
+            let target = ns.substring(with: match.range(at: 1))
+                .trimmingCharacters(in: .whitespaces)
+
+            var heading: String? = nil
+            if match.range(at: 2).location != NSNotFound {
+                heading = ns.substring(with: match.range(at: 2))
+                    .trimmingCharacters(in: .whitespaces)
+            }
+
+            let displayText: String
+            if match.range(at: 3).location != NSNotFound {
+                displayText = ns.substring(with: match.range(at: 3))
+                    .trimmingCharacters(in: .whitespaces)
+            } else if let heading {
+                displayText = "\(target) > \(heading)"
+            } else {
+                displayText = target
+            }
+
+            if appLinkURLs {
+                let encodedTarget = target.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? target
+                var href = "clearly://wiki/\(encodedTarget)"
+                if let heading {
+                    let encodedHeading = heading.addingPercentEncoding(withAllowedCharacters: .urlFragmentAllowed) ?? heading
+                    href += "#\(encodedHeading)"
+                }
+                result += "<a href=\"\(href)\" class=\"wiki-link\">\(escapeHTML(displayText))</a>"
+            } else {
+                result += "<span class=\"wiki-link\">\(escapeHTML(displayText))</span>"
+            }
+            lastEnd = match.range.location + match.range.length
+        }
+        result += ns.substring(from: lastEnd)
+        return restoreWikiLinkRegions(in: result, segments: segments)
+    }
+
+    private static func protectWikiLinkRegions(in html: String) -> (html: String, segments: [String]) {
+        guard let regex = try? NSRegularExpression(
+            pattern: #"<(pre|code|a|script|style)\b[^>]*>[\s\S]*?<\/\1>"#,
+            options: [.caseInsensitive]
+        ) else {
+            return (html, [])
+        }
+
+        var protectedHTML = html
+        var segments: [String] = []
+        let matches = regex.matches(in: html, range: NSRange(html.startIndex..., in: html)).reversed()
+
+        for match in matches {
+            guard let range = Range(match.range, in: protectedHTML) else { continue }
+            let segment = String(protectedHTML[range])
+            let token = "__CLEARLY_PROTECTED_WIKILINK_\(segments.count)__"
+            segments.append(segment)
+            protectedHTML.replaceSubrange(range, with: token)
+        }
+
+        return (protectedHTML, segments)
+    }
+
+    private static func restoreWikiLinkRegions(in html: String, segments: [String]) -> String {
+        var restored = html
+        for (index, segment) in segments.enumerated() {
+            restored = restored.replacingOccurrences(
+                of: "__CLEARLY_PROTECTED_WIKILINK_\(index)__",
+                with: segment
+            )
+        }
+        return restored
+    }
+
+    // MARK: - Tags #tag
+
+    private static func processTags(_ html: String, appLinkURLs: Bool) -> String {
+        let (protectedHTML, segments) = protectTagRegions(in: html)
+        guard let regex = try? NSRegularExpression(
+            pattern: #"(?:^|(?<=[\s>]))#([\p{L}\p{N}_\-/]*[\p{L}_\-/][\p{L}\p{N}_\-/]*)"#,
+            options: [.anchorsMatchLines]
+        ) else {
+            return restoreTagRegions(in: protectedHTML, segments: segments)
+        }
+        let ns = protectedHTML as NSString
+        var result = ""
+        var lastEnd = 0
+        for match in regex.matches(in: protectedHTML, range: NSRange(location: 0, length: ns.length)) {
+            result += ns.substring(with: NSRange(location: lastEnd, length: match.range.location - lastEnd))
+            let tagName = ns.substring(with: match.range(at: 1))
+            if appLinkURLs {
+                let encodedTag = tagName.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? tagName
+                result += "<a href=\"clearly://tag/\(encodedTag)\" class=\"md-tag\">#\(escapeHTML(tagName))</a>"
+            } else {
+                result += "<span class=\"md-tag\">#\(escapeHTML(tagName))</span>"
+            }
+            lastEnd = match.range.location + match.range.length
+        }
+        result += ns.substring(from: lastEnd)
+        return restoreTagRegions(in: result, segments: segments)
+    }
+
+    private static func protectTagRegions(in html: String) -> (html: String, segments: [String]) {
+        guard let regex = try? NSRegularExpression(
+            pattern: #"<(pre|code|a|script|style|span)\b[^>]*>[\s\S]*?<\/\1>"#,
+            options: [.caseInsensitive]
+        ) else {
+            return (html, [])
+        }
+        var protectedHTML = html
+        var segments: [String] = []
+        let matches = regex.matches(in: html, range: NSRange(html.startIndex..., in: html)).reversed()
+        for match in matches {
+            guard let range = Range(match.range, in: protectedHTML) else { continue }
+            let segment = String(protectedHTML[range])
+            let token = "__CLEARLY_PROTECTED_TAG_\(segments.count)__"
+            segments.append(segment)
+            protectedHTML.replaceSubrange(range, with: token)
+        }
+        return (protectedHTML, segments)
+    }
+
+    private static func restoreTagRegions(in html: String, segments: [String]) -> String {
+        var restored = html
+        for (index, segment) in segments.enumerated() {
+            restored = restored.replacingOccurrences(
+                of: "__CLEARLY_PROTECTED_TAG_\(index)__",
+                with: segment
+            )
+        }
+        return restored
     }
 
     // MARK: - Highlight/Mark ==text==

@@ -2,7 +2,9 @@ import SwiftUI
 
 extension Notification.Name {
     static let scrollEditorToLine = Notification.Name("scrollEditorToLine")
+    static let scrollPreviewToLine = Notification.Name("scrollPreviewToLine")
     static let flushEditorBuffer = Notification.Name("flushEditorBuffer")
+    static let navigateWikiLink = Notification.Name("navigateWikiLink")
 }
 
 enum ViewMode: String, CaseIterable {
@@ -30,6 +32,10 @@ struct OutlineStateKey: FocusedValueKey {
     typealias Value = OutlineState
 }
 
+struct BacklinksStateKey: FocusedValueKey {
+    typealias Value = BacklinksState
+}
+
 extension FocusedValues {
     var viewMode: Binding<ViewMode>? {
         get { self[ViewModeKey.self] }
@@ -51,6 +57,10 @@ extension FocusedValues {
         get { self[OutlineStateKey.self] }
         set { self[OutlineStateKey.self] = newValue }
     }
+    var backlinksState: BacklinksState? {
+        get { self[BacklinksStateKey.self] }
+        set { self[BacklinksStateKey.self] = newValue }
+    }
 }
 
 struct FocusedValuesModifier: ViewModifier {
@@ -58,6 +68,7 @@ struct FocusedValuesModifier: ViewModifier {
     @Binding var mode: ViewMode
     var findState: FindState
     var outlineState: OutlineState
+    var backlinksState: BacklinksState
 
     func body(content: Content) -> some View {
         content
@@ -66,6 +77,7 @@ struct FocusedValuesModifier: ViewModifier {
             .focusedSceneValue(\.documentFileURL, workspace.currentFileURL)
             .focusedSceneValue(\.findState, findState)
             .focusedSceneValue(\.outlineState, outlineState)
+            .focusedSceneValue(\.backlinksState, backlinksState)
     }
 }
 
@@ -80,14 +92,22 @@ struct HiddenToolbarBackground: ViewModifier {
 }
 
 struct ContentView: View {
+    private struct PendingWikiNavigation {
+        let fileURL: URL
+        let lineNumber: Int
+        let destinationMode: ViewMode
+    }
+
     @Bindable var workspace: WorkspaceManager
     @State private var mode: ViewMode
     @State private var positionSyncID = UUID().uuidString
     @State private var localizationRefreshID = UUID()
+    @State private var pendingWikiNavigation: PendingWikiNavigation?
     @AppStorage("editorFontSize") private var fontSize: Double = 16
     @StateObject private var findState = FindState()
     @StateObject private var fileWatcher = FileWatcher()
     @StateObject private var outlineState = OutlineState()
+    @StateObject private var backlinksState = BacklinksState()
 
     init(workspace: WorkspaceManager) {
         self.workspace = workspace
@@ -104,6 +124,18 @@ struct ContentView: View {
     private var previewPane: some View {
         let editorFontSize = CGFloat(fontSize)
         let fileURL = workspace.currentFileURL
+        let _ = workspace.vaultIndexRevision
+        let allWikiFileNames: Set<String> = {
+            var names = Set<String>()
+            for index in workspace.activeVaultIndexes {
+                for file in index.allFiles() {
+                    names.insert(file.filename.lowercased())
+                    names.insert(file.path.lowercased())
+                    names.insert((file.path as NSString).deletingPathExtension.lowercased())
+                }
+            }
+            return names
+        }()
         return PreviewView(
             markdown: workspace.currentFileText,
             fontSize: editorFontSize,
@@ -134,9 +166,19 @@ struct ContentView: View {
             },
             onClickToSource: { line in
                 mode = .edit
-                // Post a notification that EditorView can observe to scroll to line
                 NotificationCenter.default.post(name: .scrollEditorToLine, object: nil, userInfo: ["line": line])
-            }
+            },
+            onWikiLinkClicked: { target, heading in
+                navigateToWikiLink(target: target, heading: heading, destinationMode: .preview)
+            },
+            onTagClicked: { tagName in
+                NotificationCenter.default.post(
+                    name: .init("ClearlyFilterByTag"),
+                    object: nil,
+                    userInfo: ["tag": tagName]
+                )
+            },
+            wikiFileNames: allWikiFileNames
         )
     }
 
@@ -190,6 +232,16 @@ struct ContentView: View {
 
                 Button {
                     withAnimation(Theme.Motion.smooth) {
+                        backlinksState.toggle()
+                    }
+                } label: {
+                    Image(systemName: "link")
+                }
+                .buttonStyle(ClearlyToolbarButtonStyle(isActive: backlinksState.isVisible))
+                .help(L10n.string("content.backlinks.help", defaultValue: "Backlinks (⇧⌘B)"))
+
+                Button {
+                    withAnimation(Theme.Motion.smooth) {
                         outlineState.toggle()
                     }
                 } label: {
@@ -237,6 +289,30 @@ struct ContentView: View {
                     .opacity(mode == .preview ? 1 : 0)
                     .allowsHitTesting(mode == .preview)
             }
+            .layoutPriority(1)
+
+            if backlinksState.isVisible {
+                Rectangle()
+                    .fill(Color.primary.opacity(0.08))
+                    .frame(height: 1)
+                BacklinksView(backlinksState: backlinksState) { backlink in
+                    let fileURL = backlink.vaultRootURL.appendingPathComponent(backlink.sourcePath)
+                    if workspace.openFile(at: fileURL) {
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+                            NotificationCenter.default.post(
+                                name: .scrollEditorToLine,
+                                object: nil,
+                                userInfo: ["line": backlink.lineNumber]
+                            )
+                        }
+                    }
+                } onLink: { backlink in
+                    linkBacklink(backlink)
+                }
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxHeight: 200)
+                .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
 
             bottomBar(words: words, chars: chars)
         }
@@ -255,16 +331,19 @@ struct ContentView: View {
                 UserDefaults.standard.set(newMode.rawValue, forKey: "viewMode")
             }
             .animation(Theme.Motion.smooth, value: mode)
-            .modifier(FocusedValuesModifier(workspace: workspace, mode: $mode, findState: findState, outlineState: outlineState))
+            .modifier(FocusedValuesModifier(workspace: workspace, mode: $mode, findState: findState, outlineState: outlineState, backlinksState: backlinksState))
             .onAppear {
                 setupFileWatcher()
                 outlineState.parseHeadings(from: workspace.currentFileText)
+                backlinksState.update(for: workspace.currentFileURL, using: workspace.activeVaultIndexes)
             }
             .onChange(of: workspace.activeDocumentID) { _, newID in
                 positionSyncID = UUID().uuidString
                 findState.isVisible = false
                 setupFileWatcher()
                 outlineState.parseHeadings(from: workspace.currentFileText)
+                backlinksState.update(for: workspace.currentFileURL, using: workspace.activeVaultIndexes)
+                applyPendingWikiNavigationIfNeeded()
                 // New untitled docs always open in edit mode
                 if let newID, let doc = workspace.openDocuments.first(where: { $0.id == newID }), doc.isUntitled {
                     mode = .edit
@@ -291,9 +370,25 @@ struct ContentView: View {
             .onReceive(NotificationCenter.default.publisher(for: .appLanguageDidChange)) { _ in
                 localizationRefreshID = UUID()
             }
+            .onReceive(NotificationCenter.default.publisher(for: .init("ClearlyToggleBacklinks"))) { _ in
+                withAnimation(Theme.Motion.smooth) {
+                    backlinksState.toggle()
+                }
+            }
+            .onChange(of: workspace.vaultIndexRevision) { _, _ in
+                backlinksState.update(for: workspace.currentFileURL, using: workspace.activeVaultIndexes)
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .navigateWikiLink)) { notification in
+                guard let target = notification.userInfo?["target"] as? String else { return }
+                let heading = notification.userInfo?["heading"] as? String
+                navigateToWikiLink(target: target, heading: heading, destinationMode: .edit)
+            }
     }
 
     private func setupFileWatcher() {
+        fileWatcher.liveCurrentText = { [workspace] in
+            workspace.liveCurrentFileText()
+        }
         guard let url = workspace.currentFileURL else {
             fileWatcher.watch(nil, currentText: nil)
             return
@@ -302,5 +397,66 @@ struct ContentView: View {
             workspace.externalFileDidChange(newText)
         }
         fileWatcher.watch(url, currentText: workspace.currentFileText)
+    }
+
+    private func linkBacklink(_ backlink: Backlink) {
+        let fileURL = backlink.vaultRootURL.appendingPathComponent(backlink.sourcePath)
+        guard workspace.insertWikiLink(
+            in: fileURL,
+            matching: backlinksState.currentFilename,
+            linkTarget: backlinksState.currentLinkTarget,
+            atLine: backlink.lineNumber
+        ) else { return }
+
+        backlinksState.removeUnlinkedMention(backlink)
+    }
+
+    private func navigateToWikiLink(target: String, heading: String?, destinationMode: ViewMode) {
+        for vaultIndex in workspace.activeVaultIndexes {
+            guard let file = vaultIndex.resolveWikiLink(name: target) else { continue }
+
+            let fileURL = vaultIndex.rootURL.appendingPathComponent(file.path)
+            let headingLine = heading.flatMap { vaultIndex.lineNumberForHeading(in: file.id, heading: $0) }
+
+            guard workspace.openFile(at: fileURL) else { return }
+
+            if let headingLine {
+                if workspace.currentFileURL == fileURL {
+                    scheduleWikiNavigation(lineNumber: headingLine, destinationMode: destinationMode)
+                } else {
+                    pendingWikiNavigation = PendingWikiNavigation(
+                        fileURL: fileURL,
+                        lineNumber: headingLine,
+                        destinationMode: destinationMode
+                    )
+                }
+            } else {
+                mode = destinationMode
+                pendingWikiNavigation = nil
+            }
+            return
+        }
+    }
+
+    private func applyPendingWikiNavigationIfNeeded() {
+        guard let pendingWikiNavigation,
+              workspace.currentFileURL == pendingWikiNavigation.fileURL else { return }
+        scheduleWikiNavigation(
+            lineNumber: pendingWikiNavigation.lineNumber,
+            destinationMode: pendingWikiNavigation.destinationMode
+        )
+        self.pendingWikiNavigation = nil
+    }
+
+    private func scheduleWikiNavigation(lineNumber: Int, destinationMode: ViewMode) {
+        mode = destinationMode
+        let notificationName: Notification.Name = destinationMode == .preview ? .scrollPreviewToLine : .scrollEditorToLine
+        DispatchQueue.main.async {
+            NotificationCenter.default.post(
+                name: notificationName,
+                object: nil,
+                userInfo: ["line": lineNumber]
+            )
+        }
     }
 }
