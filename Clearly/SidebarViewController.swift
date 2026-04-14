@@ -57,6 +57,7 @@ class SidebarViewController: NSViewController {
         outlineView.floatsGroupRows = false
         outlineView.intercellSpacing = NSSize(width: 0, height: 0)
         outlineView.backgroundColor = .clear
+        outlineView.autoresizesOutlineColumn = false
 
         let column = NSTableColumn(identifier: NSUserInterfaceItemIdentifier("name"))
         column.isEditable = false

@@ -45,6 +45,8 @@ Open in Xcode: `open Clearly.xcodeproj` (gitignored, so regenerate with xcodegen
 
 **Key pattern**: The editor uses AppKit (`NSTextView`) bridged to SwiftUI via `NSViewRepresentable`, not SwiftUI's `TextEditor`. This is intentional — it provides undo support, find panel, and `NSTextStorageDelegate`-based syntax highlighting.
 
+**Threading rule for `FileNode.buildTree()`**: This method does recursive filesystem I/O and must never run on the main thread. Use `WorkspaceManager.loadTree(for:at:reindex:)` which dispatches to a background queue, guards against stale completions via a generation counter, and assigns the result on main. The same applies to any new code that calls `FileManager.contentsOfDirectory` over potentially large directory trees.
+
 **NSViewRepresentable binding gotcha**: SwiftUI can call `updateNSView` at any time — layout passes, state changes, etc. — not just in response to binding changes. When the user types, the text view's content changes immediately but the `@Binding` update is async. If `updateNSView` fires in between, it sees a mismatch and overwrites the text view with the stale binding value, causing the cursor to jump. A simple `isUpdating` boolean set inside the async block does NOT protect against this because SwiftUI defers the actual `updateNSView` call past the flag's lifetime. The fix is `pendingBindingUpdates` — a counter incremented synchronously in `textDidChange` and decremented in the async block. `updateNSView` skips text replacement while this counter is > 0. This pattern applies to any `NSViewRepresentable` that pushes changes from the AppKit side back to SwiftUI bindings asynchronously.
 
 ## Dual Distribution: Sparkle + App Store

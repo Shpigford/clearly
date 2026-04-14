@@ -718,10 +718,9 @@ final class VaultIndex: @unchecked Sendable {
 
         var files: [URL] = []
         for case let url as URL in enumerator {
+            guard FileNode.markdownExtensions.contains(url.pathExtension.lowercased()) else { continue }
             guard let isFile = try? url.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile, isFile else { continue }
-            if FileNode.markdownExtensions.contains(url.pathExtension.lowercased()) {
-                files.append(url)
-            }
+            files.append(url)
         }
         return files
     }

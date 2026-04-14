@@ -442,7 +442,7 @@ struct FileExplorerOutlineView: NSViewRepresentable {
             let locCount = workspace.locations.count
             let recCount = workspace.recentFiles.count
             let openCount = workspace.openDocuments.count
-            let treeHash = workspace.locations.reduce(0) { $0 ^ $1.fileTree.hashValue }
+            let treeHash = workspace.treeRevision
             let activeID = workspace.activeDocumentID
             let vaultRev = workspace.vaultIndexRevision
 

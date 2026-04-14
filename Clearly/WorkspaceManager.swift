@@ -39,12 +39,15 @@ final class WorkspaceManager {
 
     private var fsStreams: [UUID: FSEventStreamRef] = [:]
     @ObservationIgnored private var vaultIndexes: [UUID: VaultIndex] = [:]
+    @ObservationIgnored private var refreshWork: [UUID: DispatchWorkItem] = [:]
+    @ObservationIgnored private var treeBuildGeneration: [UUID: Int] = [:]
     private var autoSaveWork: DispatchWorkItem?
     private var lastSavedText: String = ""
     private var accessedURLs: Set<URL> = []
 
     var activeVaultIndexes: [VaultIndex] { Array(vaultIndexes.values) }
     private(set) var vaultIndexRevision: Int = 0
+    private(set) var treeRevision: Int = 0
 
     // MARK: - UserDefaults Keys
 
@@ -89,6 +92,7 @@ final class WorkspaceManager {
 
     deinit {
         autoSaveWork?.cancel()
+        refreshWork.values.forEach { $0.cancel() }
         for index in vaultIndexes.values { index.close() }
         vaultIndexes.removeAll()
         stopAllFSStreams()
@@ -107,8 +111,10 @@ final class WorkspaceManager {
     func toggleShowHiddenFiles() {
         showHiddenFiles.toggle()
         UserDefaults.standard.set(showHiddenFiles, forKey: Self.showHiddenFilesKey)
-        for index in locations.indices {
-            locations[index].fileTree = FileNode.buildTree(at: locations[index].url, showHiddenFiles: showHiddenFiles)
+        for location in locations {
+            refreshWork[location.id]?.cancel()
+            refreshWork.removeValue(forKey: location.id)
+            loadTree(for: location.id, at: location.url)
         }
         reindexAllVaults()
     }
@@ -567,6 +573,31 @@ final class WorkspaceManager {
         return nil
     }
 
+    private func nextTreeBuildGeneration(for locationID: UUID) -> Int {
+        let generation = (treeBuildGeneration[locationID] ?? 0) + 1
+        treeBuildGeneration[locationID] = generation
+        return generation
+    }
+
+    private func loadTree(for locationID: UUID, at url: URL, reindex index: VaultIndex? = nil) {
+        let generation = nextTreeBuildGeneration(for: locationID)
+        let showHidden = showHiddenFiles
+
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            let tree = FileNode.buildTree(at: url, showHiddenFiles: showHidden)
+            DispatchQueue.main.async {
+                guard let self,
+                      self.treeBuildGeneration[locationID] == generation,
+                      let idx = self.locations.firstIndex(where: { $0.id == locationID }) else { return }
+                self.locations[idx].fileTree = tree
+                self.treeRevision += 1
+                if let index {
+                    self.reindexVault(index)
+                }
+            }
+        }
+    }
+
     // MARK: - Locations
 
     func addLocation(url: URL) {
@@ -585,11 +616,10 @@ final class WorkspaceManager {
         }
         accessedURLs.insert(url)
 
-        let tree = FileNode.buildTree(at: url, showHiddenFiles: showHiddenFiles)
         let location = BookmarkedLocation(
             url: url,
             bookmarkData: bookmarkData,
-            fileTree: tree,
+            fileTree: [],
             isAccessible: true
         )
         locations.append(location)
@@ -598,10 +628,12 @@ final class WorkspaceManager {
         openVaultIndex(for: location)
 
         DiagnosticLog.log("Added location: \(url.lastPathComponent)")
+        loadTree(for: location.id, at: url)
     }
 
     func removeLocation(_ location: BookmarkedLocation) {
         stopFSStream(for: location.id)
+        treeBuildGeneration.removeValue(forKey: location.id)
         vaultIndexes[location.id]?.close()
         vaultIndexes.removeValue(forKey: location.id)
         vaultIndexRevision += 1
@@ -614,11 +646,21 @@ final class WorkspaceManager {
     }
 
     func refreshTree(for locationID: UUID) {
-        guard let index = locations.firstIndex(where: { $0.id == locationID }) else { return }
-        locations[index].fileTree = FileNode.buildTree(at: locations[index].url, showHiddenFiles: showHiddenFiles)
+        refreshWork[locationID]?.cancel()
 
-        // Re-index on file system changes (hash check makes this efficient)
-        reindexVault(vaultIndexes[locationID])
+        let work = DispatchWorkItem { [weak self] in
+            guard let self,
+                  let idx = self.locations.firstIndex(where: { $0.id == locationID }) else { return }
+            self.refreshWork.removeValue(forKey: locationID)
+            self.loadTree(
+                for: locationID,
+                at: self.locations[idx].url,
+                reindex: self.vaultIndexes[locationID]
+            )
+        }
+
+        refreshWork[locationID] = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3, execute: work)
     }
 
     // MARK: - Recents
@@ -879,17 +921,17 @@ final class WorkspaceManager {
             guard url.startAccessingSecurityScopedResource() else { continue }
             accessedURLs.insert(url)
 
-            let tree = FileNode.buildTree(at: url, showHiddenFiles: showHiddenFiles)
             let location = BookmarkedLocation(
                 id: bookmark.id,
                 url: url,
                 bookmarkData: bookmarkData,
-                fileTree: tree,
+                fileTree: [],
                 isAccessible: true
             )
             locations.append(location)
             startFSStream(for: location)
             openVaultIndex(for: location)
+            loadTree(for: bookmark.id, at: url)
         }
 
         if !stored.isEmpty {
@@ -1034,6 +1076,9 @@ final class WorkspaceManager {
     }
 
     private func stopFSStream(for locationID: UUID) {
+        refreshWork[locationID]?.cancel()
+        refreshWork.removeValue(forKey: locationID)
+        treeBuildGeneration.removeValue(forKey: locationID)
         guard let stream = fsStreams.removeValue(forKey: locationID) else { return }
         FSEventStreamStop(stream)
         FSEventStreamInvalidate(stream)
