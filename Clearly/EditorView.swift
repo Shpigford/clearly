@@ -11,6 +11,7 @@ struct EditorView: NSViewRepresentable {
     var positionSyncID: String
     var findState: FindState?
     var outlineState: OutlineState?
+    var extraTopInset: CGFloat = 0
     @Environment(\.colorScheme) private var colorScheme
 
     func makeCoordinator() -> Coordinator {
@@ -53,7 +54,7 @@ struct EditorView: NSViewRepresentable {
         ]
 
         // Insets
-        textView.textContainerInset = NSSize(width: Theme.editorInsetX, height: Theme.editorInsetTop)
+        textView.textContainerInset = NSSize(width: Theme.editorInsetX, height: Theme.editorInsetTop + extraTopInset)
         textView.textContainer?.lineFragmentPadding = 0
 
         // Layout
@@ -150,6 +151,12 @@ struct EditorView: NSViewRepresentable {
 
         // Keep coordinator's parent fresh so the binding never goes stale
         context.coordinator.parent = self
+
+        // Update top inset when tab bar appears/disappears
+        let expectedInset = NSSize(width: Theme.editorInsetX, height: Theme.editorInsetTop + extraTopInset)
+        if textView.textContainerInset != expectedInset {
+            textView.textContainerInset = expectedInset
+        }
 
         let didChangeDocument = context.coordinator.lastPositionSyncID != positionSyncID
         context.coordinator.lastPositionSyncID = positionSyncID

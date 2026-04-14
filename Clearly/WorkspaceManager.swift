@@ -22,6 +22,7 @@ final class WorkspaceManager {
     var currentFileURL: URL?
     var currentFileText: String = ""
     var isDirty: Bool = false
+    var currentViewMode: ViewMode = .edit
 
     // MARK: - Open Documents
 
@@ -190,6 +191,22 @@ final class WorkspaceManager {
         return true
     }
 
+    func selectNextTab() {
+        guard let id = activeDocumentID,
+              let idx = openDocuments.firstIndex(where: { $0.id == id }),
+              openDocuments.count > 1 else { return }
+        let next = (idx + 1) % openDocuments.count
+        switchToDocument(openDocuments[next].id)
+    }
+
+    func selectPreviousTab() {
+        guard let id = activeDocumentID,
+              let idx = openDocuments.firstIndex(where: { $0.id == id }),
+              openDocuments.count > 1 else { return }
+        let prev = (idx - 1 + openDocuments.count) % openDocuments.count
+        switchToDocument(openDocuments[prev].id)
+    }
+
     @discardableResult
     func prepareForAppTermination() -> Bool {
         snapshotActiveDocument()
@@ -239,9 +256,10 @@ final class WorkspaceManager {
 
     // MARK: - Open File
 
+    /// Opens a file by replacing the active tab's content (no new tab created).
     @discardableResult
     func openFile(at url: URL) -> Bool {
-        // If already open, just switch to it
+        // If already open in a tab, just switch to it
         if let existing = openDocuments.first(where: { $0.fileURL == url }) {
             return switchToDocument(existing.id)
         }
@@ -250,6 +268,66 @@ final class WorkspaceManager {
         guard saveFileBacked() else { return false }
 
         // Load new file
+        guard let data = try? Data(contentsOf: url),
+              let text = String(data: data, encoding: .utf8) else {
+            DiagnosticLog.log("Failed to read file: \(url.lastPathComponent)")
+            return false
+        }
+
+        if let idx = activeDocumentIndex {
+            // If the active document is dirty and untitled, prompt before replacing
+            snapshotActiveDocument()
+            let activeDoc = openDocuments[idx]
+            if activeDoc.isDirty && activeDoc.isUntitled {
+                switch promptToSaveChanges(for: activeDoc) {
+                case .save:
+                    guard saveDocument(at: idx, treatCancelAsFailure: true) else { return false }
+                case .discard:
+                    break
+                case .cancel:
+                    return false
+                }
+            }
+            // Replace the active tab's content in place
+            openDocuments[idx].fileURL = url
+            openDocuments[idx].text = text
+            openDocuments[idx].lastSavedText = text
+            openDocuments[idx].untitledNumber = nil
+            currentFileURL = url
+            currentFileText = text
+            lastSavedText = text
+            isDirty = false
+        } else {
+            // No active document — create one
+            let doc = OpenDocument(
+                id: UUID(),
+                fileURL: url,
+                text: text,
+                lastSavedText: text,
+                untitledNumber: nil
+            )
+            openDocuments.append(doc)
+            activateDocument(doc)
+        }
+
+        addToRecents(url)
+        persistLastOpenFile(url)
+
+        DiagnosticLog.log("Opened file: \(url.lastPathComponent)")
+        presentMainWindow()
+        return true
+    }
+
+    /// Opens a file in a new tab (Cmd+click or Cmd+T then navigate).
+    @discardableResult
+    func openFileInNewTab(at url: URL) -> Bool {
+        // If already open in a tab, just switch to it
+        if let existing = openDocuments.first(where: { $0.fileURL == url }) {
+            return switchToDocument(existing.id)
+        }
+
+        guard saveFileBacked() else { return false }
+
         guard let data = try? Data(contentsOf: url),
               let text = String(data: data, encoding: .utf8) else {
             DiagnosticLog.log("Failed to read file: \(url.lastPathComponent)")
@@ -271,7 +349,7 @@ final class WorkspaceManager {
         addToRecents(url)
         persistLastOpenFile(url)
 
-        DiagnosticLog.log("Opened file: \(url.lastPathComponent)")
+        DiagnosticLog.log("Opened file in new tab: \(url.lastPathComponent)")
         presentMainWindow()
         return true
     }
@@ -1022,6 +1100,7 @@ final class WorkspaceManager {
         flushActiveEditorBuffer()
         openDocuments[idx].text = currentFileText
         openDocuments[idx].lastSavedText = lastSavedText
+        openDocuments[idx].viewMode = currentViewMode
     }
 
     private func flushActiveEditorBuffer() {
@@ -1048,6 +1127,7 @@ final class WorkspaceManager {
         currentFileText = doc.text
         lastSavedText = doc.lastSavedText
         isDirty = doc.isDirty
+        currentViewMode = doc.viewMode
     }
 
     /// Set the given document as active and sync stored properties.
@@ -1057,6 +1137,7 @@ final class WorkspaceManager {
         currentFileText = doc.text
         lastSavedText = doc.lastSavedText
         isDirty = doc.isDirty
+        currentViewMode = doc.viewMode
     }
 
     private func persistLastOpenFile(_ url: URL) {

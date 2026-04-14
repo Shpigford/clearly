@@ -125,6 +125,7 @@ struct LauncherSceneMarker: NSViewRepresentable {
 final class ClearlyAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     private var observers: [Any] = []
     private var commandQMonitor: Any?
+    private var closeTabMonitor: Any?
     private var showHiddenFilesMonitor: Any?
     private var sidebarToggleMonitor: Any?
     private var quickSwitcherMonitor: Any?
@@ -156,12 +157,6 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValid
         window.setContentSize(NSSize(width: 960, height: 900))
         window.center()
         window.setFrameAutosaveName("ClearlyMainWindow")
-
-        // Empty toolbar triggers macOS 26's larger ~26pt corner radius
-        let toolbar = NSToolbar(identifier: "ClearlyMainToolbar")
-        toolbar.showsBaselineSeparator = false
-        toolbar.displayMode = .iconOnly
-        window.toolbar = toolbar
 
         let themePreference = UserDefaults.standard.string(forKey: "themePreference") ?? "system"
         let appearance: NSAppearance? = switch themePreference {
@@ -298,6 +293,20 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValid
             return nil
         }
 
+        closeTabMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+            let mods = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+            let chars = event.charactersIgnoringModifiers?.lowercased() ?? ""
+            guard chars == "w" && mods == [.command] else { return event }
+            guard let window = event.window,
+                  window.identifier == WindowRouter.mainWindowIdentifier else { return event }
+            let workspace = WorkspaceManager.shared
+            if let activeID = workspace.activeDocumentID {
+                workspace.closeDocument(activeID)
+                return nil
+            }
+            return event
+        }
+
         showHiddenFilesMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
             guard let self else { return event }
             guard self.shouldToggleHiddenFiles(for: event) else { return event }
@@ -317,11 +326,23 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValid
                 return nil
             }
             if chars == "1" && mods == [.command] {
-                NotificationCenter.default.post(name: .init("ClearlySetViewMode"), object: "edit")
+                WorkspaceManager.shared.currentViewMode = .edit
                 return nil
             }
             if chars == "2" && mods == [.command] {
-                NotificationCenter.default.post(name: .init("ClearlySetViewMode"), object: "preview")
+                WorkspaceManager.shared.currentViewMode = .preview
+                return nil
+            }
+            if chars == "t" && mods == [.command] {
+                WorkspaceManager.shared.createUntitledDocument()
+                return nil
+            }
+            if chars == "[" && mods == [.command, .shift] {
+                WorkspaceManager.shared.selectPreviousTab()
+                return nil
+            }
+            if chars == "]" && mods == [.command, .shift] {
+                WorkspaceManager.shared.selectNextTab()
                 return nil
             }
             if chars == "o" && mods == [.command, .shift] {
@@ -371,7 +392,7 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValid
                     workspace.addLocation(url: url)
                 }
             } else {
-                openedFile = workspace.openFile(at: url) || openedFile
+                openedFile = workspace.openFileInNewTab(at: url) || openedFile
             }
         }
         if openedDirectory {
@@ -403,6 +424,10 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValid
         if let commandQMonitor {
             NSEvent.removeMonitor(commandQMonitor)
             self.commandQMonitor = nil
+        }
+        if let closeTabMonitor {
+            NSEvent.removeMonitor(closeTabMonitor)
+            self.closeTabMonitor = nil
         }
         if let showHiddenFilesMonitor {
             NSEvent.removeMonitor(showHiddenFilesMonitor)
@@ -524,11 +549,11 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValid
     }
 
     @objc private func switchToEditorAction(_ sender: Any?) {
-        NotificationCenter.default.post(name: .init("ClearlySetViewMode"), object: "edit")
+        WorkspaceManager.shared.currentViewMode = .edit
     }
 
     @objc private func switchToPreviewAction(_ sender: Any?) {
-        NotificationCenter.default.post(name: .init("ClearlySetViewMode"), object: "preview")
+        WorkspaceManager.shared.currentViewMode = .preview
     }
 
     @objc private func toggleOutlineAction(_ sender: Any?) {
@@ -806,10 +831,10 @@ class ClearlySplitViewController: NSSplitViewController {
         addSplitViewItem(sidebarItem)
 
         // Detail
-        // Detail
         let detailHost = NSHostingController(rootView:
             DetailView(workspace: workspace)
         )
+        detailHost.safeAreaRegions = []
         let detailItem = NSSplitViewItem(viewController: detailHost)
         detailItem.minimumThickness = 400
         addSplitViewItem(detailItem)
@@ -856,10 +881,14 @@ struct DetailView: View {
     @Bindable var workspace: WorkspaceManager
 
     var body: some View {
-        if workspace.activeDocumentID != nil {
-            ContentView(workspace: workspace)
-        } else {
-            NoFileView(workspace: workspace)
+        VStack(spacing: 0) {
+            TabBarView(workspace: workspace)
+
+            if workspace.activeDocumentID != nil {
+                ContentView(workspace: workspace)
+            } else {
+                NoFileView(workspace: workspace)
+            }
         }
     }
 }
@@ -950,6 +979,11 @@ struct ClearlyApp: App {
                     workspace.createUntitledDocument()
                 }
                 .keyboardShortcut("n", modifiers: .command)
+
+                Button("New Tab") {
+                    workspace.createUntitledDocument()
+                }
+                .keyboardShortcut("t", modifiers: .command)
 
                 Button("Open…") {
                     workspace.showOpenPanel()

@@ -947,13 +947,23 @@ struct FileExplorerOutlineView: NSViewRepresentable {
             let row = outlineView.selectedRow
             guard row >= 0, let outlineItem = outlineView.item(atRow: row) as? OutlineItem else { return }
 
+            let cmdHeld = NSEvent.modifierFlags.contains(.command)
+
             switch outlineItem.kind {
             case .openDocument(let doc):
                 workspace.switchToDocument(doc.id)
             case .fileNode(let node) where !node.isDirectory:
-                workspace.openFile(at: node.url)
+                if cmdHeld {
+                    workspace.openFileInNewTab(at: node.url)
+                } else {
+                    workspace.openFile(at: node.url)
+                }
             case .recentFile(let url):
-                workspace.openFile(at: url)
+                if cmdHeld {
+                    workspace.openFileInNewTab(at: url)
+                } else {
+                    workspace.openFile(at: url)
+                }
             case .tagEntry(let tag, _):
                 NotificationCenter.default.post(
                     name: .init("ClearlyFilterByTag"),
@@ -1039,6 +1049,11 @@ struct FileExplorerOutlineView: NSViewRepresentable {
 
                     menu.addItem(.separator())
                 } else {
+                    let openTabItem = NSMenuItem(title: "Open in New Tab", action: #selector(openInNewTabAction(_:)), keyEquivalent: "")
+                    openTabItem.representedObject = node.url
+                    openTabItem.target = self
+                    menu.addItem(openTabItem)
+
                     let newFileItem = NSMenuItem(title: "New File…", action: #selector(newFileInFolderAction(_:)), keyEquivalent: "")
                     newFileItem.representedObject = parentURL
                     newFileItem.target = self
@@ -1071,6 +1086,11 @@ struct FileExplorerOutlineView: NSViewRepresentable {
                 menu.addItem(deleteItem)
 
             case .recentFile(let url):
+                let openTabItem = NSMenuItem(title: "Open in New Tab", action: #selector(openInNewTabAction(_:)), keyEquivalent: "")
+                openTabItem.representedObject = url
+                openTabItem.target = self
+                menu.addItem(openTabItem)
+
                 let revealItem = NSMenuItem(title: "Reveal in Finder", action: #selector(revealInFinderAction(_:)), keyEquivalent: "")
                 revealItem.representedObject = url
                 revealItem.target = self
@@ -1225,6 +1245,11 @@ struct FileExplorerOutlineView: NSViewRepresentable {
             guard let locationID = sender.representedObject as? UUID,
                   let location = workspace.locations.first(where: { $0.id == locationID }) else { return }
             workspace.removeLocation(location)
+        }
+
+        @objc func openInNewTabAction(_ sender: NSMenuItem) {
+            guard let url = sender.representedObject as? URL else { return }
+            workspace.openFileInNewTab(at: url)
         }
 
         @objc func closeOpenDocAction(_ sender: NSMenuItem) {

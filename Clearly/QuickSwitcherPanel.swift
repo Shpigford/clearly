@@ -483,7 +483,7 @@ final class QuickSwitcherManager: NSObject {
         } else {
             WorkspaceManager.shared.openFile(at: item.fullURL)
             if let line = item.lineNumber {
-                let currentMode = ViewMode(rawValue: UserDefaults.standard.string(forKey: "viewMode") ?? "") ?? .edit
+                let currentMode = WorkspaceManager.shared.currentViewMode
                 let notificationName: Notification.Name = currentMode == .preview
                     ? .scrollPreviewToLine
                     : .scrollEditorToLine

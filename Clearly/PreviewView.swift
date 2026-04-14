@@ -15,6 +15,7 @@ struct PreviewView: NSViewRepresentable {
     var onWikiLinkClicked: ((String, String?) -> Void)?
     var onTagClicked: ((String) -> Void)?
     var wikiFileNames: Set<String>?
+    var extraTopInset: CGFloat = 0
     @Environment(\.colorScheme) private var colorScheme
 
     private var contentKey: String {
@@ -160,7 +161,7 @@ struct PreviewView: NSViewRepresentable {
         }
         </style>
         </head>
-        <body>\(htmlBody)</body>
+        <body\(extraTopInset > 0 ? " style=\"padding-top: \(Int(extraTopInset))px\"" : "")>\(htmlBody)</body>
         <script>
         document.querySelectorAll('img').forEach(function(img) {
             if (!img.complete) {
