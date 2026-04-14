@@ -902,6 +902,7 @@ final class WorkspaceManager {
         guard let data = UserDefaults.standard.data(forKey: Self.locationBookmarksKey),
               let stored = try? JSONDecoder().decode([StoredBookmark].self, from: data) else { return }
 
+        var didRefreshBookmarks = false
         for bookmark in stored {
             var isStale = false
             guard let url = try? URL(
@@ -915,11 +916,22 @@ final class WorkspaceManager {
             if isStale {
                 if let refreshed = try? url.bookmarkData(options: .withSecurityScope, includingResourceValuesForKeys: nil, relativeTo: nil) {
                     bookmarkData = refreshed
+                    didRefreshBookmarks = true
                 }
             }
 
             guard url.startAccessingSecurityScopedResource() else { continue }
             accessedURLs.insert(url)
+
+            // Verify we can actually read the directory — stale bookmarks can resolve
+            // and grant scoped access but still fail at the filesystem level (e.g. after
+            // an app upgrade or iCloud permission change).
+            if (try? FileManager.default.contentsOfDirectory(at: url, includingPropertiesForKeys: nil)) == nil {
+                DiagnosticLog.log("Location bookmark resolved but directory unreadable, skipping: \(url.lastPathComponent)")
+                url.stopAccessingSecurityScopedResource()
+                accessedURLs.remove(url)
+                continue
+            }
 
             let location = BookmarkedLocation(
                 id: bookmark.id,
@@ -934,8 +946,8 @@ final class WorkspaceManager {
             loadTree(for: bookmark.id, at: url)
         }
 
-        if !stored.isEmpty {
-            persistLocations() // Re-persist in case any bookmarks were refreshed
+        if didRefreshBookmarks {
+            persistLocations()
         }
         persistVaultsConfig()
     }
