@@ -10,6 +10,11 @@ struct TabBarView: View {
             : Color.primary.opacity(0.04)
     }
 
+    /// Extra leading space to clear traffic lights when sidebar is hidden
+    private var trafficLightInset: CGFloat {
+        workspace.isSidebarVisible ? 0 : 70
+    }
+
     var body: some View {
         if workspace.openDocuments.count >= 2 {
             VStack(spacing: 0) {
@@ -26,7 +31,8 @@ struct TabBarView: View {
                         }
                         Spacer()
                     }
-                    .padding(.horizontal, 6)
+                    .padding(.leading, 6 + trafficLightInset)
+                    .padding(.trailing, 6)
                     .padding(.vertical, 5)
                 }
                 .frame(height: 38)

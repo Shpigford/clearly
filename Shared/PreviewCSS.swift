@@ -139,6 +139,7 @@ enum PreviewCSS {
         margin-top: 2em;
         margin-bottom: 0.75em;
         letter-spacing: -0.015em;
+        position: relative;
     }
 
     body > *:first-child {
@@ -604,9 +605,9 @@ enum PreviewCSS {
 
     /* Heading anchor links */
     .heading-anchor {
+        position: absolute;
+        left: -1.2em;
         opacity: 0;
-        margin-left: -1.2em;
-        padding-right: 0.3em;
         text-decoration: none;
         color: #AEAEB2;
         font-weight: 400;

@@ -38,21 +38,31 @@
         html { scroll-behavior: smooth; }
         :root { font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11'; }
 
-        /* Screenshot gallery */
+        /* Screenshot gallery — mobile: vertical stack */
         .screenshot-gallery {
             display: flex;
-            gap: 1.25rem;
-            overflow-x: auto;
-            -webkit-overflow-scrolling: touch;
-            scrollbar-width: none;
-            cursor: grab;
+            flex-direction: column;
+            gap: 1rem;
         }
-        .screenshot-gallery:active { cursor: grabbing; }
-        .screenshot-gallery::-webkit-scrollbar { display: none; }
         .screenshot-gallery img {
-            flex-shrink: 0;
-            pointer-events: none;
             user-select: none;
+        }
+        /* Desktop: horizontal scroll with drag */
+        @media (min-width: 768px) {
+            .screenshot-gallery {
+                flex-direction: row;
+                gap: 1.25rem;
+                overflow-x: auto;
+                -webkit-overflow-scrolling: touch;
+                scrollbar-width: none;
+                cursor: grab;
+            }
+            .screenshot-gallery:active { cursor: grabbing; }
+            .screenshot-gallery::-webkit-scrollbar { display: none; }
+            .screenshot-gallery img {
+                flex-shrink: 0;
+                pointer-events: none;
+            }
         }
     </style>
 </head>
@@ -60,10 +70,10 @@
 
     <main class="relative z-10">
         <!-- Hero -->
-        <section class="relative pt-16 pb-16">
+        <section class="relative pt-16 pb-6 md:pb-16">
             <!-- Rainbow reflection background -->
-            <div class="fixed left-1/2 -top-[30%] -translate-x-1/2 pointer-events-none z-0" aria-hidden="true">
-                <svg class="w-[2400px] opacity-100" viewBox="0 0 933 656" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <div class="fixed left-1/2 -top-[10%] md:-top-[30%] -translate-x-1/2 pointer-events-none z-0" aria-hidden="true">
+                <svg class="w-[1200px] md:w-[2400px] opacity-100" viewBox="0 0 933 656" fill="none" xmlns="http://www.w3.org/2000/svg">
                     <g filter="url(#filter0_f_hero)">
                         <path d="M455.714 109.936C462.117 106.021 470.174 106.021 476.577 109.936L821.464 320.777C826.567 323.897 826.567 331.308 821.464 334.428L476.577 545.269C470.174 549.184 462.117 549.184 455.714 545.269L110.827 334.428C105.724 331.308 105.724 323.897 110.827 320.777L455.714 109.936Z" stroke="url(#paint0_hero)" stroke-width="14"/>
                     </g>
@@ -105,11 +115,14 @@
         </section>
 
         <!-- Screenshot Gallery -->
-        <section class="py-12">
-            <div class="screenshot-gallery max-w-[100vw] px-6 md:px-[max(1.5rem,calc((100vw-64rem)/2))]">
-                <img src="screenshot.jpg" alt="Clearly — editor view with sidebar and document outline" class="w-[min(85vw,56rem)] rounded-lg outline-1 -outline-offset-1 outline-white/10">
-                <img src="screenshot.jpg" alt="Clearly — preview mode with rendered markdown" class="w-[min(85vw,56rem)] rounded-lg outline-1 -outline-offset-1 outline-white/10">
-                <img src="screenshot.jpg" alt="Clearly — global search across documents" class="w-[min(85vw,56rem)] rounded-lg outline-1 -outline-offset-1 outline-white/10">
+        <section class="pt-4 pb-12 md:py-12">
+            <div class="screenshot-gallery max-w-4xl mx-auto px-6 md:max-w-none md:mx-0 md:px-[max(1.5rem,calc((100vw-64rem)/2))]">
+                <img src="screenshots/screenshot-1.jpg" alt="" class="w-full md:w-auto md:h-[32rem] max-w-none rounded-lg outline-1 -outline-offset-1 outline-white/10">
+                <img src="screenshots/screenshot-2-alt.jpg" alt="" class="w-full md:w-auto md:h-[32rem] max-w-none rounded-lg outline-1 -outline-offset-1 outline-white/10">
+                <img src="screenshots/screenshot-3.jpg" alt="" class="w-full md:w-auto md:h-[32rem] max-w-none rounded-lg outline-1 -outline-offset-1 outline-white/10">
+                <img src="screenshots/screenshot-4.jpg" alt="" class="w-full md:w-auto md:h-[32rem] max-w-none rounded-lg outline-1 -outline-offset-1 outline-white/10">
+                <img src="screenshots/screenshot-5-alt.jpg" alt="" class="w-full md:w-auto md:h-[32rem] max-w-none rounded-lg outline-1 -outline-offset-1 outline-white/10">
+                <img src="screenshots/screenshot-6-alt.jpg" alt="" class="w-full md:w-auto md:h-[32rem] max-w-none rounded-lg outline-1 -outline-offset-1 outline-white/10">
             </div>
         </section>
 
@@ -122,21 +135,21 @@
                     <div>
                         <h2 class="font-mono text-xs tracking-wide uppercase text-zinc-600 mb-6">Writing</h2>
                         <dl class="space-y-3">
-                            <div class="flex gap-2 text-sm">
-                                <dt class="font-medium text-zinc-200 shrink-0">Syntax Highlighting</dt>
-                                <dd class="text-zinc-500">&mdash; Headings, bold, italic, links, code blocks, tables, highlighted as you type.</dd>
+                            <div class="sm:flex sm:gap-2 text-sm">
+                                <dt class="font-medium text-zinc-200 sm:shrink-0">Syntax Highlighting</dt>
+                                <dd class="text-zinc-500"><span class="max-sm:hidden">&mdash; </span>Headings, bold, italic, links, code blocks, tables, highlighted as you type.</dd>
                             </div>
-                            <div class="flex gap-2 text-sm">
-                                <dt class="font-medium text-zinc-200 shrink-0">Format Shortcuts</dt>
-                                <dd class="text-zinc-500">&mdash; &#8984;B bold, &#8984;I italic, &#8984;K links.</dd>
+                            <div class="sm:flex sm:gap-2 text-sm">
+                                <dt class="font-medium text-zinc-200 sm:shrink-0">Format Shortcuts</dt>
+                                <dd class="text-zinc-500"><span class="max-sm:hidden">&mdash; </span>&#8984;B bold, &#8984;I italic, &#8984;K links.</dd>
                             </div>
-                            <div class="flex gap-2 text-sm">
-                                <dt class="font-medium text-zinc-200 shrink-0">Extended Markdown</dt>
-                                <dd class="text-zinc-500">&mdash; Highlights, superscript, subscript, emoji shortcodes, table of contents.</dd>
+                            <div class="sm:flex sm:gap-2 text-sm">
+                                <dt class="font-medium text-zinc-200 sm:shrink-0">Extended Markdown</dt>
+                                <dd class="text-zinc-500"><span class="max-sm:hidden">&mdash; </span>Highlights, superscript, subscript, emoji shortcodes, table of contents.</dd>
                             </div>
-                            <div class="flex gap-2 text-sm">
-                                <dt class="font-medium text-zinc-200 shrink-0">Scratchpad</dt>
-                                <dd class="text-zinc-500">&mdash; Menubar scratch pad with a global hotkey.</dd>
+                            <div class="sm:flex sm:gap-2 text-sm">
+                                <dt class="font-medium text-zinc-200 sm:shrink-0">Scratchpad</dt>
+                                <dd class="text-zinc-500"><span class="max-sm:hidden">&mdash; </span>Menubar scratch pad with a global hotkey.</dd>
                             </div>
                         </dl>
                     </div>
@@ -145,29 +158,29 @@
                     <div>
                         <h2 class="font-mono text-xs tracking-wide uppercase text-zinc-600 mb-6">Knowledge</h2>
                         <dl class="space-y-3">
-                            <div class="flex gap-2 text-sm">
-                                <dt class="font-medium text-zinc-200 shrink-0">Wiki-links</dt>
-                                <dd class="text-zinc-500">&mdash; Link documents with [[wiki-links]]. Type [[ to autocomplete.</dd>
+                            <div class="sm:flex sm:gap-2 text-sm">
+                                <dt class="font-medium text-zinc-200 sm:shrink-0">Wiki-links</dt>
+                                <dd class="text-zinc-500"><span class="max-sm:hidden">&mdash; </span>Link documents with [[wiki-links]]. Type [[ to autocomplete.</dd>
                             </div>
-                            <div class="flex gap-2 text-sm">
-                                <dt class="font-medium text-zinc-200 shrink-0">Backlinks</dt>
-                                <dd class="text-zinc-500">&mdash; Linked and unlinked mentions with one-click linking.</dd>
+                            <div class="sm:flex sm:gap-2 text-sm">
+                                <dt class="font-medium text-zinc-200 sm:shrink-0">Backlinks</dt>
+                                <dd class="text-zinc-500"><span class="max-sm:hidden">&mdash; </span>Linked and unlinked mentions with one-click linking.</dd>
                             </div>
-                            <div class="flex gap-2 text-sm">
-                                <dt class="font-medium text-zinc-200 shrink-0">Tags</dt>
-                                <dd class="text-zinc-500">&mdash; Organize with #tags. Browse in the sidebar.</dd>
+                            <div class="sm:flex sm:gap-2 text-sm">
+                                <dt class="font-medium text-zinc-200 sm:shrink-0">Tags</dt>
+                                <dd class="text-zinc-500"><span class="max-sm:hidden">&mdash; </span>Organize with #tags. Browse in the sidebar.</dd>
                             </div>
-                            <div class="flex gap-2 text-sm">
-                                <dt class="font-medium text-zinc-200 shrink-0">Global Search</dt>
-                                <dd class="text-zinc-500">&mdash; Full-text search across every document, ranked by relevance.</dd>
+                            <div class="sm:flex sm:gap-2 text-sm">
+                                <dt class="font-medium text-zinc-200 sm:shrink-0">Global Search</dt>
+                                <dd class="text-zinc-500"><span class="max-sm:hidden">&mdash; </span>Full-text search across every document, ranked by relevance.</dd>
                             </div>
-                            <div class="flex gap-2 text-sm">
-                                <dt class="font-medium text-zinc-200 shrink-0">Document Outline</dt>
-                                <dd class="text-zinc-500">&mdash; Navigate headings. Click to jump.</dd>
+                            <div class="sm:flex sm:gap-2 text-sm">
+                                <dt class="font-medium text-zinc-200 sm:shrink-0">Document Outline</dt>
+                                <dd class="text-zinc-500"><span class="max-sm:hidden">&mdash; </span>Navigate headings. Click to jump.</dd>
                             </div>
-                            <div class="flex gap-2 text-sm">
-                                <dt class="font-medium text-zinc-200 shrink-0">File Explorer</dt>
-                                <dd class="text-zinc-500">&mdash; Browse folders, bookmark locations, create and rename files.</dd>
+                            <div class="sm:flex sm:gap-2 text-sm">
+                                <dt class="font-medium text-zinc-200 sm:shrink-0">File Explorer</dt>
+                                <dd class="text-zinc-500"><span class="max-sm:hidden">&mdash; </span>Browse folders, bookmark locations, create and rename files.</dd>
                             </div>
                         </dl>
                     </div>
@@ -176,29 +189,29 @@
                     <div>
                         <h2 class="font-mono text-xs tracking-wide uppercase text-zinc-600 mb-6">Preview</h2>
                         <dl class="space-y-3">
-                            <div class="flex gap-2 text-sm">
-                                <dt class="font-medium text-zinc-200 shrink-0">GFM Rendering</dt>
-                                <dd class="text-zinc-500">&mdash; Tables, task lists, footnotes, strikethrough.</dd>
+                            <div class="sm:flex sm:gap-2 text-sm">
+                                <dt class="font-medium text-zinc-200 sm:shrink-0">GFM Rendering</dt>
+                                <dd class="text-zinc-500"><span class="max-sm:hidden">&mdash; </span>Tables, task lists, footnotes, strikethrough.</dd>
                             </div>
-                            <div class="flex gap-2 text-sm">
-                                <dt class="font-medium text-zinc-200 shrink-0">KaTeX Math</dt>
-                                <dd class="text-zinc-500">&mdash; Inline and block equations.</dd>
+                            <div class="sm:flex sm:gap-2 text-sm">
+                                <dt class="font-medium text-zinc-200 sm:shrink-0">KaTeX Math</dt>
+                                <dd class="text-zinc-500"><span class="max-sm:hidden">&mdash; </span>Inline and block equations.</dd>
                             </div>
-                            <div class="flex gap-2 text-sm">
-                                <dt class="font-medium text-zinc-200 shrink-0">Mermaid Diagrams</dt>
-                                <dd class="text-zinc-500">&mdash; Flowcharts, sequence diagrams from code blocks.</dd>
+                            <div class="sm:flex sm:gap-2 text-sm">
+                                <dt class="font-medium text-zinc-200 sm:shrink-0">Mermaid Diagrams</dt>
+                                <dd class="text-zinc-500"><span class="max-sm:hidden">&mdash; </span>Flowcharts, sequence diagrams from code blocks.</dd>
                             </div>
-                            <div class="flex gap-2 text-sm">
-                                <dt class="font-medium text-zinc-200 shrink-0">Code Blocks</dt>
-                                <dd class="text-zinc-500">&mdash; 27+ languages, line numbers, diff highlighting, one-click copy.</dd>
+                            <div class="sm:flex sm:gap-2 text-sm">
+                                <dt class="font-medium text-zinc-200 sm:shrink-0">Code Blocks</dt>
+                                <dd class="text-zinc-500"><span class="max-sm:hidden">&mdash; </span>27+ languages, line numbers, diff highlighting, one-click copy.</dd>
                             </div>
-                            <div class="flex gap-2 text-sm">
-                                <dt class="font-medium text-zinc-200 shrink-0">Callouts</dt>
-                                <dd class="text-zinc-500">&mdash; NOTE, TIP, WARNING, and 15+ types. Foldable.</dd>
+                            <div class="sm:flex sm:gap-2 text-sm">
+                                <dt class="font-medium text-zinc-200 sm:shrink-0">Callouts</dt>
+                                <dd class="text-zinc-500"><span class="max-sm:hidden">&mdash; </span>NOTE, TIP, WARNING, and 15+ types. Foldable.</dd>
                             </div>
-                            <div class="flex gap-2 text-sm">
-                                <dt class="font-medium text-zinc-200 shrink-0">Interactive</dt>
-                                <dd class="text-zinc-500">&mdash; Toggle checkboxes, zoom images, hover footnotes, double-click to source.</dd>
+                            <div class="sm:flex sm:gap-2 text-sm">
+                                <dt class="font-medium text-zinc-200 sm:shrink-0">Interactive</dt>
+                                <dd class="text-zinc-500"><span class="max-sm:hidden">&mdash; </span>Toggle checkboxes, zoom images, hover footnotes, double-click to source.</dd>
                             </div>
                         </dl>
                     </div>
@@ -207,21 +220,21 @@
                     <div>
                         <h2 class="font-mono text-xs tracking-wide uppercase text-zinc-600 mb-6">Integration</h2>
                         <dl class="space-y-3">
-                            <div class="flex gap-2 text-sm">
-                                <dt class="font-medium text-zinc-200 shrink-0">AI / MCP Server</dt>
-                                <dd class="text-zinc-500">&mdash; Exposes your vault to AI agents for search and retrieval.</dd>
+                            <div class="sm:flex sm:gap-2 text-sm">
+                                <dt class="font-medium text-zinc-200 sm:shrink-0">AI / MCP Server</dt>
+                                <dd class="text-zinc-500"><span class="max-sm:hidden">&mdash; </span>Exposes your vault to AI agents for search and retrieval.</dd>
                             </div>
-                            <div class="flex gap-2 text-sm">
-                                <dt class="font-medium text-zinc-200 shrink-0">QuickLook</dt>
-                                <dd class="text-zinc-500">&mdash; Preview .md files in Finder with Space.</dd>
+                            <div class="sm:flex sm:gap-2 text-sm">
+                                <dt class="font-medium text-zinc-200 sm:shrink-0">QuickLook</dt>
+                                <dd class="text-zinc-500"><span class="max-sm:hidden">&mdash; </span>Preview .md files in Finder with Space.</dd>
                             </div>
-                            <div class="flex gap-2 text-sm">
-                                <dt class="font-medium text-zinc-200 shrink-0">PDF Export</dt>
-                                <dd class="text-zinc-500">&mdash; Export or print. Page breaks handled.</dd>
+                            <div class="sm:flex sm:gap-2 text-sm">
+                                <dt class="font-medium text-zinc-200 sm:shrink-0">PDF Export</dt>
+                                <dd class="text-zinc-500"><span class="max-sm:hidden">&mdash; </span>Export or print. Page breaks handled.</dd>
                             </div>
-                            <div class="flex gap-2 text-sm">
-                                <dt class="font-medium text-zinc-200 shrink-0">Copy Formats</dt>
-                                <dd class="text-zinc-500">&mdash; Markdown, HTML, or rich text.</dd>
+                            <div class="sm:flex sm:gap-2 text-sm">
+                                <dt class="font-medium text-zinc-200 sm:shrink-0">Copy Formats</dt>
+                                <dd class="text-zinc-500"><span class="max-sm:hidden">&mdash; </span>Markdown, HTML, or rich text.</dd>
                             </div>
                         </dl>
                     </div>

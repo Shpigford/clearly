@@ -2,49 +2,76 @@
   <img src="website/icon.png" width="128" height="128" alt="Clearly icon" />
 </p>
 
-<h1 align="center">Clearly Markdown</h1>
+<h1 align="center">Clearly</h1>
 
-<p align="center">A native markdown editor and document workspace for macOS.</p>
+<p align="center">Markdown editor and knowledge base for Mac.</p>
 
 <p align="center">
-  <a href="https://github.com/Shpigford/clearly/releases/latest/download/Clearly.dmg">Download</a> &middot;
+  <a href="https://apps.apple.com/app/clearly-markdown/id6760669470">Mac App Store</a> &middot;
+  <a href="https://github.com/Shpigford/clearly/releases/latest/download/Clearly.dmg">Direct Download</a> &middot;
   <a href="https://clearly.md">Website</a> &middot;
   <a href="https://x.com/Shpigford">@Shpigford</a>
 </p>
 
 <p align="center">
-  <img src="website/screenshot.jpg" width="720" alt="Clearly screenshot" />
+  <img src="website/screenshots/screenshot-1.jpg" width="720" alt="Clearly — editor with sidebar and document outline" />
 </p>
 
-Open folders, browse your files, write with syntax highlighting, and preview instantly. No Electron, no subscriptions, no bloat.
+Write with syntax highlighting, link your thoughts with wiki-links, search everything, preview beautifully. Native macOS, no Electron, no subscriptions.
 
 ## Features
 
-- **File explorer** — open folders, browse markdown files in a sidebar with bookmarked locations and recents
-- **Document outline** — navigable header outline panel for jumping between sections (⇧⌘O)
-- **Syntax highlighting** — headings, bold, italic, links, code blocks, tables, footnotes, highlights, and more
-- **Instant preview** — rendered GitHub Flavored Markdown, including Mermaid diagrams and KaTeX math
-- **Code syntax highlighting** — 27+ languages via Highlight.js with line numbers and diff highlighting
-- **Callouts & admonitions** — `> [!NOTE]`, `> [!WARNING]`, and 15 callout types with foldable support
-- **Extended markdown** — ==highlights==, ^superscript^, ~subscript~, :emoji: shortcodes, and `[TOC]` generation
-- **Interactive preview** — clickable task checkboxes, heading anchor links, image lightbox, footnote popovers
-- **Click-to-source** — double-click any element in preview to jump to its source line in the editor
-- **Frontmatter support** — YAML frontmatter is formatted cleanly in both editor and preview
-- **Editor/Preview toggle** — switch between editor (⌘1) and preview (⌘2) with scroll position preserved
-- **PDF export** — export to PDF or print directly from the app
-- **Format shortcuts** — Cmd+B, Cmd+I, Cmd+K for bold, italic, and links
-- **Scratchpad** — menubar app with a global hotkey for capturing quick notes without opening a document
-- **QuickLook** — preview .md files right in Finder
-- **Light & Dark** — follows system appearance or set manually
+### Writing
+
+- **Syntax highlighting** — headings, bold, italic, links, code blocks, tables, highlighted as you type
+- **Format shortcuts** — ⌘B bold, ⌘I italic, ⌘K links
+- **Extended markdown** — ==highlights==, ^superscript^, ~subscript~, :emoji: shortcodes, `[TOC]` generation
+- **Scratchpad** — menubar scratch pad with a global hotkey
+
+### Knowledge
+
+- **Wiki-links** — link documents with `[[wiki-links]]`, type `[[` to autocomplete
+- **Backlinks** — linked and unlinked mentions with one-click linking
+- **Tags** — organize with #tags, browse in the sidebar
+- **Global search** — full-text search across every document, ranked by relevance
+- **Document outline** — navigable heading outline, click to jump
+- **File explorer** — browse folders, bookmark locations, create and rename files
+
+### Preview
+
+- **GFM rendering** — tables, task lists, footnotes, strikethrough
+- **KaTeX math** — inline and block equations
+- **Mermaid diagrams** — flowcharts, sequence diagrams from code blocks
+- **Code blocks** — 27+ languages, line numbers, diff highlighting, one-click copy
+- **Callouts** — NOTE, TIP, WARNING, and 15+ types, foldable
+- **Interactive** — toggle checkboxes, zoom images, hover footnotes, double-click to jump to source
+
+### Integration
+
+- **AI / MCP server** — built-in MCP server exposes your vault to AI agents for search and retrieval
+- **QuickLook** — preview .md files in Finder with Space
+- **PDF export** — export or print, page breaks handled
+- **Copy formats** — markdown, HTML, or rich text
+
+## Screenshots
+
+<p>
+  <img src="website/screenshots/screenshot-2-alt.jpg" width="360" alt="" />
+  <img src="website/screenshots/screenshot-3.jpg" width="360" alt="" />
+</p>
+<p>
+  <img src="website/screenshots/screenshot-4.jpg" width="360" alt="" />
+  <img src="website/screenshots/screenshot-5-alt.jpg" width="360" alt="" />
+</p>
 
 ## Prerequisites
 
 - **macOS 14** (Sonoma) or later
-- **Xcode** with command-line tools (`xcode-select --install`)
+- **Xcode 16+** with command-line tools (`xcode-select --install`)
 - **Homebrew** ([brew.sh](https://brew.sh))
 - **xcodegen** — `brew install xcodegen`
 
-Sparkle (auto-updates) and cmark-gfm (markdown rendering) are pulled automatically by Xcode via Swift Package Manager. No manual setup needed.
+Dependencies (cmark-gfm, Sparkle, GRDB, MCP SDK) are pulled automatically by Xcode via Swift Package Manager.
 
 ## Quick Start
 
@@ -56,11 +83,11 @@ xcodegen generate        # generates Clearly.xcodeproj from project.yml
 open Clearly.xcodeproj   # opens in Xcode
 ```
 
-Then hit **Cmd+R** to build and run.
+Then hit **⌘R** to build and run.
 
-> **Note:** The Xcode project is generated from `project.yml`. If you change `project.yml`, re-run `xcodegen generate`. Don't edit the `.xcodeproj` directly.
+> The Xcode project is generated from `project.yml`. If you change `project.yml`, re-run `xcodegen generate`. Don't edit the `.xcodeproj` directly.
 
-### CLI build (no Xcode GUI)
+### CLI build
 
 ```bash
 xcodebuild -scheme Clearly -configuration Debug build
@@ -70,98 +97,103 @@ xcodebuild -scheme Clearly -configuration Debug build
 
 ```
 Clearly/
-├── ClearlyApp.swift                # @main entry — DocumentGroup + menu commands (⌘1/⌘2)
-├── MarkdownDocument.swift          # FileDocument conformance for reading/writing .md files
-├── ContentView.swift               # Mode picker toolbar, switches Editor ↔ Preview
+├── ClearlyApp.swift                # @main — DocumentGroup + menu commands (⌘1/⌘2)
+├── MarkdownDocument.swift          # FileDocument conformance for .md files
+├── ContentView.swift               # Mode picker, Editor ↔ Preview switching
 ├── EditorView.swift                # NSViewRepresentable wrapping NSTextView
 ├── MarkdownSyntaxHighlighter.swift # Regex-based highlighting via NSTextStorageDelegate
 ├── PreviewView.swift               # NSViewRepresentable wrapping WKWebView
+├── FileExplorerView.swift          # Sidebar file browser with bookmarks and recents
+├── FileParser.swift                # Parses frontmatter, wiki-links, tags from documents
+├── VaultIndex.swift                # SQLite + FTS5 index for search, backlinks, tags
 ├── Theme.swift                     # Centralized colors (light/dark) and font constants
-└── Info.plist                      # Supported file types, Sparkle config
+└── Info.plist
 
 ClearlyQuickLook/
-├── PreviewViewController.swift     # QLPreviewProvider for Finder previews
-└── Info.plist                      # Extension config (NSExtensionAttributes)
+├── PreviewProvider.swift           # QLPreviewProvider for Finder previews
+└── Info.plist
+
+ClearlyMCP/
+├── main.swift                      # MCP server — search_notes, get_backlinks, get_tags
+└── (shares VaultIndex, FileParser, FileNode from main app)
 
 Shared/
-├── MarkdownRenderer.swift          # cmark-gfm wrapper — GFM → HTML + post-processing pipeline
-├── PreviewCSS.swift                # CSS shared by in-app preview and QuickLook
-├── EmojiShortcodes.swift           # :shortcode: → Unicode emoji lookup table
-├── SyntaxHighlightSupport.swift    # Highlight.js injection for code block syntax coloring
-└── Resources/                      # Bundled JS/CSS (Mermaid, KaTeX, Highlight.js, demo.md)
+├── MarkdownRenderer.swift          # cmark-gfm → HTML + post-processing pipeline
+├── PreviewCSS.swift                # CSS for in-app preview and QuickLook
+├── MathSupport.swift               # KaTeX injection
+├── MermaidSupport.swift            # Mermaid injection
+├── SyntaxHighlightSupport.swift    # Highlight.js injection
+├── EmojiShortcodes.swift           # :shortcode: → Unicode lookup
+└── Resources/                      # Bundled JS/CSS, demo.md
 
-website/                 # Static marketing site (HTML/CSS), deployed to clearly.md
-scripts/                 # Release pipeline (release.sh)
-project.yml              # xcodegen config — source of truth for Xcode project settings
-ExportOptions.plist      # Developer ID export config for release builds
+website/                            # Static site deployed to clearly.md
+scripts/                            # Release pipeline
+project.yml                         # xcodegen config (source of truth)
 ```
 
 ## Architecture
 
-**SwiftUI + AppKit**, document-based app with two modes.
+**SwiftUI + AppKit**, document-based app with three targets.
 
-### App lifecycle
+### Targets
 
-1. `ClearlyApp` creates a `DocumentGroup` with `MarkdownDocument` (handles `.md` file I/O)
-2. `ContentView` renders a toolbar mode picker and switches between `EditorView` and `PreviewView`
-3. Menu commands (⌘1 Editor, ⌘2 Preview) use `FocusedValueKey` to communicate across the responder chain
+1. **Clearly** — main app. `DocumentGroup` with `MarkdownDocument`, editor and preview modes, file explorer, vault indexing.
+2. **ClearlyQuickLook** — Finder extension for previewing `.md` files with Space.
+3. **ClearlyMCP** — command-line MCP server. Exposes `search_notes` (FTS5), `get_backlinks`, and `get_tags` to AI agents. Read-only access to the same SQLite index the main app creates.
 
 ### Editor
 
-The editor wraps AppKit's `NSTextView` via `NSViewRepresentable` — **not** SwiftUI's `TextEditor`. This is intentional: it provides native undo/redo, the system find panel (⌘F), and `NSTextStorageDelegate`-based syntax highlighting that runs on every keystroke.
-
-`MarkdownSyntaxHighlighter` applies regex patterns for headings, bold, italic, code blocks, links, blockquotes, and lists. Code blocks are matched first to prevent inner highlighting.
+Wraps AppKit's `NSTextView` via `NSViewRepresentable` — not SwiftUI's `TextEditor`. This provides native undo/redo, the system find panel (⌘F), and `NSTextStorageDelegate`-based syntax highlighting on every keystroke.
 
 ### Preview
 
-`PreviewView` wraps `WKWebView` and renders the full HTML preview using `MarkdownRenderer` (cmark-gfm) styled with `PreviewCSS`.
+`PreviewView` wraps `WKWebView` and renders HTML via `MarkdownRenderer` (cmark-gfm). Post-processing pipeline: math → highlight marks → superscript/subscript → emoji → callouts → TOC → tables → code highlighting.
 
-### Key design decisions
+### Knowledge Graph
+
+`VaultIndex` maintains a SQLite database with FTS5 for full-text search. `FileParser` extracts wiki-links, backlinks, and tags from documents. The index is built on a background thread via `WorkspaceManager` to avoid blocking the UI.
+
+### Dependencies
+
+| Package | Purpose |
+|---------|---------|
+| [cmark-gfm](https://github.com/apple/swift-cmark) | GitHub Flavored Markdown → HTML |
+| [Sparkle](https://sparkle-project.org) | Auto-updates (direct distribution only) |
+| [GRDB](https://github.com/groue/GRDB.swift) | SQLite + FTS5 for vault indexing |
+| [MCP](https://github.com/modelcontextprotocol/swift-sdk) | Model Context Protocol server |
+
+### Key Decisions
 
 - **AppKit bridge** — `NSTextView` over `TextEditor` for undo, find, and `NSTextStorageDelegate` syntax highlighting
-- **Dynamic theming** — all colors go through `Theme.swift` with `NSColor(name:)` for automatic light/dark resolution. Don't hardcode colors.
-- **Shared code** — `MarkdownRenderer` and `PreviewCSS` compile into both the main app and the QuickLook extension
-- **No test suite** — validate changes manually by building, running, and observing
+- **Dynamic theming** — all colors through `Theme.swift` with `NSColor(name:)` for automatic light/dark
+- **Shared code** — `MarkdownRenderer` and `PreviewCSS` compile into both the main app and QuickLook
+- **Dual distribution** — Sparkle for direct, App Store without. All Sparkle code wrapped in `#if canImport(Sparkle)`
+- **No `.inspector()`** — outline panel uses `HStack` due to fullscreen safe area bugs
 
 ## Common Dev Tasks
 
-### Add a supported file type
-
-Edit `Clearly/Info.plist` — add a new entry under `CFBundleDocumentTypes` with the UTI and file extension.
-
 ### Change syntax highlighting
 
-Edit `Clearly/MarkdownSyntaxHighlighter.swift`. Patterns are applied in order — code blocks first, then everything else. Add new regex patterns to the `highlightAllMarkdown()` method.
+Edit `MarkdownSyntaxHighlighter.swift`. Patterns are applied in order — code blocks first, then everything else.
 
 ### Modify preview styling
 
-Edit `Shared/PreviewCSS.swift`. This CSS is used by both the in-app preview and QuickLook extension. Keep it in sync with `Theme.swift` colors.
+Edit `Shared/PreviewCSS.swift`. Used by both in-app preview and QuickLook. Keep in sync with `Theme.swift` colors. Base styles must come before `@media (prefers-color-scheme: dark)` overrides.
 
-### Update theme colors
+### Add a preview feature
 
-Edit `Clearly/Theme.swift`. All colors use `NSColor(name:)` with dynamic light/dark providers. Update the corresponding CSS in `PreviewCSS.swift` to match.
+Follow the `MathSupport`/`MermaidSupport` pattern: create a `*Support.swift` enum in `Shared/` with a static method that returns a `<script>` block. Integrate into `PreviewView.swift`, `PreviewProvider.swift`, and `PDFExporter.swift`.
 
 ## Testing
 
 No automated test suite. Validate manually:
 
-1. Build and run the app (Cmd+R)
-2. Open a `.md` file and verify syntax highlighting
-3. Switch to preview mode (⌘2) and verify rendered output
-4. Test QuickLook by selecting a `.md` file in Finder and pressing Space
-5. Check both light and dark mode
-
-## Website
-
-The marketing site is static HTML in `website/`, deployed to [clearly.md](https://clearly.md).
-
-- `website/index.html` — landing page (version string on line 174)
-- `website/privacy.html` — privacy policy
-- `website/appcast.xml` — Sparkle auto-update feed (updated by `scripts/release.sh`)
-
-## AI Agent Setup
-
-This repo includes a `CLAUDE.md` file with full architecture context and Claude Code skills in `.claude/skills/` for release automation and dev onboarding. If you're using Claude Code, these are picked up automatically.
+1. Build and run (⌘R)
+2. Open a `.md` file — verify syntax highlighting
+3. Switch to preview (⌘2) — verify rendered output
+4. Test wiki-links, backlinks, search, tags
+5. QuickLook: select a `.md` in Finder, press Space
+6. Check both light and dark mode
 
 ## License
 

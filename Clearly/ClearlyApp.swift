@@ -13,8 +13,9 @@ func repositionTrafficLights(in window: NSWindow) {
           let titlebarView = closeButton.superview else { return }
 
     let buttons = [closeButton, minimizeButton, zoomButton]
-    let xPositions: [CGFloat] = [14, 34, 54]
-    let topInset: CGFloat = 14
+    // Centered vertically in the 38pt tab bar; balanced inset from left edge
+    let xPositions: [CGFloat] = [13, 33, 53]
+    let topInset: CGFloat = 13
 
     for (button, xPos) in zip(buttons, xPositions) {
         button.translatesAutoresizingMaskIntoConstraints = false
@@ -169,6 +170,7 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValid
 
         self.mainWindow = window
         window.makeKeyAndOrderFront(nil)
+        repositionTrafficLights(in: window)
 
         // Observe theme preference changes
         if let themeObserver {

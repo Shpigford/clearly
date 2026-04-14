@@ -283,8 +283,8 @@ struct FileExplorerOutlineView: NSViewRepresentable {
     /// Root-level sections
     enum Section: String, CaseIterable {
         case locations = "LOCATIONS"
-        case tags = "TAGS"
         case recents = "RECENTS"
+        case tags = "TAGS"
     }
 
     /// Wrapper for items in the outline view
@@ -482,6 +482,7 @@ struct FileExplorerOutlineView: NSViewRepresentable {
 
         func reloadAndExpand() {
             guard let outlineView else { return }
+            refreshCachedTags()
             outlineView.reloadData()
             // autosaveExpandedItems restores expansion state automatically.
             // On first ever launch (no saved state), expand everything.
@@ -662,10 +663,12 @@ struct FileExplorerOutlineView: NSViewRepresentable {
             workspace.openDocuments
         }
 
-        /// Recent files that are not already visible as open documents.
+        /// Recent files that are not already visible as open documents, capped so total recents ≤ 5.
         private var recentHistoryFiles: [URL] {
             let openFileURLs = Set(workspace.openDocuments.compactMap(\.fileURL))
-            return workspace.recentFiles.filter { !openFileURLs.contains($0) }
+            let history = workspace.recentFiles.filter { !openFileURLs.contains($0) }
+            let remaining = max(0, 5 - recentSectionOpenDocs.count)
+            return Array(history.prefix(remaining))
         }
 
         func outlineView(_ outlineView: NSOutlineView, numberOfChildrenOfItem item: Any?) -> Int {
