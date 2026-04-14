@@ -113,13 +113,21 @@ struct ContentView: View {
     @StateObject private var backlinksState = BacklinksState()
     @StateObject private var jumpToLineState = JumpToLineState()
     @AppStorage("showLineNumbers") private var showLineNumbers = false
+    @State private var isFullscreen = false
+    @Environment(\.colorScheme) private var colorScheme
 
     private var hasTabBar: Bool { workspace.openDocuments.count >= 2 }
+
+    private var contentExtraTopInset: CGFloat {
+        var inset: CGFloat = hasTabBar ? 16 : 0
+        if isFullscreen { inset += 16 }
+        return inset
+    }
 
     private var editorPane: some View {
         let editorFontSize = CGFloat(fontSize)
         let fileURL = workspace.currentFileURL
-        return EditorView(text: $workspace.currentFileText, fontSize: editorFontSize, fileURL: fileURL, mode: workspace.currentViewMode, positionSyncID: positionSyncID, findState: findState, outlineState: outlineState, extraTopInset: hasTabBar ? 16 : 0, showLineNumbers: showLineNumbers, jumpToLineState: jumpToLineState)
+        return EditorView(text: $workspace.currentFileText, fontSize: editorFontSize, fileURL: fileURL, mode: workspace.currentViewMode, positionSyncID: positionSyncID, findState: findState, outlineState: outlineState, extraTopInset: contentExtraTopInset, showLineNumbers: showLineNumbers, jumpToLineState: jumpToLineState)
     }
 
     private var previewPane: some View {
@@ -181,7 +189,7 @@ struct ContentView: View {
                 )
             },
             wikiFileNames: allWikiFileNames,
-            extraTopInset: hasTabBar ? 16 : 0
+            extraTopInset: contentExtraTopInset
         )
     }
 
@@ -326,22 +334,35 @@ struct ContentView: View {
 
             bottomBar(words: words, chars: chars)
         }
-        .inspector(isPresented: $outlineState.isVisible) {
-            OutlineView(outlineState: outlineState)
-                .inspectorColumnWidth(min: 180, ideal: 200, max: 280)
-        }
         .frame(minWidth: 500, minHeight: 400)
         .background(Theme.backgroundColorSwiftUI)
     }
 
     var body: some View {
-        mainContent
+        HStack(spacing: 0) {
+            mainContent
+
+            if outlineState.isVisible {
+                Rectangle()
+                    .fill(Color.primary.opacity(colorScheme == .dark ? Theme.separatorOpacityDark : Theme.separatorOpacity))
+                    .frame(width: 1)
+                OutlineView(outlineState: outlineState)
+                    .frame(width: 200)
+            }
+        }
             .animation(Theme.Motion.smooth, value: workspace.currentViewMode)
             .modifier(FocusedValuesModifier(workspace: workspace, findState: findState, outlineState: outlineState, backlinksState: backlinksState, jumpToLineState: jumpToLineState))
             .onAppear {
                 setupFileWatcher()
                 outlineState.parseHeadings(from: workspace.currentFileText)
                 backlinksState.update(for: workspace.currentFileURL, using: workspace.activeVaultIndexes)
+                isFullscreen = NSApp.mainWindow?.styleMask.contains(.fullScreen) ?? false
+            }
+            .onReceive(NotificationCenter.default.publisher(for: NSWindow.didEnterFullScreenNotification)) { _ in
+                isFullscreen = true
+            }
+            .onReceive(NotificationCenter.default.publisher(for: NSWindow.didExitFullScreenNotification)) { _ in
+                isFullscreen = false
             }
             .onChange(of: workspace.activeDocumentID) { _, newID in
                 positionSyncID = UUID().uuidString
