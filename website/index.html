@@ -1,259 +1,254 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" style="color-scheme: dark">
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <link rel="icon" type="image/png" href="/favicon-96x96.png" sizes="96x96" />
-    <link rel="shortcut icon" href="/favicon.ico" />
-    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
-    <meta name="apple-mobile-web-app-title" content="Clearly Markdown" />
-    <link rel="manifest" href="/site.webmanifest" />
-    <title>Clearly Markdown — A native markdown editor and document workspace for Mac</title>
-    <meta name="description" content="A native markdown editor and document workspace for macOS. Open folders, browse files, write with syntax highlighting, and preview instantly.">
-    <meta property="og:title" content="Clearly Markdown">
-    <meta property="og:description" content="A native markdown editor and document workspace for Mac.">
+    <link rel="icon" type="image/png" href="/favicon-96x96.png" sizes="96x96">
+    <link rel="shortcut icon" href="/favicon.ico">
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
+    <meta name="apple-mobile-web-app-title" content="Clearly">
+    <link rel="manifest" href="/site.webmanifest">
+
+    <title>Clearly — Native markdown editor and knowledge base for Mac</title>
+    <meta name="description" content="A native Mac markdown editor that's also a knowledge base. Write with syntax highlighting, link thoughts with wiki-links, search everything, preview beautifully.">
+    <meta property="og:title" content="Clearly — Markdown editor for Mac">
+    <meta property="og:description" content="Native markdown editor and knowledge base for macOS.">
     <meta property="og:image" content="https://clearly.md/icon.png">
     <meta property="og:url" content="https://clearly.md">
+    <meta name="twitter:card" content="summary_large_image">
+
+    <link rel="preconnect" href="https://rsms.me" crossorigin>
+    <link href="https://rsms.me/inter/inter.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/geist@1.3.1/dist/fonts/geist-mono/style.css" rel="stylesheet">
+
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['InterVariable', 'Inter', 'system-ui', 'sans-serif'],
+                        mono: ['"Geist Mono"', 'ui-monospace', 'monospace'],
+                    },
+                },
+            },
+        }
+    </script>
     <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
+        html { scroll-behavior: smooth; }
+        :root { font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11'; }
 
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif;
-            background: #0a0a0a;
-            color: #e0e0e0;
-            -webkit-font-smoothing: antialiased;
-        }
-
-        .container {
-            max-width: 680px;
-            margin: 0 auto;
-            padding: 80px 24px 60px;
-            text-align: center;
-        }
-
-        .icon {
-            width: 160px;
-            height: 160px;
-            border-radius: 36px;
-            margin-bottom: 40px;
-        }
-
-        h1 {
-            font-size: 2.4em;
-            font-weight: 700;
-            letter-spacing: -0.02em;
-            margin-bottom: 12px;
-        }
-
-        .subtitle {
-            font-size: 1.2em;
-            color: #999;
-            line-height: 1.5;
-            margin-bottom: 40px;
-        }
-
-        .buttons {
+        /* Screenshot gallery */
+        .screenshot-gallery {
             display: flex;
-            flex-wrap: wrap;
-            gap: 12px;
-            justify-content: center;
-            margin-bottom: 16px;
+            gap: 1.25rem;
+            overflow-x: auto;
+            -webkit-overflow-scrolling: touch;
+            scrollbar-width: none;
+            cursor: grab;
         }
-
-        .btn {
-            display: inline-flex;
-            align-items: center;
-            gap: 8px;
-            font-size: 1em;
-            font-weight: 600;
-            padding: 14px 28px;
-            border-radius: 10px;
-            text-decoration: none;
-            transition: opacity 0.2s;
-        }
-
-        .btn:hover { opacity: 0.85; }
-
-        .btn.primary {
-            background: #fff;
-            color: #0a0a0a;
-        }
-
-        .btn.secondary {
-            background: #222;
-            color: #e0e0e0;
-        }
-
-        .btn svg { flex-shrink: 0; }
-
-        .requires {
-            font-size: 0.85em;
-            color: #666;
-        }
-
-        .features {
-            margin-top: 80px;
-            text-align: left;
-        }
-
-        .features h2 {
-            font-size: 1.1em;
-            font-weight: 600;
-            color: #666;
-            text-transform: uppercase;
-            letter-spacing: 0.05em;
-            margin-bottom: 24px;
-            text-align: center;
-        }
-
-        .feature-grid {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 20px;
-        }
-
-        .feature-grid .feature:last-child:nth-child(odd) {
-            grid-column: 1 / -1;
-        }
-
-        .feature {
-            background: #141414;
-            border: 1px solid #222;
-            border-radius: 12px;
-            padding: 24px;
-        }
-
-        .feature h3 {
-            font-size: 1em;
-            font-weight: 600;
-            margin-bottom: 6px;
-            color: #f0f0f0;
-        }
-
-        .feature p {
-            font-size: 0.9em;
-            color: #888;
-            line-height: 1.5;
-        }
-
-        .screenshot {
-            max-width: 100%;
-            width: 100%;
-            margin-top: 60px;
-            border-radius: 12px;
-        }
-
-        footer {
-            margin-top: 80px;
-            padding-top: 24px;
-            border-top: 1px solid #1a1a1a;
-            text-align: center;
-            color: #444;
-            font-size: 0.85em;
-        }
-
-        footer a {
-            color: #666;
-            text-decoration: none;
-        }
-
-        footer a:hover { color: #999; }
-
-        @media (max-width: 500px) {
-            .container { padding: 48px 20px 40px; }
-            h1 { font-size: 1.8em; }
-            .icon { width: 120px; height: 120px; border-radius: 28px; }
-            .feature-grid { grid-template-columns: 1fr; }
+        .screenshot-gallery:active { cursor: grabbing; }
+        .screenshot-gallery::-webkit-scrollbar { display: none; }
+        .screenshot-gallery img {
+            flex-shrink: 0;
+            pointer-events: none;
+            user-select: none;
         }
     </style>
 </head>
-<body>
-    <div class="container">
-        <img src="icon.png" alt="Clearly Markdown" class="icon">
-        <h1>Clearly Markdown</h1>
-        <p class="subtitle">A native markdown editor and document workspace for Mac. Open folders, browse your files, write with syntax highlighting, and preview instantly.</p>
-        <div class="buttons">
-            <a href="https://apps.apple.com/app/clearly-markdown/id6760669470" class="btn primary"><svg width="16" height="16" viewBox="0 0 814 1000" fill="currentColor"><path d="M788.1 340.9c-5.8 4.5-108.2 62.2-108.2 190.5 0 148.4 130.3 200.9 134.2 202.2-.6 3.2-20.7 71.9-68.7 141.9-42.8 61.6-87.5 123.1-155.5 123.1s-85.5-39.5-164-39.5c-76.5 0-103.7 40.8-165.9 40.8s-105.6-57.8-155.5-127.4c-58.5-81.7-105.3-209-105.3-329.1 0-193.1 125.6-295.7 249.2-295.7 65.7 0 120.5 43.2 161.7 43.2 39.2 0 100.4-45.8 174.5-45.8 28.2 0 129.3 2.6 196.3 99.8zm-135.5-183.1c31.1-36.9 53.1-88.1 53.1-139.3 0-7.1-.6-14.3-1.9-20.1-50.6 1.9-110.8 33.7-147.1 75.8-28.2 32.4-55.1 83.6-55.1 135.5 0 7.8 1.3 15.6 1.9 18.1 3.2.6 8.4 1.3 13.6 1.3 45.4 0 102.5-30.4 135.5-71.3z"/></svg> Mac App Store</a>
-            <a href="https://github.com/Shpigford/clearly/releases/latest/download/Clearly.dmg" class="btn secondary">Direct Download</a>
-            <a href="https://github.com/Shpigford/clearly" class="btn secondary">GitHub</a>
-        </div>
-        <p class="requires">v1.16.0 &middot; Requires macOS Sonoma or later</p>
+<body class="bg-[#0a0a0a] text-zinc-300 antialiased overflow-x-hidden">
 
-        <img src="screenshot.jpg" alt="Clearly — a native markdown editor for Mac with custom sidebar and preview" class="screenshot">
+    <main class="relative z-10">
+        <!-- Hero -->
+        <section class="relative pt-16 pb-16">
+            <!-- Rainbow reflection background -->
+            <div class="fixed left-1/2 -top-[30%] -translate-x-1/2 pointer-events-none z-0" aria-hidden="true">
+                <svg class="w-[2400px] opacity-100" viewBox="0 0 933 656" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <g filter="url(#filter0_f_hero)">
+                        <path d="M455.714 109.936C462.117 106.021 470.174 106.021 476.577 109.936L821.464 320.777C826.567 323.897 826.567 331.308 821.464 334.428L476.577 545.269C470.174 549.184 462.117 549.184 455.714 545.269L110.827 334.428C105.724 331.308 105.724 323.897 110.827 320.777L455.714 109.936Z" stroke="url(#paint0_hero)" stroke-width="14"/>
+                    </g>
+                    <defs>
+                        <filter id="filter0_f_hero" x="0" y="0" width="932.291" height="655.205" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+                            <feFlood flood-opacity="0" result="BackgroundImageFix"/>
+                            <feBlend mode="normal" in="SourceGraphic" in2="BackgroundImageFix" result="shape"/>
+                            <feGaussianBlur stdDeviation="50" result="effect1_foregroundBlur"/>
+                        </filter>
+                        <linearGradient id="paint0_hero" x1="530.669" y1="327.646" x2="527.169" y2="175.646" gradientUnits="userSpaceOnUse">
+                            <stop stop-color="#FF0044" stop-opacity="0"/>
+                            <stop offset="0.333333" stop-color="#2400FF"/>
+                            <stop offset="0.5" stop-color="#00EDFF"/>
+                            <stop offset="0.666667" stop-color="#00FF0D"/>
+                            <stop offset="0.833333" stop-color="#FFDC00"/>
+                            <stop offset="1" stop-color="#FF2900"/>
+                        </linearGradient>
+                    </defs>
+                </svg>
+            </div>
+            <div class="relative max-w-4xl mx-auto px-6 text-center">
+                <img src="icon.png" alt="" class="size-20 rounded-[1.25rem] mx-auto mb-8">
+                <h1 class="text-4xl sm:text-5xl font-medium tracking-tight text-white text-balance max-w-[30ch] mx-auto">
+                    Clearly. A markdown editor and knowledge base for Mac.
+                </h1>
+                <p class="mt-6 text-lg text-zinc-400 text-pretty max-w-[48ch] mx-auto">
+                    Write with syntax highlighting. Link your thoughts. Search everything. Preview beautifully. Free and open source.
+                </p>
+                <div class="mt-8 flex flex-wrap items-center justify-center gap-4">
+                    <a href="https://apps.apple.com/app/clearly-markdown/id6760669470" class="inline-flex items-center gap-2 px-3 py-2 rounded-md bg-white text-zinc-950 text-sm font-medium hover:bg-zinc-200 transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500">
+                        <svg width="14" height="14" viewBox="0 0 814 1000" fill="currentColor"><path d="M788.1 340.9c-5.8 4.5-108.2 62.2-108.2 190.5 0 148.4 130.3 200.9 134.2 202.2-.6 3.2-20.7 71.9-68.7 141.9-42.8 61.6-87.5 123.1-155.5 123.1s-85.5-39.5-164-39.5c-76.5 0-103.7 40.8-165.9 40.8s-105.6-57.8-155.5-127.4c-58.5-81.7-105.3-209-105.3-329.1 0-193.1 125.6-295.7 249.2-295.7 65.7 0 120.5 43.2 161.7 43.2 39.2 0 100.4-45.8 174.5-45.8 28.2 0 129.3 2.6 196.3 99.8zm-135.5-183.1c31.1-36.9 53.1-88.1 53.1-139.3 0-7.1-.6-14.3-1.9-20.1-50.6 1.9-110.8 33.7-147.1 75.8-28.2 32.4-55.1 83.6-55.1 135.5 0 7.8 1.3 15.6 1.9 18.1 3.2.6 8.4 1.3 13.6 1.3 45.4 0 102.5-30.4 135.5-71.3z"/></svg>
+                        Mac App Store
+                    </a>
+                    <a href="https://github.com/Shpigford/clearly/releases/latest/download/Clearly.dmg" class="text-sm text-zinc-400 hover:text-white transition-colors">Direct Download</a>
+                    <a href="https://github.com/Shpigford/clearly" class="text-sm text-zinc-500 hover:text-zinc-300 transition-colors">GitHub</a>
+                </div>
+                <p class="mt-4 text-sm text-zinc-700">Requires macOS Sonoma or later.</p>
+            </div>
+        </section>
 
-        <div class="features">
-            <h2>Features</h2>
-            <div class="feature-grid">
-                <div class="feature">
-                    <h3>File Explorer</h3>
-                    <p>Open folders and browse your markdown files in a sidebar. Bookmark locations, see recents, create and rename files without leaving the app.</p>
-                </div>
-                <div class="feature">
-                    <h3>Document Outline</h3>
-                    <p>A navigable outline of every heading in your document. Click to jump. Toggle with ⇧⌘O.</p>
-                </div>
-                <div class="feature">
-                    <h3>Native macOS</h3>
-                    <p>Built with SwiftUI and AppKit. Fast launch, low memory, feels right at home on your Mac.</p>
-                </div>
-                <div class="feature">
-                    <h3>Syntax Highlighting</h3>
-                    <p>Headings, bold, italic, links, code blocks, tables, footnotes, highlights, and more — highlighted as you type.</p>
-                </div>
-                <div class="feature">
-                    <h3>Instant Preview</h3>
-                    <p>Full GitHub Flavored Markdown with Mermaid diagrams, KaTeX math, syntax-highlighted code blocks, callouts, and more.</p>
-                </div>
-                <div class="feature">
-                    <h3>Code Highlighting</h3>
-                    <p>27+ languages with line numbers and diff highlighting. Filename headers on code blocks. Copy with one click.</p>
-                </div>
-                <div class="feature">
-                    <h3>Callouts &amp; Admonitions</h3>
-                    <p>GitHub and Obsidian-style callouts — NOTE, TIP, WARNING, and 15 types. Foldable with a click.</p>
-                </div>
-                <div class="feature">
-                    <h3>Interactive Preview</h3>
-                    <p>Toggle task checkboxes, click images to zoom, hover footnotes for popovers, double-click to jump to source.</p>
-                </div>
-                <div class="feature">
-                    <h3>Extended Markdown</h3>
-                    <p>==Highlights==, ^superscript^, ~subscript~, :emoji: shortcodes, and auto-generated table of contents.</p>
-                </div>
-                <div class="feature">
-                    <h3>Editor &amp; Preview Toggle</h3>
-                    <p>Switch between writing and reading with ⌘1 and ⌘2. Scroll position stays in sync across both.</p>
-                </div>
-                <div class="feature">
-                    <h3>PDF Export</h3>
-                    <p>Export your document as a PDF or send it straight to a printer. Page breaks just work.</p>
-                </div>
-                <div class="feature">
-                    <h3>Format Shortcuts</h3>
-                    <p>Cmd+B for bold, Cmd+I for italic, Cmd+K for links. The keyboard shortcuts you expect.</p>
-                </div>
-                <div class="feature">
-                    <h3>Scratchpad</h3>
-                    <p>A menubar app with a global hotkey for jotting things down. Capture a thought without opening a full document.</p>
-                </div>
-                <div class="feature">
-                    <h3>QuickLook</h3>
-                    <p>Preview markdown files right in Finder. Press Space on any .md file.</p>
-                </div>
-                <div class="feature">
-                    <h3>Light &amp; Dark</h3>
-                    <p>Follows your system appearance or set it manually. Looks great either way.</p>
-                </div>
-                <div class="feature">
-                    <h3>Open Source</h3>
-                    <p>Free and open source on <a href="https://github.com/Shpigford/clearly" style="color: #ccc; text-decoration: underline;">GitHub</a>. See how it works, file issues, contribute.</p>
+        <!-- Screenshot Gallery -->
+        <section class="py-12">
+            <div class="screenshot-gallery max-w-[100vw] px-6 md:px-[max(1.5rem,calc((100vw-64rem)/2))]">
+                <img src="screenshot.jpg" alt="Clearly — editor view with sidebar and document outline" class="w-[min(85vw,56rem)] rounded-lg outline-1 -outline-offset-1 outline-white/10">
+                <img src="screenshot.jpg" alt="Clearly — preview mode with rendered markdown" class="w-[min(85vw,56rem)] rounded-lg outline-1 -outline-offset-1 outline-white/10">
+                <img src="screenshot.jpg" alt="Clearly — global search across documents" class="w-[min(85vw,56rem)] rounded-lg outline-1 -outline-offset-1 outline-white/10">
+            </div>
+        </section>
+
+        <!-- Features -->
+        <section class="py-20">
+            <div class="max-w-3xl mx-auto px-6">
+
+                <div class="space-y-16">
+                    <!-- Writing -->
+                    <div>
+                        <h2 class="font-mono text-xs tracking-wide uppercase text-zinc-600 mb-6">Writing</h2>
+                        <dl class="space-y-3">
+                            <div class="flex gap-2 text-sm">
+                                <dt class="font-medium text-zinc-200 shrink-0">Syntax Highlighting</dt>
+                                <dd class="text-zinc-500">&mdash; Headings, bold, italic, links, code blocks, tables, highlighted as you type.</dd>
+                            </div>
+                            <div class="flex gap-2 text-sm">
+                                <dt class="font-medium text-zinc-200 shrink-0">Format Shortcuts</dt>
+                                <dd class="text-zinc-500">&mdash; &#8984;B bold, &#8984;I italic, &#8984;K links.</dd>
+                            </div>
+                            <div class="flex gap-2 text-sm">
+                                <dt class="font-medium text-zinc-200 shrink-0">Extended Markdown</dt>
+                                <dd class="text-zinc-500">&mdash; Highlights, superscript, subscript, emoji shortcodes, table of contents.</dd>
+                            </div>
+                            <div class="flex gap-2 text-sm">
+                                <dt class="font-medium text-zinc-200 shrink-0">Scratchpad</dt>
+                                <dd class="text-zinc-500">&mdash; Menubar scratch pad with a global hotkey.</dd>
+                            </div>
+                        </dl>
+                    </div>
+
+                    <!-- Knowledge -->
+                    <div>
+                        <h2 class="font-mono text-xs tracking-wide uppercase text-zinc-600 mb-6">Knowledge</h2>
+                        <dl class="space-y-3">
+                            <div class="flex gap-2 text-sm">
+                                <dt class="font-medium text-zinc-200 shrink-0">Wiki-links</dt>
+                                <dd class="text-zinc-500">&mdash; Link documents with [[wiki-links]]. Type [[ to autocomplete.</dd>
+                            </div>
+                            <div class="flex gap-2 text-sm">
+                                <dt class="font-medium text-zinc-200 shrink-0">Backlinks</dt>
+                                <dd class="text-zinc-500">&mdash; Linked and unlinked mentions with one-click linking.</dd>
+                            </div>
+                            <div class="flex gap-2 text-sm">
+                                <dt class="font-medium text-zinc-200 shrink-0">Tags</dt>
+                                <dd class="text-zinc-500">&mdash; Organize with #tags. Browse in the sidebar.</dd>
+                            </div>
+                            <div class="flex gap-2 text-sm">
+                                <dt class="font-medium text-zinc-200 shrink-0">Global Search</dt>
+                                <dd class="text-zinc-500">&mdash; Full-text search across every document, ranked by relevance.</dd>
+                            </div>
+                            <div class="flex gap-2 text-sm">
+                                <dt class="font-medium text-zinc-200 shrink-0">Document Outline</dt>
+                                <dd class="text-zinc-500">&mdash; Navigate headings. Click to jump.</dd>
+                            </div>
+                            <div class="flex gap-2 text-sm">
+                                <dt class="font-medium text-zinc-200 shrink-0">File Explorer</dt>
+                                <dd class="text-zinc-500">&mdash; Browse folders, bookmark locations, create and rename files.</dd>
+                            </div>
+                        </dl>
+                    </div>
+
+                    <!-- Preview -->
+                    <div>
+                        <h2 class="font-mono text-xs tracking-wide uppercase text-zinc-600 mb-6">Preview</h2>
+                        <dl class="space-y-3">
+                            <div class="flex gap-2 text-sm">
+                                <dt class="font-medium text-zinc-200 shrink-0">GFM Rendering</dt>
+                                <dd class="text-zinc-500">&mdash; Tables, task lists, footnotes, strikethrough.</dd>
+                            </div>
+                            <div class="flex gap-2 text-sm">
+                                <dt class="font-medium text-zinc-200 shrink-0">KaTeX Math</dt>
+                                <dd class="text-zinc-500">&mdash; Inline and block equations.</dd>
+                            </div>
+                            <div class="flex gap-2 text-sm">
+                                <dt class="font-medium text-zinc-200 shrink-0">Mermaid Diagrams</dt>
+                                <dd class="text-zinc-500">&mdash; Flowcharts, sequence diagrams from code blocks.</dd>
+                            </div>
+                            <div class="flex gap-2 text-sm">
+                                <dt class="font-medium text-zinc-200 shrink-0">Code Blocks</dt>
+                                <dd class="text-zinc-500">&mdash; 27+ languages, line numbers, diff highlighting, one-click copy.</dd>
+                            </div>
+                            <div class="flex gap-2 text-sm">
+                                <dt class="font-medium text-zinc-200 shrink-0">Callouts</dt>
+                                <dd class="text-zinc-500">&mdash; NOTE, TIP, WARNING, and 15+ types. Foldable.</dd>
+                            </div>
+                            <div class="flex gap-2 text-sm">
+                                <dt class="font-medium text-zinc-200 shrink-0">Interactive</dt>
+                                <dd class="text-zinc-500">&mdash; Toggle checkboxes, zoom images, hover footnotes, double-click to source.</dd>
+                            </div>
+                        </dl>
+                    </div>
+
+                    <!-- Integration -->
+                    <div>
+                        <h2 class="font-mono text-xs tracking-wide uppercase text-zinc-600 mb-6">Integration</h2>
+                        <dl class="space-y-3">
+                            <div class="flex gap-2 text-sm">
+                                <dt class="font-medium text-zinc-200 shrink-0">AI / MCP Server</dt>
+                                <dd class="text-zinc-500">&mdash; Exposes your vault to AI agents for search and retrieval.</dd>
+                            </div>
+                            <div class="flex gap-2 text-sm">
+                                <dt class="font-medium text-zinc-200 shrink-0">QuickLook</dt>
+                                <dd class="text-zinc-500">&mdash; Preview .md files in Finder with Space.</dd>
+                            </div>
+                            <div class="flex gap-2 text-sm">
+                                <dt class="font-medium text-zinc-200 shrink-0">PDF Export</dt>
+                                <dd class="text-zinc-500">&mdash; Export or print. Page breaks handled.</dd>
+                            </div>
+                            <div class="flex gap-2 text-sm">
+                                <dt class="font-medium text-zinc-200 shrink-0">Copy Formats</dt>
+                                <dd class="text-zinc-500">&mdash; Markdown, HTML, or rich text.</dd>
+                            </div>
+                        </dl>
+                    </div>
                 </div>
             </div>
-        </div>
+        </section>
+    </main>
 
-        <footer>
-            <p>&copy; Made by <a href="https://x.com/Shpigford">@Shpigford</a> &middot; <a href="https://github.com/Shpigford/clearly">GitHub</a> &middot; <a href="/privacy">Privacy</a></p>
-        </footer>
-    </div>
+    <!-- Footer -->
+    <footer class="pb-12 pt-8 border-t border-zinc-900">
+        <div class="max-w-4xl mx-auto px-6 flex flex-col sm:flex-row items-center justify-between gap-4 text-sm text-zinc-600">
+            <span>&copy; 2026</span>
+            <div class="flex items-center gap-6">
+                <a href="https://github.com/Shpigford/clearly" class="hover:text-zinc-400 transition-colors">GitHub</a>
+                <a href="/privacy" class="hover:text-zinc-400 transition-colors">Privacy</a>
+                <a href="https://x.com/Shpigford" class="hover:text-zinc-400 transition-colors">@Shpigford</a>
+            </div>
+        </div>
+    </footer>
+
+    <script>
+        const g = document.querySelector('.screenshot-gallery');
+        let down = false, startX, scrollLeft;
+        g.addEventListener('mousedown', e => { down = true; startX = e.pageX - g.offsetLeft; scrollLeft = g.scrollLeft; });
+        g.addEventListener('mouseleave', () => { down = false; });
+        g.addEventListener('mouseup', () => { down = false; });
+        g.addEventListener('mousemove', e => { if (!down) return; e.preventDefault(); g.scrollLeft = scrollLeft - (e.pageX - g.offsetLeft - startX); });
+    </script>
 </body>
 </html>
