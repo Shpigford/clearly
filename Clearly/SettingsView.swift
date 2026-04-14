@@ -81,6 +81,10 @@ struct SettingsView: View {
         return appSupport.appendingPathComponent("Clearly/ClearlyMCP").path
     }
 
+    private var mcpBundleIdentifier: String {
+        Bundle.main.bundleIdentifier ?? "com.sabotage.clearly"
+    }
+
     private var mcpBinaryInstalled: Bool {
         FileManager.default.isExecutableFile(atPath: mcpBinaryPath)
     }
@@ -122,7 +126,8 @@ struct SettingsView: View {
         {
           "mcpServers": {
             "clearly": {
-              "command": "\(mcpBinaryPath)"
+              "command": "\(mcpBinaryPath)",
+              "args": ["--bundle-id", "\(mcpBundleIdentifier)"]
             }
           }
         }

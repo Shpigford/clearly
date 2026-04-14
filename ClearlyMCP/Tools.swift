@@ -90,7 +90,11 @@ private func handleSearchNotes(params: CallTool.Parameters, indexes: [(index: Va
         return .init(content: [.text("Error: 'query' parameter is required")], isError: true)
     }
 
-    let limit = params.arguments?["limit"]?.intValue ?? 20
+    let rawLimit = params.arguments?["limit"]?.intValue
+    if let rawLimit, rawLimit <= 0 {
+        return .init(content: [.text("Error: 'limit' must be greater than 0")], isError: true)
+    }
+    let limit = min(rawLimit ?? 20, 100)
 
     // Search across all vaults, collect results with vault context
     var allResults: [(vaultPath: String, group: SearchFileGroup)] = []
@@ -100,6 +104,8 @@ private func handleSearchNotes(params: CallTool.Parameters, indexes: [(index: Va
             allResults.append((url.path, group))
         }
     }
+
+    allResults.sort(by: isHigherPrioritySearchResult)
 
     if allResults.isEmpty {
         return .init(content: [.text("No results found for: \(query)")])
@@ -123,6 +129,22 @@ private func handleSearchNotes(params: CallTool.Parameters, indexes: [(index: Va
     }
 
     return .init(content: [.text(output)])
+}
+
+private func isHigherPrioritySearchResult(
+    _ lhs: (vaultPath: String, group: SearchFileGroup),
+    _ rhs: (vaultPath: String, group: SearchFileGroup)
+) -> Bool {
+    if lhs.group.matchesFilename != rhs.group.matchesFilename {
+        return lhs.group.matchesFilename
+    }
+    if lhs.group.relevanceRank != rhs.group.relevanceRank {
+        return lhs.group.relevanceRank < rhs.group.relevanceRank
+    }
+    if lhs.vaultPath != rhs.vaultPath {
+        return lhs.vaultPath.localizedCaseInsensitiveCompare(rhs.vaultPath) == .orderedAscending
+    }
+    return lhs.group.file.path.localizedCaseInsensitiveCompare(rhs.group.file.path) == .orderedAscending
 }
 
 private func handleGetBacklinks(params: CallTool.Parameters, indexes: [(index: VaultIndex, url: URL)]) -> CallTool.Result {

@@ -27,6 +27,7 @@ struct SearchFileGroup {
     let file: IndexedFile
     let vaultRootURL: URL
     let matchesFilename: Bool
+    let relevanceRank: Double
     let excerpts: [MatchExcerpt]
 }
 
@@ -357,7 +358,7 @@ final class VaultIndex: @unchecked Sendable {
             return try dbPool.read { db in
                 // FTS5 content search
                 let contentRows = try Row.fetchAll(db, sql: """
-                    SELECT f.*, highlight(files_fts, 1, '<<', '>>') AS highlighted_content
+                    SELECT f.*, highlight(files_fts, 1, '<<', '>>') AS highlighted_content, bm25(files_fts) AS rank
                     FROM files_fts
                     JOIN files f ON f.id = files_fts.rowid
                     WHERE files_fts MATCH ?
@@ -371,6 +372,7 @@ final class VaultIndex: @unchecked Sendable {
                 for row in contentRows {
                     let file = Self.indexedFile(from: row)
                     let highlightedContent: String = row["highlighted_content"] ?? ""
+                    let relevanceRank: Double = row["rank"] ?? Double.greatestFiniteMagnitude
                     let filenameMatches = searchTerms.contains { file.filename.lowercased().contains($0) }
 
                     // Find matching lines from FTS-highlighted content so stemmed/tokenized
@@ -396,6 +398,7 @@ final class VaultIndex: @unchecked Sendable {
                         file: file,
                         vaultRootURL: rootURL,
                         matchesFilename: filenameMatches,
+                        relevanceRank: relevanceRank,
                         excerpts: excerpts
                     )
                     orderedIds.append(file.id)
@@ -418,6 +421,7 @@ final class VaultIndex: @unchecked Sendable {
                                 file: file,
                                 vaultRootURL: self.rootURL,
                                 matchesFilename: true,
+                                relevanceRank: Double.greatestFiniteMagnitude,
                                 excerpts: []
                             )
                             orderedIds.append(file.id)
@@ -425,11 +429,12 @@ final class VaultIndex: @unchecked Sendable {
                     }
                 }
 
-                // Sort: filename matches first, then content-only, preserving bm25 order within
+                // Sort deterministically: filename matches first, then BM25 rank, then path.
                 let groups = orderedIds.compactMap { resultsByFileId[$0] }
                 return groups.sorted { a, b in
                     if a.matchesFilename != b.matchesFilename { return a.matchesFilename }
-                    return false // preserve bm25 order
+                    if a.relevanceRank != b.relevanceRank { return a.relevanceRank < b.relevanceRank }
+                    return a.file.path.localizedCaseInsensitiveCompare(b.file.path) == .orderedAscending
                 }
             }
         } catch {
