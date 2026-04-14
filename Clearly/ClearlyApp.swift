@@ -1202,7 +1202,7 @@ struct FindCommand: View {
 
     var body: some View {
         Button("Find…") {
-            findState?.present()
+            findState?.toggle()
         }
         .keyboardShortcut("f", modifiers: .command)
     }

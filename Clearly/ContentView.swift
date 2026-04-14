@@ -267,7 +267,7 @@ struct ContentView: View {
                 .help("Document Outline (Shift+Cmd+O)")
 
                 Button {
-                    findState.present()
+                    findState.toggle()
                 } label: {
                     Image(systemName: "magnifyingglass")
                 }
@@ -373,7 +373,7 @@ struct ContentView: View {
             }
             .onChange(of: workspace.activeDocumentID) { _, newID in
                 positionSyncID = UUID().uuidString
-                findState.isVisible = false
+                findState.dismiss()
                 jumpToLineState.dismiss()
                 setupFileWatcher()
                 outlineState.parseHeadings(from: workspace.currentFileText)
@@ -408,7 +408,7 @@ struct ContentView: View {
             .onReceive(NotificationCenter.default.publisher(for: .init("ClearlyJumpToLine"))) { _ in
                 guard workspace.currentViewMode == .edit else { return }
                 withAnimation(Theme.Motion.smooth) {
-                    jumpToLineState.present()
+                    jumpToLineState.toggle()
                 }
             }
             .onChange(of: workspace.vaultIndexRevision) { _, _ in

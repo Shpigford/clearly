@@ -24,7 +24,7 @@ struct FindBarView: View {
                         }
                     }
                     .onExitCommand {
-                        findState.isVisible = false
+                        findState.dismiss()
                     }
 
                 if !findState.query.isEmpty {
@@ -62,7 +62,7 @@ struct FindBarView: View {
             }
 
             Button("Done") {
-                findState.isVisible = false
+                findState.dismiss()
             }
             .buttonStyle(.plain)
             .font(.system(size: 12, weight: .medium))

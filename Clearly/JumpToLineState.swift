@@ -8,6 +8,14 @@ final class JumpToLineState: ObservableObject {
     var onJump: ((Int) -> Void)?
     var editorLineInfo: (() -> (current: Int, total: Int))?
 
+    func toggle() {
+        if isVisible {
+            dismiss()
+        } else {
+            present()
+        }
+    }
+
     func present() {
         if let info = editorLineInfo?() {
             totalLines = info.total
