@@ -14,6 +14,7 @@ struct EditorView: NSViewRepresentable {
     var extraTopInset: CGFloat = 0
     var showLineNumbers: Bool = false
     var jumpToLineState: JumpToLineState?
+    var needsTrafficLightClearance: Bool = false
     @Environment(\.colorScheme) private var colorScheme
 
     func makeCoordinator() -> Coordinator {
@@ -56,7 +57,8 @@ struct EditorView: NSViewRepresentable {
         ]
 
         // Insets
-        textView.textContainerInset = NSSize(width: Theme.editorInsetX, height: Theme.editorInsetTop + extraTopInset)
+        let horizontalInset = Theme.editorInsetX + (needsTrafficLightClearance ? 20 : 0)
+        textView.textContainerInset = NSSize(width: horizontalInset, height: Theme.editorInsetTop + extraTopInset)
         textView.textContainer?.lineFragmentPadding = 0
 
         // Layout
@@ -210,7 +212,8 @@ struct EditorView: NSViewRepresentable {
         }
 
         // Update top inset when tab bar appears/disappears
-        let expectedInset = NSSize(width: Theme.editorInsetX, height: Theme.editorInsetTop + extraTopInset)
+        let horizontalInset = Theme.editorInsetX + (needsTrafficLightClearance ? 20 : 0)
+        let expectedInset = NSSize(width: horizontalInset, height: Theme.editorInsetTop + extraTopInset)
         if textView.textContainerInset != expectedInset {
             textView.textContainerInset = expectedInset
         }

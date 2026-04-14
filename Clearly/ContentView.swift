@@ -118,6 +118,11 @@ struct ContentView: View {
 
     private var hasTabBar: Bool { workspace.openDocuments.count >= 2 }
 
+    /// Extra leading space to clear traffic lights when sidebar is hidden and no tab bar is present
+    private var trafficLightInset: CGFloat {
+        (!workspace.isSidebarVisible && !hasTabBar) ? 90 : 0
+    }
+
     private var contentExtraTopInset: CGFloat {
         var inset: CGFloat = hasTabBar ? 16 : 0
         if isFullscreen { inset += 16 }
@@ -127,7 +132,7 @@ struct ContentView: View {
     private var editorPane: some View {
         let editorFontSize = CGFloat(fontSize)
         let fileURL = workspace.currentFileURL
-        return EditorView(text: $workspace.currentFileText, fontSize: editorFontSize, fileURL: fileURL, mode: workspace.currentViewMode, positionSyncID: positionSyncID, findState: findState, outlineState: outlineState, extraTopInset: contentExtraTopInset, showLineNumbers: showLineNumbers, jumpToLineState: jumpToLineState)
+        return EditorView(text: $workspace.currentFileText, fontSize: editorFontSize, fileURL: fileURL, mode: workspace.currentViewMode, positionSyncID: positionSyncID, findState: findState, outlineState: outlineState, extraTopInset: contentExtraTopInset, showLineNumbers: showLineNumbers, jumpToLineState: jumpToLineState, needsTrafficLightClearance: !workspace.isSidebarVisible && !hasTabBar)
     }
 
     private var previewPane: some View {
@@ -287,6 +292,7 @@ struct ContentView: View {
         return VStack(spacing: 0) {
             if findState.isVisible {
                 FindBarView(findState: findState)
+                    .padding(.leading, trafficLightInset)
                     .transition(.move(edge: .top).combined(with: .opacity))
                 Rectangle()
                     .fill(Color.primary.opacity(0.08))
@@ -294,6 +300,7 @@ struct ContentView: View {
             }
             if jumpToLineState.isVisible {
                 JumpToLineBar(state: jumpToLineState)
+                    .padding(.leading, trafficLightInset)
                     .transition(.move(edge: .top).combined(with: .opacity))
                 Rectangle()
                     .fill(Color.primary.opacity(0.08))
