@@ -314,15 +314,19 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValid
             return nil
         }
 
-        // Cmd+Shift+L toggles sidebar, Cmd+1/2 switches mode, Cmd+Shift+O toggles outline
+        // Cmd+L toggles sidebar, Cmd+Shift+L jumps to line, Cmd+1/2 switches mode
         sidebarToggleMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
             guard let self else { return event }
             guard event.type == .keyDown else { return event }
             let mods = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
             let chars = event.charactersIgnoringModifiers?.lowercased() ?? ""
 
-            if chars == "l" && mods == [.command, .shift] {
+            if chars == "l" && mods == [.command] {
                 self.doToggleSidebar()
+                return nil
+            }
+            if chars == "l" && mods == [.command, .shift] {
+                NotificationCenter.default.post(name: .init("ClearlyJumpToLine"), object: nil)
                 return nil
             }
             if chars == "1" && mods == [.command] {
@@ -486,7 +490,7 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValid
         guard !viewMenu.items.contains(where: { $0.title == "Toggle Sidebar" }) else { return }
 
         let sidebarItem = NSMenuItem(title: "Toggle Sidebar", action: #selector(toggleSidebarMenuAction(_:)), keyEquivalent: "l")
-        sidebarItem.keyEquivalentModifierMask = [.command, .shift]
+        sidebarItem.keyEquivalentModifierMask = [.command]
         sidebarItem.target = self
 
         // Insert at the beginning of the View menu
@@ -531,6 +535,9 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValid
         backlinksItem.keyEquivalentModifierMask = [.command, .shift]
         backlinksItem.target = self
 
+        let lineNumbersItem = NSMenuItem(title: "Line Numbers", action: #selector(toggleLineNumbersAction(_:)), keyEquivalent: "")
+        lineNumbersItem.target = self
+
         let editorItem = NSMenuItem(title: "Editor", action: #selector(switchToEditorAction(_:)), keyEquivalent: "1")
         editorItem.keyEquivalentModifierMask = [.command]
         editorItem.target = self
@@ -543,6 +550,7 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValid
         var insertIndex = 1
         viewMenu.insertItem(outlineItem, at: insertIndex); insertIndex += 1
         viewMenu.insertItem(backlinksItem, at: insertIndex); insertIndex += 1
+        viewMenu.insertItem(lineNumbersItem, at: insertIndex); insertIndex += 1
         viewMenu.insertItem(.separator(), at: insertIndex); insertIndex += 1
         viewMenu.insertItem(editorItem, at: insertIndex); insertIndex += 1
         viewMenu.insertItem(previewItem, at: insertIndex)
@@ -562,6 +570,10 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValid
 
     @objc private func toggleBacklinksAction(_ sender: Any?) {
         NotificationCenter.default.post(name: .init("ClearlyToggleBacklinks"), object: nil)
+    }
+
+    @objc private func toggleLineNumbersAction(_ sender: Any?) {
+        NotificationCenter.default.post(name: .init("ClearlyToggleLineNumbers"), object: nil)
     }
 
     private func injectSpellingMenuIfNeeded() {
@@ -645,6 +657,10 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValid
         if menuItem.action == #selector(exportPDFAction(_:)) ||
            menuItem.action == #selector(printDocumentAction(_:)) {
             return WorkspaceManager.shared.activeDocumentID != nil
+        }
+        if menuItem.action == #selector(toggleLineNumbersAction(_:)) {
+            menuItem.state = UserDefaults.standard.bool(forKey: "showLineNumbers") ? .on : .off
+            return true
         }
         return true
     }

@@ -12,13 +12,15 @@ struct EditorView: NSViewRepresentable {
     var findState: FindState?
     var outlineState: OutlineState?
     var extraTopInset: CGFloat = 0
+    var showLineNumbers: Bool = false
+    var jumpToLineState: JumpToLineState?
     @Environment(\.colorScheme) private var colorScheme
 
     func makeCoordinator() -> Coordinator {
         Coordinator(self)
     }
 
-    func makeNSView(context: Context) -> NSScrollView {
+    func makeNSView(context: Context) -> NSView {
         DiagnosticLog.log("makeNSView: creating EditorView (\(text.count) chars)")
         let scrollView = NSScrollView()
         scrollView.hasVerticalScroller = true
@@ -85,6 +87,13 @@ struct EditorView: NSViewRepresentable {
         }
 
         scrollView.documentView = textView
+
+        // Line number gutter (plain NSView, not NSRulerView)
+        let gutter = LineNumberGutterView()
+        gutter.textView = textView
+        gutter.isHidden = !showLineNumbers
+        context.coordinator.gutterView = gutter
+
         context.coordinator.textView = textView
         context.coordinator.findState = findState
         context.coordinator.outlineState = outlineState
@@ -137,20 +146,68 @@ struct EditorView: NSViewRepresentable {
             object: nil
         )
 
+        // Frame changes (window resize causing rewrap) — trigger gutter redraw
+        textView.postsFrameChangedNotifications = true
+        NotificationCenter.default.addObserver(
+            context.coordinator,
+            selector: #selector(Coordinator.textViewFrameDidChange(_:)),
+            name: NSView.frameDidChangeNotification,
+            object: textView
+        )
+
+        // Wire jump-to-line
+        if let jumpState = jumpToLineState {
+            let coord = context.coordinator
+            jumpState.onJump = { [weak coord] line in
+                coord?.jumpToLine(line)
+            }
+            jumpState.editorLineInfo = { [weak coord] in
+                coord?.currentLineInfo() ?? (1, 1)
+            }
+        }
+
+        // Container: gutter | scrollView side by side
+        let container = NSView()
+        container.addSubview(gutter)
+        container.addSubview(scrollView)
+
+        // Layout via autoresizing
+        gutter.autoresizingMask = [.height]
+        scrollView.autoresizingMask = [.width, .height]
+
+        let gutterWidth = showLineNumbers ? gutter.preferredWidth() : 0
+        gutter.frame = NSRect(x: 0, y: 0, width: gutterWidth, height: 0)
+        scrollView.frame = NSRect(x: gutterWidth, y: 0, width: 0, height: 0)
+
         DiagnosticLog.log("makeNSView: EditorView ready")
-        return scrollView
+        return container
     }
 
-    static func dismantleNSView(_ scrollView: NSScrollView, coordinator: Coordinator) {
+    static func dismantleNSView(_ container: NSView, coordinator: Coordinator) {
         NotificationCenter.default.removeObserver(coordinator)
         DiagnosticLog.log("dismantleNSView: EditorView torn down")
     }
 
-    func updateNSView(_ scrollView: NSScrollView, context: Context) {
-        guard let textView = scrollView.documentView as? ClearlyTextView else { return }
+    func updateNSView(_ container: NSView, context: Context) {
+        guard let scrollView = container.subviews.first(where: { $0 is NSScrollView }) as? NSScrollView,
+              let textView = scrollView.documentView as? ClearlyTextView else { return }
+        let gutter = container.subviews.first(where: { $0 is LineNumberGutterView }) as? LineNumberGutterView
 
         // Keep coordinator's parent fresh so the binding never goes stale
         context.coordinator.parent = self
+
+        // Toggle line number gutter visibility
+        if let gutter {
+            let gutterWidth = showLineNumbers ? gutter.preferredWidth() : 0
+            if gutter.isHidden == showLineNumbers {
+                gutter.isHidden = !showLineNumbers
+            }
+            let expectedGutterWidth = showLineNumbers ? gutterWidth : 0
+            if abs(gutter.frame.width - expectedGutterWidth) > 0.5 || abs(scrollView.frame.minX - expectedGutterWidth) > 0.5 {
+                gutter.frame = NSRect(x: 0, y: 0, width: expectedGutterWidth, height: container.bounds.height)
+                scrollView.frame = NSRect(x: expectedGutterWidth, y: 0, width: container.bounds.width - expectedGutterWidth, height: container.bounds.height)
+            }
+        }
 
         // Update top inset when tab bar appears/disappears
         let expectedInset = NSSize(width: Theme.editorInsetX, height: Theme.editorInsetTop + extraTopInset)
@@ -221,6 +278,9 @@ struct EditorView: NSViewRepresentable {
             context.coordinator.highlighter?.highlightAll(textView.textStorage!, caller: "appearance")
             context.coordinator.isHighlightingInProgress = false
             context.coordinator.restoreFindHighlightsIfNeeded()
+
+            // Refresh ruler when appearance/font changes
+            context.coordinator.gutterView?.appearanceDidChange()
         }
 
         // Only update text if it changed externally (not from user typing).
@@ -239,6 +299,8 @@ struct EditorView: NSViewRepresentable {
             context.coordinator.highlighter?.highlightAll(textView.textStorage!, caller: "externalText")
             context.coordinator.isHighlightingInProgress = false
             context.coordinator.restoreFindHighlightsIfNeeded()
+            context.coordinator.gutterView?.textDidChange()
+            context.coordinator.gutterView?.selectionDidChange(selectedRange: textView.selectedRange())
             context.coordinator.isUpdating = false
         } else if context.coordinator.isUpdating && count <= 5 {
             DiagnosticLog.log("updateNSView #\(count): skipped text check (isUpdating)")
@@ -259,6 +321,7 @@ struct EditorView: NSViewRepresentable {
         var lastEditedRange: NSRange?
         var lastReplacementLength: Int = 0
         weak var textView: NSTextView?
+        weak var gutterView: LineNumberGutterView?
         var lastMode: ViewMode?
         var lastPositionSyncID: String?
         var findState: FindState?
@@ -289,6 +352,11 @@ struct EditorView: NSViewRepresentable {
             textView.showFindIndicator(for: range)
         }
 
+        func textViewDidChangeSelection(_ notification: Notification) {
+            guard let textView = notification.object as? NSTextView else { return }
+            gutterView?.selectionDidChange(selectedRange: textView.selectedRange())
+        }
+
         @objc func handleScrollToLine(_ notification: Notification) {
             guard let line = notification.userInfo?["line"] as? Int,
                   let textView,
@@ -314,6 +382,45 @@ struct EditorView: NSViewRepresentable {
         @objc func flushEditorBuffer(_ notification: Notification) {
             guard let textView else { return }
             parent.text = textView.string
+        }
+
+        @objc func textViewFrameDidChange(_ notification: Notification) {
+            gutterView?.scrollOrFrameDidChange()
+        }
+
+        func jumpToLine(_ line: Int) {
+            guard let textView, line > 0 else { return }
+            let text = textView.string
+            let lines = (text as NSString).components(separatedBy: "\n")
+            let targetLine = min(line, lines.count)
+            var charOffset = 0
+            for i in 0..<(targetLine - 1) {
+                charOffset += (lines[i] as NSString).length + 1
+            }
+            let nsText = text as NSString
+            let location = min(charOffset, nsText.length)
+            let range = NSRange(location: location, length: 0)
+            textView.setSelectedRange(range)
+            textView.scrollRangeToVisible(range)
+            if targetLine - 1 < lines.count {
+                let lineLen = (lines[targetLine - 1] as NSString).length
+                let highlightRange = NSRange(location: location, length: min(lineLen, nsText.length - location))
+                textView.showFindIndicator(for: highlightRange)
+            }
+        }
+
+        func currentLineInfo() -> (current: Int, total: Int) {
+            guard let textView else { return (1, 1) }
+            let text = textView.string as NSString
+            let location = min(textView.selectedRange().location, text.length)
+            var lineNumber = 1
+            var i = 0
+            while i < location {
+                if text.character(at: i) == 0x0A { lineNumber += 1 }
+                i += 1
+            }
+            let totalLines = text.components(separatedBy: "\n").count
+            return (lineNumber, totalLines)
         }
 
         func cancelPendingBindingUpdate() {
@@ -398,6 +505,9 @@ struct EditorView: NSViewRepresentable {
 
             // Re-apply find highlights after syntax highlighting
             restoreFindHighlightsIfNeeded()
+
+            // Update line number ruler
+            gutterView?.textDidChange()
 
             // Wiki-link auto-complete trigger/update
             handleWikiLinkCompletion(textView)
@@ -520,6 +630,8 @@ struct EditorView: NSViewRepresentable {
             let viewportHeight = clipView.bounds.height
             let maxScroll = max(1, docHeight - viewportHeight)
             ScrollBridge.setFraction(clipView.bounds.origin.y / maxScroll, for: parent.positionSyncID)
+
+            gutterView?.scrollOrFrameDidChange()
         }
 
         // MARK: - Find

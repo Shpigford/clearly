@@ -31,6 +31,10 @@ struct BacklinksStateKey: FocusedValueKey {
     typealias Value = BacklinksState
 }
 
+struct JumpToLineStateKey: FocusedValueKey {
+    typealias Value = JumpToLineState
+}
+
 extension FocusedValues {
     var viewMode: Binding<ViewMode>? {
         get { self[ViewModeKey.self] }
@@ -56,6 +60,10 @@ extension FocusedValues {
         get { self[BacklinksStateKey.self] }
         set { self[BacklinksStateKey.self] = newValue }
     }
+    var jumpToLineState: JumpToLineState? {
+        get { self[JumpToLineStateKey.self] }
+        set { self[JumpToLineStateKey.self] = newValue }
+    }
 }
 
 struct FocusedValuesModifier: ViewModifier {
@@ -63,6 +71,7 @@ struct FocusedValuesModifier: ViewModifier {
     var findState: FindState
     var outlineState: OutlineState
     var backlinksState: BacklinksState
+    var jumpToLineState: JumpToLineState
 
     func body(content: Content) -> some View {
         content
@@ -72,6 +81,7 @@ struct FocusedValuesModifier: ViewModifier {
             .focusedSceneValue(\.findState, findState)
             .focusedSceneValue(\.outlineState, outlineState)
             .focusedSceneValue(\.backlinksState, backlinksState)
+            .focusedSceneValue(\.jumpToLineState, jumpToLineState)
     }
 }
 
@@ -100,13 +110,15 @@ struct ContentView: View {
     @StateObject private var fileWatcher = FileWatcher()
     @StateObject private var outlineState = OutlineState()
     @StateObject private var backlinksState = BacklinksState()
+    @StateObject private var jumpToLineState = JumpToLineState()
+    @AppStorage("showLineNumbers") private var showLineNumbers = false
 
     private var hasTabBar: Bool { workspace.openDocuments.count >= 2 }
 
     private var editorPane: some View {
         let editorFontSize = CGFloat(fontSize)
         let fileURL = workspace.currentFileURL
-        return EditorView(text: $workspace.currentFileText, fontSize: editorFontSize, fileURL: fileURL, mode: workspace.currentViewMode, positionSyncID: positionSyncID, findState: findState, outlineState: outlineState, extraTopInset: hasTabBar ? 16 : 0)
+        return EditorView(text: $workspace.currentFileText, fontSize: editorFontSize, fileURL: fileURL, mode: workspace.currentViewMode, positionSyncID: positionSyncID, findState: findState, outlineState: outlineState, extraTopInset: hasTabBar ? 16 : 0, showLineNumbers: showLineNumbers, jumpToLineState: jumpToLineState)
     }
 
     private var previewPane: some View {
@@ -270,6 +282,13 @@ struct ContentView: View {
                     .fill(Color.primary.opacity(0.08))
                     .frame(height: 1)
             }
+            if jumpToLineState.isVisible {
+                JumpToLineBar(state: jumpToLineState)
+                    .transition(.move(edge: .top).combined(with: .opacity))
+                Rectangle()
+                    .fill(Color.primary.opacity(0.08))
+                    .frame(height: 1)
+            }
             ZStack {
                 editorPane
                     .opacity(workspace.currentViewMode == .edit ? 1 : 0)
@@ -316,7 +335,7 @@ struct ContentView: View {
     var body: some View {
         mainContent
             .animation(Theme.Motion.smooth, value: workspace.currentViewMode)
-            .modifier(FocusedValuesModifier(workspace: workspace, findState: findState, outlineState: outlineState, backlinksState: backlinksState))
+            .modifier(FocusedValuesModifier(workspace: workspace, findState: findState, outlineState: outlineState, backlinksState: backlinksState, jumpToLineState: jumpToLineState))
             .onAppear {
                 setupFileWatcher()
                 outlineState.parseHeadings(from: workspace.currentFileText)
@@ -325,10 +344,15 @@ struct ContentView: View {
             .onChange(of: workspace.activeDocumentID) { _, newID in
                 positionSyncID = UUID().uuidString
                 findState.isVisible = false
+                jumpToLineState.dismiss()
                 setupFileWatcher()
                 outlineState.parseHeadings(from: workspace.currentFileText)
                 backlinksState.update(for: workspace.currentFileURL, using: workspace.activeVaultIndexes)
                 applyPendingWikiNavigationIfNeeded()
+            }
+            .onChange(of: workspace.currentViewMode) { _, newMode in
+                guard newMode != .edit else { return }
+                jumpToLineState.dismiss()
             }
             .onChange(of: workspace.currentFileURL) { _, _ in
                 setupFileWatcher()
@@ -346,6 +370,15 @@ struct ContentView: View {
             .onReceive(NotificationCenter.default.publisher(for: .init("ClearlyToggleBacklinks"))) { _ in
                 withAnimation(Theme.Motion.smooth) {
                     backlinksState.toggle()
+                }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .init("ClearlyToggleLineNumbers"))) { _ in
+                showLineNumbers.toggle()
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .init("ClearlyJumpToLine"))) { _ in
+                guard workspace.currentViewMode == .edit else { return }
+                withAnimation(Theme.Motion.smooth) {
+                    jumpToLineState.present()
                 }
             }
             .onChange(of: workspace.vaultIndexRevision) { _, _ in
