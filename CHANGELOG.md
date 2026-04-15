@@ -2,6 +2,19 @@
 
 ## [Unreleased]
 
+## [2.1.0] - 2026-04-15
+- Pin favorite documents to the top of the sidebar for quick access
+- Set a preferred content width for comfortable reading on wide displays
+- Welcome view with a Getting Started guide greets new users on first launch
+- Middle-click a tab to close it
+- Toggle the Go to Line and Find bars open/closed with their keyboard shortcuts
+- Selected text stays highlighted when switching between editor and preview
+- Sidebar remembers its width between app restarts
+- Editor stays responsive on large markdown files
+- Sidebar and vault index skip heavy directories and respect .gitignore
+- Window controls stay accessible when the sidebar and tab bar are hidden
+- Location bookmarks validate directory access on restore
+
 ## [2.0.0] - 2026-04-14
 - Open multiple documents in tabs (Cmd+T, Cmd+W, Cmd+Shift+[/] to switch)
 - Link between notes with [[wiki-link]] syntax and auto-complete as you type

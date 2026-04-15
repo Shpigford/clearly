@@ -71,7 +71,7 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.sabotage.clearly
         PRODUCT_NAME: Clearly
-        MARKETING_VERSION: "2.0.0"
+        MARKETING_VERSION: "2.1.0"
         CURRENT_PROJECT_VERSION: "1"
         SWIFT_VERSION: "5.9"
         CODE_SIGN_ENTITLEMENTS: Clearly/Clearly.entitlements
@@ -113,7 +113,7 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.sabotage.clearly.quicklook
         PRODUCT_NAME: ClearlyQuickLook
-        MARKETING_VERSION: "2.0.0"
+        MARKETING_VERSION: "2.1.0"
         CURRENT_PROJECT_VERSION: "1"
         SWIFT_VERSION: "5.9"
         GENERATE_INFOPLIST_FILE: NO
@@ -145,7 +145,7 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.sabotage.clearly.mcp
         PRODUCT_NAME: ClearlyMCP
-        MARKETING_VERSION: "2.0.0"
+        MARKETING_VERSION: "2.1.0"
         CURRENT_PROJECT_VERSION: "1"
         SWIFT_VERSION: "6.0"
         SWIFT_STRICT_CONCURRENCY: minimal
