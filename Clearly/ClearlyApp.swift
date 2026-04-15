@@ -129,6 +129,7 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValid
     private var closeTabMonitor: Any?
     private var showHiddenFilesMonitor: Any?
     private var sidebarToggleMonitor: Any?
+    private var middleClickMonitor: Any?
     private var quickSwitcherMonitor: Any?
     private var themeObserver: Any?
     private var isProgrammaticallyClosingWindows = false
@@ -309,6 +310,16 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValid
             return event
         }
 
+        middleClickMonitor = NSEvent.addLocalMonitorForEvents(matching: .otherMouseUp) { event in
+            guard event.buttonNumber == 2 else { return event }
+            let workspace = WorkspaceManager.shared
+            if let hoveredID = workspace.hoveredTabID {
+                workspace.closeDocument(hoveredID)
+                return nil
+            }
+            return event
+        }
+
         showHiddenFilesMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
             guard let self else { return event }
             guard self.shouldToggleHiddenFiles(for: event) else { return event }
@@ -437,6 +448,10 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValid
         if let closeTabMonitor {
             NSEvent.removeMonitor(closeTabMonitor)
             self.closeTabMonitor = nil
+        }
+        if let middleClickMonitor {
+            NSEvent.removeMonitor(middleClickMonitor)
+            self.middleClickMonitor = nil
         }
         if let showHiddenFilesMonitor {
             NSEvent.removeMonitor(showHiddenFilesMonitor)
@@ -886,6 +901,7 @@ class ClearlySplitViewController: NSSplitViewController {
         let detailItem = NSSplitViewItem(viewController: detailHost)
         detailItem.minimumThickness = 400
         addSplitViewItem(detailItem)
+        splitView.autosaveName = "ClearlySidebar"
 
         if !workspace.isSidebarVisible {
             needsInitialCollapse = true
