@@ -26,7 +26,8 @@ struct TabBarView: View {
                                 isActive: doc.id == workspace.activeDocumentID,
                                 isLast: index == workspace.openDocuments.count - 1,
                                 onSelect: { workspace.switchToDocument(doc.id) },
-                                onClose: { workspace.closeDocument(doc.id) }
+                                onClose: { workspace.closeDocument(doc.id) },
+                                onHover: { hovering in workspace.hoveredTabID = hovering ? doc.id : nil }
                             )
                         }
                         Spacer()
@@ -53,6 +54,7 @@ private struct TabItemView: View {
     let isLast: Bool
     let onSelect: () -> Void
     let onClose: () -> Void
+    let onHover: (Bool) -> Void
 
     @State private var isHovering = false
     @Environment(\.colorScheme) private var colorScheme
@@ -104,6 +106,7 @@ private struct TabItemView: View {
         )
         .onHover { hovering in
             isHovering = hovering
+            onHover(hovering)
         }
     }
 
