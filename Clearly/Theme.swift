@@ -5,7 +5,7 @@ enum Theme {
     // MARK: - Editor Font
     static var editorFontSize: CGFloat {
         let size = UserDefaults.standard.double(forKey: "editorFontSize")
-        return size > 0 ? CGFloat(size) : 16
+        return size > 0 ? CGFloat(size) : 12
     }
     static var editorFont: NSFont { NSFont.monospacedSystemFont(ofSize: editorFontSize, weight: .regular) }
     static var editorFontSwiftUI: Font { Font.system(size: editorFontSize, design: .monospaced) }

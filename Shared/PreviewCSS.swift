@@ -126,7 +126,7 @@ enum PreviewCSS {
         line-height: 1.75;
         max-width: 61em;
         margin: 0 auto;
-        padding: 16px 64px 48px;
+        padding: 40px 64px 48px;
         color: #1D1D1F;
         background-color: #FFFFFF;
         -webkit-font-smoothing: antialiased;

@@ -59,12 +59,19 @@ final class WorkspaceManager {
     private static let folderIconsKey = "folderIcons"
     private static let folderColorsKey = "folderColors"
     private static let showHiddenFilesKey = "showHiddenFiles"
+    private static let hasEverAddedLocationKey = "hasEverAddedLocation"
+    private static let hasDeliveredGettingStartedKey = "hasDeliveredGettingStarted"
     private static let wikiLinkPattern = try! NSRegularExpression(pattern: "\\[\\[[^\\]]*\\]\\]")
 
     /// Custom folder icons keyed by folder path (URL.path → SF Symbol name).
     var folderIcons: [String: String] = [:]
     /// Custom folder colors keyed by folder path (URL.path → color name).
     var folderColors: [String: String] = [:]
+
+    /// True when the user has never added a location (first-run state).
+    var isFirstRun: Bool {
+        !UserDefaults.standard.bool(forKey: Self.hasEverAddedLocationKey)
+    }
 
     private enum DirtyDocumentDisposition {
         case save
@@ -81,6 +88,11 @@ final class WorkspaceManager {
         folderColors = UserDefaults.standard.dictionary(forKey: Self.folderColorsKey) as? [String: String] ?? [:]
         restoreLocations()
         restoreRecents()
+
+        // Backfill for users upgrading from before the welcome view
+        if !locations.isEmpty && !UserDefaults.standard.bool(forKey: Self.hasEverAddedLocationKey) {
+            UserDefaults.standard.set(true, forKey: Self.hasEverAddedLocationKey)
+        }
 
         let launchBehavior = UserDefaults.standard.string(forKey: Self.launchBehaviorKey) ?? "lastFile"
         if launchBehavior == "newDocument" {
@@ -600,19 +612,20 @@ final class WorkspaceManager {
 
     // MARK: - Locations
 
-    func addLocation(url: URL) {
+    @discardableResult
+    func addLocation(url: URL) -> Bool {
         guard let bookmarkData = try? url.bookmarkData(
             options: .withSecurityScope,
             includingResourceValuesForKeys: nil,
             relativeTo: nil
         ) else {
             DiagnosticLog.log("Failed to create bookmark for location: \(url.path)")
-            return
+            return false
         }
 
         guard url.startAccessingSecurityScopedResource() else {
             DiagnosticLog.log("Failed to access location: \(url.path)")
-            return
+            return false
         }
         accessedURLs.insert(url)
 
@@ -629,6 +642,43 @@ final class WorkspaceManager {
 
         DiagnosticLog.log("Added location: \(url.lastPathComponent)")
         loadTree(for: location.id, at: url)
+
+        if !UserDefaults.standard.bool(forKey: Self.hasEverAddedLocationKey) {
+            UserDefaults.standard.set(true, forKey: Self.hasEverAddedLocationKey)
+        }
+        return true
+    }
+
+    /// On first-ever location add, creates a Getting Started document and opens it.
+    func handleFirstLocationIfNeeded(folderURL: URL) {
+        guard !UserDefaults.standard.bool(forKey: Self.hasDeliveredGettingStartedKey) else { return }
+        UserDefaults.standard.set(true, forKey: Self.hasDeliveredGettingStartedKey)
+
+        showSidebar()
+
+        let fileName = "Getting Started.md"
+        let fileURL = folderURL.appendingPathComponent(fileName)
+
+        guard !FileManager.default.fileExists(atPath: fileURL.path) else {
+            _ = openFile(at: fileURL)
+            return
+        }
+
+        guard let bundledURL = Bundle.main.url(forResource: "getting-started", withExtension: "md"),
+              let content = try? String(contentsOf: bundledURL, encoding: .utf8) else {
+            DiagnosticLog.log("Failed to load getting-started.md from bundle")
+            return
+        }
+
+        do {
+            try content.write(to: fileURL, atomically: true, encoding: .utf8)
+            DiagnosticLog.log("Created Getting Started.md in \(folderURL.lastPathComponent)")
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
+                _ = self?.openFile(at: fileURL)
+            }
+        } catch {
+            DiagnosticLog.log("Failed to write Getting Started.md: \(error.localizedDescription)")
+        }
     }
 
     func removeLocation(_ location: BookmarkedLocation) {
@@ -844,7 +894,11 @@ final class WorkspaceManager {
         if isDir.boolValue {
             // Don't add duplicate locations
             guard !locations.contains(where: { $0.url == url }) else { return }
-            addLocation(url: url)
+            let shouldShowGettingStarted = isFirstRun
+            guard addLocation(url: url) else { return }
+            if shouldShowGettingStarted {
+                handleFirstLocationIfNeeded(folderURL: url)
+            }
             showSidebar()
             presentMainWindow()
         } else {

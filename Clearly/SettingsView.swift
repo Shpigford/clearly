@@ -9,7 +9,7 @@ struct SettingsView: View {
     #if canImport(Sparkle)
     let updater: SPUUpdater
     #endif
-    @AppStorage("editorFontSize") private var fontSize: Double = 16
+    @AppStorage("editorFontSize") private var fontSize: Double = 12
     @AppStorage("previewFontFamily") private var previewFontFamily = "sanFrancisco"
     @AppStorage("themePreference") private var themePreference = "system"
     @AppStorage("launchBehavior") private var launchBehavior = "lastFile"
