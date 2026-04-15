@@ -3,8 +3,6 @@ import Foundation
 
 enum AppRelauncher {
     static func relaunchIfPossible() {
-        guard WorkspaceManager.shared.prepareForAppTermination() else { return }
-
         let bundlePath = Bundle.main.bundleURL.path.replacingOccurrences(of: "\"", with: "\\\"")
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/bin/sh")
