@@ -17,6 +17,10 @@ final class WorkspaceManager {
     var recentFiles: [URL] = []
     private static let maxRecents = 5
 
+    // MARK: - Pinned Files
+
+    var pinnedFiles: [URL] = []
+
     // MARK: - Current File (active document buffer)
 
     var currentFileURL: URL?
@@ -61,6 +65,7 @@ final class WorkspaceManager {
     private static let showHiddenFilesKey = "showHiddenFiles"
     private static let hasEverAddedLocationKey = "hasEverAddedLocation"
     private static let hasDeliveredGettingStartedKey = "hasDeliveredGettingStarted"
+    private static let pinnedBookmarksKey = "pinnedBookmarks"
     private static let wikiLinkPattern = try! NSRegularExpression(pattern: "\\[\\[[^\\]]*\\]\\]")
 
     /// Custom folder icons keyed by folder path (URL.path → SF Symbol name).
@@ -88,6 +93,7 @@ final class WorkspaceManager {
         folderColors = UserDefaults.standard.dictionary(forKey: Self.folderColorsKey) as? [String: String] ?? [:]
         restoreLocations()
         restoreRecents()
+        restorePinnedFiles()
 
         // Backfill for users upgrading from before the welcome view
         if !locations.isEmpty && !UserDefaults.standard.bool(forKey: Self.hasEverAddedLocationKey) {
@@ -730,6 +736,21 @@ final class WorkspaceManager {
         persistRecents()
     }
 
+    // MARK: - Pinned Files
+
+    func togglePin(_ url: URL) {
+        if let idx = pinnedFiles.firstIndex(of: url) {
+            pinnedFiles.remove(at: idx)
+        } else {
+            pinnedFiles.append(url)
+        }
+        persistPinnedFiles()
+    }
+
+    func isPinned(_ url: URL) -> Bool {
+        pinnedFiles.contains(url)
+    }
+
     // MARK: - File Operations
 
     func createFile(named name: String, in folderURL: URL) -> URL? {
@@ -768,13 +789,7 @@ final class WorkspaceManager {
         let newURL = url.deletingLastPathComponent().appendingPathComponent(newName)
         do {
             try FileManager.default.moveItem(at: url, to: newURL)
-            // Update the open document reference if this file is open
-            if let idx = openDocuments.firstIndex(where: { $0.fileURL == url }) {
-                openDocuments[idx].fileURL = newURL
-            }
-            if currentFileURL == url {
-                currentFileURL = newURL
-            }
+            rewriteMovedItemReferences(from: url, to: newURL)
             DiagnosticLog.log("Renamed: \(url.lastPathComponent) → \(newName)")
             return newURL
         } catch {
@@ -793,44 +808,7 @@ final class WorkspaceManager {
 
         do {
             try FileManager.default.moveItem(at: sourceURL, to: destURL)
-            // Update open document references if the moved item (or children) are open
-            for idx in openDocuments.indices {
-                if let fileURL = openDocuments[idx].fileURL {
-                    if fileURL == sourceURL {
-                        openDocuments[idx].fileURL = destURL
-                    } else if fileURL.path.hasPrefix(sourceURL.path + "/") {
-                        // Child of a moved folder
-                        let relative = String(fileURL.path.dropFirst(sourceURL.path.count))
-                        openDocuments[idx].fileURL = URL(fileURLWithPath: destURL.path + relative)
-                    }
-                }
-            }
-            if let current = currentFileURL {
-                if current == sourceURL {
-                    currentFileURL = destURL
-                } else if current.path.hasPrefix(sourceURL.path + "/") {
-                    let relative = String(current.path.dropFirst(sourceURL.path.count))
-                    currentFileURL = URL(fileURLWithPath: destURL.path + relative)
-                }
-            }
-            var recentsChanged = false
-            for idx in recentFiles.indices {
-                let recentURL = recentFiles[idx]
-                if recentURL == sourceURL {
-                    recentFiles[idx] = destURL
-                    recentsChanged = true
-                } else if recentURL.path.hasPrefix(sourceURL.path + "/") {
-                    let relative = String(recentURL.path.dropFirst(sourceURL.path.count))
-                    recentFiles[idx] = URL(fileURLWithPath: destURL.path + relative)
-                    recentsChanged = true
-                }
-            }
-            if recentsChanged {
-                persistRecents()
-            }
-            if let currentFileURL {
-                persistLastOpenFile(currentFileURL)
-            }
+            rewriteMovedItemReferences(from: sourceURL, to: destURL)
             DiagnosticLog.log("Moved: \(sourceURL.lastPathComponent) → \(folderURL.lastPathComponent)/")
             return destURL
         } catch {
@@ -842,10 +820,7 @@ final class WorkspaceManager {
     func deleteItem(at url: URL) -> Bool {
         do {
             try FileManager.default.trashItem(at: url, resultingItemURL: nil)
-            // Close the open document if this file was open
-            if let doc = openDocuments.first(where: { $0.fileURL == url }) {
-                removeDocument(doc.id)
-            }
+            removeDeletedItemReferences(at: url)
             DiagnosticLog.log("Trashed: \(url.lastPathComponent)")
             return true
         } catch {
@@ -868,6 +843,85 @@ final class WorkspaceManager {
             return doc.text
         }
         return CopyActions.readMarkdown(from: url)
+    }
+
+    private func rewriteMovedItemReferences(from sourceURL: URL, to destURL: URL) {
+        for idx in openDocuments.indices {
+            guard let fileURL = openDocuments[idx].fileURL,
+                  let remappedURL = remappedURL(for: fileURL, moving: sourceURL, to: destURL) else { continue }
+            openDocuments[idx].fileURL = remappedURL
+        }
+
+        if let currentURL = currentFileURL,
+           let remappedURL = remappedURL(for: currentURL, moving: sourceURL, to: destURL) {
+            currentFileURL = remappedURL
+        }
+
+        var recentsChanged = false
+        for idx in recentFiles.indices {
+            guard let remappedURL = remappedURL(for: recentFiles[idx], moving: sourceURL, to: destURL) else { continue }
+            recentFiles[idx] = remappedURL
+            recentsChanged = true
+        }
+        if recentsChanged {
+            persistRecents()
+        }
+
+        var pinnedChanged = false
+        for idx in pinnedFiles.indices {
+            guard let remappedURL = remappedURL(for: pinnedFiles[idx], moving: sourceURL, to: destURL) else { continue }
+            pinnedFiles[idx] = remappedURL
+            pinnedChanged = true
+        }
+        if pinnedChanged {
+            persistPinnedFiles()
+        }
+
+        if let currentFileURL {
+            persistLastOpenFile(currentFileURL)
+        }
+    }
+
+    private func removeDeletedItemReferences(at url: URL) {
+        let affectedDocumentIDs = openDocuments.compactMap { document -> UUID? in
+            guard let fileURL = document.fileURL, isSameOrDescendant(fileURL, of: url) else { return nil }
+            return document.id
+        }
+        for documentID in affectedDocumentIDs {
+            removeDocument(documentID)
+        }
+
+        let previousRecentCount = recentFiles.count
+        recentFiles.removeAll { isSameOrDescendant($0, of: url) }
+        if recentFiles.count != previousRecentCount {
+            persistRecents()
+        }
+
+        let previousPinnedCount = pinnedFiles.count
+        pinnedFiles.removeAll { isSameOrDescendant($0, of: url) }
+        if pinnedFiles.count != previousPinnedCount {
+            persistPinnedFiles()
+        }
+    }
+
+    private func remappedURL(for candidateURL: URL, moving sourceURL: URL, to destURL: URL) -> URL? {
+        let sourcePath = sourceURL.standardizedFileURL.path
+        let candidatePath = candidateURL.standardizedFileURL.path
+
+        if candidatePath == sourcePath {
+            return destURL.standardizedFileURL
+        }
+
+        guard candidatePath.hasPrefix(sourcePath + "/") else { return nil }
+        let relativePath = String(candidatePath.dropFirst(sourcePath.count))
+        let destPath = destURL.standardizedFileURL.path
+        return URL(fileURLWithPath: destPath + relativePath)
+    }
+
+    private func isSameOrDescendant(_ candidateURL: URL, of rootURL: URL) -> Bool {
+        let rootPath = rootURL.standardizedFileURL.path
+        let candidatePath = candidateURL.standardizedFileURL.path
+        return candidatePath == rootPath || candidatePath.hasPrefix(rootPath + "/")
     }
 
     // MARK: - Open Panel (supports both files and folders)
@@ -994,32 +1048,12 @@ final class WorkspaceManager {
             startFSStream(for: location)
             openVaultIndex(for: location)
             loadTree(for: bookmark.id, at: url)
-            validateRestoredLocationAccess(for: location)
         }
 
         if didMutateStoredBookmarks {
             persistLocations()
         }
         persistVaultsConfig()
-    }
-
-    private func validateRestoredLocationAccess(for location: BookmarkedLocation) {
-        DispatchQueue.global(qos: .utility).async { [weak self] in
-            let canReadDirectory = (try? FileManager.default.contentsOfDirectory(
-                at: location.url,
-                includingPropertiesForKeys: nil,
-                options: []
-            )) != nil
-
-            guard !canReadDirectory else { return }
-
-            DispatchQueue.main.async {
-                guard let self,
-                      let existing = self.locations.first(where: { $0.id == location.id }) else { return }
-                DiagnosticLog.log("Location bookmark unreadable after restore, removing: \(existing.url.lastPathComponent)")
-                self.removeLocation(existing)
-            }
-        }
     }
 
     // MARK: - Persistence: Recents
@@ -1058,6 +1092,45 @@ final class WorkspaceManager {
         recentFiles = urls
         if shouldPersist || urls.count != bookmarks.count {
             persistRecents()
+        }
+    }
+
+    // MARK: - Persistence: Pinned Files
+
+    private func persistPinnedFiles() {
+        let bookmarks: [Data] = pinnedFiles.compactMap { url in
+            try? url.bookmarkData(options: .withSecurityScope, includingResourceValuesForKeys: nil, relativeTo: nil)
+        }
+        UserDefaults.standard.set(bookmarks, forKey: Self.pinnedBookmarksKey)
+    }
+
+    private func restorePinnedFiles() {
+        guard let bookmarks = UserDefaults.standard.array(forKey: Self.pinnedBookmarksKey) as? [Data] else { return }
+
+        var urls: [URL] = []
+        var shouldPersist = false
+        for data in bookmarks {
+            var isStale = false
+            if let url = try? URL(
+                resolvingBookmarkData: data,
+                options: .withSecurityScope,
+                relativeTo: nil,
+                bookmarkDataIsStale: &isStale
+            ) {
+                if isStale {
+                    shouldPersist = true
+                }
+                if !hasActiveAccess(to: url), url.startAccessingSecurityScopedResource() {
+                    accessedURLs.insert(url)
+                }
+                urls.append(url)
+            } else {
+                shouldPersist = true
+            }
+        }
+        pinnedFiles = urls
+        if shouldPersist || urls.count != bookmarks.count {
+            persistPinnedFiles()
         }
     }
 
