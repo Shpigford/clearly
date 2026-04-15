@@ -5,6 +5,8 @@ extension Notification.Name {
     static let scrollPreviewToLine = Notification.Name("scrollPreviewToLine")
     static let flushEditorBuffer = Notification.Name("flushEditorBuffer")
     static let navigateWikiLink = Notification.Name("navigateWikiLink")
+    static let highlightTextInEditor = Notification.Name("highlightTextInEditor")
+    static let highlightTextInPreview = Notification.Name("highlightTextInPreview")
 }
 
 struct ViewModeKey: FocusedValueKey {
@@ -405,9 +407,21 @@ struct ContentView: View {
                 backlinksState.update(for: workspace.currentFileURL, using: workspace.activeVaultIndexes)
                 applyPendingWikiNavigationIfNeeded()
             }
-            .onChange(of: workspace.currentViewMode) { _, newMode in
-                guard newMode != .edit else { return }
-                jumpToLineState.dismiss()
+            .onChange(of: workspace.currentViewMode) { oldMode, newMode in
+                if newMode != .edit {
+                    jumpToLineState.dismiss()
+                }
+                // Highlight selected text in the destination view on mode switch
+                guard oldMode != newMode,
+                      let text = SelectionBridge.selection(for: positionSyncID) else { return }
+                if oldMode == .edit && newMode == .preview {
+                    NotificationCenter.default.post(name: .highlightTextInPreview, object: nil, userInfo: ["text": text])
+                } else if oldMode == .preview && newMode == .edit {
+                    // Small delay for editor scroll restore to complete first
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+                        NotificationCenter.default.post(name: .highlightTextInEditor, object: nil, userInfo: ["text": text])
+                    }
+                }
             }
             .onChange(of: workspace.currentFileURL) { _, _ in
                 setupFileWatcher()

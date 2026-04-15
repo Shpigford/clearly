@@ -162,6 +162,13 @@ struct EditorView: NSViewRepresentable {
             object: nil
         )
 
+        NotificationCenter.default.addObserver(
+            context.coordinator,
+            selector: #selector(Coordinator.handleHighlightText(_:)),
+            name: .highlightTextInEditor,
+            object: nil
+        )
+
         // Frame changes (window resize causing rewrap) — trigger gutter redraw
         textView.postsFrameChangedNotifications = true
         NotificationCenter.default.addObserver(
@@ -381,6 +388,15 @@ struct EditorView: NSViewRepresentable {
         func textViewDidChangeSelection(_ notification: Notification) {
             guard let textView = notification.object as? NSTextView else { return }
             gutterView?.selectionDidChange(selectedRange: textView.selectedRange())
+
+            // Store current selection for highlight-on-mode-switch
+            let range = textView.selectedRange()
+            if range.length > 0 {
+                let text = (textView.string as NSString).substring(with: range)
+                SelectionBridge.setSelection(text, for: parent.positionSyncID)
+            } else {
+                SelectionBridge.setSelection(nil, for: parent.positionSyncID)
+            }
         }
 
         @objc func handleScrollToLine(_ notification: Notification) {
@@ -403,6 +419,31 @@ struct EditorView: NSViewRepresentable {
                 let highlightRange = NSRange(location: min(charOffset, nsText.length), length: min(lineLen, nsText.length - charOffset))
                 textView.showFindIndicator(for: highlightRange)
             }
+        }
+
+        @objc func handleHighlightText(_ notification: Notification) {
+            guard let searchText = notification.userInfo?["text"] as? String,
+                  !searchText.isEmpty,
+                  let textView else { return }
+            let nsText = textView.string as NSString
+            guard nsText.length > 0 else { return }
+
+            // Determine visible character range to prioritize matches near current viewport
+            var searchStart = 0
+            if let layoutManager = textView.layoutManager, let container = textView.textContainer {
+                let glyphRange = layoutManager.glyphRange(forBoundingRect: textView.visibleRect, in: container)
+                let charRange = layoutManager.characterRange(forGlyphRange: glyphRange, actualGlyphRange: nil)
+                searchStart = charRange.location
+            }
+
+            // Search forward from visible start, then wrap around
+            var foundRange = nsText.range(of: searchText, options: [], range: NSRange(location: searchStart, length: nsText.length - searchStart))
+            if foundRange.location == NSNotFound {
+                foundRange = nsText.range(of: searchText, options: [], range: NSRange(location: 0, length: min(searchStart + searchText.count, nsText.length)))
+            }
+            guard foundRange.location != NSNotFound else { return }
+            textView.scrollRangeToVisible(foundRange)
+            textView.showFindIndicator(for: foundRange)
         }
 
         @objc func flushEditorBuffer(_ notification: Notification) {
@@ -669,7 +710,8 @@ struct EditorView: NSViewRepresentable {
             let docHeight = scrollView.documentView?.frame.height ?? 1
             let viewportHeight = clipView.bounds.height
             let maxScroll = max(1, docHeight - viewportHeight)
-            ScrollBridge.setFraction(clipView.bounds.origin.y / maxScroll, for: parent.positionSyncID)
+            let fraction = min(max(clipView.bounds.origin.y / maxScroll, 0), 1)
+            ScrollBridge.setFraction(fraction, for: parent.positionSyncID)
 
             gutterView?.scrollOrFrameDidChange()
         }

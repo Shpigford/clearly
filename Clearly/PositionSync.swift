@@ -25,3 +25,20 @@ enum ScrollBridge {
         fractions[id] = value
     }
 }
+
+/// Stores current text selection per window so the destination view can highlight it on mode switch.
+enum SelectionBridge {
+    private static var selections: [String: String] = [:]
+
+    static func selection(for id: String) -> String? {
+        selections[id]
+    }
+
+    static func setSelection(_ text: String?, for id: String) {
+        if let text, !text.isEmpty {
+            selections[id] = text
+        } else {
+            selections[id] = nil
+        }
+    }
+}

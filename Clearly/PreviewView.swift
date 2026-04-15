@@ -46,6 +46,7 @@ struct PreviewView: NSViewRepresentable {
         config.userContentController.add(context.coordinator, name: "copyToClipboard")
         config.userContentController.add(context.coordinator, name: "taskToggle")
         config.userContentController.add(context.coordinator, name: "clickToSource")
+        config.userContentController.add(context.coordinator, name: "selectionCapture")
         config.userContentController.addUserScript(Self.copyButtonUserScript())
         let webView = WKWebView(frame: .zero, configuration: config)
         webView.navigationDelegate = context.coordinator
@@ -76,6 +77,12 @@ struct PreviewView: NSViewRepresentable {
             context.coordinator,
             selector: #selector(Coordinator.handleScrollToLine(_:)),
             name: .scrollPreviewToLine,
+            object: nil
+        )
+        NotificationCenter.default.addObserver(
+            context.coordinator,
+            selector: #selector(Coordinator.handleHighlightText(_:)),
+            name: .highlightTextInPreview,
             object: nil
         )
 
@@ -153,6 +160,16 @@ struct PreviewView: NSViewRepresentable {
                 _scrollTicking = false;
             });
         });
+        // Capture text selection for highlight-on-mode-switch.
+        var _lastSelText = '';
+        document.addEventListener('selectionchange', function() {
+            var sel = window.getSelection();
+            var text = sel ? sel.toString() : '';
+            if (text !== _lastSelText) {
+                _lastSelText = text;
+                window.webkit.messageHandlers.selectionCapture.postMessage({ text: text });
+            }
+        });
         """
         let html = """
         <!DOCTYPE html>
@@ -162,6 +179,8 @@ struct PreviewView: NSViewRepresentable {
         <meta name="viewport" content="width=device-width, initial-scale=1">
         <style>\(PreviewCSS.css(fontSize: fontSize, fontFamily: fontFamily, bodyMaxWidth: bodyMaxWidthCSS))
         mark.clearly-find { background-color: rgba(255, 230, 0, 0.4); border-radius: 2px; padding: 0 1px; }
+        mark.clearly-mode-highlight { background: rgba(255, 210, 50, 0.5); border-radius: 3px; padding: 0 1px; transition: background 1.5s ease; }
+        mark.clearly-mode-highlight.fade { background: transparent; }
         mark.clearly-find.current { background-color: rgba(255, 165, 0, 0.6); }
         @media (prefers-color-scheme: dark) {
             mark.clearly-find { background-color: rgba(180, 150, 0, 0.4); }
@@ -341,6 +360,7 @@ struct PreviewView: NSViewRepresentable {
         var skipNextReload = false
         var isLoadingContent = false
         var pendingScrollLine: Int?
+        var pendingHighlightText: String?
         weak var webView: WKWebView?
         private var findCancellables = Set<AnyCancellable>()
         private var matchCount = 0
@@ -402,6 +422,80 @@ struct PreviewView: NSViewRepresentable {
             pendingScrollLine = line
             guard !isLoadingContent else { return }
             scrollToPendingLine()
+        }
+
+        @objc func handleHighlightText(_ notification: Notification) {
+            guard let searchText = notification.userInfo?["text"] as? String,
+                  !searchText.isEmpty else { return }
+            pendingHighlightText = searchText
+            guard !isLoadingContent, let webView else { return }
+            applyPendingHighlight()
+        }
+
+        private func applyPendingHighlight() {
+            guard let searchText = pendingHighlightText, let webView else { return }
+            pendingHighlightText = nil
+            let escaped = searchText
+                .replacingOccurrences(of: "\\", with: "\\\\")
+                .replacingOccurrences(of: "'", with: "\\'")
+                .replacingOccurrences(of: "\n", with: "\\n")
+            let js = """
+            (function() {
+                // Remove any previous mode-highlight marks
+                document.querySelectorAll('mark.clearly-mode-highlight').forEach(function(m) {
+                    var p = m.parentNode;
+                    p.replaceChild(document.createTextNode(m.textContent), m);
+                    p.normalize();
+                });
+                var query = '\(escaped)';
+                // Walk text nodes to find the match nearest the current viewport
+                var walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+                var candidates = [];
+                var node;
+                while (node = walker.nextNode()) {
+                    var idx = node.textContent.indexOf(query);
+                    if (idx >= 0) {
+                        candidates.push({ node: node, offset: idx });
+                    }
+                }
+                if (candidates.length === 0) return;
+                // Pick the candidate closest to the viewport center
+                var viewCenter = window.scrollY + window.innerHeight / 2;
+                var best = candidates[0];
+                var bestDist = Infinity;
+                for (var i = 0; i < candidates.length; i++) {
+                    var range = document.createRange();
+                    range.setStart(candidates[i].node, candidates[i].offset);
+                    range.setEnd(candidates[i].node, candidates[i].offset + query.length);
+                    var rect = range.getBoundingClientRect();
+                    var dist = Math.abs(rect.top + window.scrollY - viewCenter);
+                    if (dist < bestDist) {
+                        bestDist = dist;
+                        best = candidates[i];
+                    }
+                }
+                // Wrap the match in a highlight mark
+                var range = document.createRange();
+                range.setStart(best.node, best.offset);
+                range.setEnd(best.node, best.offset + query.length);
+                var mark = document.createElement('mark');
+                mark.className = 'clearly-mode-highlight';
+                range.surroundContents(mark);
+                mark.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                // Fade out after a brief pause
+                setTimeout(function() {
+                    mark.classList.add('fade');
+                    setTimeout(function() {
+                        var p = mark.parentNode;
+                        if (p) {
+                            p.replaceChild(document.createTextNode(mark.textContent), mark);
+                            p.normalize();
+                        }
+                    }, 1600);
+                }, 100);
+            })();
+            """
+            webView.evaluateJavaScript(js)
         }
 
         private func scrollToPendingLine() {
@@ -574,6 +668,7 @@ struct PreviewView: NSViewRepresentable {
                 performFind(query: query)
             }
             scrollToPendingLine()
+            applyPendingHighlight()
         }
 
         private func resolvedLinkURL(for href: String) -> URL? {
@@ -645,6 +740,13 @@ struct PreviewView: NSViewRepresentable {
                 DispatchQueue.main.async { [weak self] in
                     self?.onClickToSource?(line)
                 }
+                return
+            }
+
+            if message.name == "selectionCapture",
+               let body = message.body as? [String: Any],
+               let text = body["text"] as? String {
+                SelectionBridge.setSelection(text, for: self.positionSyncID)
                 return
             }
 
