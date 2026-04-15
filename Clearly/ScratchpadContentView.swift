@@ -2,7 +2,7 @@ import SwiftUI
 
 struct ScratchpadContentView: View {
     @Binding var text: String
-    @AppStorage("editorFontSize") private var fontSize: Double = 16
+    @AppStorage("editorFontSize") private var fontSize: Double = 12
     var onSave: (() -> Void)?
 
     var body: some View {

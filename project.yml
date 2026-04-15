@@ -48,6 +48,8 @@ targets:
         buildPhase: resources
       - path: Shared/Resources/demo.md
         buildPhase: resources
+      - path: Shared/Resources/getting-started.md
+        buildPhase: resources
     dependencies:
       - package: cmark-gfm
         product: cmark

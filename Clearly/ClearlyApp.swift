@@ -395,7 +395,10 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValid
             if isDir.boolValue {
                 openedDirectory = true
                 if !workspace.locations.contains(where: { $0.url == url }) {
-                    workspace.addLocation(url: url)
+                    let shouldShowGettingStarted = workspace.isFirstRun
+                    if workspace.addLocation(url: url), shouldShowGettingStarted {
+                        workspace.handleFirstLocationIfNeeded(folderURL: url)
+                    }
                 }
             } else {
                 openedFile = workspace.openFileInNewTab(at: url) || openedFile
@@ -931,6 +934,8 @@ struct DetailView: View {
 
             if workspace.activeDocumentID != nil {
                 ContentView(workspace: workspace)
+            } else if workspace.isFirstRun && workspace.locations.isEmpty {
+                WelcomeView(workspace: workspace)
             } else {
                 NoFileView(workspace: workspace)
             }
@@ -1238,7 +1243,7 @@ struct ViewModeCommands: View {
 // MARK: - Font Size Commands
 
 struct FontSizeCommands: View {
-    @AppStorage("editorFontSize") private var fontSize: Double = 16
+    @AppStorage("editorFontSize") private var fontSize: Double = 12
 
     var body: some View {
         Button("Increase Font Size") {

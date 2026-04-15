@@ -105,7 +105,7 @@ struct ContentView: View {
     @Bindable var workspace: WorkspaceManager
     @State private var positionSyncID = UUID().uuidString
     @State private var pendingWikiNavigation: PendingWikiNavigation?
-    @AppStorage("editorFontSize") private var fontSize: Double = 16
+    @AppStorage("editorFontSize") private var fontSize: Double = 12
     @AppStorage("previewFontFamily") private var previewFontFamily = "sanFrancisco"
     @StateObject private var findState = FindState()
     @StateObject private var fileWatcher = FileWatcher()
@@ -202,7 +202,21 @@ struct ContentView: View {
 
     private func bottomBar(words: Int, chars: Int) -> some View {
         HStack(spacing: 0) {
-            // Edit/Preview on the left
+            // Sidebar toggle + Edit/Preview on the left
+            Button {
+                if let splitVC = NSApp.mainWindow?.contentViewController as? ClearlySplitViewController {
+                    let isCollapsed = splitVC.splitViewItems.first?.isCollapsed ?? true
+                    splitVC.setSidebarVisible(isCollapsed, animated: true)
+                    workspace.isSidebarVisible = isCollapsed
+                    UserDefaults.standard.set(isCollapsed, forKey: "sidebarVisible")
+                }
+            } label: {
+                Image(systemName: "sidebar.left")
+            }
+            .buttonStyle(ClearlyToolbarButtonStyle(isActive: workspace.isSidebarVisible))
+            .help("Toggle Sidebar (Cmd+L)")
+            .padding(.leading, 12)
+
             ClearlySegmentedControl(
                 selection: $workspace.currentViewMode,
                 items: [
@@ -210,7 +224,7 @@ struct ContentView: View {
                     (value: .preview, icon: "eye", label: "Preview")
                 ]
             )
-            .padding(.leading, 12)
+            .padding(.leading, 4)
 
             Spacer()
 
