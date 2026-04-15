@@ -1,13 +1,13 @@
 ---
-title: Clearly — A Native Markdown Editor for macOS
+title: Welcome to Clearly
 author: Josh Pigford
-date: 2026-04-11
-tags: markdown, macos, swiftui, demo
+date: 2026-04-14
+tags: getting-started, knowledge-base, markdown
 ---
 
-# Clearly
+# Welcome to Clearly
 
-A **native macOS markdown editor** built with SwiftUI — fast, focused, and beautifully rendered. This document shows off everything Clearly can do.
+A **native macOS knowledge base** built with SwiftUI — fast, focused, and beautifully rendered. Write in markdown, connect your thinking with [[wiki links]] and #tags, and let Clearly handle the rest.
 
 > "The best tool is the one that gets out of your way." — *somebody, probably*
 
@@ -15,22 +15,39 @@ A **native macOS markdown editor** built with SwiftUI — fast, focused, and bea
 
 ---
 
-## Headings
+## Connecting Your Knowledge
 
-# H1 — The biggest statement
-## H2 — Section header
-### H3 — Subsection
-#### H4 — Smaller grouping
-##### H5 — Smaller still
-###### H6 — The smallest
+Clearly isn't just a markdown editor — it's a place to think. Link your notes together, tag them for easy retrieval, and let the backlinks panel show you connections you didn't know existed.
+
+### Wiki Links
+
+Link to other documents in your workspace with double brackets:
+
+- **Basic link:** [[Getting Started]] links to a page by name
+- **With display text:** [[Markdown Syntax|the full syntax guide]] shows custom text
+- **To a heading:** [[Keyboard Shortcuts#Preview Mode]] jumps to a specific section
+- **Both:** [[Workspace Setup#Adding Folders|set up your folders]] combines alias and heading
+
+> [!TIP]
+> Type `[[` in the editor and Clearly will suggest matching pages from your workspace. Links that resolve to an existing page appear green; unresolved links appear orange so you can spot gaps.
+
+### Tags
+
+Add #tags inline to categorize your notes, or use the `tags` field in frontmatter (like this document does). Tags are clickable in preview and aggregated in the sidebar.
+
+Organize by topic — #projects, #research, #meeting-notes — whatever fits your workflow. Tags support hyphens, slashes, and unicode: #café, #work/2026, #日本語.
+
+### Backlinks
+
+Open the backlinks panel to see every document that links *to* the current page — both explicit wiki links and unlinked mentions of the page title. It's the fastest way to resurface forgotten connections.
 
 ---
 
-## Text Formatting
+## Writing & Formatting
 
-You can write in **bold**, *italic*, ***bold italic***, or ~~strikethrough~~. Combine them inline: this sentence has **bold with *nested italic* inside** for emphasis.
+Clearly supports the full range of markdown formatting. Write in **bold**, *italic*, ***bold italic***, or ~~strikethrough~~. Combine them inline: this sentence has **bold with *nested italic* inside** for emphasis.
 
-Use `inline code` for short snippets, variable names like `NSTextStorage`, or file paths like `~/Desktop/demo.md`.
+Use `inline code` for short snippets, variable names like `NSTextStorage`, or file paths like `~/Desktop/notes.md`.
 
 Links look like this: [Clearly on GitHub](https://github.com/joshpigford/clearly), and autolinked URLs work too: https://apple.com.
 
@@ -77,8 +94,8 @@ Ship features :ship:, fix bugs :bug:, and celebrate :champagne:!
 - [x] Open a markdown file
 - [x] See beautiful syntax highlighting
 - [x] Render a live preview
+- [ ] Link your notes with [[wiki links]]
 - [ ] Tell all your friends
-- [ ] World domination
 
 *Tip: In preview mode, you can click the checkboxes to toggle them!*
 
@@ -112,20 +129,6 @@ Clearly supports GitHub/Obsidian-style callouts with `> [!TYPE]` syntax:
 
 > [!CAUTION]
 > Negative consequences that could occur.
-
-### More callout types
-
-> [!EXAMPLE]
-> Here's an example of how to use callouts effectively.
-
-> [!BUG]
-> Known issue: this only happens on Tuesdays during a full moon.
-
-> [!SUCCESS]
-> All tests passing. Ship it!
-
-> [!QUESTION]
-> Is this the best markdown editor ever? Signs point to yes.
 
 ### Foldable callouts
 
@@ -186,12 +189,14 @@ xcodebuild -scheme Clearly -configuration Debug build
 
 ## Tables
 
-### Feature Matrix (centered alignment)
+### Feature Matrix
 
 | Feature              | Editor | Preview | QuickLook |
 | :------------------- | :----: | :-----: | :-------: |
 | Syntax highlighting  |   ✓    |    ✓    |     ✓     |
 | Live GFM rendering   |   —    |    ✓    |     ✓     |
+| Wiki links           |   ✓    |    ✓    |     ✓     |
+| Tags                 |   ✓    |    ✓    |     ✓     |
 | Tables               |   ✓    |    ✓    |     ✓     |
 | Math (KaTeX)         |   ✓    |    ✓    |     ✓     |
 | Mermaid diagrams     |   ✓    |    ✓    |     ✓     |
@@ -234,7 +239,9 @@ Tables wider than the viewport scroll horizontally inside their container.
 
 ---
 
-## Math (KaTeX)
+## Math & Diagrams
+
+### Math (KaTeX)
 
 Inline math flows with your prose: the quadratic formula is $x = \frac{-b \pm \sqrt{b^2 - 4ac}}{2a}$, and Euler's identity $e^{i\pi} + 1 = 0$ still feels like magic.
 
@@ -244,9 +251,7 @@ $$
 \int_{-\infty}^{\infty} e^{-x^2} \, dx = \sqrt{\pi}
 $$
 
----
-
-## Mermaid Diagrams
+### Mermaid Diagrams
 
 ```mermaid
 flowchart LR
@@ -273,18 +278,6 @@ sequenceDiagram
 
 ---
 
-## Horizontal Rules
-
-Three dashes, asterisks, or underscores all work:
-
----
-
-***
-
-___
-
----
-
 ## Images
 
 ![Clearly Screenshot](https://raw.githubusercontent.com/Shpigford/clearly/main/website/screenshot.jpg)
@@ -304,7 +297,9 @@ Clearly renders GitHub-style footnotes[^1], including multiple references[^note]
 
 ---
 
-## Collapsible Sections
+## More Features
+
+### Collapsible Sections
 
 <details>
 <summary>Click to expand this section</summary>
@@ -316,9 +311,11 @@ This content is hidden by default using the HTML `<details>` element. Clearly an
 
 </details>
 
----
+### Horizontal Rules
 
-## Escapes & Edge Cases
+Three dashes (`---`), asterisks (`***`), or underscores (`___`) all produce a horizontal rule.
+
+### Escapes & HTML
 
 Use backslashes to escape markdown: \*not italic\*, \`not code\`, \# not a heading.
 
@@ -328,6 +325,6 @@ HTML passes through for when you need it:
 
 ---
 
-## The End
+## What's Next
 
-That's Clearly — **every markdown feature you actually use**, rendered beautifully, highlighted live, and ready to ship. :rocket:
+This document barely scratches the surface. Start building your own #knowledge-base — create a new file, link it with `[[double brackets]]`, and watch Clearly connect the dots for you. :rocket:

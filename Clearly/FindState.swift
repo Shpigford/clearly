@@ -31,8 +31,20 @@ final class FindState: ObservableObject {
         }
     }
 
+    func toggle() {
+        if isVisible {
+            dismiss()
+        } else {
+            present()
+        }
+    }
+
     func present() {
         isVisible = true
         focusRequest = UUID()
+    }
+
+    func dismiss() {
+        isVisible = false
     }
 }

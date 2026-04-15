@@ -27,6 +27,7 @@
 "settings.general.launch.lastFile" = "Abrir el último archivo";
 "settings.general.launch.newDocument" = "Crear un nuevo documento";
 "settings.general.fontSize" = "Tamaño de fuente";
+"settings.general.previewFont" = "Fuente de vista previa";
 "settings.general.newScratchpad" = "Nuevo Scratchpad:";
 "settings.general.launchAtLogin" = "Iniciar al iniciar sesión";
 "settings.about.version" = "Versión %@";
@@ -103,6 +104,7 @@
 "sidebar.tooltip.addLocation" = "Añadir ubicación (⌘O)";
 "sidebar.tooltip.clearRecents" = "Borrar recientes";
 "sidebar.context.newFile" = "Nuevo archivo…";
+"sidebar.context.openInNewTab" = "Abrir en una nueva pestaña";
 "sidebar.context.newFolder" = "Nueva carpeta…";
 "sidebar.context.customize" = "Personalizar…";
 "sidebar.context.revealInFinder" = "Mostrar en Finder";
@@ -142,6 +144,7 @@
 "app.menu.window" = "Ventana";
 "app.menu.help" = "Ayuda";
 "app.menu.newDocument" = "Nuevo documento";
+"app.menu.newTab" = "Nueva pestaña";
 "app.menu.open" = "Abrir…";
 "app.menu.save" = "Guardar";
 "app.menu.hideHiddenFiles" = "Ocultar archivos ocultos";
@@ -171,6 +174,8 @@
 "app.menu.toggleOutline" = "Mostrar u ocultar esquema";
 "app.menu.view.editor" = "Editor";
 "app.menu.view.preview" = "Vista previa";
+"app.menu.view.lineNumbers" = "Números de línea";
+"app.menu.view.previewFont" = "Fuente de vista previa";
 "app.menu.font.increase" = "Aumentar tamaño de fuente";
 "app.menu.font.decrease" = "Reducir tamaño de fuente";
 "app.menu.checkForUpdates" = "Buscar actualizaciones…";
@@ -198,6 +203,13 @@
 "find.noResults" = "Sin resultados";
 "find.done" = "Listo";
 "find.matchIndex" = "%1$lld de %2$lld";
+"jumpToLine.placeholder" = "Número de línea";
+"jumpToLine.totalFormat" = "de %lld";
+"jumpToLine.go" = "Ir";
+
+"preview.font.sanFrancisco" = "San Francisco";
+"preview.font.newYork" = "New York";
+"preview.font.sfMono" = "SF Mono";
 
 "outline.title" = "ESQUEMA";
 "outline.empty.title" = "Sin encabezados";

@@ -10,6 +10,8 @@ class SidebarViewController: NSViewController {
     private var scrollView: NSScrollView?
     private var emptyHostingView: NSHostingView<AnyView>?
     private var updateTimer: Timer?
+    private var headerHeightConstraint: NSLayoutConstraint?
+    private var fullscreenObservers: [NSObjectProtocol] = []
 
     init(workspace: WorkspaceManager) {
         self.workspace = workspace
@@ -39,6 +41,21 @@ class SidebarViewController: NSViewController {
                 self?.updateVisibility()
             }
         }
+
+        // Observe fullscreen transitions to adjust top inset
+        let nc = NotificationCenter.default
+        fullscreenObservers.append(nc.addObserver(forName: NSWindow.didEnterFullScreenNotification, object: nil, queue: .main) { [weak self] _ in
+            Task { @MainActor in self?.updateTopInset(fullscreen: true) }
+        })
+        fullscreenObservers.append(nc.addObserver(forName: NSWindow.didExitFullScreenNotification, object: nil, queue: .main) { [weak self] _ in
+            Task { @MainActor in self?.updateTopInset(fullscreen: false) }
+        })
+    }
+
+    private func updateTopInset(fullscreen: Bool) {
+        let top: CGFloat = fullscreen ? 8 : 36
+        scrollView?.contentInsets.top = top
+        headerHeightConstraint?.constant = top
     }
 
     private func setupOutlineView() {
@@ -61,6 +78,7 @@ class SidebarViewController: NSViewController {
         outlineView.floatsGroupRows = false
         outlineView.intercellSpacing = NSSize(width: 0, height: 0)
         outlineView.backgroundColor = .clear
+        outlineView.autoresizesOutlineColumn = false
 
         let column = NSTableColumn(identifier: NSUserInterfaceItemIdentifier("name"))
         column.isEditable = false
@@ -92,7 +110,7 @@ class SidebarViewController: NSViewController {
         sv.contentView.layer?.backgroundColor = NSColor.clear.cgColor
 
         // Add content insets: top for traffic lights, left/right for breathing room
-        sv.contentInsets = NSEdgeInsets(top: 52, left: 6, bottom: 0, right: 6)
+        sv.contentInsets = NSEdgeInsets(top: 36, left: 6, bottom: 0, right: 6)
         sv.scrollerInsets = NSEdgeInsets(top: 0, left: 0, bottom: 0, right: -6)
         sv.automaticallyAdjustsContentInsets = false
 
@@ -112,11 +130,13 @@ class SidebarViewController: NSViewController {
         headerCover.layer?.backgroundColor = Theme.sidebarBackground.cgColor
         headerCover.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(headerCover, positioned: .above, relativeTo: sv)
+        let heightConstraint = headerCover.heightAnchor.constraint(equalToConstant: 36)
+        self.headerHeightConstraint = heightConstraint
         NSLayoutConstraint.activate([
             headerCover.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             headerCover.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             headerCover.topAnchor.constraint(equalTo: view.topAnchor),
-            headerCover.heightAnchor.constraint(equalToConstant: 52),
+            heightConstraint,
         ])
 
         DispatchQueue.main.async {
@@ -161,6 +181,7 @@ class SidebarViewController: NSViewController {
 
     deinit {
         updateTimer?.invalidate()
+        fullscreenObservers.forEach { NotificationCenter.default.removeObserver($0) }
     }
 }
 

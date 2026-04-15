@@ -27,6 +27,7 @@
 "settings.general.launch.lastFile" = "前回のファイルを開く";
 "settings.general.launch.newDocument" = "新規書類を作成";
 "settings.general.fontSize" = "フォントサイズ";
+"settings.general.previewFont" = "プレビューのフォント";
 "settings.general.newScratchpad" = "新しいスクラッチパッド：";
 "settings.general.launchAtLogin" = "ログイン時に起動";
 "settings.about.version" = "バージョン %@";
@@ -103,6 +104,7 @@
 "sidebar.tooltip.addLocation" = "場所を追加（⌘O）";
 "sidebar.tooltip.clearRecents" = "最近を消去";
 "sidebar.context.newFile" = "新規ファイル…";
+"sidebar.context.openInNewTab" = "新しいタブで開く";
 "sidebar.context.newFolder" = "新規フォルダ…";
 "sidebar.context.customize" = "カスタマイズ…";
 "sidebar.context.revealInFinder" = "Finder で表示";
@@ -142,6 +144,7 @@
 "app.menu.window" = "ウインドウ";
 "app.menu.help" = "ヘルプ";
 "app.menu.newDocument" = "新規書類";
+"app.menu.newTab" = "新しいタブ";
 "app.menu.open" = "開く…";
 "app.menu.save" = "保存";
 "app.menu.hideHiddenFiles" = "隠しファイルを隠す";
@@ -171,6 +174,8 @@
 "app.menu.toggleOutline" = "アウトラインを切り替え";
 "app.menu.view.editor" = "エディタ";
 "app.menu.view.preview" = "プレビュー";
+"app.menu.view.lineNumbers" = "行番号";
+"app.menu.view.previewFont" = "プレビューのフォント";
 "app.menu.font.increase" = "フォントサイズを大きくする";
 "app.menu.font.decrease" = "フォントサイズを小さくする";
 "app.menu.checkForUpdates" = "アップデートを確認…";
@@ -198,6 +203,13 @@
 "find.noResults" = "結果なし";
 "find.done" = "完了";
 "find.matchIndex" = "%1$lld / %2$lld";
+"jumpToLine.placeholder" = "行番号";
+"jumpToLine.totalFormat" = "全 %lld 行";
+"jumpToLine.go" = "移動";
+
+"preview.font.sanFrancisco" = "San Francisco";
+"preview.font.newYork" = "New York";
+"preview.font.sfMono" = "SF Mono";
 
 "outline.title" = "アウトライン";
 "outline.empty.title" = "見出しがありません";

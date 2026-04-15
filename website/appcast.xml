@@ -3,6 +3,20 @@
   <channel>
     <title>Clearly</title>
     <item>
+      <title>Version 2.0.0</title>
+      <sparkle:version>2.0.0</sparkle:version>
+      <sparkle:shortVersionString>2.0.0</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+      <pubDate>Tue, 14 Apr 2026 17:52:39 +0000</pubDate>
+      <description><![CDATA[<ul><li>Open multiple documents in tabs (Cmd+T, Cmd+W, Cmd+Shift+[/] to switch)</li><li>Link between notes with [[wiki-link]] syntax and auto-complete as you type</li><li>Find any note instantly with Quick Switcher (Cmd+P) and full-text content search</li><li>See which notes link to the current one in the Backlinks panel, with one-click Link for unlinked mentions</li><li>Browse your #tags from the sidebar, with highlighting in both editor and preview</li><li>Expose your vault to AI agents through the bundled MCP server</li><li>Line numbers in the editor with jump-to-line</li><li>Pick a preview font: San Francisco, New York, or SF Mono</li><li>Redesigned marketing site and overhauled demo document</li><li>Large vaults no longer freeze the app while loading</li><li>Fullscreen windows now have correct sidebar and content spacing</li><li>Export PDF and Print work again after the multi-file redesign</li><li>Typing is smooth again on long documents</li><li>Preview cursor no longer leaks into editor mode</li><li>Polished code blocks: copy button, rounded corners, proper gutter width</li><li>Frontmatter tags register correctly alongside inline #tags</li></ul>]]></description>
+      <enclosure
+        url="https://github.com/Shpigford/clearly/releases/download/v2.0.0/Clearly.dmg"
+        sparkle:edSignature="fx3Fngv7PGivCCtIYXmFpN4/vlsY4XvaAzybMCBybLl22WrMPeauViqP/TTU616si6oXTQ+miDz8gB9sV3iDBg=="
+        length="16305535"
+        type="application/octet-stream"
+      />
+    </item>
+    <item>
       <title>Version 1.16.0</title>
       <sparkle:version>1.16.0</sparkle:version>
       <sparkle:shortVersionString>1.16.0</sparkle:shortVersionString>

@@ -13,8 +13,9 @@ func repositionTrafficLights(in window: NSWindow) {
           let titlebarView = closeButton.superview else { return }
 
     let buttons = [closeButton, minimizeButton, zoomButton]
-    let xPositions: [CGFloat] = [14, 34, 54]
-    let topInset: CGFloat = 14
+    // Centered vertically in the 38pt tab bar; balanced inset from left edge
+    let xPositions: [CGFloat] = [13, 33, 53]
+    let topInset: CGFloat = 13
 
     for (button, xPos) in zip(buttons, xPositions) {
         button.translatesAutoresizingMaskIntoConstraints = false
@@ -125,6 +126,7 @@ struct LauncherSceneMarker: NSViewRepresentable {
 final class ClearlyAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     private var observers: [Any] = []
     private var commandQMonitor: Any?
+    private var closeTabMonitor: Any?
     private var showHiddenFilesMonitor: Any?
     private var sidebarToggleMonitor: Any?
     private var quickSwitcherMonitor: Any?
@@ -158,12 +160,6 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValid
         window.center()
         window.setFrameAutosaveName("ClearlyMainWindow")
 
-        // Empty toolbar triggers macOS 26's larger ~26pt corner radius
-        let toolbar = NSToolbar(identifier: "ClearlyMainToolbar")
-        toolbar.showsBaselineSeparator = false
-        toolbar.displayMode = .iconOnly
-        window.toolbar = toolbar
-
         let themePreference = UserDefaults.standard.string(forKey: "themePreference") ?? "system"
         let appearance: NSAppearance? = switch themePreference {
             case "light": NSAppearance(named: .aqua)
@@ -175,6 +171,7 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValid
 
         self.mainWindow = window
         window.makeKeyAndOrderFront(nil)
+        repositionTrafficLights(in: window)
 
         // Observe theme preference changes
         if let themeObserver {
@@ -307,6 +304,20 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValid
             return nil
         }
 
+        closeTabMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+            let mods = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+            let chars = event.charactersIgnoringModifiers?.lowercased() ?? ""
+            guard chars == "w" && mods == [.command] else { return event }
+            guard let window = event.window,
+                  window.identifier == WindowRouter.mainWindowIdentifier else { return event }
+            let workspace = WorkspaceManager.shared
+            if let activeID = workspace.activeDocumentID {
+                workspace.closeDocument(activeID)
+                return nil
+            }
+            return event
+        }
+
         showHiddenFilesMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
             guard let self else { return event }
             guard self.shouldToggleHiddenFiles(for: event) else { return event }
@@ -314,23 +325,39 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValid
             return nil
         }
 
-        // Cmd+Shift+L toggles sidebar, Cmd+1/2 switches mode, Cmd+Shift+O toggles outline
+        // Cmd+L toggles sidebar, Cmd+Shift+L jumps to line, Cmd+1/2 switches mode
         sidebarToggleMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
             guard let self else { return event }
             guard event.type == .keyDown else { return event }
             let mods = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
             let chars = event.charactersIgnoringModifiers?.lowercased() ?? ""
 
-            if chars == "l" && mods == [.command, .shift] {
+            if chars == "l" && mods == [.command] {
                 self.doToggleSidebar()
                 return nil
             }
+            if chars == "l" && mods == [.command, .shift] {
+                NotificationCenter.default.post(name: .init("ClearlyJumpToLine"), object: nil)
+                return nil
+            }
             if chars == "1" && mods == [.command] {
-                NotificationCenter.default.post(name: .init("ClearlySetViewMode"), object: "edit")
+                WorkspaceManager.shared.currentViewMode = .edit
                 return nil
             }
             if chars == "2" && mods == [.command] {
-                NotificationCenter.default.post(name: .init("ClearlySetViewMode"), object: "preview")
+                WorkspaceManager.shared.currentViewMode = .preview
+                return nil
+            }
+            if chars == "t" && mods == [.command] {
+                WorkspaceManager.shared.createUntitledDocument()
+                return nil
+            }
+            if chars == "[" && mods == [.command, .shift] {
+                WorkspaceManager.shared.selectPreviousTab()
+                return nil
+            }
+            if chars == "]" && mods == [.command, .shift] {
+                WorkspaceManager.shared.selectNextTab()
                 return nil
             }
             if chars == "o" && mods == [.command, .shift] {
@@ -380,7 +407,7 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValid
                     workspace.addLocation(url: url)
                 }
             } else {
-                openedFile = workspace.openFile(at: url) || openedFile
+                openedFile = workspace.openFileInNewTab(at: url) || openedFile
             }
         }
         if openedDirectory {
@@ -412,6 +439,10 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValid
         if let commandQMonitor {
             NSEvent.removeMonitor(commandQMonitor)
             self.commandQMonitor = nil
+        }
+        if let closeTabMonitor {
+            NSEvent.removeMonitor(closeTabMonitor)
+            self.closeTabMonitor = nil
         }
         if let showHiddenFilesMonitor {
             NSEvent.removeMonitor(showHiddenFilesMonitor)
@@ -518,7 +549,7 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValid
             action: #selector(toggleSidebarMenuAction(_:)),
             keyEquivalent: "l"
         )
-        sidebarItem.keyEquivalentModifierMask = [.command, .shift]
+        sidebarItem.keyEquivalentModifierMask = [.command]
         sidebarItem.target = self
 
         // Insert at the beginning of the View menu
@@ -590,6 +621,11 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValid
         )
         updateMenuItemTitle(
             in: viewMenu,
+            action: #selector(toggleLineNumbersAction(_:)),
+            title: L10n.string("app.menu.view.lineNumbers", defaultValue: "Line Numbers")
+        )
+        updateMenuItemTitle(
+            in: viewMenu,
             action: #selector(switchToEditorAction(_:)),
             title: L10n.string("app.menu.view.editor", defaultValue: "Editor")
         )
@@ -607,6 +643,30 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValid
             in: viewMenu,
             action: #selector(globalSearchAction(_:)),
             title: L10n.string("app.menu.view.searchAllFiles", defaultValue: "Search All Files…")
+        )
+        updateMenuTitles(
+            in: viewMenu,
+            key: "app.menu.view.previewFont",
+            defaultValue: "Preview Font",
+            title: L10n.string("app.menu.view.previewFont", defaultValue: "Preview Font")
+        )
+        updateMenuTitles(
+            in: viewMenu,
+            key: "preview.font.sanFrancisco",
+            defaultValue: "San Francisco",
+            title: L10n.string("preview.font.sanFrancisco", defaultValue: "San Francisco")
+        )
+        updateMenuTitles(
+            in: viewMenu,
+            key: "preview.font.newYork",
+            defaultValue: "New York",
+            title: L10n.string("preview.font.newYork", defaultValue: "New York")
+        )
+        updateMenuTitles(
+            in: viewMenu,
+            key: "preview.font.sfMono",
+            defaultValue: "SF Mono",
+            title: L10n.string("preview.font.sfMono", defaultValue: "SF Mono")
         )
 
         let fileMenu = fileMenu()
@@ -701,6 +761,13 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValid
         backlinksItem.keyEquivalentModifierMask = [.command, .shift]
         backlinksItem.target = self
 
+        let lineNumbersItem = NSMenuItem(
+            title: L10n.string("app.menu.view.lineNumbers", defaultValue: "Line Numbers"),
+            action: #selector(toggleLineNumbersAction(_:)),
+            keyEquivalent: ""
+        )
+        lineNumbersItem.target = self
+
         let editorItem = NSMenuItem(
             title: L10n.string("app.menu.view.editor", defaultValue: "Editor"),
             action: #selector(switchToEditorAction(_:)),
@@ -721,17 +788,36 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValid
         var insertIndex = 1
         viewMenu.insertItem(outlineItem, at: insertIndex); insertIndex += 1
         viewMenu.insertItem(backlinksItem, at: insertIndex); insertIndex += 1
+        viewMenu.insertItem(lineNumbersItem, at: insertIndex); insertIndex += 1
         viewMenu.insertItem(.separator(), at: insertIndex); insertIndex += 1
         viewMenu.insertItem(editorItem, at: insertIndex); insertIndex += 1
-        viewMenu.insertItem(previewItem, at: insertIndex)
+        viewMenu.insertItem(previewItem, at: insertIndex); insertIndex += 1
+
+        // Preview Font submenu
+        viewMenu.insertItem(.separator(), at: insertIndex); insertIndex += 1
+        let previewFontTitle = L10n.string("app.menu.view.previewFont", defaultValue: "Preview Font")
+        let fontSubmenu = NSMenu(title: previewFontTitle)
+        for (title, value) in [
+            (L10n.string("preview.font.sanFrancisco", defaultValue: "San Francisco"), "sanFrancisco"),
+            (L10n.string("preview.font.newYork", defaultValue: "New York"), "newYork"),
+            (L10n.string("preview.font.sfMono", defaultValue: "SF Mono"), "sfMono")
+        ] {
+            let item = NSMenuItem(title: title, action: #selector(setPreviewFontAction(_:)), keyEquivalent: "")
+            item.target = self
+            item.representedObject = value
+            fontSubmenu.addItem(item)
+        }
+        let fontMenuItem = NSMenuItem(title: previewFontTitle, action: nil, keyEquivalent: "")
+        fontMenuItem.submenu = fontSubmenu
+        viewMenu.insertItem(fontMenuItem, at: insertIndex)
     }
 
     @objc private func switchToEditorAction(_ sender: Any?) {
-        NotificationCenter.default.post(name: .init("ClearlySetViewMode"), object: "edit")
+        WorkspaceManager.shared.currentViewMode = .edit
     }
 
     @objc private func switchToPreviewAction(_ sender: Any?) {
-        NotificationCenter.default.post(name: .init("ClearlySetViewMode"), object: "preview")
+        WorkspaceManager.shared.currentViewMode = .preview
     }
 
     @objc private func toggleOutlineAction(_ sender: Any?) {
@@ -740,6 +826,15 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValid
 
     @objc private func toggleBacklinksAction(_ sender: Any?) {
         NotificationCenter.default.post(name: .init("ClearlyToggleBacklinks"), object: nil)
+    }
+
+    @objc private func toggleLineNumbersAction(_ sender: Any?) {
+        NotificationCenter.default.post(name: .init("ClearlyToggleLineNumbers"), object: nil)
+    }
+
+    @objc private func setPreviewFontAction(_ sender: NSMenuItem) {
+        guard let value = sender.representedObject as? String else { return }
+        UserDefaults.standard.set(value, forKey: "previewFontFamily")
     }
 
     private func injectSpellingMenuIfNeeded() {
@@ -807,9 +902,11 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValid
         let workspace = WorkspaceManager.shared
         guard workspace.activeDocumentID != nil else { return }
         let fontSize = UserDefaults.standard.double(forKey: "editorFontSize")
+        let fontFamily = UserDefaults.standard.string(forKey: "previewFontFamily") ?? "sanFrancisco"
         PDFExporter().exportPDF(
             markdown: workspace.currentFileText,
             fontSize: CGFloat(fontSize > 0 ? fontSize : 16),
+            fontFamily: fontFamily,
             fileURL: workspace.currentFileURL
         )
     }
@@ -818,9 +915,11 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValid
         let workspace = WorkspaceManager.shared
         guard workspace.activeDocumentID != nil else { return }
         let fontSize = UserDefaults.standard.double(forKey: "editorFontSize")
+        let fontFamily = UserDefaults.standard.string(forKey: "previewFontFamily") ?? "sanFrancisco"
         PDFExporter().printHTML(
             markdown: workspace.currentFileText,
             fontSize: CGFloat(fontSize > 0 ? fontSize : 16),
+            fontFamily: fontFamily,
             fileURL: workspace.currentFileURL
         )
     }
@@ -829,6 +928,15 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValid
         if menuItem.action == #selector(exportPDFAction(_:)) ||
            menuItem.action == #selector(printDocumentAction(_:)) {
             return WorkspaceManager.shared.activeDocumentID != nil
+        }
+        if menuItem.action == #selector(toggleLineNumbersAction(_:)) {
+            menuItem.state = UserDefaults.standard.bool(forKey: "showLineNumbers") ? .on : .off
+            return true
+        }
+        if menuItem.action == #selector(setPreviewFontAction(_:)) {
+            let current = UserDefaults.standard.string(forKey: "previewFontFamily") ?? "sanFrancisco"
+            menuItem.state = (menuItem.representedObject as? String) == current ? .on : .off
+            return true
         }
         return true
     }
@@ -889,6 +997,7 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValid
         ]
         let replacements: [(key: String, defaultValue: String)] = [
             ("app.menu.newDocument", "New Document"),
+            ("app.menu.newTab", "New Tab"),
             ("app.menu.open", "Open…"),
             ("app.menu.save", "Save"),
             ("app.menu.hideHiddenFiles", "Hide Hidden Files"),
@@ -1090,6 +1199,7 @@ class ClearlySplitViewController: NSSplitViewController {
 
         // Detail
         let detailHost = NSHostingController(rootView: localizedDetailView())
+        detailHost.safeAreaRegions = []
         self.detailHostController = detailHost
         let detailItem = NSSplitViewItem(viewController: detailHost)
         detailItem.minimumThickness = 400
@@ -1149,10 +1259,14 @@ struct DetailView: View {
     @Bindable var workspace: WorkspaceManager
 
     var body: some View {
-        if workspace.activeDocumentID != nil {
-            ContentView(workspace: workspace)
-        } else {
-            NoFileView(workspace: workspace)
+        VStack(spacing: 0) {
+            TabBarView(workspace: workspace)
+
+            if workspace.activeDocumentID != nil {
+                ContentView(workspace: workspace)
+            } else {
+                NoFileView(workspace: workspace)
+            }
         }
     }
 }
@@ -1257,6 +1371,11 @@ struct ClearlyApp: App {
                     workspace.createUntitledDocument()
                 }
                 .keyboardShortcut("n", modifiers: .command)
+
+                Button(L10n.string("app.menu.newTab", defaultValue: "New Tab")) {
+                    workspace.createUntitledDocument()
+                }
+                .keyboardShortcut("t", modifiers: .command)
 
                 Button(L10n.string("app.menu.open", defaultValue: "Open…")) {
                     workspace.showOpenPanel()
@@ -1439,7 +1558,7 @@ struct FindCommand: View {
 
     var body: some View {
         Button(L10n.string("app.menu.find", defaultValue: "Find…")) {
-            findState?.present()
+            findState?.toggle()
         }
         .keyboardShortcut("f", modifiers: .command)
     }

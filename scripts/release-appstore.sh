@@ -129,19 +129,37 @@ rm -rf build
 mkdir -p build
 
 # ── 1. Strip Sparkle keys from Info.plist (in place, restored later) ─────────
+# Run each delete independently so missing keys don't abort the script under set -e.
 cp Clearly/Info.plist build/Info-Original.plist
-/usr/libexec/PlistBuddy \
-  -c "Delete :SUFeedURL" \
-  -c "Delete :SUPublicEDKey" \
-  -c "Delete :SUEnableInstallerLauncherService" \
-  Clearly/Info.plist
+for key in SUFeedURL SUPublicEDKey SUEnableInstallerLauncherService; do
+  /usr/libexec/PlistBuddy -c "Delete :$key" Clearly/Info.plist 2>/dev/null || true
+done
 
-# ── 2. Generate project.yml without Sparkle ─────────────────────────────────
+# ── 2. Generate project.yml without Sparkle or ClearlyMCP ───────────────────
+# The ClearlyMCP CLI is stripped from App Store builds: as a sandboxed helper
+# bundled at Contents/Resources/Helpers/ClearlyMCP it cannot read the main
+# app's container, and App Store Review rejects non-sandboxed nested executables.
+# Direct-download users still get it via release.sh.
 sed \
   -e '/^  Sparkle:$/,/from:/d' \
   -e '/- package: Sparkle/d' \
   -e 's|Clearly/Clearly.entitlements|Clearly/Clearly-AppStore.entitlements|' \
-  project.yml > build/project-appstore.yml
+  project.yml | \
+awk '
+  # Drop the ClearlyMCP target block (it is the last target in project.yml).
+  /^  ClearlyMCP:/ { skip_target = 1 }
+  skip_target { next }
+  # Drop the postCompileScripts block inside the Clearly target.
+  # It ends at the next 4-space-indented key (e.g. "    settings:").
+  /^    postCompileScripts:/ { skip_postcompile = 1; next }
+  skip_postcompile && /^    [a-zA-Z]/ { skip_postcompile = 0 }
+  skip_postcompile { next }
+  # Drop the ClearlyMCP dependency entry plus its indented children (embed, etc).
+  /^      - target: ClearlyMCP/ { skip_mcp_dep = 1; next }
+  skip_mcp_dep && /^        / { next }
+  skip_mcp_dep { skip_mcp_dep = 0 }
+  { print }
+' > build/project-appstore.yml
 
 # ── 3. Generate Xcode project from modified spec ────────────────────────────
 xcodegen generate --spec build/project-appstore.yml -p . -r .
@@ -276,15 +294,65 @@ asc_api PATCH "/appStoreVersions/$VERSION_ID/relationships/build" "{
 }" > /dev/null
 echo "   Attached build to version."
 
-# Submit for review
-asc_api POST "/appStoreVersionSubmissions" "{
-  \"data\": {
-    \"type\": \"appStoreVersionSubmissions\",
-    \"relationships\": {
-      \"appStoreVersion\": {
-        \"data\": { \"type\": \"appStoreVersions\", \"id\": \"$VERSION_ID\" }
+# Submit for review — uses the new reviewSubmissions API.
+# The old appStoreVersionSubmissions endpoint was retired; it now returns
+# 403 FORBIDDEN_ERROR with "The resource ... does not allow 'CREATE'".
+# New flow: create a reviewSubmission, attach the version as an item, then
+# PATCH the submission with submitted=true.
+
+# Reuse any existing in-flight submission for this platform, or create one.
+REVIEW_SUBMISSION_ID=$(asc_api GET "/reviewSubmissions?filter[app]=$APP_ID&filter[platform]=MAC_OS&filter[state]=READY_FOR_REVIEW,UNRESOLVED_ISSUES&fields[reviewSubmissions]=state" | \
+  python3 -c "
+import sys,json
+data = json.load(sys.stdin)['data']
+print(data[0]['id'] if data else '')
+")
+
+if [ -z "$REVIEW_SUBMISSION_ID" ]; then
+  REVIEW_SUBMISSION_ID=$(asc_api POST "/reviewSubmissions" "{
+    \"data\": {
+      \"type\": \"reviewSubmissions\",
+      \"attributes\": { \"platform\": \"MAC_OS\" },
+      \"relationships\": {
+        \"app\": { \"data\": { \"type\": \"apps\", \"id\": \"$APP_ID\" } }
       }
     }
+  }" | python3 -c "import sys,json; print(json.load(sys.stdin)['data']['id'])")
+  echo "   Created review submission: $REVIEW_SUBMISSION_ID"
+else
+  echo "   Using existing review submission: $REVIEW_SUBMISSION_ID"
+fi
+
+# Attach the version as a submission item (idempotent — skip if already present).
+EXISTING_ITEM=$(asc_api GET "/reviewSubmissions/$REVIEW_SUBMISSION_ID/items?fields[reviewSubmissionItems]=appStoreVersion&include=appStoreVersion" | \
+  python3 -c "
+import sys,json
+d = json.load(sys.stdin)
+for item in d.get('data', []):
+    rel = item.get('relationships', {}).get('appStoreVersion', {}).get('data') or {}
+    if rel.get('id') == '$VERSION_ID':
+        print(item['id']); break
+")
+
+if [ -z "$EXISTING_ITEM" ]; then
+  asc_api POST "/reviewSubmissionItems" "{
+    \"data\": {
+      \"type\": \"reviewSubmissionItems\",
+      \"relationships\": {
+        \"appStoreVersion\": { \"data\": { \"type\": \"appStoreVersions\", \"id\": \"$VERSION_ID\" } },
+        \"reviewSubmission\": { \"data\": { \"type\": \"reviewSubmissions\", \"id\": \"$REVIEW_SUBMISSION_ID\" } }
+      }
+    }
+  }" > /dev/null
+  echo "   Attached version to review submission."
+fi
+
+# Flip the submission to submitted=true to send it to App Review.
+asc_api PATCH "/reviewSubmissions/$REVIEW_SUBMISSION_ID" "{
+  \"data\": {
+    \"type\": \"reviewSubmissions\",
+    \"id\": \"$REVIEW_SUBMISSION_ID\",
+    \"attributes\": { \"submitted\": true }
   }
 }" > /dev/null
 

@@ -164,6 +164,12 @@ enum FileParser {
                         .trimmingCharacters(in: .whitespaces)
                         .trimmingCharacters(in: CharacterSet(charactersIn: "\"'"))
                     if !tag.isEmpty { tagNames.append(tag) }
+                } else if trimmed.contains(",") {
+                    // Bare comma-separated: tags: foo, bar, baz
+                    tagNames.append(contentsOf: trimmed.components(separatedBy: ",").map {
+                        $0.trimmingCharacters(in: .whitespaces)
+                            .trimmingCharacters(in: CharacterSet(charactersIn: "\"'"))
+                    })
                 } else if !trimmed.isEmpty {
                     // Single value on same line as key
                     tagNames.append(trimmed.trimmingCharacters(in: CharacterSet(charactersIn: "\"'")))

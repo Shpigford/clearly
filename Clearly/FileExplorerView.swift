@@ -469,7 +469,7 @@ struct FileExplorerOutlineView: NSViewRepresentable {
             let locCount = workspace.locations.count
             let recCount = workspace.recentFiles.count
             let openCount = workspace.openDocuments.count
-            let treeHash = workspace.locations.reduce(0) { $0 ^ $1.fileTree.hashValue }
+            let treeHash = workspace.treeRevision
             let activeID = workspace.activeDocumentID
             let vaultRev = workspace.vaultIndexRevision
 
@@ -509,6 +509,7 @@ struct FileExplorerOutlineView: NSViewRepresentable {
 
         func reloadAndExpand() {
             guard let outlineView else { return }
+            refreshCachedTags()
             outlineView.reloadData()
             // autosaveExpandedItems restores expansion state automatically.
             // On first ever launch (no saved state), expand everything.
@@ -696,10 +697,12 @@ struct FileExplorerOutlineView: NSViewRepresentable {
             workspace.openDocuments
         }
 
-        /// Recent files that are not already visible as open documents.
+        /// Recent files that are not already visible as open documents, capped so total recents ≤ 5.
         private var recentHistoryFiles: [URL] {
             let openFileURLs = Set(workspace.openDocuments.compactMap(\.fileURL))
-            return workspace.recentFiles.filter { !openFileURLs.contains($0) }
+            let history = workspace.recentFiles.filter { !openFileURLs.contains($0) }
+            let remaining = max(0, 5 - recentSectionOpenDocs.count)
+            return Array(history.prefix(remaining))
         }
 
         func outlineView(_ outlineView: NSOutlineView, numberOfChildrenOfItem item: Any?) -> Int {
@@ -1005,13 +1008,23 @@ struct FileExplorerOutlineView: NSViewRepresentable {
             let row = outlineView.selectedRow
             guard row >= 0, let outlineItem = outlineView.item(atRow: row) as? OutlineItem else { return }
 
+            let cmdHeld = NSEvent.modifierFlags.contains(.command)
+
             switch outlineItem.kind {
             case .openDocument(let doc):
                 workspace.switchToDocument(doc.id)
             case .fileNode(let node) where !node.isDirectory:
-                workspace.openFile(at: node.url)
+                if cmdHeld {
+                    workspace.openFileInNewTab(at: node.url)
+                } else {
+                    workspace.openFile(at: node.url)
+                }
             case .recentFile(let url):
-                workspace.openFile(at: url)
+                if cmdHeld {
+                    workspace.openFileInNewTab(at: url)
+                } else {
+                    workspace.openFile(at: url)
+                }
             case .tagEntry(let tag, _):
                 NotificationCenter.default.post(
                     name: .init("ClearlyFilterByTag"),
@@ -1069,6 +1082,7 @@ struct FileExplorerOutlineView: NSViewRepresentable {
 
                     menu.addItem(.separator())
                 } else {
+                    menu.addItem(menuItem("sidebar.context.openInNewTab", "Open in New Tab", action: #selector(openInNewTabAction(_:)), representedObject: node.url))
                     menu.addItem(menuItem("sidebar.context.newFile", "New File…", action: #selector(newFileInFolderAction(_:)), representedObject: parentURL))
 
                     menu.addItem(.separator())
@@ -1089,6 +1103,7 @@ struct FileExplorerOutlineView: NSViewRepresentable {
                 menu.addItem(menuItem("sidebar.context.moveToTrash", "Move to Trash", action: #selector(moveToTrashAction(_:)), representedObject: node.url))
 
             case .recentFile(let url):
+                menu.addItem(menuItem("sidebar.context.openInNewTab", "Open in New Tab", action: #selector(openInNewTabAction(_:)), representedObject: url))
                 menu.addItem(menuItem("sidebar.context.revealInFinder", "Reveal in Finder", action: #selector(revealInFinderAction(_:)), representedObject: url))
 
                 let copyItem = NSMenuItem(title: localized("sidebar.context.copy", "Copy"), action: nil, keyEquivalent: "")
@@ -1233,6 +1248,11 @@ struct FileExplorerOutlineView: NSViewRepresentable {
             guard let locationID = sender.representedObject as? UUID,
                   let location = workspace.locations.first(where: { $0.id == locationID }) else { return }
             workspace.removeLocation(location)
+        }
+
+        @objc func openInNewTabAction(_ sender: NSMenuItem) {
+            guard let url = sender.representedObject as? URL else { return }
+            workspace.openFileInNewTab(at: url)
         }
 
         @objc func closeOpenDocAction(_ sender: NSMenuItem) {

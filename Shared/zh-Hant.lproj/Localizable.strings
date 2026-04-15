@@ -27,6 +27,7 @@
 "settings.general.launch.lastFile" = "打開上次文件";
 "settings.general.launch.newDocument" = "建立新文件";
 "settings.general.fontSize" = "字體大小";
+"settings.general.previewFont" = "預覽字體";
 "settings.general.newScratchpad" = "新建 Scratchpad：";
 "settings.general.launchAtLogin" = "登入時啟動";
 "settings.about.version" = "版本 %@";
@@ -103,6 +104,7 @@
 "sidebar.tooltip.addLocation" = "新增位置（⌘O）";
 "sidebar.tooltip.clearRecents" = "清空最近";
 "sidebar.context.newFile" = "新建文件…";
+"sidebar.context.openInNewTab" = "在新分頁中開啟";
 "sidebar.context.newFolder" = "新建資料夾…";
 "sidebar.context.customize" = "自訂…";
 "sidebar.context.revealInFinder" = "在 Finder 中顯示";
@@ -142,6 +144,7 @@
 "app.menu.window" = "視窗";
 "app.menu.help" = "幫助";
 "app.menu.newDocument" = "新建文件";
+"app.menu.newTab" = "新建分頁";
 "app.menu.open" = "打開…";
 "app.menu.save" = "儲存";
 "app.menu.hideHiddenFiles" = "不顯示隱藏文件";
@@ -171,6 +174,8 @@
 "app.menu.toggleOutline" = "切換大綱";
 "app.menu.view.editor" = "編輯器";
 "app.menu.view.preview" = "預覽";
+"app.menu.view.lineNumbers" = "行號";
+"app.menu.view.previewFont" = "預覽字體";
 "app.menu.font.increase" = "增大字體";
 "app.menu.font.decrease" = "縮小字體";
 "app.menu.checkForUpdates" = "檢查更新…";
@@ -198,6 +203,13 @@
 "find.noResults" = "無結果";
 "find.done" = "完成";
 "find.matchIndex" = "%1$lld / %2$lld";
+"jumpToLine.placeholder" = "行號";
+"jumpToLine.totalFormat" = "共 %lld 行";
+"jumpToLine.go" = "跳至";
+
+"preview.font.sanFrancisco" = "San Francisco";
+"preview.font.newYork" = "New York";
+"preview.font.sfMono" = "SF Mono";
 
 "outline.title" = "大綱";
 "outline.empty.title" = "暫無標題";

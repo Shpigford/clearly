@@ -5,6 +5,7 @@ import Combine
 struct PreviewView: NSViewRepresentable {
     let markdown: String
     var fontSize: CGFloat = 18
+    var fontFamily: String = "sanFrancisco"
     var mode: ViewMode
     var positionSyncID: String
     var fileURL: URL?
@@ -15,6 +16,7 @@ struct PreviewView: NSViewRepresentable {
     var onWikiLinkClicked: ((String, String?) -> Void)?
     var onTagClicked: ((String) -> Void)?
     var wikiFileNames: Set<String>?
+    var extraTopInset: CGFloat = 0
     @Environment(\.colorScheme) private var colorScheme
 
     private static func javaScriptStringLiteral(_ value: String) -> String {
@@ -25,7 +27,7 @@ struct PreviewView: NSViewRepresentable {
     }
 
     private var contentKey: String {
-        "\(markdown)__\(fontSize)__\(colorScheme == .dark ? "dark" : "light")__\(LocalImageSupport.fileURLKeyFragment(fileURL))__\(wikiFilesKey)"
+        "\(markdown)__\(fontSize)__\(fontFamily)__\(colorScheme == .dark ? "dark" : "light")__\(LocalImageSupport.fileURLKeyFragment(fileURL))__\(wikiFilesKey)"
     }
 
     private var wikiFilesKey: String {
@@ -158,7 +160,7 @@ struct PreviewView: NSViewRepresentable {
         <head>
         <meta charset="utf-8">
         <meta name="viewport" content="width=device-width, initial-scale=1">
-        <style>\(PreviewCSS.css(fontSize: fontSize))
+        <style>\(PreviewCSS.css(fontSize: fontSize, fontFamily: fontFamily))
         mark.clearly-find { background-color: rgba(255, 230, 0, 0.4); border-radius: 2px; padding: 0 1px; }
         mark.clearly-find.current { background-color: rgba(255, 165, 0, 0.6); }
         @media (prefers-color-scheme: dark) {
@@ -167,7 +169,7 @@ struct PreviewView: NSViewRepresentable {
         }
         </style>
         </head>
-        <body>\(htmlBody)</body>
+        <body\(extraTopInset > 0 ? " style=\"padding-top: \(Int(extraTopInset))px\"" : "")>\(htmlBody)</body>
         <script>
         document.querySelectorAll('img').forEach(function(img) {
             if (!img.complete) {

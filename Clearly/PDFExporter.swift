@@ -12,7 +12,7 @@ final class PDFExporter: NSObject, WKNavigationDelegate {
     private var documentURL: URL?
     private var isPrint = false
 
-    func exportPDF(markdown: String, fontSize: CGFloat, fileURL: URL? = nil) {
+    func exportPDF(markdown: String, fontSize: CGFloat, fontFamily: String = "sanFrancisco", fileURL: URL? = nil) {
         let panel = NSSavePanel()
         panel.allowedContentTypes = [.pdf]
         panel.nameFieldStringValue = "Untitled.pdf"
@@ -22,18 +22,18 @@ final class PDFExporter: NSObject, WKNavigationDelegate {
         exportURL = url
         documentURL = fileURL
         isPrint = false
-        loadHTML(markdown: markdown, fontSize: fontSize)
+        loadHTML(markdown: markdown, fontSize: fontSize, fontFamily: fontFamily)
     }
 
-    func printHTML(markdown: String, fontSize: CGFloat, fileURL: URL? = nil) {
+    func printHTML(markdown: String, fontSize: CGFloat, fontFamily: String = "sanFrancisco", fileURL: URL? = nil) {
         PDFExporter.current = self
         exportURL = nil
         documentURL = fileURL
         isPrint = true
-        loadHTML(markdown: markdown, fontSize: fontSize)
+        loadHTML(markdown: markdown, fontSize: fontSize, fontFamily: fontFamily)
     }
 
-    private func loadHTML(markdown: String, fontSize: CGFloat) {
+    private func loadHTML(markdown: String, fontSize: CGFloat, fontFamily: String = "sanFrancisco") {
         // Both print and export use full page width — NSPrintOperation handles margins
         let renderWidth = Self.pageSize.width
         let config = WKWebViewConfiguration()
@@ -60,7 +60,7 @@ final class PDFExporter: NSObject, WKNavigationDelegate {
         <html>
         <head>
         <meta charset="utf-8">
-        <style>\(PreviewCSS.css(fontSize: fontSize, forExport: false))</style>
+        <style>\(PreviewCSS.css(fontSize: fontSize, fontFamily: fontFamily, forExport: false))</style>
         </head>
         <body>\(htmlBody)</body>
         \(MathSupport.scriptHTML(for: htmlBody))

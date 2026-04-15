@@ -12,6 +12,7 @@ struct SettingsView: View {
     @AppStorage("editorFontSize") private var fontSize: Double = 16
     @AppStorage(AppLanguagePreference.userDefaultsKey) private var appLanguagePreference = AppLanguagePreference.system.rawValue
     @AppStorage(AppLanguagePreference.appliedUserDefaultsKey) private var appliedLanguagePreference = AppLanguagePreference.system.rawValue
+    @AppStorage("previewFontFamily") private var previewFontFamily = "sanFrancisco"
     @AppStorage("themePreference") private var themePreference = "system"
     @AppStorage("launchBehavior") private var launchBehavior = "lastFile"
 
@@ -88,6 +89,13 @@ struct SettingsView: View {
                     .font(.system(size: 13, weight: .medium))
                     .monospacedDigit()
                     .frame(width: 30, alignment: .trailing)
+            }
+            KeyboardShortcuts.Recorder(L10n.string("settings.general.newScratchpad", defaultValue: "New Scratchpad:"), name: .newScratchpad)
+            Toggle(L10n.string("settings.general.launchAtLogin", defaultValue: "Launch at Login"), isOn: $launchAtLogin)
+            Picker(L10n.string("settings.general.previewFont", defaultValue: "Preview Font"), selection: $previewFontFamily) {
+                Text(L10n.string("preview.font.sanFrancisco", defaultValue: "San Francisco")).tag("sanFrancisco")
+                Text(L10n.string("preview.font.newYork", defaultValue: "New York")).tag("newYork")
+                Text(L10n.string("preview.font.sfMono", defaultValue: "SF Mono")).tag("sfMono")
             }
             KeyboardShortcuts.Recorder(L10n.string("settings.general.newScratchpad", defaultValue: "New Scratchpad:"), name: .newScratchpad)
             Toggle(L10n.string("settings.general.launchAtLogin", defaultValue: "Launch at Login"), isOn: $launchAtLogin)

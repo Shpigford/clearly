@@ -2,6 +2,24 @@
 
 ## [Unreleased]
 
+## [2.0.0] - 2026-04-14
+- Open multiple documents in tabs (Cmd+T, Cmd+W, Cmd+Shift+[/] to switch)
+- Link between notes with [[wiki-link]] syntax and auto-complete as you type
+- Find any note instantly with Quick Switcher (Cmd+P) and full-text content search
+- See which notes link to the current one in the Backlinks panel, with one-click Link for unlinked mentions
+- Browse your #tags from the sidebar, with highlighting in both editor and preview
+- Expose your vault to AI agents through the bundled MCP server
+- Line numbers in the editor with jump-to-line
+- Pick a preview font: San Francisco, New York, or SF Mono
+- Redesigned marketing site and overhauled demo document
+- Large vaults no longer freeze the app while loading
+- Fullscreen windows now have correct sidebar and content spacing
+- Export PDF and Print work again after the multi-file redesign
+- Typing is smooth again on long documents
+- Preview cursor no longer leaks into editor mode
+- Polished code blocks: copy button, rounded corners, proper gutter width
+- Frontmatter tags register correctly alongside inline #tags
+
 ## [1.16.0] - 2026-04-12
 - Redesigned UI with refined sidebar, toolbar, and file explorer styling
 

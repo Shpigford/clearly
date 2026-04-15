@@ -1,8 +1,21 @@
 import Foundation
 
 enum PreviewCSS {
-    static func css(fontSize: CGFloat = 18, forExport: Bool = false) -> String {
+    static func css(fontSize: CGFloat = 18, fontFamily: String = "sanFrancisco", forExport: Bool = false) -> String {
     let tocTitle = L10n.string("preview.toc.title", defaultValue: "Table of Contents")
+    let bodyFontFamily: String
+    let headingFontFamily: String
+    switch fontFamily {
+    case "newYork":
+        bodyFontFamily = "\"New York\", \"Iowan Old Style\", Georgia, serif"
+        headingFontFamily = "\"New York\", \"Iowan Old Style\", Georgia, serif"
+    case "sfMono":
+        bodyFontFamily = "\"SF Mono\", SFMono-Regular, Menlo, monospace"
+        headingFontFamily = "\"SF Mono\", SFMono-Regular, Menlo, monospace"
+    default:
+        bodyFontFamily = "system-ui, -apple-system, BlinkMacSystemFont, \"SF Pro Text\", \"SF Pro Display\", \"Helvetica Neue\", sans-serif"
+        headingFontFamily = "system-ui, -apple-system, BlinkMacSystemFont, \"SF Pro Display\", \"Helvetica Neue\", sans-serif"
+    }
     let exportOverrides = forExport ? """
     .wiki-link { color: #34855A !important; border-bottom: none !important; }
     .wiki-link-broken { color: #B35C3A !important; border-bottom: none !important; }
@@ -109,7 +122,7 @@ enum PreviewCSS {
     }
 
     body {
-        font-family: system-ui, -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "Helvetica Neue", sans-serif;
+        font-family: \(bodyFontFamily);
         font-size: \(Int(fontSize))px;
         line-height: 1.75;
         max-width: 61em;
@@ -122,11 +135,12 @@ enum PreviewCSS {
     }
 
     h1, h2, h3, h4, h5, h6 {
-        font-family: system-ui, -apple-system, BlinkMacSystemFont, "SF Pro Display", "Helvetica Neue", sans-serif;
+        font-family: \(headingFontFamily);
         line-height: 1.25;
         margin-top: 2em;
         margin-bottom: 0.75em;
         letter-spacing: -0.015em;
+        position: relative;
     }
 
     body > *:first-child {
@@ -592,9 +606,9 @@ enum PreviewCSS {
 
     /* Heading anchor links */
     .heading-anchor {
+        position: absolute;
+        left: -1.2em;
         opacity: 0;
-        margin-left: -1.2em;
-        padding-right: 0.3em;
         text-decoration: none;
         color: #AEAEB2;
         font-weight: 400;

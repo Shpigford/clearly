@@ -1,5 +1,10 @@
 import Foundation
 
+enum ViewMode: String, CaseIterable {
+    case edit
+    case preview
+}
+
 /// Represents a single document that is currently open in the editor.
 /// Can be either file-backed (has a fileURL) or untitled (in-memory only).
 struct OpenDocument: Identifiable {
@@ -8,6 +13,7 @@ struct OpenDocument: Identifiable {
     var text: String
     var lastSavedText: String
     var untitledNumber: Int?
+    var viewMode: ViewMode = .edit
 
     var isDirty: Bool { text != lastSavedText }
     var isUntitled: Bool { fileURL == nil }
