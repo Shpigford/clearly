@@ -712,14 +712,28 @@ final class VaultIndex: @unchecked Sendable {
     private func collectMarkdownFiles(under rootURL: URL, showHiddenFiles: Bool) -> [URL] {
         let fm = FileManager.default
         let options: FileManager.DirectoryEnumerationOptions = showHiddenFiles ? [] : [.skipsHiddenFiles]
-        guard let enumerator = fm.enumerator(at: rootURL, includingPropertiesForKeys: [.isRegularFileKey], options: options) else {
+        guard let enumerator = fm.enumerator(at: rootURL, includingPropertiesForKeys: [.isRegularFileKey, .isDirectoryKey], options: options) else {
             return []
         }
 
+        var rules = IgnoreRules(rootURL: rootURL)
         var files: [URL] = []
         for case let url as URL in enumerator {
+            let resourceValues = try? url.resourceValues(forKeys: [.isRegularFileKey, .isDirectoryKey])
+            let isDir = resourceValues?.isDirectory ?? false
+
+            if isDir {
+                rules.loadNestedGitignore(at: url)
+                if rules.shouldIgnore(url: url, isDirectory: true) {
+                    enumerator.skipDescendants()
+                    continue
+                }
+                continue
+            }
+
+            if rules.shouldIgnore(url: url, isDirectory: false) { continue }
             guard FileNode.markdownExtensions.contains(url.pathExtension.lowercased()) else { continue }
-            guard let isFile = try? url.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile, isFile else { continue }
+            guard resourceValues?.isRegularFile ?? false else { continue }
             files.append(url)
         }
         return files
