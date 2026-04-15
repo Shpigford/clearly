@@ -6,10 +6,28 @@ final class MarkdownSyntaxHighlighter: NSObject {
     private var isHighlighting = false
     private var cachedProtectedRanges: [ProtectedRange] = []
 
+    /// Set by `highlightAround` when a block delimiter is detected.
+    /// The caller should schedule a deferred `highlightAll` instead of running it synchronously.
+    var needsFullHighlight = false
+
     // MARK: - Regex Patterns
 
     private static let frontmatterKeyRegex: NSRegularExpression? = try? NSRegularExpression(
         pattern: "^([\\w][\\w\\s.-]*)(:)",
+        options: .anchorsMatchLines
+    )
+
+    private static let frontmatterBlockRegex: NSRegularExpression? = try? NSRegularExpression(
+        pattern: "\\A---[ \\t]*\\n([\\s\\S]*?)\\n---[ \\t]*(?:\\n|\\z)"
+    )
+
+    private static let fencedCodeBlockRegex: NSRegularExpression? = try? NSRegularExpression(
+        pattern: "^(`{3,})(.*?)\\n([\\s\\S]*?)^\\1\\s*$",
+        options: .anchorsMatchLines
+    )
+
+    private static let displayMathBlockRegex: NSRegularExpression? = try? NSRegularExpression(
+        pattern: "^\\$\\$\\n([\\s\\S]*?)^\\$\\$\\s*$",
         options: .anchorsMatchLines
     )
 
@@ -23,13 +41,19 @@ final class MarkdownSyntaxHighlighter: NSObject {
         }
 
         // Frontmatter (--- ... ---) at very start of file — must come before everything
-        add("\\A---[ \\t]*\\n([\\s\\S]*?)\\n---[ \\t]*(?:\\n|\\z)", .frontmatter)
+        if let regex = frontmatterBlockRegex {
+            result.append((regex, .frontmatter))
+        }
 
         // Fenced code blocks (``` ... ```) — must come first to prevent inner highlighting
-        add("^(`{3,})(.*?)\\n([\\s\\S]*?)^\\1\\s*$", .codeBlock, options: .anchorsMatchLines)
+        if let regex = fencedCodeBlockRegex {
+            result.append((regex, .codeBlock))
+        }
 
         // Display math blocks: $$...$$ (multiline)
-        add("^\\$\\$\\n([\\s\\S]*?)^\\$\\$\\s*$", .mathBlock, options: .anchorsMatchLines)
+        if let regex = displayMathBlockRegex {
+            result.append((regex, .mathBlock))
+        }
 
         // Inline math: $...$
         add("(?<!\\$)\\$(?!\\$)([^\n$]+?)(?<!\\$)\\$(?!\\$)", .mathInline)
@@ -405,6 +429,34 @@ final class MarkdownSyntaxHighlighter: NSObject {
         pattern: "^(`{3,}|\\${2}|---\\s*$)", options: .anchorsMatchLines
     )
 
+    private func rebuildProtectedRanges(for text: String) -> [ProtectedRange] {
+        let nsText = text as NSString
+        let fullRange = NSRange(location: 0, length: nsText.length)
+        var protectedRanges: [ProtectedRange] = []
+
+        Self.frontmatterBlockRegex?.enumerateMatches(in: text, range: fullRange) { match, _, _ in
+            guard let match else { return }
+            let matchedText = nsText.substring(with: match.range)
+            guard FrontmatterSupport.extract(from: matchedText) != nil else { return }
+            protectedRanges.append(ProtectedRange(range: match.range, kind: .frontmatter))
+        }
+
+        Self.fencedCodeBlockRegex?.enumerateMatches(in: text, range: fullRange) { match, _, _ in
+            guard let match else { return }
+            protectedRanges.append(ProtectedRange(range: match.range, kind: .code))
+        }
+
+        Self.displayMathBlockRegex?.enumerateMatches(in: text, range: fullRange) { match, _, _ in
+            guard let match else { return }
+            protectedRanges.append(ProtectedRange(range: match.range, kind: .math))
+        }
+
+        protectedRanges.sort { lhs, rhs in
+            lhs.range.location < rhs.range.location
+        }
+        return protectedRanges
+    }
+
     /// Re-highlight only the region around the edit, expanded to paragraph boundaries.
     /// Falls back to highlightAll if the edit touches a block delimiter (```, $$, ---).
     func highlightAround(_ textStorage: NSTextStorage, editedRange: NSRange, replacementLength: Int, caller: String = "") {
@@ -418,11 +470,16 @@ final class MarkdownSyntaxHighlighter: NSObject {
         let paragraphRange = nsText.paragraphRange(for: postEditRange)
 
         // If the edited paragraph contains a block delimiter, the change could affect
-        // everything below (opening/closing a code block or math block). Full re-highlight.
+        // everything below (opening/closing a code block or math block). Signal the caller
+        // to schedule a deferred full re-highlight, but still highlight the current paragraph
+        // immediately for responsive feedback.
         let paragraphText = nsText.substring(with: paragraphRange)
-        if Self.blockDelimiterRegex?.firstMatch(in: paragraphText, range: NSRange(location: 0, length: (paragraphText as NSString).length)) != nil {
-            highlightAll(textStorage, caller: caller + "-blockDelim")
-            return
+        let editedBlockDelimiter = Self.blockDelimiterRegex?.firstMatch(
+            in: paragraphText,
+            range: NSRange(location: 0, length: (paragraphText as NSString).length)
+        ) != nil
+        if editedBlockDelimiter {
+            needsFullHighlight = true
         }
 
         isHighlighting = true
@@ -431,40 +488,59 @@ final class MarkdownSyntaxHighlighter: NSObject {
 
         textStorage.beginEditing()
 
-        // Reset attributes in the affected range
-        let paragraph = NSMutableParagraphStyle()
-        paragraph.minimumLineHeight = Theme.editorLineHeight
-        paragraph.maximumLineHeight = Theme.editorLineHeight
+        // Reset attributes in the affected range. Only reset font/paragraph/baseline
+        // when the range actually has non-default fonts (headings, code, bold, italic).
+        // Skipping the font reset for plain text avoids glyph regeneration, which is
+        // the main per-keystroke cost on large documents.
+        var needsFontReset = false
+        textStorage.enumerateAttribute(.font, in: paragraphRange, options: .longestEffectiveRangeNotRequired) { value, _, stop in
+            if let font = value as? NSFont, font != Theme.editorFont {
+                needsFontReset = true
+                stop.pointee = true
+            }
+        }
 
-        textStorage.addAttributes([
-            .font: Theme.editorFont,
-            .foregroundColor: Theme.textColor,
-            .paragraphStyle: paragraph,
-            .baselineOffset: Theme.editorBaselineOffset
-        ], range: paragraphRange)
+        if needsFontReset {
+            let paragraph = NSMutableParagraphStyle()
+            paragraph.minimumLineHeight = Theme.editorLineHeight
+            paragraph.maximumLineHeight = Theme.editorLineHeight
+            textStorage.addAttributes([
+                .font: Theme.editorFont,
+                .paragraphStyle: paragraph,
+                .baselineOffset: Theme.editorBaselineOffset
+            ], range: paragraphRange)
+        }
+        textStorage.addAttribute(.foregroundColor, value: Theme.textColor, range: paragraphRange)
         textStorage.removeAttribute(.backgroundColor, range: paragraphRange)
         textStorage.removeAttribute(.strikethroughStyle, range: paragraphRange)
 
-        // Adjust cached protected ranges for the edit offset instead of re-scanning
-        // the full document. Block delimiter edits already trigger highlightAll which
-        // rebuilds the cache from scratch.
-        let delta = replacementLength - editedRange.length
-        var protectedRanges: [ProtectedRange] = []
-        for protectedRange in cachedProtectedRanges {
-            let range = protectedRange.range
-            if NSMaxRange(range) <= editedRange.location {
-                protectedRanges.append(protectedRange)
-            } else if range.location >= NSMaxRange(editedRange) {
-                protectedRanges.append(ProtectedRange(
-                    range: NSRange(location: range.location + delta, length: range.length),
-                    kind: protectedRange.kind
-                ))
-            } else {
-                protectedRanges.append(ProtectedRange(
-                    range: NSRange(location: range.location, length: max(0, range.length + delta)),
-                    kind: protectedRange.kind
-                ))
+        // Keep cached protected ranges aligned with the edit. Most edits can cheaply
+        // shift the cached ranges; block delimiters need a full protected-range rescan
+        // so semantic queries stay correct until the deferred highlightAll runs.
+        let protectedRanges: [ProtectedRange]
+        if editedBlockDelimiter {
+            // Keep protected-range queries correct until the deferred highlightAll runs.
+            protectedRanges = rebuildProtectedRanges(for: text)
+        } else {
+            let delta = replacementLength - editedRange.length
+            var shiftedProtectedRanges: [ProtectedRange] = []
+            for protectedRange in cachedProtectedRanges {
+                let range = protectedRange.range
+                if NSMaxRange(range) <= editedRange.location {
+                    shiftedProtectedRanges.append(protectedRange)
+                } else if range.location >= NSMaxRange(editedRange) {
+                    shiftedProtectedRanges.append(ProtectedRange(
+                        range: NSRange(location: range.location + delta, length: range.length),
+                        kind: protectedRange.kind
+                    ))
+                } else {
+                    shiftedProtectedRanges.append(ProtectedRange(
+                        range: NSRange(location: range.location, length: max(0, range.length + delta)),
+                        kind: protectedRange.kind
+                    ))
+                }
             }
+            protectedRanges = shiftedProtectedRanges
         }
         cachedProtectedRanges = protectedRanges
 
