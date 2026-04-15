@@ -15,7 +15,18 @@ struct EditorView: NSViewRepresentable {
     var showLineNumbers: Bool = false
     var jumpToLineState: JumpToLineState?
     var needsTrafficLightClearance: Bool = false
+    var contentWidthEm: CGFloat? = nil
     @Environment(\.colorScheme) private var colorScheme
+
+    private static func computeHorizontalInset(
+        scrollViewWidth: CGFloat, contentWidthEm: CGFloat?,
+        fontSize: CGFloat, needsTrafficLightClearance: Bool
+    ) -> CGFloat {
+        let minInset = Theme.editorInsetX + (needsTrafficLightClearance ? 20 : 0)
+        guard let emValue = contentWidthEm else { return minInset }
+        let maxWidthPoints = emValue * fontSize
+        return max(minInset, (scrollViewWidth - maxWidthPoints) / 2.0)
+    }
 
     func makeCoordinator() -> Coordinator {
         Coordinator(self)
@@ -57,7 +68,10 @@ struct EditorView: NSViewRepresentable {
         ]
 
         // Insets
-        let horizontalInset = Theme.editorInsetX + (needsTrafficLightClearance ? 20 : 0)
+        let horizontalInset = Self.computeHorizontalInset(
+            scrollViewWidth: 0, contentWidthEm: contentWidthEm,
+            fontSize: fontSize, needsTrafficLightClearance: needsTrafficLightClearance
+        )
         textView.textContainerInset = NSSize(width: horizontalInset, height: Theme.editorInsetTop + extraTopInset)
         textView.textContainer?.lineFragmentPadding = 0
 
@@ -211,8 +225,14 @@ struct EditorView: NSViewRepresentable {
             }
         }
 
-        // Update top inset when tab bar appears/disappears
-        let horizontalInset = Theme.editorInsetX + (needsTrafficLightClearance ? 20 : 0)
+        // Update insets (content width, tab bar, traffic light clearance)
+        context.coordinator.contentWidthEm = contentWidthEm
+        context.coordinator.cachedFontSize = fontSize
+        context.coordinator.cachedNeedsTrafficLightClearance = needsTrafficLightClearance
+        let horizontalInset = Self.computeHorizontalInset(
+            scrollViewWidth: scrollView.frame.width, contentWidthEm: contentWidthEm,
+            fontSize: fontSize, needsTrafficLightClearance: needsTrafficLightClearance
+        )
         let expectedInset = NSSize(width: horizontalInset, height: Theme.editorInsetTop + extraTopInset)
         if textView.textContainerInset != expectedInset {
             textView.textContainerInset = expectedInset
@@ -331,6 +351,9 @@ struct EditorView: NSViewRepresentable {
         var outlineState: OutlineState?
         var lastColorScheme: ColorScheme?
         var lastFontSize: CGFloat?
+        var contentWidthEm: CGFloat?
+        var cachedFontSize: CGFloat = 12
+        var cachedNeedsTrafficLightClearance: Bool = false
         var updateCount = 0
         private var lastScrollTime: TimeInterval = 0
         private var editGeneration: UInt = 0
@@ -389,6 +412,20 @@ struct EditorView: NSViewRepresentable {
 
         @objc func textViewFrameDidChange(_ notification: Notification) {
             gutterView?.scrollOrFrameDidChange()
+
+            // Recalculate horizontal inset on window resize to keep text centered
+            guard let textView, let scrollView = textView.enclosingScrollView else { return }
+            let horizontalInset = EditorView.computeHorizontalInset(
+                scrollViewWidth: scrollView.frame.width,
+                contentWidthEm: contentWidthEm,
+                fontSize: cachedFontSize,
+                needsTrafficLightClearance: cachedNeedsTrafficLightClearance
+            )
+            let currentVertical = textView.textContainerInset.height
+            let newInset = NSSize(width: horizontalInset, height: currentVertical)
+            if abs(textView.textContainerInset.width - newInset.width) > 0.5 {
+                textView.textContainerInset = newInset
+            }
         }
 
         func jumpToLine(_ line: Int) {

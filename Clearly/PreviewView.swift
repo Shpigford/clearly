@@ -16,11 +16,18 @@ struct PreviewView: NSViewRepresentable {
     var onWikiLinkClicked: ((String, String?) -> Void)?
     var onTagClicked: ((String) -> Void)?
     var wikiFileNames: Set<String>?
+    var contentWidthEm: CGFloat? = nil
     var extraTopInset: CGFloat = 0
     @Environment(\.colorScheme) private var colorScheme
 
+    private var bodyMaxWidthCSS: String {
+        guard let contentWidthEm else { return "none" }
+        // Body padding is part of the box width, so add it back to match editor text width.
+        return "calc(\(Int(contentWidthEm))em + 128px)"
+    }
+
     private var contentKey: String {
-        "\(markdown)__\(fontSize)__\(fontFamily)__\(colorScheme == .dark ? "dark" : "light")__\(LocalImageSupport.fileURLKeyFragment(fileURL))__\(wikiFilesKey)"
+        "\(markdown)__\(fontSize)__\(fontFamily)__\(colorScheme == .dark ? "dark" : "light")__\(LocalImageSupport.fileURLKeyFragment(fileURL))__\(wikiFilesKey)__\(contentWidthEm.map { "\($0)" } ?? "off")"
     }
 
     private var wikiFilesKey: String {
@@ -153,7 +160,7 @@ struct PreviewView: NSViewRepresentable {
         <head>
         <meta charset="utf-8">
         <meta name="viewport" content="width=device-width, initial-scale=1">
-        <style>\(PreviewCSS.css(fontSize: fontSize, fontFamily: fontFamily))
+        <style>\(PreviewCSS.css(fontSize: fontSize, fontFamily: fontFamily, bodyMaxWidth: bodyMaxWidthCSS))
         mark.clearly-find { background-color: rgba(255, 230, 0, 0.4); border-radius: 2px; padding: 0 1px; }
         mark.clearly-find.current { background-color: rgba(255, 165, 0, 0.6); }
         @media (prefers-color-scheme: dark) {

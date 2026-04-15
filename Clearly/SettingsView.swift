@@ -13,6 +13,7 @@ struct SettingsView: View {
     @AppStorage("previewFontFamily") private var previewFontFamily = "sanFrancisco"
     @AppStorage("themePreference") private var themePreference = "system"
     @AppStorage("launchBehavior") private var launchBehavior = "lastFile"
+    @AppStorage("contentWidth") private var contentWidth = "off"
 
     var body: some View {
         TabView {
@@ -60,6 +61,12 @@ struct SettingsView: View {
                 Text("San Francisco").tag("sanFrancisco")
                 Text("New York").tag("newYork")
                 Text("SF Mono").tag("sfMono")
+            }
+            Picker("Content Width", selection: $contentWidth) {
+                Text("Off").tag("off")
+                Text("Narrow").tag("narrow")
+                Text("Medium").tag("medium")
+                Text("Wide").tag("wide")
             }
             KeyboardShortcuts.Recorder("New Scratchpad:", name: .newScratchpad)
             Toggle("Launch at Login", isOn: $launchAtLogin)

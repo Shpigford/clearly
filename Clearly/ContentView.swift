@@ -113,6 +113,7 @@ struct ContentView: View {
     @StateObject private var backlinksState = BacklinksState()
     @StateObject private var jumpToLineState = JumpToLineState()
     @AppStorage("showLineNumbers") private var showLineNumbers = false
+    @AppStorage("contentWidth") private var contentWidth = "off"
     @State private var isFullscreen = false
     @Environment(\.colorScheme) private var colorScheme
 
@@ -129,10 +130,19 @@ struct ContentView: View {
         return inset
     }
 
+    private var contentWidthEm: CGFloat? {
+        switch contentWidth {
+        case "narrow": return 36
+        case "medium": return 48
+        case "wide":   return 60
+        default:       return nil
+        }
+    }
+
     private var editorPane: some View {
         let editorFontSize = CGFloat(fontSize)
         let fileURL = workspace.currentFileURL
-        return EditorView(text: $workspace.currentFileText, fontSize: editorFontSize, fileURL: fileURL, mode: workspace.currentViewMode, positionSyncID: positionSyncID, findState: findState, outlineState: outlineState, extraTopInset: contentExtraTopInset, showLineNumbers: showLineNumbers, jumpToLineState: jumpToLineState, needsTrafficLightClearance: !workspace.isSidebarVisible && !hasTabBar)
+        return EditorView(text: $workspace.currentFileText, fontSize: editorFontSize, fileURL: fileURL, mode: workspace.currentViewMode, positionSyncID: positionSyncID, findState: findState, outlineState: outlineState, extraTopInset: contentExtraTopInset, showLineNumbers: showLineNumbers, jumpToLineState: jumpToLineState, needsTrafficLightClearance: !workspace.isSidebarVisible && !hasTabBar, contentWidthEm: contentWidthEm)
     }
 
     private var previewPane: some View {
@@ -194,6 +204,7 @@ struct ContentView: View {
                 )
             },
             wikiFileNames: allWikiFileNames,
+            contentWidthEm: contentWidthEm,
             extraTopInset: contentExtraTopInset
         )
     }

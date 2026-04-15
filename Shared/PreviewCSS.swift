@@ -1,7 +1,7 @@
 import Foundation
 
 enum PreviewCSS {
-    static func css(fontSize: CGFloat = 18, fontFamily: String = "sanFrancisco", forExport: Bool = false) -> String {
+    static func css(fontSize: CGFloat = 18, fontFamily: String = "sanFrancisco", forExport: Bool = false, bodyMaxWidth: String = "61em") -> String {
     let bodyFontFamily: String
     let headingFontFamily: String
     switch fontFamily {
@@ -124,7 +124,7 @@ enum PreviewCSS {
         font-family: \(bodyFontFamily);
         font-size: \(Int(fontSize))px;
         line-height: 1.75;
-        max-width: 61em;
+        max-width: \(bodyMaxWidth);
         margin: 0 auto;
         padding: 40px 64px 48px;
         color: #1D1D1F;
