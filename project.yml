@@ -135,6 +135,7 @@ targets:
       - path: Clearly/VaultIndex.swift
       - path: Clearly/FileParser.swift
       - path: Clearly/FileNode.swift
+      - path: Clearly/IgnoreRules.swift
       - path: Clearly/DiagnosticLog.swift
       - path: Shared/FrontmatterSupport.swift
     dependencies:

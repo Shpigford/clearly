@@ -658,14 +658,13 @@ final class WorkspaceManager {
     /// On first-ever location add, creates a Getting Started document and opens it.
     func handleFirstLocationIfNeeded(folderURL: URL) {
         guard !UserDefaults.standard.bool(forKey: Self.hasDeliveredGettingStartedKey) else { return }
-        UserDefaults.standard.set(true, forKey: Self.hasDeliveredGettingStartedKey)
-
         showSidebar()
 
         let fileName = "Getting Started.md"
         let fileURL = folderURL.appendingPathComponent(fileName)
 
         guard !FileManager.default.fileExists(atPath: fileURL.path) else {
+            UserDefaults.standard.set(true, forKey: Self.hasDeliveredGettingStartedKey)
             _ = openFile(at: fileURL)
             return
         }
@@ -678,6 +677,7 @@ final class WorkspaceManager {
 
         do {
             try content.write(to: fileURL, atomically: true, encoding: .utf8)
+            UserDefaults.standard.set(true, forKey: Self.hasDeliveredGettingStartedKey)
             DiagnosticLog.log("Created Getting Started.md in \(folderURL.lastPathComponent)")
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
                 _ = self?.openFile(at: fileURL)
@@ -739,10 +739,37 @@ final class WorkspaceManager {
     // MARK: - Pinned Files
 
     func togglePin(_ url: URL) {
-        if let idx = pinnedFiles.firstIndex(of: url) {
+        let normalizedURL = url.standardizedFileURL
+
+        if let idx = pinnedFiles.firstIndex(where: { $0.standardizedFileURL == normalizedURL }) {
             pinnedFiles.remove(at: idx)
         } else {
-            pinnedFiles.append(url)
+            guard let bookmarkData = try? normalizedURL.bookmarkData(
+                options: .withSecurityScope,
+                includingResourceValuesForKeys: nil,
+                relativeTo: nil
+            ) else {
+                DiagnosticLog.log("Failed to create bookmark for pinned file: \(normalizedURL.path)")
+                return
+            }
+
+            var isStale = false
+            let pinnedURL = (try? URL(
+                resolvingBookmarkData: bookmarkData,
+                options: .withSecurityScope,
+                relativeTo: nil,
+                bookmarkDataIsStale: &isStale
+            ))?.standardizedFileURL ?? normalizedURL
+
+            if !hasExactActiveAccess(to: pinnedURL) {
+                if pinnedURL.startAccessingSecurityScopedResource() {
+                    accessedURLs.insert(pinnedURL)
+                } else if !hasActiveAccess(to: pinnedURL) {
+                    DiagnosticLog.log("Failed to access pinned file: \(pinnedURL.path)")
+                }
+            }
+
+            pinnedFiles.append(pinnedURL)
         }
         persistPinnedFiles()
     }
@@ -1117,13 +1144,18 @@ final class WorkspaceManager {
                 relativeTo: nil,
                 bookmarkDataIsStale: &isStale
             ) {
+                let normalizedURL = url.standardizedFileURL
                 if isStale {
                     shouldPersist = true
                 }
-                if !hasActiveAccess(to: url), url.startAccessingSecurityScopedResource() {
-                    accessedURLs.insert(url)
+                if !hasExactActiveAccess(to: normalizedURL) {
+                    if normalizedURL.startAccessingSecurityScopedResource() {
+                        accessedURLs.insert(normalizedURL)
+                    } else if !hasActiveAccess(to: normalizedURL) {
+                        DiagnosticLog.log("Failed to restore pinned file access: \(normalizedURL.path)")
+                    }
                 }
-                urls.append(url)
+                urls.append(normalizedURL)
             } else {
                 shouldPersist = true
             }
@@ -1390,6 +1422,11 @@ final class WorkspaceManager {
             let scopePath = accessedURL.standardizedFileURL.path
             return targetPath == scopePath || targetPath.hasPrefix(scopePath + "/")
         }
+    }
+
+    private func hasExactActiveAccess(to url: URL) -> Bool {
+        let targetPath = url.standardizedFileURL.path
+        return accessedURLs.contains { $0.standardizedFileURL.path == targetPath }
     }
 }
 

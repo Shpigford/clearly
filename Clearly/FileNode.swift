@@ -15,7 +15,8 @@ struct FileNode: Identifiable, Hashable {
     ]
 
     /// Build a file tree from a directory URL, filtering to markdown files.
-    static func buildTree(at url: URL, showHiddenFiles: Bool = false) -> [FileNode] {
+    /// Skips hardcoded heavy directories and respects `.gitignore` rules.
+    static func buildTree(at url: URL, showHiddenFiles: Bool = false, ignoreRules: IgnoreRules? = nil) -> [FileNode] {
         let fm = FileManager.default
         let options: FileManager.DirectoryEnumerationOptions = showHiddenFiles ? [] : [.skipsHiddenFiles]
         guard let contents = try? fm.contentsOfDirectory(
@@ -23,6 +24,8 @@ struct FileNode: Identifiable, Hashable {
             includingPropertiesForKeys: [.isDirectoryKey, .nameKey],
             options: options
         ) else { return [] }
+
+        var rules = ignoreRules ?? IgnoreRules(rootURL: url)
 
         var folders: [FileNode] = []
         var files: [FileNode] = []
@@ -33,13 +36,19 @@ struct FileNode: Identifiable, Hashable {
             let hidden = name.hasPrefix(".")
 
             if isDir {
-                let children = buildTree(at: itemURL, showHiddenFiles: showHiddenFiles)
+                if rules.shouldIgnore(url: itemURL, isDirectory: true) { continue }
+                var childRules = rules
+                childRules.loadNestedGitignore(at: itemURL)
+                let children = buildTree(at: itemURL, showHiddenFiles: showHiddenFiles, ignoreRules: childRules)
                 // Only include folders that contain markdown files (directly or nested)
                 if !children.isEmpty {
                     folders.append(FileNode(name: name, url: itemURL, isHidden: hidden, children: children))
                 }
-            } else if markdownExtensions.contains(itemURL.pathExtension.lowercased()) {
-                files.append(FileNode(name: name, url: itemURL, isHidden: hidden, children: nil))
+            } else {
+                if rules.shouldIgnore(url: itemURL, isDirectory: false) { continue }
+                if markdownExtensions.contains(itemURL.pathExtension.lowercased()) {
+                    files.append(FileNode(name: name, url: itemURL, isHidden: hidden, children: nil))
+                }
             }
         }
 
