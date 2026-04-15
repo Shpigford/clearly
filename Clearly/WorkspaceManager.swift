@@ -32,6 +32,7 @@ final class WorkspaceManager {
 
     var openDocuments: [OpenDocument] = []
     var activeDocumentID: UUID?
+    var hoveredTabID: UUID?
     private var nextUntitledNumber: Int = 1
 
     // MARK: - Sidebar
