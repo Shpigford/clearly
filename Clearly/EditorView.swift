@@ -44,6 +44,7 @@ struct EditorView: NSViewRepresentable {
         textView.isRichText = false
         textView.allowsUndo = true
         textView.usesFindPanel = false
+        textView.usesFontPanel = false
         textView.isAutomaticQuoteSubstitutionEnabled = false
         textView.isAutomaticDashSubstitutionEnabled = false
         textView.isAutomaticTextReplacementEnabled = false
@@ -318,7 +319,7 @@ struct EditorView: NSViewRepresentable {
         // synchronously, then the async block decrements it after updating the
         // binding. While updates are pending, the text view is authoritative —
         // any mismatch is just the binding lagging behind, not an external change.
-        let textMismatch = textView.string != text
+        let textMismatch = text.count != textView.string.count || textView.string != text
         if !context.coordinator.isUpdating && context.coordinator.pendingBindingUpdates == 0 && textMismatch {
             DiagnosticLog.log("updateNSView #\(count): external text change (\(text.count) chars)")
             context.coordinator.isUpdating = true
@@ -369,6 +370,7 @@ struct EditorView: NSViewRepresentable {
         /// view is authoritative and the binding will catch up.
         var pendingBindingUpdates = 0
         var pendingBindingUpdateToken: UUID?
+        private var pendingFullHighlightWork: DispatchWorkItem?
 
         // Find state tracking
         var matchRanges: [NSRange] = []
@@ -555,7 +557,7 @@ struct EditorView: NSViewRepresentable {
                 return
             }
 
-            DiagnosticLog.log("textDidChange (\(textView.string.count) chars)")
+            DiagnosticLog.log("textDidChange (\(textView.textStorage?.length ?? 0) chars)")
 
             // Block updateNSView from replacing text while binding update is pending.
             // Without this, SwiftUI can call updateNSView (e.g., from a layout pass
@@ -577,6 +579,28 @@ struct EditorView: NSViewRepresentable {
                 highlighter?.highlightAll(textView.textStorage!, caller: "textDidChange-fallback")
             }
             isHighlightingInProgress = false
+
+            // If a block delimiter was edited, defer the full re-highlight so it
+            // doesn't block typing. The paragraph was already highlighted above.
+            if highlighter?.needsFullHighlight == true {
+                highlighter?.needsFullHighlight = false
+                pendingFullHighlightWork?.cancel()
+                let work = DispatchWorkItem { [weak self] in
+                    guard let self, let textView = self.textView else { return }
+                    let sv = textView.enclosingScrollView
+                    let origin = sv?.contentView.bounds.origin
+                    self.isHighlightingInProgress = true
+                    self.highlighter?.highlightAll(textView.textStorage!, caller: "deferred-blockDelim")
+                    self.isHighlightingInProgress = false
+                    if let sv, let origin {
+                        sv.contentView.scroll(to: origin)
+                        sv.reflectScrolledClipView(sv.contentView)
+                    }
+                    self.restoreFindHighlightsIfNeeded()
+                }
+                pendingFullHighlightWork = work
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3, execute: work)
+            }
 
             // Restore scroll position that highlighting may have disturbed
             if let scrollView, let savedOrigin {

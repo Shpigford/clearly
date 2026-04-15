@@ -429,11 +429,16 @@ struct ContentView: View {
             .onChange(of: workspace.currentFileText) { _, newText in
                 workspace.contentDidChange()
                 fileWatcher.updateCurrentText(newText)
-                outlineState.parseHeadings(from: newText)
+                if outlineState.isVisible {
+                    outlineState.parseHeadings(from: newText)
+                }
             }
             .onReceive(NotificationCenter.default.publisher(for: .init("ClearlyToggleOutline"))) { _ in
                 withAnimation(Theme.Motion.smooth) {
                     outlineState.toggle()
+                }
+                if outlineState.isVisible {
+                    outlineState.parseHeadings(from: workspace.currentFileText)
                 }
             }
             .onReceive(NotificationCenter.default.publisher(for: .init("ClearlyToggleBacklinks"))) { _ in
