@@ -8,7 +8,7 @@ struct FileExplorerView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            if workspace.locations.isEmpty && workspace.recentFiles.isEmpty && workspace.openDocuments.isEmpty {
+            if workspace.locations.isEmpty && workspace.pinnedFiles.isEmpty && workspace.recentFiles.isEmpty && workspace.openDocuments.isEmpty {
                 FileExplorerEmptyView(workspace: workspace)
             } else {
                 FileExplorerOutlineView(workspace: workspace)
@@ -282,6 +282,7 @@ struct FileExplorerOutlineView: NSViewRepresentable {
 
     /// Root-level sections
     enum Section: String, CaseIterable {
+        case pinned = "PINNED"
         case locations = "LOCATIONS"
         case recents = "RECENTS"
         case tags = "TAGS"
@@ -293,6 +294,7 @@ struct FileExplorerOutlineView: NSViewRepresentable {
             case section(Section)
             case location(BookmarkedLocation)
             case fileNode(FileNode)
+            case pinnedFile(URL)
             case recentFile(URL)
             case openDocument(OpenDocument)
             case tagEntry(tag: String, count: Int)
@@ -308,6 +310,7 @@ struct FileExplorerOutlineView: NSViewRepresentable {
             case .section: return nil
             case .location(let loc): return loc.url
             case .fileNode(let node): return node.url
+            case .pinnedFile(let url): return url
             case .recentFile(let url): return url
             case .openDocument(let doc): return doc.fileURL
             case .tagEntry: return nil
@@ -318,7 +321,7 @@ struct FileExplorerOutlineView: NSViewRepresentable {
             switch kind {
             case .fileNode(let node): return node.isDirectory
             case .location: return true
-            case .section, .recentFile, .openDocument, .tagEntry: return false
+            case .section, .pinnedFile, .recentFile, .openDocument, .tagEntry: return false
             }
         }
     }
@@ -333,15 +336,18 @@ struct FileExplorerOutlineView: NSViewRepresentable {
         private var sectionItems: [Section: OutlineItem] = [:]
         private var locationItems: [UUID: OutlineItem] = [:]
         private var nodeItems: [URL: OutlineItem] = [:]
+        private var pinnedItems: [URL: OutlineItem] = [:]
         private var recentItems: [URL: OutlineItem] = [:]
         private var openDocItems: [UUID: OutlineItem] = [:]
         private var tagItems: [String: OutlineItem] = [:]
         private var cachedTags: [(tag: String, count: Int)] = []
         private var lastVaultRevision: Int = 0
+        private var hadPinnedBefore = false
         private var hadTagsBefore = false
 
         // Track state to avoid redundant reloads (updateNSView fires on every SwiftUI render)
         private var lastLocationCount = 0
+        private var lastPinnedCount = 0
         private var lastRecentCount = 0
         private var lastOpenDocCount = 0
         private var lastLocationTreeHash = 0
@@ -381,6 +387,15 @@ struct FileExplorerOutlineView: NSViewRepresentable {
             }
             let item = OutlineItem(.fileNode(node))
             nodeItems[node.url] = item
+            return item
+        }
+
+        func item(forPinned url: URL) -> OutlineItem {
+            if let existing = pinnedItems[url] {
+                return existing
+            }
+            let item = OutlineItem(.pinnedFile(url))
+            pinnedItems[url] = item
             return item
         }
 
@@ -440,6 +455,7 @@ struct FileExplorerOutlineView: NSViewRepresentable {
 
         private func dataDidChange() -> Bool {
             let locCount = workspace.locations.count
+            let pinCount = workspace.pinnedFiles.count
             let recCount = workspace.recentFiles.count
             let openCount = workspace.openDocuments.count
             let treeHash = workspace.treeRevision
@@ -447,6 +463,7 @@ struct FileExplorerOutlineView: NSViewRepresentable {
             let vaultRev = workspace.vaultIndexRevision
 
             let changed = locCount != lastLocationCount
+                || pinCount != lastPinnedCount
                 || recCount != lastRecentCount
                 || openCount != lastOpenDocCount
                 || treeHash != lastLocationTreeHash
@@ -458,6 +475,7 @@ struct FileExplorerOutlineView: NSViewRepresentable {
             }
 
             lastLocationCount = locCount
+            lastPinnedCount = pinCount
             lastRecentCount = recCount
             lastOpenDocCount = openCount
             lastLocationTreeHash = treeHash
@@ -494,6 +512,7 @@ struct FileExplorerOutlineView: NSViewRepresentable {
                 }
             }
             selectCurrentFile()
+            hadPinnedBefore = !workspace.pinnedFiles.isEmpty
             hadTagsBefore = !cachedTags.isEmpty
             _ = dataDidChange()
         }
@@ -501,10 +520,15 @@ struct FileExplorerOutlineView: NSViewRepresentable {
         func reloadIfNeeded() {
             guard dataDidChange() else { return }
             guard let outlineView else { return }
+            let pinnedJustAppeared = !hadPinnedBefore && !workspace.pinnedFiles.isEmpty
+            hadPinnedBefore = !workspace.pinnedFiles.isEmpty
             let tagsJustAppeared = !hadTagsBefore && !cachedTags.isEmpty
             hadTagsBefore = !cachedTags.isEmpty
             outlineView.reloadData()
             // autosaveExpandedItems handles restoration automatically
+            if pinnedJustAppeared {
+                outlineView.expandItem(item(for: .pinned))
+            }
             if tagsJustAppeared {
                 outlineView.expandItem(item(for: .tags))
             }
@@ -524,6 +548,9 @@ struct FileExplorerOutlineView: NSViewRepresentable {
                 guard let outlineItem = outlineView.item(atRow: row) as? OutlineItem else { continue }
                 switch outlineItem.kind {
                 case .openDocument(let doc) where doc.id == activeID:
+                    outlineView.selectRowIndexes(IndexSet(integer: row), byExtendingSelection: false)
+                    return
+                case .pinnedFile(let url) where url == activeURL:
                     outlineView.selectRowIndexes(IndexSet(integer: row), byExtendingSelection: false)
                     return
                 case .recentFile(let url) where url == activeURL:
@@ -546,6 +573,7 @@ struct FileExplorerOutlineView: NSViewRepresentable {
             case .section(let section): return "section:\(section.rawValue)"
             case .location(let loc): return "location:\(loc.url.path)"
             case .fileNode(let node): return "node:\(node.url.path)"
+            case .pinnedFile(let url): return "pinned:\(url.path)"
             case .recentFile(let url): return "recent:\(url.path)"
             case .openDocument(let doc): return "openDoc:\(doc.id.uuidString)"
             case .tagEntry(let tag, _): return "tag:\(tag)"
@@ -563,6 +591,10 @@ struct FileExplorerOutlineView: NSViewRepresentable {
                 if let loc = workspace.locations.first(where: { $0.url.path == path }) {
                     return item(for: loc)
                 }
+            } else if key.hasPrefix("pinned:") {
+                let path = String(key.dropFirst("pinned:".count))
+                let url = URL(fileURLWithPath: path)
+                if workspace.pinnedFiles.contains(url) { return item(forPinned: url) }
             } else if key.hasPrefix("node:") {
                 let path = String(key.dropFirst("node:".count))
                 let url = URL(fileURLWithPath: path)
@@ -653,9 +685,15 @@ struct FileExplorerOutlineView: NSViewRepresentable {
 
         // MARK: - Data Source
 
-        /// Sections to display — hides TAGS when no tags exist.
+        /// Sections to display — hides PINNED when empty, hides TAGS when no tags exist.
         private var visibleSections: [Section] {
-            Section.allCases.filter { $0 != .tags || !cachedTags.isEmpty }
+            Section.allCases.filter {
+                switch $0 {
+                case .pinned: return !workspace.pinnedFiles.isEmpty
+                case .tags: return !cachedTags.isEmpty
+                default: return true
+                }
+            }
         }
 
         /// Open documents shown at the top of RECENTS.
@@ -676,6 +714,8 @@ struct FileExplorerOutlineView: NSViewRepresentable {
                 return visibleSections.count
             }
             switch item.kind {
+            case .section(.pinned):
+                return workspace.pinnedFiles.count
             case .section(.locations):
                 return workspace.locations.count
             case .section(.tags):
@@ -686,7 +726,7 @@ struct FileExplorerOutlineView: NSViewRepresentable {
                 return loc.fileTree.count
             case .fileNode(let node):
                 return node.children?.count ?? 0
-            case .recentFile, .openDocument, .tagEntry:
+            case .pinnedFile, .recentFile, .openDocument, .tagEntry:
                 return 0
             }
         }
@@ -696,6 +736,8 @@ struct FileExplorerOutlineView: NSViewRepresentable {
                 return self.item(for: visibleSections[index])
             }
             switch item.kind {
+            case .section(.pinned):
+                return self.item(forPinned: workspace.pinnedFiles[index])
             case .section(.locations):
                 return self.item(for: workspace.locations[index])
             case .section(.tags):
@@ -711,7 +753,7 @@ struct FileExplorerOutlineView: NSViewRepresentable {
                 return self.item(for: loc.fileTree[index])
             case .fileNode(let node):
                 return self.item(for: node.children![index])
-            case .recentFile, .openDocument, .tagEntry:
+            case .pinnedFile, .recentFile, .openDocument, .tagEntry:
                 fatalError("Leaf items have no children")
             }
         }
@@ -719,12 +761,13 @@ struct FileExplorerOutlineView: NSViewRepresentable {
         func outlineView(_ outlineView: NSOutlineView, isItemExpandable item: Any) -> Bool {
             guard let item = item as? OutlineItem else { return false }
             switch item.kind {
+            case .section(.pinned): return true
             case .section(.locations): return true
             case .section(.tags): return true
             case .section(.recents): return true
             case .location: return true
             case .fileNode(let node): return node.isDirectory
-            case .recentFile, .openDocument, .tagEntry: return false
+            case .pinnedFile, .recentFile, .openDocument, .tagEntry: return false
             }
         }
 
@@ -748,6 +791,7 @@ struct FileExplorerOutlineView: NSViewRepresentable {
             case .section: return false
             case .location: return false
             case .fileNode(let node): return !node.isDirectory
+            case .pinnedFile: return true
             case .recentFile: return true
             case .openDocument: return true
             case .tagEntry: return true
@@ -885,12 +929,33 @@ struct FileExplorerOutlineView: NSViewRepresentable {
                     cell.imageView?.symbolConfiguration = config
                     cell.imageView?.contentTintColor = nodeColor ?? .secondaryLabelColor
                 } else {
-                    cell.imageView?.image = NSImage(systemSymbolName: "doc.text", accessibilityDescription: "File")?.withSymbolConfiguration(config)
+                    let isPinned = workspace.isPinned(node.url)
+                    let iconName = isPinned ? "pin" : "doc.text"
+                    cell.imageView?.image = NSImage(systemSymbolName: iconName, accessibilityDescription: "File")?.withSymbolConfiguration(config)
                     cell.imageView?.symbolConfiguration = config
-                    cell.imageView?.contentTintColor = nodeColor?.withAlphaComponent(0.6) ?? .tertiaryLabelColor
+                    cell.imageView?.contentTintColor = isPinned ? .controlAccentColor : (nodeColor?.withAlphaComponent(0.6) ?? .tertiaryLabelColor)
                 }
                 cell.imageView?.isHidden = false
                 if node.isHidden { cell.alphaValue = 0.5 }
+
+            case .pinnedFile(let url):
+                let filename = url.lastPathComponent
+                let parentName = url.deletingLastPathComponent().lastPathComponent
+                let attributed = NSMutableAttributedString(
+                    string: filename,
+                    attributes: [.font: NSFont.systemFont(ofSize: 12), .foregroundColor: NSColor.labelColor]
+                )
+                attributed.append(NSAttributedString(
+                    string: "  \(parentName)",
+                    attributes: [.font: NSFont.systemFont(ofSize: 9), .foregroundColor: NSColor.tertiaryLabelColor]
+                ))
+                cell.textField?.font = .systemFont(ofSize: 12)
+                cell.textField?.attributedStringValue = attributed
+                let pinnedConfig = NSImage.SymbolConfiguration(pointSize: 13, weight: .medium)
+                cell.imageView?.image = NSImage(systemSymbolName: "pin", accessibilityDescription: "Pinned")?.withSymbolConfiguration(pinnedConfig)
+                cell.imageView?.symbolConfiguration = pinnedConfig
+                cell.imageView?.contentTintColor = .controlAccentColor
+                cell.imageView?.isHidden = false
 
             case .recentFile(let url):
                 let filename = url.lastPathComponent
@@ -960,6 +1025,12 @@ struct FileExplorerOutlineView: NSViewRepresentable {
                     workspace.openFileInNewTab(at: node.url)
                 } else {
                     workspace.openFile(at: node.url)
+                }
+            case .pinnedFile(let url):
+                if cmdHeld {
+                    workspace.openFileInNewTab(at: url)
+                } else {
+                    workspace.openFile(at: url)
                 }
             case .recentFile(let url):
                 if cmdHeld {
@@ -1081,12 +1152,45 @@ struct FileExplorerOutlineView: NSViewRepresentable {
                     menu.addItem(copyItem)
                 }
 
+                if !node.isDirectory {
+                    menu.addItem(.separator())
+                    let pinTitle = workspace.isPinned(node.url) ? "Unpin" : "Pin"
+                    let pinItem = NSMenuItem(title: pinTitle, action: #selector(togglePinAction(_:)), keyEquivalent: "d")
+                    pinItem.keyEquivalentModifierMask = [.command]
+                    pinItem.representedObject = node.url
+                    pinItem.target = self
+                    menu.addItem(pinItem)
+                }
+
                 menu.addItem(.separator())
 
                 let deleteItem = NSMenuItem(title: "Move to Trash", action: #selector(moveToTrashAction(_:)), keyEquivalent: "")
                 deleteItem.representedObject = node.url
                 deleteItem.target = self
                 menu.addItem(deleteItem)
+
+            case .pinnedFile(let url):
+                let openTabItem = NSMenuItem(title: "Open in New Tab", action: #selector(openInNewTabAction(_:)), keyEquivalent: "")
+                openTabItem.representedObject = url
+                openTabItem.target = self
+                menu.addItem(openTabItem)
+
+                let unpinItem = NSMenuItem(title: "Unpin", action: #selector(togglePinAction(_:)), keyEquivalent: "d")
+                unpinItem.keyEquivalentModifierMask = [.command]
+                unpinItem.representedObject = url
+                unpinItem.target = self
+                menu.addItem(unpinItem)
+
+                menu.addItem(.separator())
+
+                let revealItem = NSMenuItem(title: "Reveal in Finder", action: #selector(revealInFinderAction(_:)), keyEquivalent: "")
+                revealItem.representedObject = url
+                revealItem.target = self
+                menu.addItem(revealItem)
+
+                let copyItem = NSMenuItem(title: "Copy", action: nil, keyEquivalent: "")
+                copyItem.submenu = CopyActions.copySubmenu(for: url, target: self)
+                menu.addItem(copyItem)
 
             case .recentFile(let url):
                 let openTabItem = NSMenuItem(title: "Open in New Tab", action: #selector(openInNewTabAction(_:)), keyEquivalent: "")
@@ -1102,6 +1206,14 @@ struct FileExplorerOutlineView: NSViewRepresentable {
                 let copyItem = NSMenuItem(title: "Copy", action: nil, keyEquivalent: "")
                 copyItem.submenu = CopyActions.copySubmenu(for: url, target: self)
                 menu.addItem(copyItem)
+
+                menu.addItem(.separator())
+                let pinTitle = workspace.isPinned(url) ? "Unpin" : "Pin"
+                let pinItem = NSMenuItem(title: pinTitle, action: #selector(togglePinAction(_:)), keyEquivalent: "p")
+                pinItem.keyEquivalentModifierMask = [.command, .shift]
+                pinItem.representedObject = url
+                pinItem.target = self
+                menu.addItem(pinItem)
 
             case .openDocument(let doc):
                 if doc.isUntitled {
@@ -1121,12 +1233,24 @@ struct FileExplorerOutlineView: NSViewRepresentable {
                     menu.addItem(copyItem)
 
                     menu.addItem(.separator())
+
+                    let pinTitle = workspace.isPinned(url) ? "Unpin" : "Pin"
+                    let pinItem = NSMenuItem(title: pinTitle, action: #selector(togglePinAction(_:)), keyEquivalent: "d")
+                    pinItem.keyEquivalentModifierMask = [.command]
+                    pinItem.representedObject = url
+                    pinItem.target = self
+                    menu.addItem(pinItem)
+
+                    menu.addItem(.separator())
                 }
 
                 let closeItem = NSMenuItem(title: "Close", action: #selector(closeOpenDocAction(_:)), keyEquivalent: "")
                 closeItem.representedObject = doc.id
                 closeItem.target = self
                 menu.addItem(closeItem)
+
+            case .section(.pinned):
+                break
 
             case .section(.recents):
                 if !workspace.recentFiles.isEmpty {
@@ -1158,6 +1282,16 @@ struct FileExplorerOutlineView: NSViewRepresentable {
             recentItems.removeAll()
             openDocItems.removeAll()
             reloadAndExpand()
+        }
+
+        @objc func togglePinAction(_ sender: NSMenuItem) {
+            guard let url = sender.representedObject as? URL else { return }
+            workspace.togglePin(url)
+            pinnedItems.removeAll()
+            reloadAndExpand()
+            if !workspace.pinnedFiles.isEmpty {
+                outlineView?.expandItem(item(for: .pinned))
+            }
         }
 
         @objc func addLocationAction(_ sender: NSMenuItem) {

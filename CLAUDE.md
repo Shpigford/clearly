@@ -83,6 +83,10 @@ When adding new Sparkle-dependent code, always wrap it in `#if canImport(Sparkle
 - **CSS source order in `PreviewCSS.swift`**: Base (light) styles for new elements must be defined BEFORE any `@media (prefers-color-scheme: dark)` overrides for those elements. If a base style comes after a dark-mode `@media` block, the base style wins by source order and dark mode breaks. Place the dark-mode override immediately after the base definition (in its own `@media` block if needed), not in the consolidated dark-mode block near the top of the file.
 - Changes to `project.yml` require running `xcodegen generate` to update the Xcode project
 
+### Adding sidebar sections
+
+When adding a new sidebar section that can appear/disappear dynamically (like PINNED or TAGS), add a `hadXBefore` boolean tracker in the Coordinator. Check it in `reloadIfNeeded()` — if the section just appeared (`!hadXBefore && !data.isEmpty`), call `outlineView.expandItem(item(for: .newSection))`. Without this, new sections appear collapsed and the user can't see their contents. Also expand explicitly in any `@objc` action handler that triggers the section to appear, since `reloadAndExpand()` only auto-expands all sections on very first launch (no autosave state).
+
 ### Adding preview features
 
 Follow the `MathSupport`/`MermaidSupport`/`TableSupport`/`SyntaxHighlightSupport` pattern: create a `*Support.swift` enum in `Shared/` with a static method that returns a `<script>` block (or empty string if the feature isn't needed for the current content). Integrate it into `PreviewView.swift`, `PreviewProvider.swift`, and `PDFExporter.swift` HTML templates. This ensures the feature works in preview, QuickLook, and PDF export.

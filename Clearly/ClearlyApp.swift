@@ -661,7 +661,7 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValid
         let fontFamily = UserDefaults.standard.string(forKey: "previewFontFamily") ?? "sanFrancisco"
         PDFExporter().exportPDF(
             markdown: workspace.currentFileText,
-            fontSize: CGFloat(fontSize > 0 ? fontSize : 16),
+            fontSize: CGFloat(fontSize > 0 ? fontSize : Theme.editorFontSize),
             fontFamily: fontFamily,
             fileURL: workspace.currentFileURL
         )
@@ -674,7 +674,7 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValid
         let fontFamily = UserDefaults.standard.string(forKey: "previewFontFamily") ?? "sanFrancisco"
         PDFExporter().printHTML(
             markdown: workspace.currentFileText,
-            fontSize: CGFloat(fontSize > 0 ? fontSize : 16),
+            fontSize: CGFloat(fontSize > 0 ? fontSize : Theme.editorFontSize),
             fontFamily: fontFamily,
             fileURL: workspace.currentFileURL
         )
@@ -1048,6 +1048,16 @@ struct ClearlyApp: App {
                 }
                 .keyboardShortcut("s", modifiers: .command)
                 .disabled(workspace.activeDocumentID == nil)
+
+                Divider()
+
+                Button(workspace.currentFileURL.map { workspace.isPinned($0) ? "Unpin Document" : "Pin Document" } ?? "Pin Document") {
+                    if let url = workspace.currentFileURL {
+                        workspace.togglePin(url)
+                    }
+                }
+                .keyboardShortcut("d", modifiers: .command)
+                .disabled(workspace.currentFileURL == nil)
             }
 
             #if canImport(Sparkle)
