@@ -62,6 +62,7 @@ struct ScratchpadMenuBar: View {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
             activateDocumentApp()
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+                WindowRouter.shared.showMainWindow()
                 action()
             }
         }

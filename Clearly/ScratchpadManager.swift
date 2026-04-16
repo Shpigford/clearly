@@ -33,6 +33,8 @@ final class ScratchpadManager {
 
     private var nextCascadeOffset: Int = 0
 
+    var hasOpenWindows: Bool { !windows.isEmpty }
+
     func createScratchpad() {
         let pad = Scratchpad()
         let padID = pad.id

@@ -50,9 +50,7 @@ final class WindowRouter {
             return
         }
 
-        if let appDelegate = NSApp.delegate as? ClearlyAppDelegate {
-            appDelegate.createMainWindow()
-        }
+        ClearlyAppDelegate.shared?.createMainWindow()
     }
 
     private func present(_ window: NSWindow) {
@@ -115,7 +113,7 @@ struct LauncherSceneMarker: NSViewRepresentable {
         window.setFrameOrigin(NSPoint(x: -10_000, y: -10_000))
         window.orderOut(nil)
 
-        guard let appDelegate = NSApp.delegate as? ClearlyAppDelegate else { return }
+        guard let appDelegate = ClearlyAppDelegate.shared else { return }
         appDelegate.ensureMainWindowIfNeeded()
     }
 }
@@ -124,6 +122,8 @@ struct LauncherSceneMarker: NSViewRepresentable {
 
 @MainActor
 final class ClearlyAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
+    static private(set) weak var shared: ClearlyAppDelegate?
+
     private var observers: [Any] = []
     private var commandQMonitor: Any?
     private var closeTabMonitor: Any?
@@ -229,12 +229,12 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValid
 
     private class MainWindowDelegateImpl: NSObject, NSWindowDelegate {
         func windowShouldClose(_ sender: NSWindow) -> Bool {
-            guard let appDelegate = NSApp.delegate as? ClearlyAppDelegate else { return true }
+            guard let appDelegate = ClearlyAppDelegate.shared else { return true }
             return appDelegate.shouldCloseMainWindow(sender)
         }
 
         func windowWillClose(_ notification: Notification) {
-            guard let appDelegate = NSApp.delegate as? ClearlyAppDelegate else { return }
+            guard let appDelegate = ClearlyAppDelegate.shared else { return }
             if let window = notification.object as? NSWindow, window === appDelegate.mainWindow {
                 appDelegate.handleMainWindowWillClose()
             }
@@ -242,6 +242,7 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValid
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        Self.shared = self
         installMCPHelperIfNeeded()
 
         // A normal Launch Services open activates the app and opens a document window.
@@ -716,23 +717,27 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValid
         if hasDocumentWindows() && NSApp.activationPolicy() != .regular {
             NSApp.setActivationPolicy(.regular)
         }
-        if isForegroundActivation, !hasDocumentWindows(), mainWindow == nil {
+        if isForegroundActivation, !hasDocumentWindows(), mainWindow == nil,
+           !ScratchpadManager.shared.hasOpenWindows {
             createMainWindow()
         }
     }
 
     func applicationDidBecomeActive(_ notification: Notification) {
-        guard isForegroundActivation, !hasDocumentWindows(), mainWindow == nil else { return }
+        guard isForegroundActivation, !hasDocumentWindows(), mainWindow == nil,
+              !ScratchpadManager.shared.hasOpenWindows else { return }
         createMainWindow()
     }
 
     func applicationDidUnhide(_ notification: Notification) {
-        guard isForegroundActivation, !hasDocumentWindows(), mainWindow == nil else { return }
+        guard isForegroundActivation, !hasDocumentWindows(), mainWindow == nil,
+              !ScratchpadManager.shared.hasOpenWindows else { return }
         createMainWindow()
     }
 
     func ensureMainWindowIfNeeded() {
-        guard isForegroundActivation, !hasDocumentWindows(), mainWindow == nil else { return }
+        guard isForegroundActivation, !hasDocumentWindows(), mainWindow == nil,
+              !ScratchpadManager.shared.hasOpenWindows else { return }
         createMainWindow()
     }
 
@@ -933,7 +938,7 @@ class ClearlySplitViewController: NSSplitViewController {
     }
 
     override func toggleSidebar(_ sender: Any?) {
-        guard let appDelegate = NSApp.delegate as? ClearlyAppDelegate,
+        guard let appDelegate = ClearlyAppDelegate.shared,
               let sidebarItem = splitViewItems.first else { return }
         appDelegate.setSidebarVisible(sidebarItem.isCollapsed)
     }
