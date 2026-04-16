@@ -352,6 +352,7 @@ struct FileExplorerOutlineView: NSViewRepresentable {
         private var lastOpenDocCount = 0
         private var lastLocationTreeHash = 0
         private var lastActiveDocumentID: UUID?
+        private var lastCurrentFileURL: URL?
         private var hasLoadedOnce = false
 
         // Prevent re-entrant selection changes
@@ -461,6 +462,7 @@ struct FileExplorerOutlineView: NSViewRepresentable {
             let treeHash = workspace.treeRevision
             let activeID = workspace.activeDocumentID
             let vaultRev = workspace.vaultIndexRevision
+            let currentURL = workspace.currentFileURL
 
             let changed = locCount != lastLocationCount
                 || pinCount != lastPinnedCount
@@ -469,6 +471,7 @@ struct FileExplorerOutlineView: NSViewRepresentable {
                 || treeHash != lastLocationTreeHash
                 || activeID != lastActiveDocumentID
                 || vaultRev != lastVaultRevision
+                || currentURL != lastCurrentFileURL
 
             if vaultRev != lastVaultRevision {
                 refreshCachedTags()
@@ -481,6 +484,7 @@ struct FileExplorerOutlineView: NSViewRepresentable {
             lastLocationTreeHash = treeHash
             lastActiveDocumentID = activeID
             lastVaultRevision = vaultRev
+            lastCurrentFileURL = currentURL
 
             return changed
         }
