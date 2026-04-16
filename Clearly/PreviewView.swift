@@ -35,6 +35,7 @@ struct PreviewView: NSViewRepresentable {
     var wikiFileNames: Set<String>?
     var contentWidthEm: CGFloat? = nil
     var extraTopInset: CGFloat = 0
+    @AppStorage("hideFrontmatterInPreview") private var hideFrontmatterInPreview = false
     @Environment(\.colorScheme) private var colorScheme
 
     private var bodyMaxWidthCSS: String {
@@ -44,7 +45,7 @@ struct PreviewView: NSViewRepresentable {
     }
 
     private var contentKey: String {
-        "\(markdown)__\(fontSize)__\(fontFamily)__\(colorScheme == .dark ? "dark" : "light")__\(LocalImageSupport.fileURLKeyFragment(fileURL))__\(wikiFilesKey)__\(contentWidthEm.map { "\($0)" } ?? "off")"
+        "\(markdown)__\(fontSize)__\(fontFamily)__\(colorScheme == .dark ? "dark" : "light")__\(LocalImageSupport.fileURLKeyFragment(fileURL))__\(wikiFilesKey)__\(contentWidthEm.map { "\($0)" } ?? "off")__\(hideFrontmatterInPreview)"
     }
 
     private var wikiFilesKey: String {
@@ -154,7 +155,7 @@ struct PreviewView: NSViewRepresentable {
     private func loadHTML(in webView: WKWebView, context: Context) {
         context.coordinator.lastContentKey = contentKey
         context.coordinator.isLoadingContent = true
-        let rawBody = MarkdownRenderer.renderHTML(markdown, appLinkURLs: true)
+        let rawBody = MarkdownRenderer.renderHTML(markdown, appLinkURLs: true, includeFrontmatter: !hideFrontmatterInPreview)
         let htmlBody = LocalImageSupport.resolveImageSources(in: rawBody, relativeTo: fileURL)
         let wikiFilesJSON: String = {
             guard let names = wikiFileNames, !names.isEmpty else { return "[]" }

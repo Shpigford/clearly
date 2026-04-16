@@ -14,6 +14,7 @@ struct SettingsView: View {
     @AppStorage("themePreference") private var themePreference = "system"
     @AppStorage("launchBehavior") private var launchBehavior = "lastFile"
     @AppStorage("contentWidth") private var contentWidth = "off"
+    @AppStorage("hideFrontmatterInPreview") private var hideFrontmatterInPreview = false
 
     var body: some View {
         TabView {
@@ -68,6 +69,7 @@ struct SettingsView: View {
                 Text("Medium").tag("medium")
                 Text("Wide").tag("wide")
             }
+            Toggle("Hide frontmatter in Preview", isOn: $hideFrontmatterInPreview)
             KeyboardShortcuts.Recorder("New Scratchpad:", name: .newScratchpad)
             Toggle("Launch at Login", isOn: $launchAtLogin)
                 .onChange(of: launchAtLogin) { _, newValue in
