@@ -870,6 +870,7 @@ private class SoftDividerSplitView: NSSplitView {
 class ClearlySplitViewController: NSSplitViewController {
     let workspace: WorkspaceManager
     private var needsInitialCollapse = false
+    private static let sidebarWidthKey = "sidebarWidth"
 
     init(workspace: WorkspaceManager) {
         self.workspace = workspace
@@ -908,6 +909,12 @@ class ClearlySplitViewController: NSSplitViewController {
         addSplitViewItem(detailItem)
         splitView.autosaveName = "ClearlySidebar"
 
+        // Manual sidebar width restore (fallback for macOS 15 where autosaveName is broken)
+        let saved = UserDefaults.standard.double(forKey: Self.sidebarWidthKey)
+        if saved >= sidebarItem.minimumThickness && saved <= sidebarItem.maximumThickness {
+            splitView.setPosition(saved, ofDividerAt: 0)
+        }
+
         if !workspace.isSidebarVisible {
             needsInitialCollapse = true
         }
@@ -918,6 +925,16 @@ class ClearlySplitViewController: NSSplitViewController {
         if needsInitialCollapse {
             needsInitialCollapse = false
             splitViewItems.first?.isCollapsed = true
+        }
+    }
+
+    override func splitViewDidResizeSubviews(_ notification: Notification) {
+        super.splitViewDidResizeSubviews(notification)
+        guard let sidebarItem = splitViewItems.first,
+              !sidebarItem.isCollapsed else { return }
+        let width = splitView.subviews[0].frame.width
+        if width >= sidebarItem.minimumThickness {
+            UserDefaults.standard.set(width, forKey: Self.sidebarWidthKey)
         }
     }
 
