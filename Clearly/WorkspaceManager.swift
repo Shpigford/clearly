@@ -506,6 +506,7 @@ final class WorkspaceManager {
         // Bump epoch so any docChanged messages already in-flight from before
         // this host-driven replacement are rejected by the coordinator's epoch guard.
         documentEpoch += 1
+        LiveEditorSession.currentDocumentEpoch = documentEpoch
         currentFileText = newText
         lastSavedText = newText
         isDirty = false
@@ -1877,6 +1878,7 @@ final class WorkspaceManager {
         // ID and are rejected before SwiftUI fires updateNSView.
         LiveEditorSession.currentDocumentID = doc.id
         documentEpoch += 1
+        LiveEditorSession.currentDocumentEpoch = documentEpoch
         currentFileURL = doc.fileURL
         currentFileText = doc.text
         lastSavedText = doc.lastSavedText
@@ -1895,6 +1897,7 @@ final class WorkspaceManager {
         // document immediately — before SwiftUI's updateNSView can fire.
         LiveEditorSession.currentDocumentID = doc.id
         documentEpoch += 1
+        LiveEditorSession.currentDocumentEpoch = documentEpoch
         activeDocumentID = doc.id
         currentFileURL = doc.fileURL
         currentFileText = doc.text

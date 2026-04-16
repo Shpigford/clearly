@@ -112,7 +112,7 @@ This section is the source of truth for what should and should not be part of th
 ### Decide
 
 - [ ] `docs/expansion/IMPLEMENTATION.md`
-- [ ] `docs/rendering.md`
+- [ ] `docs/markdown-rendering-architecture.md`
 
 ### Likely drop from upstream PR
 
@@ -240,7 +240,7 @@ That means:
 ## Immediate Next Steps
 
 - [ ] Decide whether `CLAUDE.md` belongs in the PR at all
-- [ ] Decide whether `docs/expansion/IMPLEMENTATION.md` and `docs/rendering.md` belong in this PR
+- [ ] Decide whether `docs/expansion/IMPLEMENTATION.md` and `docs/markdown-rendering-architecture.md` belong in this PR
 - [ ] Run the full manual document-integrity matrix
 - [ ] Run performance checks on representative notes
 - [ ] Review `WorkspaceManager` ↔ live editor bridge coupling for cleanliness

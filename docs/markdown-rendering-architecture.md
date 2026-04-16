@@ -86,6 +86,8 @@ Colors come from `Theme.swift` dynamic `NSColor` pairs (light/dark). No colors a
 
 The live preview editor is a hybrid: raw markdown source is edited inside a CodeMirror 6 instance rendered in a `WKWebView`. CodeMirror's decoration system overlays rendered widgets on completed blocks while the cursor is elsewhere, giving an "edit in place" feel.
 
+Its visual styling should track the classic preview pane as closely as possible: the same typography, heading scale, spacing, link treatments, code surfaces, and block presentation should be used unless live editing behavior requires a deliberate deviation.
+
 ### 3.1 Architecture
 
 ```

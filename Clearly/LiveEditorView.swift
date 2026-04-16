@@ -5,6 +5,7 @@ import WebKit
 
 enum LiveEditorSession {
     static var currentDocumentID: UUID?
+    static var currentDocumentEpoch: Int = 0
 }
 
 /// WKWebView subclass that re-focuses CodeMirror when macOS routes
@@ -49,6 +50,7 @@ struct LiveEditorView: NSViewRepresentable {
         webView.underPageBackgroundColor = Theme.backgroundColor
         // Update the session ID before any async callbacks from the old view can race.
         LiveEditorSession.currentDocumentID = documentID
+        LiveEditorSession.currentDocumentEpoch = documentEpoch
         context.coordinator.attach(webView: webView, findState: findState, outlineState: outlineState)
         loadEditorPage(in: webView)
         return webView
@@ -58,6 +60,7 @@ struct LiveEditorView: NSViewRepresentable {
         context.coordinator.parent = self
         webView.underPageBackgroundColor = Theme.backgroundColor
         LiveEditorSession.currentDocumentID = documentID
+        LiveEditorSession.currentDocumentEpoch = documentEpoch
         context.coordinator.attach(webView: webView, findState: findState, outlineState: outlineState)
         context.coordinator.syncFromSwiftIfNeeded()
     }
@@ -289,13 +292,15 @@ struct LiveEditorView: NSViewRepresentable {
             // string is a valid confirmed state (user deleted all content) and must
             // be flushed. Only skip when no docChanged has arrived yet (initial state
             // where lastSyncedText=="" means "uninitialized", not "empty document").
-            // Also guard against the window between a document switch
+            // Also guard against the window between a document switch or a
+            // same-document host revision
             // (WorkspaceManager updated LiveEditorSession.currentDocumentID) and
-            // the next SwiftUI updateNSView (which updates parent.documentID).
-            // If they don't match, the coordinator's parent is stale and
-            // lastSyncedText belongs to the previous document.
+            // the next SwiftUI updateNSView (which updates parent.documentID /
+            // parent.documentEpoch). If they don't match, the coordinator's
+            // parent is stale and lastSyncedText belongs to an older host state.
             if hasReceivedDocChanged,
-               parent.documentID == LiveEditorSession.currentDocumentID {
+               parent.documentID == LiveEditorSession.currentDocumentID,
+               parent.documentEpoch == LiveEditorSession.currentDocumentEpoch {
                 parent.onFlushContent?(lastSyncedText)
             }
 

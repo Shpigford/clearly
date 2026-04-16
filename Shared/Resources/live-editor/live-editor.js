@@ -31614,6 +31614,8 @@
     renderInto(view, wrapper) {
       while (wrapper.firstChild) wrapper.removeChild(wrapper.firstChild);
       const rows = this.parseRows();
+      const scrollShell = document.createElement("div");
+      scrollShell.className = "table-wrapper";
       const table2 = document.createElement("table");
       const thead = table2.createTHead();
       const headerTr = thead.insertRow();
@@ -31663,7 +31665,8 @@
         rowCtrl.appendChild(rowBtn);
         tr.appendChild(rowCtrl);
       });
-      wrapper.appendChild(table2);
+      scrollShell.appendChild(table2);
+      wrapper.appendChild(scrollShell);
       wrapper.addEventListener("mousedown", (e) => {
         if (e.target.closest("td, th")) return;
         e.preventDefault();
@@ -31672,7 +31675,7 @@
     }
     toDOM(view) {
       const wrapper = document.createElement("div");
-      wrapper.className = "cm-live-block cm-live-table-block";
+      wrapper.className = "cm-live-block cm-live-table-block table-shell";
       this.renderInto(view, wrapper);
       return wrapper;
     }
@@ -31701,7 +31704,7 @@
     toDOM(view) {
       const wrapper = blockWrapper(view, this.from, "cm-live-mermaid-block");
       const container = document.createElement("div");
-      container.className = "cm-live-mermaid-diagram";
+      container.className = "mermaid cm-live-mermaid-diagram";
       wrapper.appendChild(container);
       if (!mermaidInitialized) {
         window.mermaid?.initialize?.({
@@ -31740,6 +31743,7 @@
     }
     toDOM(view) {
       const wrapper = blockWrapper(view, this.from, "cm-live-math-block");
+      wrapper.classList.add("math-block");
       if (window.katex?.renderToString) {
         wrapper.innerHTML = window.katex.renderToString(this.source, {
           displayMode: true,
@@ -31805,12 +31809,12 @@
       }
       const key = escapeHTML(line.slice(0, separator).trim());
       const value = escapeHTML(line.slice(separator + 1).trim());
-      return `<div class="cm-live-frontmatter-row"><dt>${key}</dt><dd>${value}</dd></div>`;
+      return `<div class="frontmatter-row"><dt>${key}</dt><dd>${value}</dd></div>`;
     }).filter(Boolean).join("");
     if (!rows) {
       return `<pre>${escapeHTML(source)}</pre>`;
     }
-    return `<dl class="cm-live-frontmatter-table">${rows}</dl>`;
+    return `<div class="frontmatter"><dl>${rows}</dl></div>`;
   }
   function renderCodeBlockHTML(info, source) {
     const language2 = info.split(/\s+/)[0] ?? "";
@@ -31818,7 +31822,7 @@
     const highlighted = language2 && highlighter?.getLanguage?.(language2) ? highlighter.highlight?.(source, { language: language2 }).value : highlighter?.highlightAuto?.(source).value;
     const codeHTML = highlighted ?? escapeHTML(source);
     const labelHTML = language2 ? `<div class="cm-live-code-label">${escapeHTML(language2)}</div>` : "";
-    return `${labelHTML}<pre><code>${codeHTML}</code></pre>`;
+    return `<div class="code-block-wrapper">${labelHTML}<pre><code>${codeHTML}</code></pre></div>`;
   }
   function renderImageHTML(alt, source) {
     const resolved = resolvedImageURL(source);
@@ -32362,18 +32366,26 @@ $$`);
   });
   function livePreviewTheme(appearance, fontSize) {
     const isDark = appearance === "dark";
-    const background = isDark ? "#323236" : "#ffffff";
-    const sidebar = isDark ? "#28282B" : "#f6f6f7";
-    const text2 = isDark ? "#e0e0e0" : "#222222";
-    const syntax = isDark ? "#72727a" : "#909090";
-    const accent = isDark ? "#5A9AFF" : "#3B7BF6";
-    const link2 = isDark ? "#5cc7ff" : "#1e69c8";
-    const wiki = isDark ? "#62d087" : "#2e8a57";
-    const tag = isDark ? "#91b9e5" : "#3b6ea5";
-    const surface = isDark ? "#1f1f22" : "#f7f7f8";
-    const border = isDark ? "rgba(255,255,255,0.08)" : "rgba(0,0,0,0.08)";
-    const quote = isDark ? "rgba(255,255,255,0.06)" : "rgba(0,0,0,0.03)";
-    const selection = isDark ? "rgba(90,154,255,0.28)" : "rgba(59,123,246,0.18)";
+    const background = isDark ? "#323236" : "#FFFFFF";
+    const text2 = isDark ? "#F5F5F7" : "#1D1D1F";
+    const muted = isDark ? "#AEAEB2" : "#86868B";
+    const subtleText = isDark ? "#E5E5EA" : "#48484A";
+    const link2 = isDark ? "#0A84FF" : "#0071E3";
+    const wiki = isDark ? "#5ABF80" : "#34855A";
+    const wikiBorder = isDark ? "rgba(90, 191, 128, 0.3)" : "rgba(52, 133, 90, 0.3)";
+    const tag = isDark ? "#7AB0D9" : "#3A6EA5";
+    const tagBackground = isDark ? "rgba(122, 176, 217, 0.12)" : "rgba(58, 110, 165, 0.08)";
+    const inlineCodeBackground = isDark ? "rgba(255, 255, 255, 0.06)" : "rgba(0, 0, 0, 0.04)";
+    const preBackground = isDark ? "rgba(255, 255, 255, 0.05)" : "#F5F5F7";
+    const codeLabelBackground = isDark ? "rgba(255, 255, 255, 0.07)" : "#EDEDF0";
+    const quoteBackground = isDark ? "rgba(255, 255, 255, 0.04)" : "rgba(0, 0, 0, 0.03)";
+    const tableBorder = isDark ? "rgba(255, 255, 255, 0.15)" : "rgba(0, 0, 0, 0.12)";
+    const tableRowBorder = isDark ? "rgba(255, 255, 255, 0.08)" : "rgba(0, 0, 0, 0.06)";
+    const tableHover = isDark ? "rgba(255, 255, 255, 0.03)" : "rgba(0, 0, 0, 0.02)";
+    const buttonBackground = isDark ? "rgba(255, 255, 255, 0.07)" : "rgba(0, 0, 0, 0.05)";
+    const buttonHover = isDark ? "rgba(255, 255, 255, 0.1)" : "rgba(0, 0, 0, 0.08)";
+    const buttonActive = isDark ? "rgba(255, 255, 255, 0.14)" : "rgba(0, 0, 0, 0.12)";
+    const selection = isDark ? "rgba(10, 132, 255, 0.28)" : "rgba(0, 113, 227, 0.18)";
     return EditorView.theme({
       "&": {
         height: "100%",
@@ -32383,19 +32395,23 @@ $$`);
       },
       ".cm-scroller": {
         overflow: "auto",
-        fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, monospace"
+        fontFamily: 'system-ui, -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "Helvetica Neue", sans-serif'
       },
       ".cm-content": {
-        padding: "10px 60px 40px",
+        maxWidth: "61em",
+        margin: "0 auto",
+        padding: "16px 64px 48px",
         minHeight: "100%",
         lineHeight: "1.75",
-        caretColor: text2
+        caretColor: text2,
+        WebkitFontSmoothing: "antialiased"
       },
       ".cm-focused": {
         outline: "none"
       },
       ".cm-line": {
-        padding: "0"
+        padding: "0",
+        color: text2
       },
       ".cm-selectionBackground, ::selection": {
         backgroundColor: selection
@@ -32411,18 +32427,37 @@ $$`);
       },
       ".cm-live-heading": {
         color: text2,
-        fontWeight: "650"
+        fontFamily: 'system-ui, -apple-system, BlinkMacSystemFont, "SF Pro Display", "Helvetica Neue", sans-serif',
+        fontWeight: "650",
+        lineHeight: "1.25",
+        letterSpacing: "-0.015em"
       },
       ".cm-live-heading-1": {
-        fontSize: "1.8em",
-        letterSpacing: "-0.03em"
+        fontSize: "2.25em",
+        fontWeight: "700",
+        letterSpacing: "-0.025em"
       },
       ".cm-live-heading-2": {
-        fontSize: "1.45em",
-        letterSpacing: "-0.02em"
+        fontSize: "1.625em"
       },
       ".cm-live-heading-3": {
-        fontSize: "1.18em"
+        fontSize: "1.3125em",
+        fontWeight: "600"
+      },
+      ".cm-live-heading-4": {
+        fontSize: "1.125em",
+        fontWeight: "600"
+      },
+      ".cm-live-heading-5": {
+        fontSize: "1em",
+        fontWeight: "600"
+      },
+      ".cm-live-heading-6": {
+        fontSize: "0.9375em",
+        fontWeight: "600",
+        textTransform: "uppercase",
+        letterSpacing: "0.05em",
+        color: isDark ? "rgba(245, 245, 247, 0.55)" : "rgba(29, 29, 31, 0.55)"
       },
       ".cm-live-strong": {
         fontWeight: "700"
@@ -32431,31 +32466,32 @@ $$`);
         fontStyle: "italic"
       },
       ".cm-live-strikethrough": {
-        textDecoration: "line-through"
+        textDecoration: "line-through",
+        opacity: "0.6"
       },
       ".cm-live-inline-code": {
-        fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, monospace",
-        backgroundColor: surface,
-        border: `1px solid ${border}`,
-        borderRadius: "6px",
-        padding: "0.05rem 0.3rem",
-        color: isDark ? "#ff9b9b" : "#a02d2d"
+        fontFamily: '"SF Mono", SFMono-Regular, Menlo, monospace',
+        fontSize: "0.875em",
+        backgroundColor: inlineCodeBackground,
+        borderRadius: "5px",
+        padding: "0.125em 0.375em",
+        color: text2
       },
       ".cm-live-link": {
         color: link2,
-        textDecoration: "underline",
-        textUnderlineOffset: "0.15em"
+        textDecoration: "none"
       },
       ".cm-live-wiki-link": {
         color: wiki,
-        textDecoration: "underline",
-        textUnderlineOffset: "0.15em"
+        textDecoration: "none",
+        borderBottom: `1px solid ${wikiBorder}`
       },
       ".cm-live-tag": {
         color: tag,
-        backgroundColor: surface,
-        borderRadius: "999px",
-        padding: "0.05rem 0.35rem"
+        backgroundColor: tagBackground,
+        borderRadius: "3px",
+        padding: "1px 5px",
+        fontSize: "0.9em"
       },
       ".cm-live-prefix": {
         display: "inline-flex",
@@ -32463,14 +32499,15 @@ $$`);
         justifyContent: "center",
         minWidth: "1.4rem",
         marginRight: "0.15rem",
-        color: syntax
+        color: muted
       },
       ".cm-live-quote-line": {
-        backgroundColor: quote,
-        borderRadius: "8px"
+        backgroundColor: quoteBackground,
+        borderRadius: "8px",
+        color: subtleText
       },
       ".cm-live-quote-prefix": {
-        color: accent,
+        color: subtleText,
         fontWeight: "700"
       },
       ".cm-live-task-checkbox": {
@@ -32478,39 +32515,67 @@ $$`);
         marginRight: "0.45rem"
       },
       ".cm-live-block": {
-        margin: "0.35rem 0 0.5rem"
-      },
-      // Code, frontmatter, math, and mermaid blocks get the card treatment.
-      // Tables, HR, images, and page breaks render without a background container.
-      ".cm-live-code-block, .cm-live-frontmatter-block, .cm-live-math-block, .cm-live-mermaid-block": {
-        border: `1px solid ${border}`,
-        borderRadius: "14px",
-        backgroundColor: surface,
-        padding: "14px 16px"
+        margin: "0 0 1.25em"
       },
       ".cm-live-block pre": {
+        position: "relative",
+        backgroundColor: preBackground,
+        borderRadius: "10px",
+        padding: "1.125em 1.25em",
         margin: "0",
-        whiteSpace: "pre-wrap"
+        overflowX: "auto",
+        whiteSpace: "pre"
       },
       ".cm-live-code-label": {
-        fontSize: "0.78em",
-        color: syntax,
-        textTransform: "uppercase",
-        letterSpacing: "0.08em",
-        marginBottom: "0.55rem"
+        fontFamily: '"SF Mono", SFMono-Regular, Menlo, monospace',
+        padding: "0.5em 1.25em",
+        background: codeLabelBackground,
+        borderRadius: "10px 10px 0 0",
+        fontSize: "0.8em",
+        color: muted
       },
-      ".cm-live-frontmatter-table": {
-        display: "grid",
-        gap: "0.5rem",
+      ".code-block-wrapper": {
+        position: "relative",
+        marginBottom: "1.25em"
+      },
+      ".code-block-wrapper > pre": {
+        marginBottom: "0"
+      },
+      ".cm-live-code-label + pre": {
+        borderTopLeftRadius: "0",
+        borderTopRightRadius: "0"
+      },
+      ".cm-live-code-block code, .cm-live-code-block pre code": {
+        fontFamily: '"SF Mono", SFMono-Regular, Menlo, monospace',
+        background: "none",
+        color: text2,
+        padding: "0",
+        fontSize: "0.875em"
+      },
+      ".frontmatter": {
+        marginBottom: "1.5em",
+        padding: "1em 1.25em",
+        backgroundColor: quoteBackground,
+        borderRadius: "10px",
+        fontSize: "0.85em"
+      },
+      ".frontmatter dl": {
         margin: "0"
       },
-      ".cm-live-frontmatter-row": {
-        display: "grid",
-        gridTemplateColumns: "minmax(120px, 180px) 1fr",
-        gap: "0.75rem"
+      ".frontmatter .frontmatter-row": {
+        display: "flex",
+        gap: "0.5em",
+        padding: "0.15em 0"
       },
-      ".cm-live-frontmatter-row dt": {
-        color: syntax
+      ".frontmatter dt": {
+        fontWeight: "600",
+        color: muted,
+        minWidth: "6em"
+      },
+      ".frontmatter dd": {
+        margin: "0",
+        color: text2,
+        whiteSpace: "pre-wrap"
       },
       ".cm-live-image-figure": {
         margin: "0",
@@ -32523,39 +32588,53 @@ $$`);
         display: "block"
       },
       ".cm-live-image-figure figcaption": {
-        color: syntax,
+        color: muted,
         fontSize: "0.9em"
       },
       ".cm-live-rule-block hr": {
         border: "0",
-        borderTop: `1px solid ${border}`,
+        borderTop: `0.5px solid ${isDark ? "rgba(255, 255, 255, 0.1)" : "rgba(0, 0, 0, 0.1)"}`,
         margin: "0"
       },
       ".cm-live-page-break-mark": {
         fontSize: "0.8em",
-        color: syntax,
+        color: muted,
         textTransform: "uppercase",
         letterSpacing: "0.08em"
       },
+      ".cm-live-math-block, .cm-live-mermaid-block": {
+        textAlign: "center",
+        overflowX: "auto"
+      },
+      ".table-wrapper": {
+        overflowX: "auto"
+      },
       ".cm-live-table-block table": {
         width: "100%",
-        borderCollapse: "collapse"
+        borderCollapse: "collapse",
+        fontVariantNumeric: "tabular-nums"
       },
       ".cm-live-table-block th, .cm-live-table-block td": {
-        border: `1px solid ${border}`,
-        padding: "0.55rem 0.7rem",
+        padding: "0.625em 0.875em",
         minWidth: "80px",
         verticalAlign: "top",
-        cursor: "text"
+        cursor: "text",
+        maxWidth: "20em",
+        overflowWrap: "break-word"
       },
       ".cm-live-table-block th": {
-        backgroundColor: isDark ? "#2b2b2f" : "#efeff2",
-        // Required for the absolutely-positioned column + button
+        fontWeight: "600",
+        backgroundColor: "transparent",
+        borderBottom: `1px solid ${tableBorder}`,
         position: "relative",
-        overflow: "visible"
+        overflow: "visible",
+        whiteSpace: "nowrap"
+      },
+      ".cm-live-table-block td": {
+        borderBottom: `1px solid ${tableRowBorder}`
       },
       ".cm-live-table-block th:focus, .cm-live-table-block td:focus": {
-        outline: `2px solid ${accent}`,
+        outline: `2px solid ${link2}`,
         outlineOffset: "-2px"
       },
       // Column + button: floats at the right edge of each header cell
@@ -32568,9 +32647,9 @@ $$`);
         width: "20px",
         height: "20px",
         borderRadius: "50%",
-        border: `1px solid ${border}`,
-        backgroundColor: isDark ? "#323236" : "#ffffff",
-        color: syntax,
+        border: "none",
+        backgroundColor: buttonBackground,
+        color: muted,
         fontSize: "14px",
         lineHeight: "1",
         padding: "0",
@@ -32584,6 +32663,9 @@ $$`);
       },
       ".cm-live-table-block th:hover .cm-live-table-col-add": {
         opacity: "1"
+      },
+      ".cm-live-table-block tr:hover td": {
+        backgroundColor: tableHover
       },
       // Row + control: a narrow column on the right side of the table
       ".cm-live-table-row-add-cell": {
@@ -32599,9 +32681,9 @@ $$`);
         width: "20px",
         height: "20px",
         borderRadius: "50%",
-        border: `1px solid ${border}`,
-        backgroundColor: isDark ? "#323236" : "#ffffff",
-        color: syntax,
+        border: "none",
+        backgroundColor: buttonBackground,
+        color: muted,
         fontSize: "14px",
         lineHeight: "1",
         padding: "0",
@@ -32615,6 +32697,12 @@ $$`);
       },
       ".cm-live-table-block tr:hover .cm-live-table-row-add-btn": {
         opacity: "1"
+      },
+      ".cm-live-table-col-add:hover, .cm-live-table-row-add-btn:hover": {
+        backgroundColor: buttonHover
+      },
+      ".cm-live-table-col-add:active, .cm-live-table-row-add-btn:active": {
+        backgroundColor: buttonActive
       }
     }, { dark: isDark });
   }
