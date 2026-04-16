@@ -190,7 +190,7 @@ struct SettingsView: View {
                 .foregroundStyle(.secondary)
 
             HStack(spacing: 16) {
-                #if canImport(Sparkle)
+                #if canImport(Sparkle) && !DEBUG
                 Button("Check for Updates") {
                     updater.checkForUpdates()
                 }

@@ -1016,11 +1016,19 @@ struct ClearlyApp: App {
         DiagnosticLog.trimIfNeeded()
         DiagnosticLog.log("App launched")
         #if canImport(Sparkle)
+        #if DEBUG
+        updaterController = SPUStandardUpdaterController(
+            startingUpdater: false,
+            updaterDelegate: nil,
+            userDriverDelegate: nil
+        )
+        #else
         updaterController = SPUStandardUpdaterController(
             startingUpdater: true,
             updaterDelegate: nil,
             userDriverDelegate: nil
         )
+        #endif
         #endif
     }
 
