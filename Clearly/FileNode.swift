@@ -40,10 +40,7 @@ struct FileNode: Identifiable, Hashable {
                 var childRules = rules
                 childRules.loadNestedGitignore(at: itemURL)
                 let children = buildTree(at: itemURL, showHiddenFiles: showHiddenFiles, ignoreRules: childRules)
-                // Only include folders that contain markdown files (directly or nested)
-                if !children.isEmpty {
-                    folders.append(FileNode(name: name, url: itemURL, isHidden: hidden, children: children))
-                }
+                folders.append(FileNode(name: name, url: itemURL, isHidden: hidden, children: children))
             } else {
                 if rules.shouldIgnore(url: itemURL, isDirectory: false) { continue }
                 if markdownExtensions.contains(itemURL.pathExtension.lowercased()) {
