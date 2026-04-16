@@ -2,6 +2,23 @@ import SwiftUI
 import WebKit
 import Combine
 
+/// WKWebView subclass that allows window dragging from the top region.
+/// WKWebView normally consumes all mouse events, blocking `isMovableByWindowBackground`.
+/// This intercepts mouseDown in the top strip and calls `performDrag` instead.
+private final class DraggableWKWebView: WKWebView {
+    static let dragHeight: CGFloat = 28
+
+    override func mouseDown(with event: NSEvent) {
+        let local = convert(event.locationInWindow, from: nil)
+        // WKWebView is flipped (y=0 at top)
+        if local.y <= Self.dragHeight {
+            window?.performDrag(with: event)
+            return
+        }
+        super.mouseDown(with: event)
+    }
+}
+
 struct PreviewView: NSViewRepresentable {
     let markdown: String
     var fontSize: CGFloat = 18
@@ -48,7 +65,7 @@ struct PreviewView: NSViewRepresentable {
         config.userContentController.add(context.coordinator, name: "clickToSource")
         config.userContentController.add(context.coordinator, name: "selectionCapture")
         config.userContentController.addUserScript(Self.copyButtonUserScript())
-        let webView = WKWebView(frame: .zero, configuration: config)
+        let webView = DraggableWKWebView(frame: .zero, configuration: config)
         webView.navigationDelegate = context.coordinator
         webView.underPageBackgroundColor = Theme.backgroundColor
         webView.alphaValue = 0 // hidden until content loads
