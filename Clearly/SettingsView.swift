@@ -89,9 +89,20 @@ struct SettingsView: View {
 
     @State private var mcpCopied = false
 
-    private var mcpBinaryPath: String {
+    private var bundledMCPBinaryPath: String? {
+        Bundle.main.url(forResource: "ClearlyMCP", withExtension: nil, subdirectory: "Helpers")?.path
+    }
+
+    private var installedMCPBinaryPath: String {
         let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
         return appSupport.appendingPathComponent("Clearly/ClearlyMCP").path
+    }
+
+    private var mcpBinaryPath: String {
+        if let bundledMCPBinaryPath, FileManager.default.isExecutableFile(atPath: bundledMCPBinaryPath) {
+            return bundledMCPBinaryPath
+        }
+        return installedMCPBinaryPath
     }
 
     private var mcpBundleIdentifier: String {
@@ -125,6 +136,7 @@ struct SettingsView: View {
             Button(mcpCopied ? "Copied!" : "Copy MCP Config") {
                 copyMCPConfig()
             }
+            .disabled(!mcpBinaryInstalled)
 
             // Help text
             Text("The MCP server lets AI agents search your notes, explore backlinks, and browse tags. It automatically discovers all your vaults. Copy the config and add it to any MCP-compatible app (Claude Desktop, Cursor, Windsurf, etc.).")
