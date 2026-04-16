@@ -9,3 +9,8 @@ build/
 .env
 .context/
 __pycache__/
+.agents/
+.codex/
+AGENTS.md
+script/
+ClearlyLiveEditorWeb/node_modules/

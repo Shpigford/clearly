@@ -857,88 +857,88 @@ struct ClearlyApp: App {
                 FontSizeCommands()
                 Divider()
                 Button("Bold") {
-                    NSApp.sendAction(#selector(ClearlyTextView.toggleBold(_:)), to: nil, from: nil)
+                    performFormattingCommand(.bold, selector: #selector(ClearlyTextView.toggleBold(_:)))
                 }
                 .keyboardShortcut("b", modifiers: .command)
 
                 Button("Italic") {
-                    NSApp.sendAction(#selector(ClearlyTextView.toggleItalic(_:)), to: nil, from: nil)
+                    performFormattingCommand(.italic, selector: #selector(ClearlyTextView.toggleItalic(_:)))
                 }
                 .keyboardShortcut("i", modifiers: .command)
 
                 Button("Strikethrough") {
-                    NSApp.sendAction(#selector(ClearlyTextView.toggleStrikethrough(_:)), to: nil, from: nil)
+                    performFormattingCommand(.strikethrough, selector: #selector(ClearlyTextView.toggleStrikethrough(_:)))
                 }
                 .keyboardShortcut("x", modifiers: [.command, .shift])
 
                 Button("Heading") {
-                    NSApp.sendAction(#selector(ClearlyTextView.insertHeading(_:)), to: nil, from: nil)
+                    performFormattingCommand(.heading, selector: #selector(ClearlyTextView.insertHeading(_:)))
                 }
                 .keyboardShortcut("h", modifiers: [.command, .shift])
 
                 Divider()
 
                 Button("Link...") {
-                    NSApp.sendAction(#selector(ClearlyTextView.insertLink(_:)), to: nil, from: nil)
+                    performFormattingCommand(.link, selector: #selector(ClearlyTextView.insertLink(_:)))
                 }
                 .keyboardShortcut("k", modifiers: .command)
 
                 Button("Image...") {
-                    NSApp.sendAction(#selector(ClearlyTextView.insertImage(_:)), to: nil, from: nil)
+                    performFormattingCommand(.image, selector: #selector(ClearlyTextView.insertImage(_:)))
                 }
 
                 Divider()
 
                 Button("Bullet List") {
-                    NSApp.sendAction(#selector(ClearlyTextView.toggleBulletList(_:)), to: nil, from: nil)
+                    performFormattingCommand(.bulletList, selector: #selector(ClearlyTextView.toggleBulletList(_:)))
                 }
 
                 Button("Numbered List") {
-                    NSApp.sendAction(#selector(ClearlyTextView.toggleNumberedList(_:)), to: nil, from: nil)
+                    performFormattingCommand(.numberedList, selector: #selector(ClearlyTextView.toggleNumberedList(_:)))
                 }
 
                 Button("Todo") {
-                    NSApp.sendAction(#selector(ClearlyTextView.toggleTodoList(_:)), to: nil, from: nil)
+                    performFormattingCommand(.todoList, selector: #selector(ClearlyTextView.toggleTodoList(_:)))
                 }
 
                 Divider()
 
                 Button("Quote") {
-                    NSApp.sendAction(#selector(ClearlyTextView.toggleBlockquote(_:)), to: nil, from: nil)
+                    performFormattingCommand(.blockquote, selector: #selector(ClearlyTextView.toggleBlockquote(_:)))
                 }
 
                 Button("Horizontal Rule") {
-                    NSApp.sendAction(#selector(ClearlyTextView.insertHorizontalRule(_:)), to: nil, from: nil)
+                    performFormattingCommand(.horizontalRule, selector: #selector(ClearlyTextView.insertHorizontalRule(_:)))
                 }
 
                 Button("Table") {
-                    NSApp.sendAction(#selector(ClearlyTextView.insertMarkdownTable(_:)), to: nil, from: nil)
+                    performFormattingCommand(.table, selector: #selector(ClearlyTextView.insertMarkdownTable(_:)))
                 }
 
                 Divider()
 
                 Button("Code") {
-                    NSApp.sendAction(#selector(ClearlyTextView.toggleInlineCode(_:)), to: nil, from: nil)
+                    performFormattingCommand(.inlineCode, selector: #selector(ClearlyTextView.toggleInlineCode(_:)))
                 }
 
                 Button("Code Block") {
-                    NSApp.sendAction(#selector(ClearlyTextView.insertCodeBlock(_:)), to: nil, from: nil)
+                    performFormattingCommand(.codeBlock, selector: #selector(ClearlyTextView.insertCodeBlock(_:)))
                 }
 
                 Divider()
 
                 Button("Math") {
-                    NSApp.sendAction(#selector(ClearlyTextView.toggleInlineMath(_:)), to: nil, from: nil)
+                    performFormattingCommand(.inlineMath, selector: #selector(ClearlyTextView.toggleInlineMath(_:)))
                 }
 
                 Button("Math Block") {
-                    NSApp.sendAction(#selector(ClearlyTextView.insertMathBlock(_:)), to: nil, from: nil)
+                    performFormattingCommand(.mathBlock, selector: #selector(ClearlyTextView.insertMathBlock(_:)))
                 }
 
                 Divider()
 
                 Button("Page Break") {
-                    NSApp.sendAction(#selector(ClearlyTextView.insertPageBreak(_:)), to: nil, from: nil)
+                    performFormattingCommand(.pageBreak, selector: #selector(ClearlyTextView.insertPageBreak(_:)))
                 }
             }
         }
@@ -1015,9 +1015,14 @@ struct OutlineToggleCommand: View {
 
 struct ViewModeCommands: View {
     @FocusedValue(\.viewMode) var mode
+    @AppStorage("editorEngine") private var editorEngineRawValue = EditorEngine.classic.rawValue
+
+    private var editorEngine: EditorEngine {
+        EditorEngine.resolved(rawValue: editorEngineRawValue)
+    }
 
     var body: some View {
-        Button("Editor") {
+        Button(editorEngine == .livePreviewExperimental ? "Live Preview" : "Editor") {
             mode?.wrappedValue = .edit
         }
         .keyboardShortcut("1", modifiers: .command)
@@ -1025,6 +1030,7 @@ struct ViewModeCommands: View {
         Button("Preview") {
             mode?.wrappedValue = .preview
         }
+        .disabled(editorEngine == .livePreviewExperimental)
         .keyboardShortcut("2", modifiers: .command)
     }
 }
@@ -1086,6 +1092,15 @@ struct FontSizeCommands: View {
             fontSize = max(fontSize - 1, 12)
         }
         .keyboardShortcut("-", modifiers: .command)
+    }
+}
+
+@MainActor
+private func performFormattingCommand(_ command: LiveEditorCommand, selector: Selector) {
+    if LiveEditorCommandDispatcher.isActive {
+        LiveEditorCommandDispatcher.send(command)
+    } else {
+        NSApp.sendAction(selector, to: nil, from: nil)
     }
 }
 

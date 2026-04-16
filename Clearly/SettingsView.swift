@@ -13,6 +13,7 @@ struct SettingsView: View {
     #endif
     @AppStorage("editorFontSize") private var fontSize: Double = 12
     @AppStorage("previewFontFamily") private var previewFontFamily = "sanFrancisco"
+    @AppStorage("editorEngine") private var editorEngine = EditorEngine.classic.rawValue
     @AppStorage("themePreference") private var themePreference = "system"
     @AppStorage("launchBehavior") private var launchBehavior = "lastFile"
     @AppStorage("contentWidth") private var contentWidth = "off"
@@ -56,6 +57,11 @@ struct SettingsView: View {
 
     private var generalSettings: some View {
         Form {
+            Picker("Editor", selection: $editorEngine) {
+                ForEach(EditorEngine.availableCases) { engine in
+                    Text(engine.displayName).tag(engine.rawValue)
+                }
+            }
             Picker("Appearance", selection: $themePreference) {
                 Text("System").tag("system")
                 Text("Light").tag("light")
@@ -105,8 +111,17 @@ struct SettingsView: View {
                         launchAtLogin = SMAppService.mainApp.status == .enabled
                     }
                 }
+            Text("Live Preview is experimental. Switch back to Classic if you encounter any issues.")
+                .font(.caption)
+                .foregroundStyle(.tertiary)
         }
         .formStyle(.grouped)
+        .onAppear {
+            let resolved = EditorEngine.resolved(rawValue: editorEngine)
+            if editorEngine != resolved.rawValue {
+                editorEngine = resolved.rawValue
+            }
+        }
     }
 
     // MARK: - Command Line Settings

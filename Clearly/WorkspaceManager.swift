@@ -48,6 +48,10 @@ final class WorkspaceManager {
     var openDocuments: [OpenDocument] = []
     var activeDocumentID: UUID?
     var hoveredTabID: UUID?
+    /// Monotonically increasing counter, incremented on every document switch.
+    /// Passed to JS via mount/setDocument and echoed back in docChanged so Swift
+    /// can reject messages that were queued by a previous document's session.
+    private(set) var documentEpoch: Int = 0
     private var nextUntitledNumber: Int = 1
 
     // MARK: - Sidebar
@@ -148,6 +152,9 @@ final class WorkspaceManager {
                 createUntitledDocument()
             } else {
                 restoreLastFile()
+                if openDocuments.isEmpty {
+                    createUntitledDocument()
+                }
             }
         }
     }
@@ -496,6 +503,9 @@ final class WorkspaceManager {
 
     /// Called when FileWatcher detects an external modification.
     func externalFileDidChange(_ newText: String) {
+        // Bump epoch so any docChanged messages already in-flight from before
+        // this host-driven replacement are rejected by the coordinator's epoch guard.
+        documentEpoch += 1
         currentFileText = newText
         lastSavedText = newText
         isDirty = false
@@ -1862,6 +1872,11 @@ final class WorkspaceManager {
     private func restoreActiveDocument() {
         guard let idx = activeDocumentIndex else { return }
         let doc = openDocuments[idx]
+        // Mirror activateDocument: update session ID before the epoch bump so
+        // evaluateJavaScript completions from the previous document see the new
+        // ID and are rejected before SwiftUI fires updateNSView.
+        LiveEditorSession.currentDocumentID = doc.id
+        documentEpoch += 1
         currentFileURL = doc.fileURL
         currentFileText = doc.text
         lastSavedText = doc.lastSavedText
@@ -1875,6 +1890,11 @@ final class WorkspaceManager {
 
     /// Set the given document as active and sync stored properties.
     private func activateDocument(_ doc: OpenDocument) {
+        // Update the session ID synchronously so any in-flight evaluateJavaScript
+        // completions that check LiveEditorSession.currentDocumentID see the new
+        // document immediately — before SwiftUI's updateNSView can fire.
+        LiveEditorSession.currentDocumentID = doc.id
+        documentEpoch += 1
         activeDocumentID = doc.id
         currentFileURL = doc.fileURL
         currentFileText = doc.text

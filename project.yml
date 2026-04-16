@@ -63,6 +63,9 @@ targets:
       - path: Shared/Resources/recipes
         buildPhase: resources
         type: folder
+      - path: Shared/Resources/live-editor
+        buildPhase: resources
+        type: folder
     dependencies:
       - package: ClearlyCore
       - package: cmark-gfm
