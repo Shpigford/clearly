@@ -433,6 +433,11 @@ final class WorkspaceManager {
                     return false
                 }
             }
+            // Replacing the active tab's file is a host-driven same-document revision.
+            // Bump the live editor epoch before mutating text so stale callbacks from
+            // the previously loaded file cannot overwrite the newly opened content.
+            documentEpoch += 1
+            LiveEditorSession.update(documentID: openDocuments[idx].id, epoch: documentEpoch)
             // Replace the active tab's content in place
             openDocuments[idx].fileURL = url
             openDocuments[idx].text = text
