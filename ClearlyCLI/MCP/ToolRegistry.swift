@@ -26,6 +26,7 @@ enum ToolRegistry {
                 description: "Full-text search across all notes in Clearly. Searches \(vaults.count) vault(s): \(vaultDescription). Returns relevance-ranked results with context snippets. Uses BM25 ranking and stemming. Results include the vault path and relative file path — use standard file access to read full content.",
                 inputSchema: .object([
                     "type": .string("object"),
+                    "additionalProperties": .bool(false),
                     "properties": .object([
                         "query": .object([
                             "type": .string("string"),
@@ -33,37 +34,77 @@ enum ToolRegistry {
                         ]),
                         "limit": .object([
                             "type": .string("integer"),
-                            "description": .string("Max results to return (default 20)")
+                            "minimum": .int(1),
+                            "description": .string("Max results to return. Default 20, capped at 100.")
                         ])
                     ]),
                     "required": .array([.string("query")])
+                ]),
+                annotations: readAnnotations,
+                outputSchema: .object([
+                    "type": .string("object"),
+                    "properties": .object([
+                        "query":          .object(["type": .string("string")]),
+                        "total_count":    .object(["type": .string("integer"), "description": .string("Unclamped total match count across all vaults.")]),
+                        "returned_count": .object(["type": .string("integer"), "description": .string("Number of hits included in the results array after applying limit.")]),
+                        "results":        .object(["type": .string("array"), "items": .object(["type": .string("object")])])
+                    ]),
+                    "required": .array([.string("query"), .string("total_count"), .string("returned_count"), .string("results")])
                 ])
             ),
             Tool(
                 name: "get_backlinks",
-                description: "Get all notes that link to a given note via [[wiki-links]], plus unlinked text mentions (places the note is referenced by name but not yet linked). Searches across all vaults.",
+                description: "Get all notes that link to a given note via [[wiki-links]], plus unlinked text mentions (places the note is referenced by name but not yet linked). Searches across all loaded vaults by default; pass 'vault' to scope.",
                 inputSchema: .object([
                     "type": .string("object"),
+                    "additionalProperties": .bool(false),
                     "properties": .object([
-                        "note_path": .object([
+                        "relative_path": .object([
                             "type": .string("string"),
-                            "description": .string("Note filename (e.g. 'My Note') or relative path within a vault (e.g. 'folder/My Note.md')")
+                            "description": .string("Vault-relative path (e.g. 'folder/My Note.md') or bare filename (e.g. 'My Note') of the target note.")
+                        ]),
+                        "vault": .object([
+                            "type": .string("string"),
+                            "description": .string("Optional vault name or path. When set, only this vault is searched.")
                         ])
                     ]),
-                    "required": .array([.string("note_path")])
+                    "required": .array([.string("relative_path")])
+                ]),
+                annotations: readAnnotations,
+                outputSchema: .object([
+                    "type": .string("object"),
+                    "properties": .object([
+                        "vault":         .object(["type": .string("string")]),
+                        "relative_path": .object(["type": .string("string"), "description": .string("Resolved vault-relative path of the target note.")]),
+                        "linked":        .object(["type": .string("array"), "items": .object(["type": .string("object")]), "description": .string("Wiki-link references from other notes.")]),
+                        "unlinked":      .object(["type": .string("array"), "items": .object(["type": .string("object")]), "description": .string("Text mentions of the note's filename not wrapped in [[...]].")])
+                    ]),
+                    "required": .array([.string("vault"), .string("relative_path"), .string("linked"), .string("unlinked")])
                 ])
             ),
             Tool(
                 name: "get_tags",
-                description: "Without arguments: list all tags across all vaults with file counts. With a tag argument: list all files with that tag. Tags come from both inline #hashtags and YAML frontmatter.",
+                description: "Without arguments: list all tags across all vaults with file counts (mode='all'). With a tag argument: list all files with that tag (mode='by_tag'). Tags come from both inline #hashtags and YAML frontmatter.",
                 inputSchema: .object([
                     "type": .string("object"),
+                    "additionalProperties": .bool(false),
                     "properties": .object([
                         "tag": .object([
                             "type": .string("string"),
-                            "description": .string("Specific tag to look up (without # prefix). Omit to list all tags.")
+                            "description": .string("Optional specific tag (without '#' prefix) to look up. Omit to list all tags.")
                         ])
                     ])
+                ]),
+                annotations: readAnnotations,
+                outputSchema: .object([
+                    "type": .string("object"),
+                    "properties": .object([
+                        "mode":     .object(["type": .string("string"), "enum": .array([.string("all"), .string("by_tag")])]),
+                        "tag":      .object(["type": .string("string"), "description": .string("Echoes the input tag when mode='by_tag'; absent (not emitted) otherwise.")]),
+                        "all_tags": .object(["type": .string("array"), "items": .object(["type": .string("object")]), "description": .string("Populated only when mode='all'. Each entry has 'tag' and 'count'.")]),
+                        "files":    .object(["type": .string("array"), "items": .object(["type": .string("object")]), "description": .string("Populated only when mode='by_tag'. Each entry has 'vault', 'vault_path', 'relative_path'.")])
+                    ]),
+                    "required": .array([.string("mode")])
                 ])
             ),
             Tool(

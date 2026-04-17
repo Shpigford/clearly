@@ -1,66 +1,92 @@
 import Foundation
 
 struct GetBacklinksArgs: Codable {
-    let notePath: String
+    let relativePath: String
+    let vault: String?
 }
 
 struct GetBacklinksResult: Codable {
     struct Linked: Codable {
-        let source: String
+        let vault: String
+        let relativePath: String
         let lineNumber: Int?
+        let displayText: String?
+        let context: String?
     }
     struct Unlinked: Codable {
-        let path: String
+        let vault: String
+        let relativePath: String
         let lineNumber: Int
         let contextLine: String
     }
-    let vaultPath: String
-    let notePath: String
+    let vault: String
+    let relativePath: String
     let linked: [Linked]
     let unlinked: [Unlinked]
 }
 
 func getBacklinks(_ args: GetBacklinksArgs, vaults: [LoadedVault]) async throws -> GetBacklinksResult {
-    guard !args.notePath.isEmpty else {
-        throw ToolError.missingArgument("note_path")
+    guard !args.relativePath.isEmpty else {
+        throw ToolError.missingArgument("relative_path")
     }
 
-    for vault in vaults {
+    // Honor optional `vault` hint to scope lookup in a multi-vault setup.
+    let searchSpace: [LoadedVault]
+    if let hint = args.vault, !hint.isEmpty {
+        searchSpace = vaults.filter {
+            $0.url.lastPathComponent == hint || $0.url.path == hint
+        }
+        if searchSpace.isEmpty {
+            throw ToolError.noteNotFound(args.relativePath)
+        }
+    } else {
+        searchSpace = vaults
+    }
+
+    for loaded in searchSpace {
         let file: IndexedFile?
-        if let f = vault.index.file(forRelativePath: args.notePath) {
+        if let f = loaded.index.file(forRelativePath: args.relativePath) {
             file = f
-        } else if let f = vault.index.resolveWikiLink(name: args.notePath) {
+        } else if let f = loaded.index.resolveWikiLink(name: args.relativePath) {
             file = f
         } else {
-            let withoutExt = args.notePath.hasSuffix(".md")
-                ? String(args.notePath.dropLast(3))
-                : args.notePath
-            file = vault.index.resolveWikiLink(name: withoutExt)
+            let withoutExt = args.relativePath.hasSuffix(".md")
+                ? String(args.relativePath.dropLast(3))
+                : args.relativePath
+            file = loaded.index.resolveWikiLink(name: withoutExt)
         }
 
         guard let file = file else { continue }
+        let vaultName = loaded.url.lastPathComponent
 
-        let linked = vault.index.linksTo(fileId: file.id)
-        let unlinked = vault.index.unlinkedMentions(for: file.filename, excludingFileId: file.id)
+        let linked = loaded.index.linksTo(fileId: file.id).map { link in
+            GetBacklinksResult.Linked(
+                vault: vaultName,
+                relativePath: link.sourcePath ?? link.sourceFilename ?? "unknown",
+                lineNumber: link.lineNumber,
+                displayText: link.displayText,
+                context: link.context
+            )
+        }
+        let unlinked = loaded.index.unlinkedMentions(
+            for: file.filename,
+            excludingFileId: file.id
+        ).map { mention in
+            GetBacklinksResult.Unlinked(
+                vault: vaultName,
+                relativePath: mention.file.path,
+                lineNumber: mention.lineNumber,
+                contextLine: mention.contextLine
+            )
+        }
 
         return GetBacklinksResult(
-            vaultPath: vault.url.path,
-            notePath: file.path,
-            linked: linked.map {
-                GetBacklinksResult.Linked(
-                    source: $0.sourcePath ?? $0.sourceFilename ?? "unknown",
-                    lineNumber: $0.lineNumber
-                )
-            },
-            unlinked: unlinked.map {
-                GetBacklinksResult.Unlinked(
-                    path: $0.file.path,
-                    lineNumber: $0.lineNumber,
-                    contextLine: $0.contextLine
-                )
-            }
+            vault: vaultName,
+            relativePath: file.path,
+            linked: linked,
+            unlinked: unlinked
         )
     }
 
-    throw ToolError.noteNotFound(args.notePath)
+    throw ToolError.noteNotFound(args.relativePath)
 }

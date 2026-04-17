@@ -5,30 +5,39 @@ struct GetTagsArgs: Codable {
 }
 
 struct GetTagsResult: Codable {
-    struct TagEntry: Codable {
+    enum Mode: String, Codable {
+        case all
+        case byTag = "by_tag"
+    }
+    struct TagSummary: Codable {
         let tag: String
         let count: Int
     }
-    struct FileEntry: Codable {
+    struct TagFile: Codable {
+        let vault: String
         let vaultPath: String
-        let path: String
-    }
-    enum Mode: String, Codable {
-        case all
-        case byTag
+        let relativePath: String
     }
     let mode: Mode
     let tag: String?
-    let allTags: [TagEntry]?
-    let files: [FileEntry]?
+    let allTags: [TagSummary]?
+    let files: [TagFile]?
 }
 
 func getTags(_ args: GetTagsArgs, vaults: [LoadedVault]) async throws -> GetTagsResult {
     if let tag = args.tag, !tag.isEmpty {
-        var files: [GetTagsResult.FileEntry] = []
+        var files: [GetTagsResult.TagFile] = []
         for vault in vaults {
+            let vaultName = vault.url.lastPathComponent
+            let vaultPath = vault.url.path
             for f in vault.index.filesForTag(tag: tag) {
-                files.append(GetTagsResult.FileEntry(vaultPath: vault.url.path, path: f.path))
+                files.append(
+                    GetTagsResult.TagFile(
+                        vault: vaultName,
+                        vaultPath: vaultPath,
+                        relativePath: f.path
+                    )
+                )
             }
         }
         return GetTagsResult(mode: .byTag, tag: tag, allTags: nil, files: files)
@@ -43,7 +52,7 @@ func getTags(_ args: GetTagsArgs, vaults: [LoadedVault]) async throws -> GetTags
         return GetTagsResult(
             mode: .all,
             tag: nil,
-            allTags: sorted.map { GetTagsResult.TagEntry(tag: $0.key, count: $0.value) },
+            allTags: sorted.map { GetTagsResult.TagSummary(tag: $0.key, count: $0.value) },
             files: nil
         )
     }
