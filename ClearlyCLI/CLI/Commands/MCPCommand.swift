@@ -14,22 +14,18 @@ struct MCPCommand: AsyncParsableCommand {
         do {
             vaults = try IndexSet.openIndexes(globals)
         } catch IndexSetError.noVaults {
-            FileHandle.standardError.write(Data("""
-            No vaults found. Either:
-              - Open Clearly and add a vault first (auto-detected via ~/.config/clearly/vaults.json)
-              - Pass --vault <path> explicitly
-
-            """.utf8))
+            let msg = "No vaults found. Either:\n"
+                + "  - Open Clearly and add a vault first (auto-detected via ~/.config/clearly/vaults.json)\n"
+                + "  - Pass --vault <path> explicitly\n"
+            FileHandle.standardError.write(Data(msg.utf8))
             throw ExitCode(Exit.general)
         } catch IndexSetError.pathsMissing {
             FileHandle.standardError.write(Data("Error: No vault paths exist on disk.\n".utf8))
             throw ExitCode(Exit.general)
         } catch IndexSetError.noIndexes {
-            FileHandle.standardError.write(Data("""
-            Error: Could not open any vault indexes.
-            Make sure Clearly has been opened with these vaults at least once.
-
-            """.utf8))
+            let msg = "Error: Could not open any vault indexes.\n"
+                + "Make sure Clearly has been opened with these vaults at least once.\n"
+            FileHandle.standardError.write(Data(msg.utf8))
             throw ExitCode(Exit.general)
         }
 

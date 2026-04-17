@@ -30,7 +30,7 @@ enum Handlers {
                 return .init(content: [.text("Unknown tool: \(params.name)")], isError: false)
             }
         } catch let error as ToolError {
-            return .init(content: [.text("Error: \(error.localizedDescription)")], isError: true)
+            return .init(content: [.text(error.localizedDescription)], isError: true)
         } catch {
             return .init(content: [.text("Error: \(error.localizedDescription)")], isError: true)
         }
@@ -109,7 +109,7 @@ private func renderTagsText(_ r: GetTagsResult, multiVault: Bool) -> String {
     }
 }
 
-extension Value {
+private extension Value {
     var stringValue: String? {
         if case .string(let s) = self { return s }
         return nil
