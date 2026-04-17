@@ -39,7 +39,7 @@ func readNote(_ args: ReadNoteArgs, vaults: [LoadedVault]) async throws -> ReadN
         throw ToolError.missingArgument("relative_path")
     }
 
-    switch VaultResolver.resolve(relativePath: args.relativePath, hint: args.vault, in: vaults) {
+    switch try VaultResolver.resolve(relativePath: args.relativePath, hint: args.vault, in: vaults) {
     case .notFound:
         throw ToolError.noteNotFound(args.relativePath)
     case .ambiguous(let matches):
@@ -53,10 +53,14 @@ func readNote(_ args: ReadNoteArgs, vaults: [LoadedVault]) async throws -> ReadN
         do {
             rawData = try Data(contentsOf: fileURL)
         } catch {
+            // VaultResolver confirmed the file exists, so a read failure here
+            // is either a TOCTOU race (file was deleted between check and
+            // read) or a permission denial. noteNotFound is the closest stable
+            // identifier for both; Phase 3 may split out an io_error surface.
             throw ToolError.noteNotFound(args.relativePath)
         }
         guard let fullContent = String(data: rawData, encoding: .utf8) else {
-            throw ToolError.invalidArgument(name: "relative_path", reason: "file is not valid UTF-8")
+            throw ToolError.invalidEncoding(args.relativePath)
         }
 
         let attrs = try? FileManager.default.attributesOfItem(atPath: fileURL.path)

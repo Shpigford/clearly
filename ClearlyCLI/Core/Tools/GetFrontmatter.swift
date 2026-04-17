@@ -19,7 +19,7 @@ func getFrontmatter(_ args: GetFrontmatterArgs, vaults: [LoadedVault]) async thr
         throw ToolError.missingArgument("relative_path")
     }
 
-    switch VaultResolver.resolve(relativePath: args.relativePath, hint: args.vault, in: vaults) {
+    switch try VaultResolver.resolve(relativePath: args.relativePath, hint: args.vault, in: vaults) {
     case .notFound:
         throw ToolError.noteNotFound(args.relativePath)
     case .ambiguous(let matches):
@@ -36,7 +36,7 @@ func getFrontmatter(_ args: GetFrontmatterArgs, vaults: [LoadedVault]) async thr
             throw ToolError.noteNotFound(args.relativePath)
         }
         guard let text = String(data: data, encoding: .utf8) else {
-            throw ToolError.invalidArgument(name: "relative_path", reason: "file is not valid UTF-8")
+            throw ToolError.invalidEncoding(args.relativePath)
         }
 
         guard let block = FrontmatterSupport.extract(from: text) else {

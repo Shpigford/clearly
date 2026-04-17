@@ -3,6 +3,7 @@ import Foundation
 enum ToolError: Error, LocalizedError {
     case missingArgument(String)
     case invalidArgument(name: String, reason: String)
+    case invalidEncoding(String)
     case noteNotFound(String)
     case pathOutsideVault(String)
     case ambiguousVault(relativePath: String, matches: [String])
@@ -16,6 +17,8 @@ enum ToolError: Error, LocalizedError {
             return "Error: '\(name)' parameter is required"
         case .invalidArgument(let name, let reason):
             return "Error: '\(name)' \(reason)"
+        case .invalidEncoding(let path):
+            return "File is not valid UTF-8: \(path)"
         case .noteNotFound(let path):
             return "Note not found: \(path)\nMake sure the note exists and has been indexed by Clearly."
         case .pathOutsideVault(let path):
@@ -45,6 +48,11 @@ extension ToolError {
             payload["message"] = errorDescription ?? ""
             payload["argument"] = name
             payload["reason"] = reason
+        case .invalidEncoding(let path):
+            code = 1
+            payload["error"] = "invalid_encoding"
+            payload["message"] = errorDescription ?? ""
+            payload["relative_path"] = path
         case .noteNotFound(let path):
             code = 3
             payload["error"] = "note_not_found"

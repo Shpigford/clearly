@@ -10,10 +10,14 @@ enum VaultResolver {
     /// Resolve which loaded vault owns a vault-relative path.
     ///
     /// Semantics:
-    /// - `hint` matches a vault by its basename (`lastPathComponent`) or by its full standardized path.
-    /// - Among vaults matching the hint (or all vaults if no hint), the file at `<vault>/<relativePath>` is checked.
-    /// - Exactly one hit → `.resolved`. Zero hits → `.notFound`. More than one → `.ambiguous`.
-    static func resolve(relativePath: String, hint: String?, in vaults: [LoadedVault]) -> Resolution {
+    /// - `hint` matches a vault by its basename (`lastPathComponent`) or by its
+    ///   full standardized path.
+    /// - For each candidate vault, `PathGuard.resolve` runs — this throws
+    ///   `ToolError.pathOutsideVault` / `.invalidArgument` for unsafe paths
+    ///   (absolute, `..`, null bytes, symlink escape) *before* any file-system
+    ///   existence check. Callers get a consistent error identifier.
+    /// - Exactly one hit on disk → `.resolved`. Zero → `.notFound`. >1 → `.ambiguous`.
+    static func resolve(relativePath: String, hint: String?, in vaults: [LoadedVault]) throws -> Resolution {
         let filtered: [LoadedVault]
         if let hint = hint, !hint.isEmpty {
             let hintPath = URL(fileURLWithPath: hint).standardizedFileURL.path
@@ -28,9 +32,12 @@ enum VaultResolver {
             filtered = vaults
         }
 
-        let hits = filtered.filter { vault in
-            let target = vault.url.appendingPathComponent(relativePath).path
-            return FileManager.default.fileExists(atPath: target)
+        var hits: [LoadedVault] = []
+        for vault in filtered {
+            let resolvedURL = try PathGuard.resolve(relativePath: relativePath, in: vault.url)
+            if FileManager.default.fileExists(atPath: resolvedURL.path) {
+                hits.append(vault)
+            }
         }
         switch hits.count {
         case 0: return .notFound
