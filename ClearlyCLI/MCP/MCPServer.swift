@@ -21,7 +21,11 @@ enum MCPServer {
         let transport = StdioTransport()
         try await server.start(transport: transport)
 
-        // Block until the process is terminated
-        try await Task.sleep(for: .seconds(365 * 24 * 3600))
+        // Block until stdin closes (MCP client disconnects) — the transport
+        // reports EOF which completes the server lifecycle. Previously this
+        // slept for a year regardless of transport state, which made scripted
+        // JSON-RPC smoke tests hang. `waitUntilCompleted` returns promptly on
+        // clean disconnect and keeps blocking during normal client use.
+        await server.waitUntilCompleted()
     }
 }

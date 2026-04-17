@@ -74,7 +74,7 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.sabotage.clearly
         PRODUCT_NAME: Clearly
-        MARKETING_VERSION: "2.2.0"
+        MARKETING_VERSION: "2.3.0"
         CURRENT_PROJECT_VERSION: "1"
         SWIFT_VERSION: "5.9"
         CODE_SIGN_ENTITLEMENTS: Clearly/Clearly.entitlements
@@ -116,7 +116,7 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.sabotage.clearly.quicklook
         PRODUCT_NAME: ClearlyQuickLook
-        MARKETING_VERSION: "2.2.0"
+        MARKETING_VERSION: "2.3.0"
         CURRENT_PROJECT_VERSION: "1"
         SWIFT_VERSION: "5.9"
         GENERATE_INFOPLIST_FILE: NO
@@ -150,7 +150,7 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.sabotage.clearly.mcp
         PRODUCT_NAME: ClearlyCLI
-        MARKETING_VERSION: "2.2.0"
+        MARKETING_VERSION: "2.3.0"
         CURRENT_PROJECT_VERSION: "1"
         SWIFT_VERSION: "6.0"
         SWIFT_STRICT_CONCURRENCY: minimal
@@ -160,3 +160,32 @@ targets:
         Release:
           CODE_SIGN_STYLE: Manual
           CODE_SIGN_IDENTITY: "Developer ID Application"
+
+  ClearlyCLIIntegrationTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - path: ClearlyCLI
+        excludes:
+          - "CLI/ClearlyCLI.swift"
+      - path: Clearly/VaultIndex.swift
+      - path: Clearly/FileParser.swift
+      - path: Clearly/FileNode.swift
+      - path: Clearly/IgnoreRules.swift
+      - path: Clearly/DiagnosticLog.swift
+      - path: Shared/FrontmatterSupport.swift
+      - path: ClearlyCLIIntegrationTests
+      - path: ClearlyCLIIntegrationTests/FixtureVault
+        buildPhase: resources
+        type: folder
+    dependencies:
+      - package: GRDB
+      - package: MCP
+      - package: swift-argument-parser
+        product: ArgumentParser
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.sabotage.clearly.tests
+        SWIFT_VERSION: "6.0"
+        SWIFT_STRICT_CONCURRENCY: minimal
+        GENERATE_INFOPLIST_FILE: YES

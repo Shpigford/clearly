@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+## [2.3.0] - 2026-04-17
+- `clearly` command-line tool shipped — install from Settings → Command Line for terminal and MCP-client access to your vault
+- MCP server grows from 3 to 9 tools: `read_note`, `list_notes`, `get_headings`, `get_frontmatter` (reads) plus `create_note`, `update_note` (writes)
+- Structured JSON on every tool, input/output schemas published via MCP, stable error identifiers
+- Agent-friendly `--help` with examples on every CLI subcommand
+- XCTest integration suite drives every MCP tool end-to-end on every PR
+- `ClearlyMCP` target renamed to `ClearlyCLI` internally (same bundled binary, new subcommand tree)
+- New Command Line tab in Settings replaces the MCP Config tab
+
 ## [2.2.0] - 2026-04-16
 - Hide frontmatter in preview mode with a new toggle in Settings
 - Empty folders now appear in the sidebar file tree

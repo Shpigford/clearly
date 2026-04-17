@@ -92,7 +92,15 @@ enum Handlers {
             }
 
         default:
-            return .init(content: [.text("Unknown tool: \(params.name)")], isError: true)
+            let payload: [String: Any] = [
+                "error": "unknown_tool",
+                "message": "Unknown tool: \(params.name)",
+                "tool": params.name
+            ]
+            let data = (try? JSONSerialization.data(withJSONObject: payload, options: [.sortedKeys])) ?? Data("{}".utf8)
+            let text = String(data: data, encoding: .utf8) ?? "{}"
+            let structured: Value? = (try? JSONDecoder().decode(Value.self, from: data)) ?? .object([:])
+            return .init(content: [.text(text)], structuredContent: structured, isError: true)
         }
     }
 
@@ -117,7 +125,8 @@ enum Handlers {
         } catch {
             let payload: [String: Any] = [
                 "error": "internal_error",
-                "message": error.localizedDescription
+                "message": error.localizedDescription,
+                "error_type": String(describing: type(of: error))
             ]
             let data = (try? JSONSerialization.data(withJSONObject: payload, options: [.sortedKeys])) ?? Data("{}".utf8)
             let text = String(data: data, encoding: .utf8) ?? "{}"

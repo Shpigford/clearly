@@ -4,7 +4,29 @@ import Foundation
 struct SearchCommand: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "search",
-        abstract: "Full-text search across loaded vaults. Emits NDJSON hits (one per line) in JSON mode."
+        abstract: "Full-text search across loaded vaults. Emits NDJSON hits (one per line) in JSON mode.",
+        discussion: """
+        Uses the vault's FTS5 index (BM25 ranking). Each hit includes the
+        vault, relative path, filename, a matches_filename flag, and a few
+        context excerpts. Output is NDJSON — one hit per line — which
+        composes well with jq / xargs.
+
+        Output shape documented in README.md, section "clearly CLI" →
+        "Tool reference" → search_notes.
+
+        EXAMPLES
+          # Basic search
+          clearly search pricing
+
+          # Cap results and pretty-print one hit:
+          clearly search "API design" --limit 5 | head -1 | jq .
+
+          # Pipeline: list paths of the top 20 matches
+          clearly search rust --limit 20 | jq -r '.relative_path'
+
+          # Combine with --in-vault via read (search searches all vaults):
+          clearly search budget | jq -r '.relative_path' | xargs -I{} clearly read {}
+        """
     )
 
     @OptionGroup var globals: GlobalOptions
@@ -22,7 +44,8 @@ struct SearchCommand: AsyncParsableCommand {
         } catch {
             Emitter.emitError(
                 "no_vaults",
-                message: "Unable to open any vault index: \(error.localizedDescription)"
+                message: "Unable to open any vault index: \(error.localizedDescription)",
+                extra: ["bundle_id": globals.bundleID, "attempted_count": globals.vault.count]
             )
             throw ExitCode(Exit.general)
         }

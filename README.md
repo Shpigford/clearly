@@ -48,7 +48,7 @@ Write with syntax highlighting, link your thoughts with wiki-links, search every
 
 ### Integration
 
-- **AI / MCP server** — built-in MCP server exposes your vault to AI agents for search and retrieval
+- **AI / MCP server** — built-in MCP server and `clearly` CLI expose your vault to AI agents. See [clearly CLI](#clearly-cli) and [ClearlyMCP](#clearlymcp).
 - **QuickLook** — preview .md files in Finder with Space
 - **PDF export** — export or print, page breaks handled
 - **Copy formats** — markdown, HTML, or rich text
@@ -106,6 +106,7 @@ Clearly/
 ├── FileExplorerView.swift          # Sidebar file browser with bookmarks and recents
 ├── FileParser.swift                # Parses frontmatter, wiki-links, tags from documents
 ├── VaultIndex.swift                # SQLite + FTS5 index for search, backlinks, tags
+├── CLIInstaller.swift              # Installs /usr/local/bin/clearly symlink from Settings
 ├── Theme.swift                     # Centralized colors (light/dark) and font constants
 └── Info.plist
 
@@ -113,9 +114,14 @@ ClearlyQuickLook/
 ├── PreviewProvider.swift           # QLPreviewProvider for Finder previews
 └── Info.plist
 
-ClearlyMCP/
-├── main.swift                      # MCP server — search_notes, get_backlinks, get_tags
-└── (shares VaultIndex, FileParser, FileNode from main app)
+ClearlyCLI/                         # `clearly` CLI binary + MCP server
+├── CLI/                            #   ArgumentParser subcommands + global options
+├── Core/                           #   Pure-function tool implementations
+└── MCP/                            #   MCP adapter (tool registry + dispatch)
+
+ClearlyCLIIntegrationTests/         # XCTest suite driving MCP server in-process
+├── FixtureVault/                   #   Sample .md files exercising every tool
+└── *.swift                         #   Per-tool + schema + error + path-guard tests
 
 Shared/
 ├── MarkdownRenderer.swift          # cmark-gfm → HTML + post-processing pipeline
@@ -124,22 +130,24 @@ Shared/
 ├── MermaidSupport.swift            # Mermaid injection
 ├── SyntaxHighlightSupport.swift    # Highlight.js injection
 ├── EmojiShortcodes.swift           # :shortcode: → Unicode lookup
+├── FrontmatterSupport.swift        # Shared YAML frontmatter parser
 └── Resources/                      # Bundled JS/CSS, demo.md
 
 website/                            # Static site deployed to clearly.md
-scripts/                            # Release pipeline
+scripts/                            # Release pipeline + CLI smoke test
 project.yml                         # xcodegen config (source of truth)
 ```
 
 ## Architecture
 
-**SwiftUI + AppKit**, document-based app with three targets.
+**SwiftUI + AppKit**, document-based app with four targets.
 
 ### Targets
 
 1. **Clearly** — main app. `DocumentGroup` with `MarkdownDocument`, editor and preview modes, file explorer, vault indexing.
 2. **ClearlyQuickLook** — Finder extension for previewing `.md` files with Space.
-3. **ClearlyMCP** — command-line MCP server. Exposes `search_notes` (FTS5), `get_backlinks`, and `get_tags` to AI agents. Read-only access to the same SQLite index the main app creates.
+3. **ClearlyCLI** — the `clearly` CLI binary and MCP server (same executable, different arg parser). Exposes 9 tools across read and write. See [clearly CLI](#clearly-cli) and [ClearlyMCP](#clearlymcp).
+4. **ClearlyCLIIntegrationTests** — XCTest suite driving the MCP server in-process via `InMemoryTransport`. Runs on every PR via `.github/workflows/test.yml`.
 
 ### Editor
 
@@ -161,6 +169,7 @@ Wraps AppKit's `NSTextView` via `NSViewRepresentable` — not SwiftUI's `TextEdi
 | [Sparkle](https://sparkle-project.org) | Auto-updates (direct distribution only) |
 | [GRDB](https://github.com/groue/GRDB.swift) | SQLite + FTS5 for vault indexing |
 | [MCP](https://github.com/modelcontextprotocol/swift-sdk) | Model Context Protocol server |
+| [swift-argument-parser](https://github.com/apple/swift-argument-parser) | CLI parsing for `clearly` |
 
 ### Key Decisions
 
@@ -186,7 +195,16 @@ Follow the `MathSupport`/`MermaidSupport` pattern: create a `*Support.swift` enu
 
 ## Testing
 
-No automated test suite. Validate manually:
+Automated:
+
+```bash
+xcodebuild test -scheme ClearlyCLIIntegrationTests -destination 'platform=macOS'
+./scripts/cli-smoke.sh
+```
+
+CI runs both on every pull request (`.github/workflows/test.yml`).
+
+Manual:
 
 1. Build and run (⌘R)
 2. Open a `.md` file — verify syntax highlighting
@@ -194,6 +212,205 @@ No automated test suite. Validate manually:
 4. Test wiki-links, backlinks, search, tags
 5. QuickLook: select a `.md` in Finder, press Space
 6. Check both light and dark mode
+
+## clearly CLI
+
+The `clearly` command-line binary is bundled with Clearly.app and operates on the same SQLite index the app maintains — no separate configuration, no data duplication.
+
+### Install
+
+Open Clearly → **Settings → Command Line → Install**. A one-time Terminal prompt for `sudo` creates a symlink at `/usr/local/bin/clearly` pointing to the bundled binary inside `Clearly.app/Contents/Resources/Helpers/ClearlyCLI`. Reinstalling Clearly (Sparkle or App Store) keeps the symlink valid.
+
+Uninstall from the same Settings pane.
+
+### Subcommand reference
+
+```
+clearly
+├── mcp                 Start the MCP stdio server (this is what MCP clients invoke)
+├── search <query>      Full-text search; emits NDJSON hits
+├── read <path>         Read a note + metadata (hash, size, mtime, frontmatter, headings, tags)
+├── list                List notes as NDJSON (fresh filesystem walk)
+├── headings <path>     Heading outline (level, text, line_number)
+├── frontmatter <path>  Parsed YAML frontmatter (flat key-value)
+├── backlinks <path>    Linked references + unlinked mentions
+├── tags [<tag>]        All tags with counts, or files for one tag
+├── create <path>       Create a new note from --content or --from-stdin
+├── update <path>       Update with --mode replace|append|prepend
+├── vaults [list]       List loaded vaults (name, path, file_count, last_indexed_at)
+└── index [rebuild]     Rebuild the SQLite index from disk
+```
+
+Run `clearly <subcommand> --help` for flags, examples, and output-shape notes.
+
+### Exit codes
+
+| Code | Name | Meaning |
+|---|---|---|
+| `0` | success | Command completed; output on stdout |
+| `1` | general | Generic failure (e.g. no vaults loaded, non-UTF8 file) |
+| `2` | usage | Invalid arguments / missing required flags |
+| `3` | notFound | Note or vault filter not found |
+| `4` | permission | Path resolves outside vault (traversal, `/absolute`, unicode lookalikes) |
+| `5` | conflict | Note already exists (on `create`) or ambiguous across vaults |
+
+### Output contract
+
+- **JSON mode** (default): every tool emits a stable structured shape documented per-tool in its `--help`. List-shaped commands (`search`, `list`, `tags`) emit NDJSON — one record per line — for stream-friendly piping. Keys are snake_case.
+- **Text mode** (`--format text`): human-readable aligned output, no stability guarantees. Use for terminal eyeballing only; agents and scripts should stick with JSON.
+- **Errors** always go to stderr as a structured JSON object with `error` (stable identifier), `message` (human text), and relevant context fields. See the [error identifiers](#error-identifiers) table.
+
+### Pipeline examples
+
+```bash
+# Top 20 tag counts, sorted
+clearly tags | jq -s 'sort_by(-.count) | .[:20]'
+
+# Grep every note under Projects/ for a term
+clearly list --under Projects/ \
+  | jq -r '.relative_path' \
+  | xargs -I{} sh -c 'clearly read "{}" | jq -r ".content" | grep -l -e "OKR" /dev/stdin && echo "{}"'
+
+# Cache invalidation by content hash
+OLD=$(clearly read Notes/plan.md | jq -r '.content_hash')
+# ...edit the file...
+NEW=$(clearly read Notes/plan.md | jq -r '.content_hash')
+[ "$OLD" != "$NEW" ] && echo "rebuild"
+```
+
+### Troubleshooting
+
+- **Multi-vault ambiguity** — pass `--in-vault <name>` on per-command calls, or `--vault <path>` on the global command to scope which vault(s) to load.
+- **Custom bundle id** — `--bundle-id com.sabotage.clearly.dev` to point at the Debug build's vault store.
+- **Dev-build SIGKILL** — the bundled `ClearlyCLI` inside `Clearly Dev.app/Contents/Resources/Helpers/` gets SIGKILL'd by macOS when launched standalone (code-signature invalidation). Use the product binary at `Build/Products/Debug/ClearlyCLI` directly for local testing.
+
+## ClearlyMCP
+
+Same binary, different arg — `clearly mcp` starts a stdio MCP server exposing 9 tools to any [Model Context Protocol](https://modelcontextprotocol.io) client.
+
+### Client config
+
+**Claude Desktop** (`~/Library/Application Support/Claude/claude_desktop_config.json`):
+
+```json
+{
+  "mcpServers": {
+    "clearly": {
+      "command": "/usr/local/bin/clearly",
+      "args": ["mcp"]
+    }
+  }
+}
+```
+
+**Claude Code** (`~/.config/claude-code/mcp.json` or via `claude mcp add`):
+
+```json
+{
+  "mcpServers": {
+    "clearly": {
+      "command": "/usr/local/bin/clearly",
+      "args": ["mcp"]
+    }
+  }
+}
+```
+
+**Cursor** (`~/.cursor/mcp.json`):
+
+```json
+{
+  "mcpServers": {
+    "clearly": {
+      "command": "/usr/local/bin/clearly",
+      "args": ["mcp"]
+    }
+  }
+}
+```
+
+Settings → Command Line → **Copy MCP config** in the Clearly app copies a ready-to-paste snippet (auto-flips to `/usr/local/bin/clearly` once the symlink is installed).
+
+### Tool reference
+
+All tools use snake_case JSON keys on input and output. Every response also includes a `structuredContent` field on success and `isError: true` on failure — both mirror the text content exactly. Error responses include `error` (stable identifier) and `message`.
+
+| Tool | Annotations | Summary |
+|---|---|---|
+| `search_notes` | read-only, idempotent | Full-text search (BM25). Returns ranked hits with excerpts. |
+| `read_note` | read-only, idempotent | Full content + hash, size, mtime, frontmatter, headings, tags. Optional line range. |
+| `list_notes` | read-only, idempotent | Fresh filesystem walk. Optional `under` prefix. |
+| `get_headings` | read-only, idempotent | Heading outline (level 1–6, text, line_number). |
+| `get_frontmatter` | read-only, idempotent | Parsed YAML frontmatter as a flat map. |
+| `get_backlinks` | read-only, idempotent | Linked references (via `[[WikiLink]]`) plus unlinked mentions. |
+| `get_tags` | read-only, idempotent | All tags with counts, or files per tag. |
+| `create_note` | destructive, non-idempotent | New note at a vault-relative path. Conflict on existing. |
+| `update_note` | destructive, non-idempotent | `replace` / `append` / `prepend` modes. Prepend is frontmatter-aware. |
+
+Each tool registers its full JSON Schema via MCP `outputSchema`; clients that render schemas (MCP Inspector, the Claude API tool-call viewer) can introspect every field without reading source.
+
+### Example payloads
+
+`search_notes` (NDJSON, one hit per line):
+
+```json
+{"excerpts":[{"context_line":"# The Death of SaaS Pricing Pages","line_number":8},{"context_line":"Pricing pages are broken…","line_number":10}],"filename":"The Death of SaaS Pricing Pages","matches_filename":true,"relative_path":"Blog Posts/The Death of SaaS Pricing Pages.md","vault":"Documents","vault_path":"/Users/…/Documents"}
+```
+
+`read_note`:
+
+```json
+{
+  "content": "---\ntitle: Building in Public is a Lie\ndate: 2026-03-15\n---\n\n# Building in Public is a Lie\n…",
+  "content_hash": "e9777e4a4e308a77ec7c5814f4d4204c978139249967deb064b4558bf4f2594a",
+  "frontmatter": { "date": "2026-03-15", "status": "draft", "tags": "writing, transparency", "title": "Building in Public is a Lie" },
+  "headings": [{ "level": 1, "line_number": 8, "text": "Building in Public is a Lie" }],
+  "size_bytes": 1703,
+  "modified_at": "2026-04-14T15:47:25.274Z",
+  "relative_path": "Blog Posts/Building in Public is a Lie.md",
+  "vault": "Documents"
+}
+```
+
+`get_backlinks`:
+
+```json
+{
+  "linked": [
+    { "display_text": "my piece on transparency", "line_number": 23, "relative_path": "Blog Posts/The Death of SaaS Pricing Pages.md", "vault": "Documents" }
+  ],
+  "unlinked": [],
+  "relative_path": "Blog Posts/Building in Public is a Lie.md",
+  "vault": "Documents"
+}
+```
+
+`get_tags` (all tags, NDJSON):
+
+```json
+{"count":1,"tag":"ai"}
+{"count":33,"tag":"analysis"}
+```
+
+### Error identifiers
+
+Every error response — whether emitted by the CLI to stderr or by the MCP server as `structuredContent` with `isError: true` — uses one of these identifiers:
+
+| `error` | Where it fires | Context fields |
+|---|---|---|
+| `missing_argument` | Required flag/arg not provided | `argument` |
+| `invalid_argument` | Bad value (e.g. `--mode` not one of replace/append/prepend) | `argument`, `reason` |
+| `invalid_encoding` | File is not valid UTF-8 | `relative_path` |
+| `note_not_found` | Target note doesn't exist in any loaded vault | `relative_path` |
+| `path_outside_vault` | Path resolves outside the vault (traversal, absolute, unicode lookalike) | `relative_path` |
+| `ambiguous_path` | Multiple loaded vaults contain this path | `relative_path`, `matches` |
+| `note_exists` | `create_note` against an existing path | `relative_path` |
+| `no_vaults` | CLI-only: could not open any vault index | `bundle_id`, `attempted_count` |
+| `no_vault_match` | `--in-vault` filter didn't match any loaded vault | `filter` |
+| `unknown_tool` | MCP `tools/call` for an unregistered tool name | `tool` |
+| `internal_error` | Uncategorized exception from a tool | `error_type` |
+
+The identifier is the stable contract — agent code should branch on `error`, not on `message` text.
 
 ## License
 

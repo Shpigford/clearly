@@ -4,7 +4,25 @@ import Foundation
 struct HeadingsCommand: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "headings",
-        abstract: "Return the heading outline of a note."
+        abstract: "Return the heading outline of a note.",
+        discussion: """
+        Sourced from the vault's index, so the note must have been indexed
+        at least once. Returns an array of {level, text, line_number},
+        level 1–6.
+
+        Output shape documented in README.md, section "clearly CLI" →
+        "Tool reference" → get_headings.
+
+        EXAMPLES
+          # Print the outline as JSON
+          clearly headings Strategy/pricing.md
+
+          # Human-readable outline
+          clearly headings Strategy/pricing.md --format text
+
+          # Count H2s in a note
+          clearly headings 'Projects/plan.md' | jq '[.headings[] | select(.level == 2)] | length'
+        """
     )
 
     @OptionGroup var globals: GlobalOptions
@@ -22,7 +40,8 @@ struct HeadingsCommand: AsyncParsableCommand {
         } catch {
             Emitter.emitError(
                 "no_vaults",
-                message: "Unable to open any vault index: \(error.localizedDescription)"
+                message: "Unable to open any vault index: \(error.localizedDescription)",
+                extra: ["bundle_id": globals.bundleID, "attempted_count": globals.vault.count]
             )
             throw ExitCode(Exit.general)
         }
