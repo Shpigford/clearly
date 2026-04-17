@@ -25,6 +25,9 @@ packages:
   MCP:
     url: https://github.com/modelcontextprotocol/swift-sdk.git
     from: "0.11.0"
+  swift-argument-parser:
+    url: https://github.com/apple/swift-argument-parser.git
+    from: "1.5.0"
 
 targets:
   Clearly:
@@ -58,14 +61,14 @@ targets:
       - package: GRDB
       - target: ClearlyQuickLook
         embed: true
-      - target: ClearlyMCP
+      - target: ClearlyCLI
         embed: false
     postCompileScripts:
       - script: |
           HELPERS_DIR="${BUILT_PRODUCTS_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/Helpers"
           mkdir -p "$HELPERS_DIR"
-          cp "${BUILT_PRODUCTS_DIR}/ClearlyMCP" "$HELPERS_DIR/ClearlyMCP"
-        name: "Copy MCP Helper"
+          cp "${BUILT_PRODUCTS_DIR}/ClearlyCLI" "$HELPERS_DIR/ClearlyCLI"
+        name: "Copy CLI Helper"
         basedOnDependencyAnalysis: false
     settings:
       base:
@@ -127,11 +130,11 @@ targets:
           CODE_SIGN_STYLE: Manual
           CODE_SIGN_IDENTITY: "Developer ID Application"
 
-  ClearlyMCP:
+  ClearlyCLI:
     type: tool
     platform: macOS
     sources:
-      - path: ClearlyMCP
+      - path: ClearlyCLI
       - path: Clearly/VaultIndex.swift
       - path: Clearly/FileParser.swift
       - path: Clearly/FileNode.swift
@@ -141,10 +144,12 @@ targets:
     dependencies:
       - package: GRDB
       - package: MCP
+      - package: swift-argument-parser
+        product: ArgumentParser
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.sabotage.clearly.mcp
-        PRODUCT_NAME: ClearlyMCP
+        PRODUCT_NAME: ClearlyCLI
         MARKETING_VERSION: "2.2.0"
         CURRENT_PROJECT_VERSION: "1"
         SWIFT_VERSION: "6.0"

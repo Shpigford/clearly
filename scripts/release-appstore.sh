@@ -135,9 +135,9 @@ for key in SUFeedURL SUPublicEDKey SUEnableInstallerLauncherService; do
   /usr/libexec/PlistBuddy -c "Delete :$key" Clearly/Info.plist 2>/dev/null || true
 done
 
-# ── 2. Generate project.yml without Sparkle or ClearlyMCP ───────────────────
-# The ClearlyMCP CLI is stripped from App Store builds: as a sandboxed helper
-# bundled at Contents/Resources/Helpers/ClearlyMCP it cannot read the main
+# ── 2. Generate project.yml without Sparkle or ClearlyCLI ───────────────────
+# The ClearlyCLI helper is stripped from App Store builds: as a sandboxed helper
+# bundled at Contents/Resources/Helpers/ClearlyCLI it cannot read the main
 # app's container, and App Store Review rejects non-sandboxed nested executables.
 # Direct-download users still get it via release.sh.
 sed \
@@ -146,18 +146,18 @@ sed \
   -e 's|Clearly/Clearly.entitlements|Clearly/Clearly-AppStore.entitlements|' \
   project.yml | \
 awk '
-  # Drop the ClearlyMCP target block (it is the last target in project.yml).
-  /^  ClearlyMCP:/ { skip_target = 1 }
+  # Drop the ClearlyCLI target block (it is the last target in project.yml).
+  /^  ClearlyCLI:/ { skip_target = 1 }
   skip_target { next }
   # Drop the postCompileScripts block inside the Clearly target.
   # It ends at the next 4-space-indented key (e.g. "    settings:").
   /^    postCompileScripts:/ { skip_postcompile = 1; next }
   skip_postcompile && /^    [a-zA-Z]/ { skip_postcompile = 0 }
   skip_postcompile { next }
-  # Drop the ClearlyMCP dependency entry plus its indented children (embed, etc).
-  /^      - target: ClearlyMCP/ { skip_mcp_dep = 1; next }
-  skip_mcp_dep && /^        / { next }
-  skip_mcp_dep { skip_mcp_dep = 0 }
+  # Drop the ClearlyCLI dependency entry plus its indented children (embed, etc).
+  /^      - target: ClearlyCLI/ { skip_cli_dep = 1; next }
+  skip_cli_dep && /^        / { next }
+  skip_cli_dep { skip_cli_dep = 0 }
   { print }
 ' > build/project-appstore.yml
 
