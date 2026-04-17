@@ -758,6 +758,31 @@ final class VaultIndex: @unchecked Sendable {
         }
     }
 
+    // MARK: Read — Vault Summary
+
+    func fileCount() -> Int {
+        do {
+            return try dbPool.read { db in
+                let row = try Row.fetchOne(db, sql: "SELECT COUNT(*) AS c FROM files")
+                return Int(row?["c"] as Int64? ?? 0)
+            }
+        } catch {
+            return 0
+        }
+    }
+
+    func lastIndexedAt() -> Date? {
+        do {
+            return try dbPool.read { db in
+                let row = try Row.fetchOne(db, sql: "SELECT MAX(indexed_at) AS m FROM files")
+                guard let ts = row?["m"] as Double? else { return nil }
+                return Date(timeIntervalSince1970: ts)
+            }
+        } catch {
+            return nil
+        }
+    }
+
     // MARK: Read — File by URL
 
     func file(forURL url: URL) -> IndexedFile? {

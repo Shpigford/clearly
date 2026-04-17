@@ -23,9 +23,9 @@ struct SettingsView: View {
                     Label("General", systemImage: "gearshape")
                 }
 
-            mcpSettings
+            commandLineSettings
                 .tabItem {
-                    Label("MCP", systemImage: "network")
+                    Label("Command Line", systemImage: "terminal")
                 }
 
             aboutView
@@ -33,7 +33,7 @@ struct SettingsView: View {
                     Label("About", systemImage: "info.circle")
                 }
         }
-        .frame(width: 420)
+        .frame(width: 460)
         .fixedSize(horizontal: false, vertical: true)
     }
 
@@ -87,74 +87,166 @@ struct SettingsView: View {
         .formStyle(.grouped)
     }
 
-    // MARK: - MCP Settings
+    // MARK: - Command Line Settings
 
     @State private var mcpCopied = false
+    @State private var cliSymlinkState: CLIInstaller.State = CLIInstaller.symlinkState()
+    @State private var cliInstallBusy = false
+    @State private var cliInstallError: String?
 
-    private var bundledMCPBinaryPath: String? {
-        Bundle.main.url(forResource: "ClearlyMCP", withExtension: nil, subdirectory: "Helpers")?.path
+    private var bundledCLIBinaryPath: String? {
+        CLIInstaller.bundledBinaryURL()?.path
     }
 
-    private var installedMCPBinaryPath: String {
-        let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
-        return appSupport.appendingPathComponent("Clearly/ClearlyMCP").path
-    }
-
-    private var mcpBinaryPath: String {
-        if let bundledMCPBinaryPath, FileManager.default.isExecutableFile(atPath: bundledMCPBinaryPath) {
-            return bundledMCPBinaryPath
-        }
-        return installedMCPBinaryPath
-    }
-
-    private var mcpBundleIdentifier: String {
+    private var cliBundleIdentifier: String {
         Bundle.main.bundleIdentifier ?? "com.sabotage.clearly"
     }
 
-    private var mcpBinaryInstalled: Bool {
-        FileManager.default.isExecutableFile(atPath: mcpBinaryPath)
+    private var cliBundledExecutable: Bool {
+        guard let path = bundledCLIBinaryPath else { return false }
+        return FileManager.default.isExecutableFile(atPath: path)
     }
 
-    private var mcpSettings: some View {
+    private var commandLineSettings: some View {
         Form {
-            // Status
+            // Row 1 — bundled binary status
             HStack {
-                Text("MCP Helper")
+                Text("Helper binary")
                 Spacer()
-                if mcpBinaryInstalled {
+                if cliBundledExecutable {
                     Image(systemName: "checkmark.circle.fill")
                         .foregroundStyle(.green)
-                    Text("Installed")
+                    Text("Bundled")
                         .foregroundStyle(.secondary)
                 } else {
                     Image(systemName: "xmark.circle.fill")
                         .foregroundStyle(.red)
-                    Text("Not Installed")
+                    Text("Missing — reinstall Clearly")
                         .foregroundStyle(.secondary)
                 }
             }
 
-            // Copy config
-            Button(mcpCopied ? "Copied!" : "Copy MCP Config") {
-                copyMCPConfig()
-            }
-            .disabled(!mcpBinaryInstalled)
+            // Row 2 — terminal install
+            VStack(alignment: .leading, spacing: 8) {
+                HStack {
+                    Text("Terminal command")
+                    Spacer()
+                    switch cliSymlinkState {
+                    case .installed:
+                        Image(systemName: "checkmark.circle.fill")
+                            .foregroundStyle(.green)
+                        Text("Installed at \(CLIInstaller.symlinkPath)")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    case .installedElsewhere:
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .foregroundStyle(.orange)
+                        Text("Different `clearly` on PATH")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    case .notInstalled:
+                        Image(systemName: "circle")
+                            .foregroundStyle(.secondary)
+                        Text("Not installed")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
 
-            // Help text
-            Text("The MCP server lets AI agents search your notes, explore backlinks, and browse tags. It automatically discovers all your vaults. Copy the config and add it to any MCP-compatible app (Claude Desktop, Cursor, Windsurf, etc.).")
-                .font(.caption)
-                .foregroundStyle(.tertiary)
+                HStack {
+                    switch cliSymlinkState {
+                    case .installed:
+                        Button("Uninstall") {
+                            Task { await runUninstall() }
+                        }
+                        .disabled(cliInstallBusy)
+                    case .installedElsewhere:
+                        Button("Install \u{2026}") {}
+                            .disabled(true)
+                        Text("Remove the existing `clearly` from /usr/local/bin manually before installing.")
+                            .font(.caption)
+                            .foregroundStyle(.tertiary)
+                    case .notInstalled:
+                        Button("Install \u{2026}") {
+                            Task { await runInstall() }
+                        }
+                        .disabled(cliInstallBusy || !cliBundledExecutable)
+                    }
+                    Spacer()
+                }
+
+                if let errorText = cliInstallError {
+                    Text(errorText)
+                        .font(.caption)
+                        .foregroundStyle(.red)
+                }
+
+                Text("Symlinks `/usr/local/bin/clearly` to the helper inside Clearly.app so `clearly` resolves on your shell PATH. Requires your admin password.")
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
+            }
+
+            // Row 3 — MCP config copy
+            VStack(alignment: .leading, spacing: 8) {
+                Button(mcpCopied ? "Copied!" : "Copy MCP Config") {
+                    copyMCPConfig()
+                }
+                .disabled(!cliBundledExecutable)
+
+                Text("The MCP server lets AI agents search your notes, explore backlinks, and browse tags. Copy this config into any MCP-compatible app (Claude Desktop, Cursor, Windsurf, etc.).")
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
+            }
         }
         .formStyle(.grouped)
+        .onAppear {
+            cliSymlinkState = CLIInstaller.symlinkState()
+        }
+    }
+
+    private func runInstall() async {
+        cliInstallBusy = true
+        cliInstallError = nil
+        defer { cliInstallBusy = false }
+        do {
+            try await CLIInstaller.install()
+            cliSymlinkState = CLIInstaller.symlinkState()
+        } catch CLIInstaller.CLIInstallerError.cancelled {
+            // User cancelled; no-op
+        } catch {
+            cliInstallError = error.localizedDescription
+        }
+    }
+
+    private func runUninstall() async {
+        cliInstallBusy = true
+        cliInstallError = nil
+        defer { cliInstallBusy = false }
+        do {
+            try await CLIInstaller.uninstall()
+            cliSymlinkState = CLIInstaller.symlinkState()
+        } catch CLIInstaller.CLIInstallerError.cancelled {
+            // User cancelled; no-op
+        } catch {
+            cliInstallError = error.localizedDescription
+        }
     }
 
     private func copyMCPConfig() {
+        let command: String
+        if case .installed = cliSymlinkState {
+            command = CLIInstaller.symlinkPath
+        } else if let path = bundledCLIBinaryPath {
+            command = path
+        } else {
+            return
+        }
         let config = """
         {
           "mcpServers": {
             "clearly": {
-              "command": "\(mcpBinaryPath)",
-              "args": ["--bundle-id", "\(mcpBundleIdentifier)"]
+              "command": "\(command)",
+              "args": ["mcp", "--bundle-id", "\(cliBundleIdentifier)"]
             }
           }
         }
