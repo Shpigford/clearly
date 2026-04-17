@@ -86,7 +86,10 @@ enum CLIInstaller {
     }
 
     private static func runPrivileged(shellCommand: String) async throws {
-        let script = "do shell script \"\(shellCommand.replacingOccurrences(of: "\"", with: "\\\""))\" with administrator privileges"
+        let escaped = shellCommand
+            .replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "\"", with: "\\\"")
+        let script = "do shell script \"\(escaped)\" with administrator privileges"
         try await Task.detached(priority: .userInitiated) {
             var errorDict: NSDictionary?
             guard let apple = NSAppleScript(source: script) else {
