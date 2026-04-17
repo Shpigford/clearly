@@ -4,7 +4,32 @@ import Foundation
 struct CreateCommand: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "create",
-        abstract: "Create a new note at the given vault-relative path."
+        abstract: "Create a new note at the given vault-relative path.",
+        discussion: """
+        Parent directories are created automatically. Fails with exit 5 /
+        error note_exists if the note already exists — use `clearly update`
+        to modify existing notes. Path traversal attempts (../, absolute
+        paths, unicode lookalikes) are rejected with exit 4 /
+        error path_outside_vault.
+
+        When multiple vaults are loaded, --in-vault is required. Provide
+        content via --content "<string>" or --from-stdin (mutually
+        exclusive). Content starting with "---" must use --from-stdin
+        (swift-argument-parser parses it as a flag otherwise).
+
+        Output shape documented in README.md, section "clearly CLI" →
+        "Tool reference" → create_note.
+
+        EXAMPLES
+          # Inline content
+          clearly create Daily/2026-04-17.md --content "# Today\\n\\nNotes..."
+
+          # Pipe content from stdin (recommended for anything non-trivial)
+          cat draft.md | clearly create Inbox/draft.md --from-stdin
+
+          # Two-vault setup
+          clearly create Notes/idea.md --content "..." --in-vault Work
+        """
     )
 
     @OptionGroup var globals: GlobalOptions
@@ -40,7 +65,11 @@ struct CreateCommand: AsyncParsableCommand {
         do {
             vaults = try IndexSet.openIndexes(globals)
         } catch {
-            Emitter.emitError("no_vaults", message: "Unable to open any vault index: \(error.localizedDescription)")
+            Emitter.emitError(
+                "no_vaults",
+                message: "Unable to open any vault index: \(error.localizedDescription)",
+                extra: ["bundle_id": globals.bundleID]
+            )
             throw ExitCode(Exit.general)
         }
 

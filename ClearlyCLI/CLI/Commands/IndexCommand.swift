@@ -5,6 +5,15 @@ struct IndexCommand: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "index",
         abstract: "Vault index maintenance.",
+        discussion: """
+        Parent command for index operations. Currently exposes `rebuild`
+        only. Running `clearly index` with no subcommand is equivalent to
+        `clearly index rebuild`.
+
+        EXAMPLES
+          clearly index                        # same as `clearly index rebuild`
+          clearly index rebuild --in-vault Work
+        """,
         subcommands: [IndexRebuildCommand.self],
         defaultSubcommand: IndexRebuildCommand.self
     )
@@ -26,7 +35,23 @@ private struct RebuildResult: Encodable {
 struct IndexRebuildCommand: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "rebuild",
-        abstract: "Rebuild the SQLite index from disk. Pass --in-vault to limit to one vault."
+        abstract: "Rebuild the SQLite index from disk. Pass --in-vault to limit to one vault.",
+        discussion: """
+        Full re-walk of each vault's filesystem, re-hashing every markdown
+        file. Use this to recover from a corrupted index or after
+        out-of-band file operations. One-liner stderr per vault; final
+        JSON summary on stdout with per-vault duration_ms.
+
+        Exits 3 / error no_vault_match if --in-vault doesn't match any
+        loaded vault.
+
+        EXAMPLES
+          # Rebuild every loaded vault
+          clearly index rebuild
+
+          # Rebuild only one (matched on directory name)
+          clearly index rebuild --in-vault Documents
+        """
     )
 
     @OptionGroup var globals: GlobalOptions
@@ -44,7 +69,8 @@ struct IndexRebuildCommand: AsyncParsableCommand {
         } catch {
             Emitter.emitError(
                 "no_vaults",
-                message: "Unable to open any vault index: \(error.localizedDescription)"
+                message: "Unable to open any vault index: \(error.localizedDescription)",
+                extra: ["bundle_id": globals.bundleID]
             )
             throw ExitCode(Exit.general)
         }

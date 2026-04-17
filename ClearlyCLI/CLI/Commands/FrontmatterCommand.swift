@@ -4,7 +4,29 @@ import Foundation
 struct FrontmatterCommand: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "frontmatter",
-        abstract: "Return the parsed YAML frontmatter of a note as a flat key-value map."
+        abstract: "Return the parsed YAML frontmatter of a note as a flat key-value map.",
+        discussion: """
+        Reads directly from disk (not the index) so results always reflect
+        current file state. Duplicate keys are last-write-wins to match the
+        internal flattening behavior.
+
+        Output shape documented in README.md, section "clearly CLI" →
+        "Tool reference" → get_frontmatter. Returns
+        {has_frontmatter: false, frontmatter: {}} when the note has no
+        YAML block.
+
+        EXAMPLES
+          # Dump a note's frontmatter
+          clearly frontmatter Projects/2026-plan.md
+
+          # Extract a single tag field
+          clearly frontmatter Projects/plan.md | jq -r '.frontmatter.status'
+
+          # Skip notes without frontmatter
+          clearly list | jq -r '.relative_path' \\
+            | xargs -I{} sh -c 'clearly frontmatter "{}" | jq -e ".has_frontmatter"' \\
+            2>/dev/null
+        """
     )
 
     @OptionGroup var globals: GlobalOptions
@@ -22,7 +44,8 @@ struct FrontmatterCommand: AsyncParsableCommand {
         } catch {
             Emitter.emitError(
                 "no_vaults",
-                message: "Unable to open any vault index: \(error.localizedDescription)"
+                message: "Unable to open any vault index: \(error.localizedDescription)",
+                extra: ["bundle_id": globals.bundleID]
             )
             throw ExitCode(Exit.general)
         }

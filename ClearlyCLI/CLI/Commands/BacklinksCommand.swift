@@ -4,7 +4,26 @@ import Foundation
 struct BacklinksCommand: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "backlinks",
-        abstract: "List wiki-link references and unlinked mentions pointing to a note."
+        abstract: "List wiki-link references and unlinked mentions pointing to a note.",
+        discussion: """
+        Returns a single structured JSON with two arrays: `linked` (notes
+        that reference the target via [[WikiLinks]], resolved through the
+        index) and `unlinked` (notes that mention the target by filename
+        in plain text, scanned via FTS — useful for "promote to a link").
+
+        Output shape documented in README.md, section "clearly CLI" →
+        "Tool reference" → get_backlinks.
+
+        EXAMPLES
+          # Backlinks for a single note
+          clearly backlinks 'Notes/Meeting Notes — Platform Team.md'
+
+          # Just the count of linked references
+          clearly backlinks 'Ideas/graph.md' | jq '.linked | length'
+
+          # Human-readable two-section output
+          clearly backlinks README.md --format text
+        """
     )
 
     @OptionGroup var globals: GlobalOptions
@@ -22,7 +41,8 @@ struct BacklinksCommand: AsyncParsableCommand {
         } catch {
             Emitter.emitError(
                 "no_vaults",
-                message: "Unable to open any vault index: \(error.localizedDescription)"
+                message: "Unable to open any vault index: \(error.localizedDescription)",
+                extra: ["bundle_id": globals.bundleID]
             )
             throw ExitCode(Exit.general)
         }

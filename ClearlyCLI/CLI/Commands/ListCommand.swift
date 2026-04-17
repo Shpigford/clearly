@@ -4,7 +4,32 @@ import Foundation
 struct ListCommand: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "list",
-        abstract: "List notes in loaded vault(s). Emits NDJSON (one record per line)."
+        abstract: "List notes in loaded vault(s). Emits NDJSON (one record per line).",
+        discussion: """
+        Walks the filesystem fresh every call (not the index) so results
+        always reflect current on-disk state. Each record carries vault,
+        relative_path, size_bytes, modified_at.
+
+        Use --under to scope to a subdirectory prefix and --in-vault to
+        scope to a single vault when multiple are loaded.
+
+        Output shape documented in README.md, section "clearly CLI" →
+        "Tool reference" → list_notes.
+
+        EXAMPLES
+          # Every note across every vault
+          clearly list
+
+          # Only daily notes
+          clearly list --under Daily/
+
+          # Count notes per vault
+          clearly list | jq -r '.vault' | sort | uniq -c
+
+          # Piping relative paths into another clearly command
+          clearly list --under Projects/ | jq -r '.relative_path' \\
+            | xargs -I{} clearly headings {}
+        """
     )
 
     @OptionGroup var globals: GlobalOptions
@@ -22,7 +47,8 @@ struct ListCommand: AsyncParsableCommand {
         } catch {
             Emitter.emitError(
                 "no_vaults",
-                message: "Unable to open any vault index: \(error.localizedDescription)"
+                message: "Unable to open any vault index: \(error.localizedDescription)",
+                extra: ["bundle_id": globals.bundleID]
             )
             throw ExitCode(Exit.general)
         }
