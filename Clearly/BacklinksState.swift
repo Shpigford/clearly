@@ -105,8 +105,7 @@ final class BacklinksState: ObservableObject {
 
     private func readContextLine(from fileURL: URL, at lineNumber: Int?) -> String {
         guard let lineNumber, lineNumber > 0,
-              let data = try? Data(contentsOf: fileURL),
-              let content = String(data: data, encoding: .utf8) else {
+              let content = try? CoordinatedFileAccess.readText(from: fileURL) else {
             return ""
         }
         let lines = content.components(separatedBy: "\n")

@@ -47,8 +47,14 @@ struct WelcomeView: View {
                 }
                 .frame(maxWidth: 520)
 
-                Button("or open an existing file\u{2026}") {
-                    workspace.showOpenPanel()
+                HStack(spacing: 16) {
+                    Button("Open an existing file\u{2026}") {
+                        workspace.showOpenPanel()
+                    }
+
+                    Button("Open iCloud Vault") {
+                        workspace.openICloudVault()
+                    }
                 }
                 .buttonStyle(.plain)
                 .font(.system(size: 12))

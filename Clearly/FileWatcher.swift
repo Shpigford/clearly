@@ -1,5 +1,11 @@
 import Foundation
 
+enum WatchedFileReadResult {
+    case text(String)
+    case retrySoon
+    case unavailable
+}
+
 final class FileWatcher: ObservableObject {
     private var source: DispatchSourceFileSystemObject?
     private var fileDescriptor: Int32 = -1
@@ -9,6 +15,7 @@ final class FileWatcher: ObservableObject {
     private var lastKnownDiskText: String?
     var onChange: ((String) -> Void)?
     var liveCurrentText: (() -> String?)?
+    var readText: ((URL) -> WatchedFileReadResult)?
 
     func watch(_ url: URL?, currentText: String? = nil) {
         stopMonitoring()
@@ -73,18 +80,32 @@ final class FileWatcher: ObservableObject {
     }
 
     private func debouncedReadAndNotify() {
+        scheduleReadAndNotify(after: 0.3)
+    }
+
+    private func scheduleReadAndNotify(after delay: TimeInterval) {
         debounceWork?.cancel()
         let work = DispatchWorkItem { [weak self] in
             self?.readAndNotify()
         }
         debounceWork = work
-        DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + 0.3, execute: work)
+        DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + delay, execute: work)
     }
 
     private func readAndNotify() {
         guard let url = monitoredURL else { return }
-        guard let data = try? Data(contentsOf: url),
-              let newText = String(data: data, encoding: .utf8) else { return }
+        let result = readText?(url) ?? defaultReadText(from: url)
+
+        let newText: String
+        switch result {
+        case .text(let text):
+            newText = text
+        case .retrySoon:
+            scheduleReadAndNotify(after: 1.0)
+            return
+        case .unavailable:
+            return
+        }
 
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
@@ -104,5 +125,13 @@ final class FileWatcher: ObservableObject {
             self.currentText = newText
             self.onChange?(newText)
         }
+    }
+
+    private func defaultReadText(from url: URL) -> WatchedFileReadResult {
+        guard let text = try? CoordinatedFileAccess.readText(from: url) else {
+            return .unavailable
+        }
+
+        return .text(text)
     }
 }

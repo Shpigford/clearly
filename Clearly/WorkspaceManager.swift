@@ -43,8 +43,10 @@ final class WorkspaceManager {
     // MARK: - Private
 
     private var fsStreams: [UUID: FSEventStreamRef] = [:]
+    @ObservationIgnored private var iCloudObservers: [UUID: ICloudVaultObserver] = [:]
     @ObservationIgnored private var vaultIndexes: [UUID: VaultIndex] = [:]
     @ObservationIgnored private var refreshWork: [UUID: DispatchWorkItem] = [:]
+    @ObservationIgnored private var iCloudReindexWork: [UUID: DispatchWorkItem] = [:]
     @ObservationIgnored private var treeBuildGeneration: [UUID: Int] = [:]
     private var autoSaveWork: DispatchWorkItem?
     private var lastSavedText: String = ""
@@ -85,6 +87,16 @@ final class WorkspaceManager {
         case cancel
     }
 
+    private struct RestoredFileReferences {
+        let urls: [URL]
+        let didMutateStoredReferences: Bool
+    }
+
+    private struct ResolvedStoredFileReference {
+        let url: URL?
+        let didMutateStoredReference: Bool
+    }
+
     // MARK: - Init
 
     init() {
@@ -112,9 +124,11 @@ final class WorkspaceManager {
     deinit {
         autoSaveWork?.cancel()
         refreshWork.values.forEach { $0.cancel() }
+        iCloudReindexWork.values.forEach { $0.cancel() }
         for index in vaultIndexes.values { index.close() }
         vaultIndexes.removeAll()
         stopAllFSStreams()
+        stopAllICloudObservers()
         for url in accessedURLs {
             url.stopAccessingSecurityScopedResource()
         }
@@ -133,7 +147,11 @@ final class WorkspaceManager {
         for location in locations {
             refreshWork[location.id]?.cancel()
             refreshWork.removeValue(forKey: location.id)
-            loadTree(for: location.id, at: location.url)
+            if location.kind == .iCloud {
+                iCloudObservers[location.id]?.refresh()
+            } else {
+                loadTree(for: location.id, at: location.url)
+            }
         }
         reindexAllVaults()
     }
@@ -284,6 +302,8 @@ final class WorkspaceManager {
     /// Opens a file by replacing the active tab's content (no new tab created).
     @discardableResult
     func openFile(at url: URL) -> Bool {
+        guard prepareFileForOpening(url) else { return false }
+
         // If already open in a tab, just switch to it
         if let existing = openDocuments.first(where: { $0.fileURL == url }) {
             return switchToDocument(existing.id)
@@ -293,8 +313,7 @@ final class WorkspaceManager {
         guard saveFileBacked() else { return false }
 
         // Load new file
-        guard let data = try? Data(contentsOf: url),
-              let text = String(data: data, encoding: .utf8) else {
+        guard let text = try? CoordinatedFileAccess.readText(from: url) else {
             DiagnosticLog.log("Failed to read file: \(url.lastPathComponent)")
             return false
         }
@@ -346,6 +365,8 @@ final class WorkspaceManager {
     /// Opens a file in a new tab (Cmd+click or Cmd+T then navigate).
     @discardableResult
     func openFileInNewTab(at url: URL) -> Bool {
+        guard prepareFileForOpening(url) else { return false }
+
         // If already open in a tab, just switch to it
         if let existing = openDocuments.first(where: { $0.fileURL == url }) {
             return switchToDocument(existing.id)
@@ -353,8 +374,7 @@ final class WorkspaceManager {
 
         guard saveFileBacked() else { return false }
 
-        guard let data = try? Data(contentsOf: url),
-              let text = String(data: data, encoding: .utf8) else {
+        guard let text = try? CoordinatedFileAccess.readText(from: url) else {
             DiagnosticLog.log("Failed to read file: \(url.lastPathComponent)")
             return false
         }
@@ -406,6 +426,30 @@ final class WorkspaceManager {
         }
     }
 
+    func readWatchedFileText(at url: URL) -> WatchedFileReadResult {
+        let normalizedURL = url.standardizedFileURL
+
+        if isUbiquitousFile(normalizedURL) {
+            do {
+                switch try ICloudVaultSupport.prepareForReading(normalizedURL) {
+                case .ready:
+                    break
+                case .downloading:
+                    return .retrySoon
+                }
+            } catch {
+                DiagnosticLog.log("Failed to prepare watched iCloud file: \(error.localizedDescription)")
+                return .unavailable
+            }
+        }
+
+        guard let text = try? CoordinatedFileAccess.readText(from: normalizedURL) else {
+            return .unavailable
+        }
+
+        return .text(text)
+    }
+
     @discardableResult
     func insertWikiLink(in fileURL: URL, matching searchTerm: String, linkTarget: String, atLine lineNumber: Int) -> Bool {
         guard !searchTerm.isEmpty, !linkTarget.isEmpty, lineNumber > 0 else { return false }
@@ -421,8 +465,7 @@ final class WorkspaceManager {
                 content = openDocuments[openDocumentIndex].text
             }
         } else {
-            guard let data = try? Data(contentsOf: fileURL),
-                  let diskContent = String(data: data, encoding: .utf8) else {
+            guard let diskContent = try? CoordinatedFileAccess.readText(from: fileURL) else {
                 DiagnosticLog.log("Failed to read backlink source: \(fileURL.lastPathComponent)")
                 return false
             }
@@ -439,7 +482,7 @@ final class WorkspaceManager {
         }
 
         do {
-            try updatedContent.write(to: fileURL, atomically: true, encoding: .utf8)
+            try CoordinatedFileAccess.writeText(updatedContent, to: fileURL, atomically: true)
 
             if let openDocumentIndex {
                 openDocuments[openDocumentIndex].text = updatedContent
@@ -479,7 +522,7 @@ final class WorkspaceManager {
 
         guard let url = doc.fileURL, doc.isDirty else { return true }
         do {
-            try doc.text.write(to: url, atomically: true, encoding: .utf8)
+            try CoordinatedFileAccess.writeText(doc.text, to: url, atomically: true)
             openDocuments[index].lastSavedText = doc.text
 
             if activeDocumentIndex == index {
@@ -506,7 +549,7 @@ final class WorkspaceManager {
 
         do {
             let text = openDocuments[index].text
-            try text.write(to: url, atomically: true, encoding: .utf8)
+            try CoordinatedFileAccess.writeText(text, to: url, atomically: true)
             openDocuments[index].fileURL = url
             openDocuments[index].lastSavedText = text
             openDocuments[index].untitledNumber = nil
@@ -617,6 +660,22 @@ final class WorkspaceManager {
         }
     }
 
+    private func applyICloudResults(_ fileURLs: [URL], for locationID: UUID) {
+        guard let index = locations.firstIndex(where: { $0.id == locationID }) else { return }
+
+        let rootURL = locations[index].url
+        locations[index].fileTree = FileNode.buildTree(
+            fromFileURLs: fileURLs,
+            rootURL: rootURL,
+            showHiddenFiles: showHiddenFiles
+        )
+        treeRevision += 1
+
+        scheduleICloudReindex(for: locationID)
+
+        reloadCurrentICloudFileIfNeeded(in: rootURL)
+    }
+
     // MARK: - Locations
 
     @discardableResult
@@ -638,13 +697,16 @@ final class WorkspaceManager {
 
         let location = BookmarkedLocation(
             url: url,
+            kind: .localBookmark,
             bookmarkData: bookmarkData,
             fileTree: [],
             isAccessible: true
         )
         locations.append(location)
         persistLocations()
-        startFSStream(for: location)
+        if location.requiresSecurityScopedAccess {
+            startFSStream(for: location)
+        }
         openVaultIndex(for: location)
 
         DiagnosticLog.log("Added location: \(url.lastPathComponent)")
@@ -656,6 +718,62 @@ final class WorkspaceManager {
         return true
     }
 
+    func openICloudVault() {
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            let result = Result { try ICloudVaultSupport.resolveVaultURL() }
+
+            DispatchQueue.main.async {
+                guard let self else { return }
+
+                switch result {
+                case .success(let vaultURL):
+                    let shouldShowGettingStarted = self.isFirstRun
+                    guard self.ensureICloudLocation(at: vaultURL) else { return }
+                    if shouldShowGettingStarted {
+                        self.handleFirstLocationIfNeeded(folderURL: vaultURL)
+                    }
+                    self.showSidebar()
+                    self.presentMainWindow()
+
+                case .failure(let error):
+                    self.presentErrorAlert(
+                        title: "Couldn't Open iCloud Vault",
+                        message: error.localizedDescription
+                    )
+                }
+            }
+        }
+    }
+
+    @discardableResult
+    private func ensureICloudLocation(at url: URL) -> Bool {
+        let normalizedURL = url.standardizedFileURL
+
+        if locations.contains(where: { $0.kind == .iCloud && $0.url.standardizedFileURL == normalizedURL }) {
+            return true
+        }
+
+        let location = BookmarkedLocation(
+            url: normalizedURL,
+            kind: .iCloud,
+            bookmarkData: nil,
+            fileTree: [],
+            isAccessible: true
+        )
+        locations.append(location)
+        persistLocations()
+        startICloudObservation(for: location)
+        openVaultIndex(for: location)
+
+        DiagnosticLog.log("Opened iCloud vault: \(normalizedURL.lastPathComponent)")
+
+        if !UserDefaults.standard.bool(forKey: Self.hasEverAddedLocationKey) {
+            UserDefaults.standard.set(true, forKey: Self.hasEverAddedLocationKey)
+        }
+
+        return true
+    }
+
     /// On first-ever location add, creates a Getting Started document and opens it.
     func handleFirstLocationIfNeeded(folderURL: URL) {
         guard !UserDefaults.standard.bool(forKey: Self.hasDeliveredGettingStartedKey) else { return }
@@ -664,7 +782,7 @@ final class WorkspaceManager {
         let fileName = "Getting Started.md"
         let fileURL = folderURL.appendingPathComponent(fileName)
 
-        guard !FileManager.default.fileExists(atPath: fileURL.path) else {
+        guard !CoordinatedFileAccess.fileExists(at: fileURL) else {
             UserDefaults.standard.set(true, forKey: Self.hasDeliveredGettingStartedKey)
             _ = openFile(at: fileURL)
             return
@@ -677,7 +795,7 @@ final class WorkspaceManager {
         }
 
         do {
-            try content.write(to: fileURL, atomically: true, encoding: .utf8)
+            try CoordinatedFileAccess.writeText(content, to: fileURL, atomically: true)
             UserDefaults.standard.set(true, forKey: Self.hasDeliveredGettingStartedKey)
             DiagnosticLog.log("Created Getting Started.md in \(folderURL.lastPathComponent)")
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
@@ -690,11 +808,14 @@ final class WorkspaceManager {
 
     func removeLocation(_ location: BookmarkedLocation) {
         stopFSStream(for: location.id)
+        stopICloudObservation(for: location.id)
+        iCloudReindexWork[location.id]?.cancel()
+        iCloudReindexWork.removeValue(forKey: location.id)
         treeBuildGeneration.removeValue(forKey: location.id)
         vaultIndexes[location.id]?.close()
         vaultIndexes.removeValue(forKey: location.id)
         vaultIndexRevision += 1
-        if accessedURLs.contains(location.url) {
+        if location.requiresSecurityScopedAccess, accessedURLs.contains(location.url) {
             location.url.stopAccessingSecurityScopedResource()
             accessedURLs.remove(location.url)
         }
@@ -703,6 +824,11 @@ final class WorkspaceManager {
     }
 
     func refreshTree(for locationID: UUID) {
+        if locations.first(where: { $0.id == locationID })?.kind == .iCloud {
+            iCloudObservers[locationID]?.refresh()
+            return
+        }
+
         refreshWork[locationID]?.cancel()
 
         let work = DispatchWorkItem { [weak self] in
@@ -745,32 +871,23 @@ final class WorkspaceManager {
         if let idx = pinnedFiles.firstIndex(where: { $0.standardizedFileURL == normalizedURL }) {
             pinnedFiles.remove(at: idx)
         } else {
-            guard let bookmarkData = try? normalizedURL.bookmarkData(
-                options: .withSecurityScope,
-                includingResourceValuesForKeys: nil,
-                relativeTo: nil
-            ) else {
-                DiagnosticLog.log("Failed to create bookmark for pinned file: \(normalizedURL.path)")
-                return
-            }
+            if requiresSecurityScopedAccess(for: normalizedURL) {
+                if !hasExactActiveAccess(to: normalizedURL) {
+                    if normalizedURL.startAccessingSecurityScopedResource() {
+                        accessedURLs.insert(normalizedURL)
+                    } else if !hasActiveAccess(to: normalizedURL) {
+                        DiagnosticLog.log("Failed to access pinned file: \(normalizedURL.path)")
+                        return
+                    }
+                }
 
-            var isStale = false
-            let pinnedURL = (try? URL(
-                resolvingBookmarkData: bookmarkData,
-                options: .withSecurityScope,
-                relativeTo: nil,
-                bookmarkDataIsStale: &isStale
-            ))?.standardizedFileURL ?? normalizedURL
-
-            if !hasExactActiveAccess(to: pinnedURL) {
-                if pinnedURL.startAccessingSecurityScopedResource() {
-                    accessedURLs.insert(pinnedURL)
-                } else if !hasActiveAccess(to: pinnedURL) {
-                    DiagnosticLog.log("Failed to access pinned file: \(pinnedURL.path)")
+                guard storedFileReference(for: normalizedURL) != nil else {
+                    DiagnosticLog.log("Failed to create bookmark for pinned file: \(normalizedURL.path)")
+                    return
                 }
             }
 
-            pinnedFiles.append(pinnedURL)
+            pinnedFiles.append(normalizedURL)
         }
         persistPinnedFiles()
     }
@@ -786,13 +903,13 @@ final class WorkspaceManager {
         let fileURL = folderURL.appendingPathComponent(fileName)
 
         // Don't overwrite existing files
-        guard !FileManager.default.fileExists(atPath: fileURL.path) else {
+        guard !CoordinatedFileAccess.fileExists(at: fileURL) else {
             DiagnosticLog.log("File already exists: \(fileName)")
             return nil
         }
 
         do {
-            try "".write(to: fileURL, atomically: true, encoding: .utf8)
+            try CoordinatedFileAccess.writeText("", to: fileURL, atomically: true)
             DiagnosticLog.log("Created file: \(fileName)")
             return fileURL
         } catch {
@@ -804,7 +921,7 @@ final class WorkspaceManager {
     func createFolder(named name: String, in parentURL: URL) -> URL? {
         let folderURL = parentURL.appendingPathComponent(name)
         do {
-            try FileManager.default.createDirectory(at: folderURL, withIntermediateDirectories: false)
+            try CoordinatedFileAccess.createDirectory(at: folderURL, withIntermediateDirectories: false)
             DiagnosticLog.log("Created folder: \(name)")
             return folderURL
         } catch {
@@ -816,7 +933,7 @@ final class WorkspaceManager {
     func renameItem(at url: URL, to newName: String) -> URL? {
         let newURL = url.deletingLastPathComponent().appendingPathComponent(newName)
         do {
-            try FileManager.default.moveItem(at: url, to: newURL)
+            try CoordinatedFileAccess.moveItem(at: url, to: newURL)
             rewriteMovedItemReferences(from: url, to: newURL)
             DiagnosticLog.log("Renamed: \(url.lastPathComponent) → \(newName)")
             return newURL
@@ -829,13 +946,13 @@ final class WorkspaceManager {
     func moveItem(at sourceURL: URL, into folderURL: URL) -> URL? {
         let destURL = folderURL.appendingPathComponent(sourceURL.lastPathComponent)
 
-        guard !FileManager.default.fileExists(atPath: destURL.path) else {
+        guard !CoordinatedFileAccess.fileExists(at: destURL) else {
             DiagnosticLog.log("Move failed — \(sourceURL.lastPathComponent) already exists in \(folderURL.lastPathComponent)")
             return nil
         }
 
         do {
-            try FileManager.default.moveItem(at: sourceURL, to: destURL)
+            try CoordinatedFileAccess.moveItem(at: sourceURL, to: destURL)
             rewriteMovedItemReferences(from: sourceURL, to: destURL)
             DiagnosticLog.log("Moved: \(sourceURL.lastPathComponent) → \(folderURL.lastPathComponent)/")
             return destURL
@@ -847,7 +964,7 @@ final class WorkspaceManager {
 
     func deleteItem(at url: URL) -> Bool {
         do {
-            try FileManager.default.trashItem(at: url, resultingItemURL: nil)
+            try CoordinatedFileAccess.trashItem(at: url)
             removeDeletedItemReferences(at: url)
             DiagnosticLog.log("Trashed: \(url.lastPathComponent)")
             return true
@@ -971,7 +1088,7 @@ final class WorkspaceManager {
         guard panel.runModal() == .OK, let url = panel.url else { return }
 
         var isDir: ObjCBool = false
-        FileManager.default.fileExists(atPath: url.path, isDirectory: &isDir)
+        CoordinatedFileAccess.itemExists(at: url, isDirectory: &isDir)
 
         if isDir.boolValue {
             // Don't add duplicate locations
@@ -1015,7 +1132,14 @@ final class WorkspaceManager {
     // MARK: - Persistence: Locations
 
     private func persistLocations() {
-        let stored = locations.map { StoredBookmark(id: $0.id, bookmarkData: $0.bookmarkData) }
+        let stored = locations.map {
+            StoredLocation(
+                id: $0.id,
+                kind: $0.kind,
+                bookmarkData: $0.bookmarkData,
+                url: $0.requiresSecurityScopedAccess ? nil : $0.url
+            )
+        }
         if let data = try? JSONEncoder().encode(stored) {
             UserDefaults.standard.set(data, forKey: Self.locationBookmarksKey)
         }
@@ -1036,46 +1160,72 @@ final class WorkspaceManager {
 
     private func restoreLocations() {
         guard let data = UserDefaults.standard.data(forKey: Self.locationBookmarksKey),
-              let stored = try? JSONDecoder().decode([StoredBookmark].self, from: data) else { return }
+              let stored = try? JSONDecoder().decode([StoredLocation].self, from: data) else { return }
 
         var didMutateStoredBookmarks = false
         for bookmark in stored {
-            var isStale = false
-            guard let url = try? URL(
-                resolvingBookmarkData: bookmark.bookmarkData,
-                options: .withSecurityScope,
-                relativeTo: nil,
-                bookmarkDataIsStale: &isStale
-            ) else {
-                didMutateStoredBookmarks = true
-                continue
-            }
+            let location: BookmarkedLocation
 
-            var bookmarkData = bookmark.bookmarkData
-            if isStale {
-                if let refreshed = try? url.bookmarkData(options: .withSecurityScope, includingResourceValuesForKeys: nil, relativeTo: nil) {
-                    bookmarkData = refreshed
+            switch bookmark.kind {
+            case .localBookmark:
+                var isStale = false
+                guard let bookmarkData = bookmark.bookmarkData,
+                      let url = try? URL(
+                        resolvingBookmarkData: bookmarkData,
+                        options: .withSecurityScope,
+                        relativeTo: nil,
+                        bookmarkDataIsStale: &isStale
+                      ) else {
+                    didMutateStoredBookmarks = true
+                    continue
+                }
+
+                var refreshedBookmarkData = bookmarkData
+                if isStale,
+                   let refreshed = try? url.bookmarkData(options: .withSecurityScope, includingResourceValuesForKeys: nil, relativeTo: nil) {
+                    refreshedBookmarkData = refreshed
                     didMutateStoredBookmarks = true
                 }
+
+                guard url.startAccessingSecurityScopedResource() else {
+                    didMutateStoredBookmarks = true
+                    continue
+                }
+                accessedURLs.insert(url)
+
+                location = BookmarkedLocation(
+                    id: bookmark.id,
+                    url: url,
+                    kind: .localBookmark,
+                    bookmarkData: refreshedBookmarkData,
+                    fileTree: [],
+                    isAccessible: true
+                )
+
+            case .iCloud:
+                guard let url = bookmark.url else {
+                    didMutateStoredBookmarks = true
+                    continue
+                }
+
+                location = BookmarkedLocation(
+                    id: bookmark.id,
+                    url: url,
+                    kind: .iCloud,
+                    bookmarkData: nil,
+                    fileTree: [],
+                    isAccessible: true
+                )
             }
 
-            guard url.startAccessingSecurityScopedResource() else {
-                didMutateStoredBookmarks = true
-                continue
-            }
-            accessedURLs.insert(url)
-
-            let location = BookmarkedLocation(
-                id: bookmark.id,
-                url: url,
-                bookmarkData: bookmarkData,
-                fileTree: [],
-                isAccessible: true
-            )
             locations.append(location)
-            startFSStream(for: location)
+            if location.requiresSecurityScopedAccess {
+                startFSStream(for: location)
+                loadTree(for: bookmark.id, at: location.url)
+            } else {
+                startICloudObservation(for: location)
+            }
             openVaultIndex(for: location)
-            loadTree(for: bookmark.id, at: url)
         }
 
         if didMutateStoredBookmarks {
@@ -1087,38 +1237,28 @@ final class WorkspaceManager {
     // MARK: - Persistence: Recents
 
     private func persistRecents() {
-        let bookmarks: [Data] = recentFiles.compactMap { url in
-            try? url.bookmarkData(options: .withSecurityScope, includingResourceValuesForKeys: nil, relativeTo: nil)
+        let references = recentFiles.compactMap(storedFileReference(for:))
+        if let data = try? JSONEncoder().encode(references) {
+            UserDefaults.standard.set(data, forKey: Self.recentBookmarksKey)
         }
-        UserDefaults.standard.set(bookmarks, forKey: Self.recentBookmarksKey)
     }
 
     private func restoreRecents() {
+        if let data = UserDefaults.standard.data(forKey: Self.recentBookmarksKey),
+           let storedReferences = try? JSONDecoder().decode([StoredFileReference].self, from: data) {
+            let restored = restoreStoredFileReferences(storedReferences)
+            recentFiles = restored.urls
+            if restored.didMutateStoredReferences {
+                persistRecents()
+            }
+            return
+        }
+
         guard let bookmarks = UserDefaults.standard.array(forKey: Self.recentBookmarksKey) as? [Data] else { return }
 
-        var urls: [URL] = []
-        var shouldPersist = false
-        for data in bookmarks {
-            var isStale = false
-            if let url = try? URL(
-                resolvingBookmarkData: data,
-                options: .withSecurityScope,
-                relativeTo: nil,
-                bookmarkDataIsStale: &isStale
-            ) {
-                if isStale {
-                    shouldPersist = true
-                }
-                if !hasActiveAccess(to: url), url.startAccessingSecurityScopedResource() {
-                    accessedURLs.insert(url)
-                }
-                urls.append(url)
-            } else {
-                shouldPersist = true
-            }
-        }
-        recentFiles = urls
-        if shouldPersist || urls.count != bookmarks.count {
+        let restored = restoreLegacySecurityScopedURLs(from: bookmarks)
+        recentFiles = restored.urls
+        if restored.didMutateStoredReferences || restored.urls.count != bookmarks.count {
             persistRecents()
         }
     }
@@ -1126,43 +1266,28 @@ final class WorkspaceManager {
     // MARK: - Persistence: Pinned Files
 
     private func persistPinnedFiles() {
-        let bookmarks: [Data] = pinnedFiles.compactMap { url in
-            try? url.bookmarkData(options: .withSecurityScope, includingResourceValuesForKeys: nil, relativeTo: nil)
+        let references = pinnedFiles.compactMap(storedFileReference(for:))
+        if let data = try? JSONEncoder().encode(references) {
+            UserDefaults.standard.set(data, forKey: Self.pinnedBookmarksKey)
         }
-        UserDefaults.standard.set(bookmarks, forKey: Self.pinnedBookmarksKey)
     }
 
     private func restorePinnedFiles() {
+        if let data = UserDefaults.standard.data(forKey: Self.pinnedBookmarksKey),
+           let storedReferences = try? JSONDecoder().decode([StoredFileReference].self, from: data) {
+            let restored = restoreStoredFileReferences(storedReferences)
+            pinnedFiles = restored.urls
+            if restored.didMutateStoredReferences {
+                persistPinnedFiles()
+            }
+            return
+        }
+
         guard let bookmarks = UserDefaults.standard.array(forKey: Self.pinnedBookmarksKey) as? [Data] else { return }
 
-        var urls: [URL] = []
-        var shouldPersist = false
-        for data in bookmarks {
-            var isStale = false
-            if let url = try? URL(
-                resolvingBookmarkData: data,
-                options: .withSecurityScope,
-                relativeTo: nil,
-                bookmarkDataIsStale: &isStale
-            ) {
-                let normalizedURL = url.standardizedFileURL
-                if isStale {
-                    shouldPersist = true
-                }
-                if !hasExactActiveAccess(to: normalizedURL) {
-                    if normalizedURL.startAccessingSecurityScopedResource() {
-                        accessedURLs.insert(normalizedURL)
-                    } else if !hasActiveAccess(to: normalizedURL) {
-                        DiagnosticLog.log("Failed to restore pinned file access: \(normalizedURL.path)")
-                    }
-                }
-                urls.append(normalizedURL)
-            } else {
-                shouldPersist = true
-            }
-        }
-        pinnedFiles = urls
-        if shouldPersist || urls.count != bookmarks.count {
+        let restored = restoreLegacySecurityScopedURLs(from: bookmarks)
+        pinnedFiles = restored.urls
+        if restored.didMutateStoredReferences || restored.urls.count != bookmarks.count {
             persistPinnedFiles()
         }
     }
@@ -1171,6 +1296,18 @@ final class WorkspaceManager {
 
     private func restoreLastFile() {
         guard let data = UserDefaults.standard.data(forKey: Self.lastOpenFileKey) else { return }
+
+        if let storedReference = try? JSONDecoder().decode(StoredFileReference.self, from: data) {
+            let restored = resolveStoredFileReference(storedReference)
+            guard let url = restored.url, CoordinatedFileAccess.fileExists(at: url) else { return }
+            if restored.didMutateStoredReference, let refreshedReference = storedFileReference(for: url),
+               let refreshedData = try? JSONEncoder().encode(refreshedReference) {
+                UserDefaults.standard.set(refreshedData, forKey: Self.lastOpenFileKey)
+            }
+            openFile(at: url)
+            return
+        }
+
         var isStale = false
         guard let url = try? URL(
             resolvingBookmarkData: data,
@@ -1179,9 +1316,7 @@ final class WorkspaceManager {
             bookmarkDataIsStale: &isStale
         ) else { return }
 
-        // Need to start access for files inside bookmarked locations OR standalone files
-        let needsAccess = !hasActiveAccess(to: url)
-        if needsAccess {
+        if !hasActiveAccess(to: url) {
             if url.startAccessingSecurityScopedResource() {
                 accessedURLs.insert(url)
             } else {
@@ -1189,15 +1324,115 @@ final class WorkspaceManager {
             }
         }
 
-        if isStale {
-            if let refreshed = try? url.bookmarkData(options: .withSecurityScope, includingResourceValuesForKeys: nil, relativeTo: nil) {
-                UserDefaults.standard.set(refreshed, forKey: Self.lastOpenFileKey)
-            }
+        if isStale, let refreshedReference = storedFileReference(for: url),
+           let refreshedData = try? JSONEncoder().encode(refreshedReference) {
+            UserDefaults.standard.set(refreshedData, forKey: Self.lastOpenFileKey)
         }
 
-        // Only open if file still exists
-        guard FileManager.default.fileExists(atPath: url.path) else { return }
+        guard CoordinatedFileAccess.fileExists(at: url) else { return }
         openFile(at: url)
+    }
+
+    private func storedFileReference(for url: URL) -> StoredFileReference? {
+        let normalizedURL = url.standardizedFileURL
+        let requiresSecurityScopedAccess = requiresSecurityScopedAccess(for: normalizedURL)
+        let reference = StoredFileReference(url: normalizedURL, requiresSecurityScopedAccess: requiresSecurityScopedAccess)
+
+        if requiresSecurityScopedAccess, reference.bookmarkData == nil {
+            return nil
+        }
+
+        return reference
+    }
+
+    private func resolveStoredFileReference(_ reference: StoredFileReference) -> ResolvedStoredFileReference {
+        if reference.requiresSecurityScopedAccess {
+            guard let bookmarkData = reference.bookmarkData else {
+                return ResolvedStoredFileReference(url: nil, didMutateStoredReference: true)
+            }
+
+            var isStale = false
+            guard let resolvedURL = try? URL(
+                resolvingBookmarkData: bookmarkData,
+                options: .withSecurityScope,
+                relativeTo: nil,
+                bookmarkDataIsStale: &isStale
+            ) else {
+                return ResolvedStoredFileReference(url: nil, didMutateStoredReference: true)
+            }
+
+            let normalizedURL = resolvedURL.standardizedFileURL
+            let didAccess = ensureSecurityScopedAccess(to: normalizedURL)
+            guard didAccess || hasActiveAccess(to: normalizedURL) else {
+                return ResolvedStoredFileReference(url: nil, didMutateStoredReference: true)
+            }
+
+            return ResolvedStoredFileReference(url: normalizedURL, didMutateStoredReference: isStale)
+        }
+
+        guard let url = reference.url?.standardizedFileURL else {
+            return ResolvedStoredFileReference(url: nil, didMutateStoredReference: true)
+        }
+
+        return ResolvedStoredFileReference(url: url, didMutateStoredReference: false)
+    }
+
+    private func restoreStoredFileReferences(_ references: [StoredFileReference]) -> RestoredFileReferences {
+        var urls: [URL] = []
+        var didMutateStoredReferences = false
+
+        for reference in references {
+            let resolved = resolveStoredFileReference(reference)
+            guard let url = resolved.url else {
+                didMutateStoredReferences = true
+                continue
+            }
+
+            if urls.contains(where: { $0.standardizedFileURL == url }) {
+                didMutateStoredReferences = true
+                continue
+            }
+
+            urls.append(url)
+            didMutateStoredReferences = didMutateStoredReferences || resolved.didMutateStoredReference
+        }
+
+        return RestoredFileReferences(urls: urls, didMutateStoredReferences: didMutateStoredReferences)
+    }
+
+    private func restoreLegacySecurityScopedURLs(from bookmarks: [Data]) -> RestoredFileReferences {
+        var urls: [URL] = []
+        var didMutateStoredReferences = false
+
+        for bookmarkData in bookmarks {
+            var isStale = false
+            guard let resolvedURL = try? URL(
+                resolvingBookmarkData: bookmarkData,
+                options: .withSecurityScope,
+                relativeTo: nil,
+                bookmarkDataIsStale: &isStale
+            ) else {
+                didMutateStoredReferences = true
+                continue
+            }
+
+            let normalizedURL = resolvedURL.standardizedFileURL
+            let didAccess = ensureSecurityScopedAccess(to: normalizedURL)
+            guard didAccess || hasActiveAccess(to: normalizedURL) else {
+                didMutateStoredReferences = true
+                continue
+            }
+
+            if urls.contains(where: { $0.standardizedFileURL == normalizedURL }) {
+                didMutateStoredReferences = true
+                continue
+            }
+
+            urls.append(normalizedURL)
+            didMutateStoredReferences = didMutateStoredReferences || isStale
+        }
+
+        return RestoredFileReferences(urls: urls, didMutateStoredReferences: didMutateStoredReferences)
     }
 
     // MARK: - Vault Index
@@ -1226,6 +1461,19 @@ final class WorkspaceManager {
                 self?.vaultIndexRevision += 1
             }
         }
+    }
+
+    private func scheduleICloudReindex(for locationID: UUID) {
+        iCloudReindexWork[locationID]?.cancel()
+
+        let work = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            self.iCloudReindexWork.removeValue(forKey: locationID)
+            self.reindexVault(self.vaultIndexes[locationID])
+        }
+
+        iCloudReindexWork[locationID] = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3, execute: work)
     }
 
     // MARK: - FSEventStream
@@ -1277,6 +1525,35 @@ final class WorkspaceManager {
         let ids = Array(fsStreams.keys)
         for id in ids {
             stopFSStream(for: id)
+        }
+    }
+
+    private func startICloudObservation(for location: BookmarkedLocation) {
+        guard location.kind == .iCloud else { return }
+
+        if let observer = iCloudObservers[location.id] {
+            observer.start()
+            observer.refresh()
+            return
+        }
+
+        let observer = ICloudVaultObserver(rootURL: location.url) { [weak self] fileURLs in
+            self?.applyICloudResults(fileURLs, for: location.id)
+        }
+        iCloudObservers[location.id] = observer
+        observer.start()
+        observer.refresh()
+    }
+
+    private func stopICloudObservation(for locationID: UUID) {
+        guard let observer = iCloudObservers.removeValue(forKey: locationID) else { return }
+        observer.stop()
+    }
+
+    private func stopAllICloudObservers() {
+        let ids = Array(iCloudObservers.keys)
+        for id in ids {
+            stopICloudObservation(for: id)
         }
     }
 
@@ -1374,8 +1651,47 @@ final class WorkspaceManager {
     }
 
     private func persistLastOpenFile(_ url: URL) {
-        if let bookmarkData = try? url.bookmarkData(options: .withSecurityScope, includingResourceValuesForKeys: nil, relativeTo: nil) {
-            UserDefaults.standard.set(bookmarkData, forKey: Self.lastOpenFileKey)
+        guard let reference = storedFileReference(for: url),
+              let data = try? JSONEncoder().encode(reference) else {
+            return
+        }
+        UserDefaults.standard.set(data, forKey: Self.lastOpenFileKey)
+    }
+
+    private func prepareFileForOpening(_ url: URL) -> Bool {
+        guard isUbiquitousFile(url) else { return true }
+
+        do {
+            switch try ICloudVaultSupport.prepareForReading(url) {
+            case .ready:
+                return true
+            case .downloading:
+                presentErrorAlert(
+                    title: "Downloading iCloud File",
+                    message: "\(url.lastPathComponent) is still downloading from iCloud. Try opening it again in a moment."
+                )
+                return false
+            }
+        } catch {
+            presentErrorAlert(
+                title: "Couldn't Open iCloud File",
+                message: error.localizedDescription
+            )
+            return false
+        }
+    }
+
+    private func reloadCurrentICloudFileIfNeeded(in rootURL: URL) {
+        guard let currentURL = currentFileURL?.standardizedFileURL,
+              isSameOrDescendant(currentURL, of: rootURL),
+              !isDirty else { return }
+
+        do {
+            guard try ICloudVaultSupport.prepareForReading(currentURL) == .ready else { return }
+            let text = try CoordinatedFileAccess.readText(from: currentURL)
+            externalFileDidChange(text)
+        } catch {
+            DiagnosticLog.log("Failed to refresh iCloud file: \(error.localizedDescription)")
         }
     }
 
@@ -1415,6 +1731,56 @@ final class WorkspaceManager {
                 UserDefaults.standard.set(true, forKey: Self.sidebarVisibleKey)
             }
         }
+    }
+
+    private func presentErrorAlert(title: String, message: String) {
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = title
+        alert.informativeText = message
+        alert.addButton(withTitle: "OK")
+        alert.runModal()
+    }
+
+    func shouldUseFileWatcher(for url: URL?) -> Bool {
+        guard let url else { return false }
+        return !isManagedICloudFile(url)
+    }
+
+    private func isManagedICloudFile(_ url: URL) -> Bool {
+        let normalizedURL = url.standardizedFileURL
+        return location(containing: normalizedURL)?.kind == .iCloud
+    }
+
+    private func isUbiquitousFile(_ url: URL) -> Bool {
+        let normalizedURL = url.standardizedFileURL
+        return (try? normalizedURL.resourceValues(forKeys: [.isUbiquitousItemKey]).isUbiquitousItem) == true
+    }
+
+    private func requiresSecurityScopedAccess(for url: URL) -> Bool {
+        guard !isManagedICloudFile(url) else { return false }
+        return location(containing: url)?.requiresSecurityScopedAccess ?? true
+    }
+
+    private func location(containing url: URL) -> BookmarkedLocation? {
+        let normalizedURL = url.standardizedFileURL
+        return locations
+            .filter { isSameOrDescendant(normalizedURL, of: $0.url) }
+            .max { $0.url.standardizedFileURL.path.count < $1.url.standardizedFileURL.path.count }
+    }
+
+    @discardableResult
+    private func ensureSecurityScopedAccess(to url: URL) -> Bool {
+        if hasActiveAccess(to: url) {
+            return true
+        }
+
+        guard url.startAccessingSecurityScopedResource() else {
+            return false
+        }
+
+        accessedURLs.insert(url.standardizedFileURL)
+        return true
     }
 
     private func hasActiveAccess(to url: URL) -> Bool {

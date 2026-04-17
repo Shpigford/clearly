@@ -1055,6 +1055,10 @@ struct ClearlyApp: App {
                     workspace.showOpenPanel()
                 }
                 .keyboardShortcut("o", modifiers: .command)
+
+                Button("Open iCloud Vault") {
+                    workspace.openICloudVault()
+                }
             }
 
             // Save

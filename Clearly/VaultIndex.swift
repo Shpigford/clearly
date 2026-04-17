@@ -171,7 +171,7 @@ final class VaultIndex: @unchecked Sendable {
                     let relativePath = Self.relativePath(of: fileURL, from: rootURL)
                     processedPaths.insert(relativePath)
 
-                    guard let data = try? Data(contentsOf: fileURL),
+                    guard let data = try? CoordinatedFileAccess.readData(from: fileURL),
                           let content = String(data: data, encoding: .utf8) else { continue }
 
                     let hash = Self.contentHash(data)
@@ -695,7 +695,7 @@ final class VaultIndex: @unchecked Sendable {
     }
 
     private static func fileModDate(_ url: URL) -> Date {
-        (try? FileManager.default.attributesOfItem(atPath: url.path)[.modificationDate] as? Date) ?? Date()
+        (try? CoordinatedFileAccess.attributesOfItem(at: url)[.modificationDate] as? Date) ?? Date()
     }
 
     static func relativePath(of fileURL: URL, from rootURL: URL) -> String {

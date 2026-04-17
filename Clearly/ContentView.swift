@@ -469,8 +469,15 @@ struct ContentView: View {
         fileWatcher.liveCurrentText = { [workspace] in
             workspace.liveCurrentFileText()
         }
+        fileWatcher.readText = { [workspace] url in
+            workspace.readWatchedFileText(at: url)
+        }
         guard let url = workspace.currentFileURL else {
             fileWatcher.watch(nil, currentText: nil)
+            return
+        }
+        guard workspace.shouldUseFileWatcher(for: url) else {
+            fileWatcher.watch(nil, currentText: workspace.currentFileText)
             return
         }
         fileWatcher.onChange = { [workspace] newText in

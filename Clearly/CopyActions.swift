@@ -62,7 +62,7 @@ enum CopyActions {
     static func readMarkdown(from url: URL) -> String? {
         let accessed = url.startAccessingSecurityScopedResource()
         defer { if accessed { url.stopAccessingSecurityScopedResource() } }
-        return try? String(contentsOf: url, encoding: .utf8)
+        return try? CoordinatedFileAccess.readText(from: url)
     }
 
     /// Builds an NSMenu with all copy items for a given file URL.

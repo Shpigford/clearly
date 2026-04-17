@@ -43,11 +43,19 @@ struct FileExplorerEmptyView: View {
                     .font(.system(size: 12))
                     .foregroundStyle(.tertiary)
                     .multilineTextAlignment(.center)
-                Button("Add Location…") {
-                    workspace.showOpenPanel()
+                HStack(spacing: 10) {
+                    Button("Add Location…") {
+                        workspace.showOpenPanel()
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(.accentColor)
+
+                    Button("Open iCloud Vault") {
+                        workspace.openICloudVault()
+                    }
+                    .buttonStyle(.bordered)
                 }
                 .controlSize(.small)
-                .tint(.accentColor)
             }
             .frame(maxWidth: .infinity)
             .padding()
@@ -1060,12 +1068,17 @@ struct FileExplorerOutlineView: NSViewRepresentable {
                 // Clicked on empty space
                 menu.addItem(NSMenuItem(title: "Add Location…", action: #selector(addLocationAction(_:)), keyEquivalent: ""))
                 menu.items.last?.target = self
+                menu.addItem(NSMenuItem(title: "Open iCloud Vault", action: #selector(openICloudVaultAction(_:)), keyEquivalent: ""))
+                menu.items.last?.target = self
                 return
             }
 
             switch outlineItem.kind {
             case .section(.locations):
                 menu.addItem(NSMenuItem(title: "Add Location…", action: #selector(addLocationAction(_:)), keyEquivalent: ""))
+                menu.items.last?.target = self
+
+                menu.addItem(NSMenuItem(title: "Open iCloud Vault", action: #selector(openICloudVaultAction(_:)), keyEquivalent: ""))
                 menu.items.last?.target = self
 
             case .location(let loc):
@@ -1296,6 +1309,10 @@ struct FileExplorerOutlineView: NSViewRepresentable {
 
         @objc func addLocationAction(_ sender: NSMenuItem) {
             workspace.showOpenPanel()
+        }
+
+        @objc func openICloudVaultAction(_ sender: NSMenuItem) {
+            workspace.openICloudVault()
         }
 
         @objc func newFileInFolderAction(_ sender: NSMenuItem) {
