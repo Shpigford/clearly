@@ -59,6 +59,7 @@ targets:
       - package: Sparkle
       - package: KeyboardShortcuts
       - package: GRDB
+      - sdk: AuthenticationServices.framework
       - target: ClearlyQuickLook
         embed: true
       - target: ClearlyCLI

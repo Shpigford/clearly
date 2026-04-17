@@ -1007,6 +1007,7 @@ struct ClearlyApp: App {
     @NSApplicationDelegateAdaptor(ClearlyAppDelegate.self) var appDelegate
     @AppStorage("themePreference") private var themePreference = "system"
     @State private var scratchpadManager = ScratchpadManager.shared
+    @State private var accountManager = AccountManager.shared
     private let workspace = WorkspaceManager.shared
     #if canImport(Sparkle)
     private let updaterController: SPUStandardUpdaterController
@@ -1015,6 +1016,7 @@ struct ClearlyApp: App {
     init() {
         DiagnosticLog.trimIfNeeded()
         DiagnosticLog.log("App launched")
+        Task { @MainActor in await AccountManager.shared.bootstrap() }
         #if canImport(Sparkle)
         #if DEBUG
         updaterController = SPUStandardUpdaterController(
@@ -1224,9 +1226,11 @@ struct ClearlyApp: App {
             #if canImport(Sparkle)
             SettingsView(updater: updaterController.updater)
                 .preferredColorScheme(resolvedColorScheme)
+                .environment(accountManager)
             #else
             SettingsView()
                 .preferredColorScheme(resolvedColorScheme)
+                .environment(accountManager)
             #endif
         }
 

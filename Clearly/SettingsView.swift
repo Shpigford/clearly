@@ -28,6 +28,11 @@ struct SettingsView: View {
                     Label("Command Line", systemImage: "terminal")
                 }
 
+            AccountsSettingsView()
+                .tabItem {
+                    Label("Account", systemImage: "person.circle")
+                }
+
             aboutView
                 .tabItem {
                     Label("About", systemImage: "info.circle")
