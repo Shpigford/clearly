@@ -101,6 +101,14 @@ function log(message: string) {
   postMessage({ type: "log", message });
 }
 
+window.addEventListener("error", (event) => {
+  log(`window error: ${event.message}`);
+});
+
+window.addEventListener("unhandledrejection", (event) => {
+  log(`unhandled rejection: ${String(event.reason)}`);
+});
+
 function escapeHTML(value: string) {
   return value
     .replaceAll("&", "&amp;")
@@ -1209,14 +1217,14 @@ function buildDecorations(state: EditorState): DecorationSet {
 
     const headingMatch = /^(#{1,6})\s+/.exec(text);
     if (headingMatch) {
+      const level = headingMatch[1].length;
       const markerLength = headingMatch[0].length;
       const markerEnd = line.from + markerLength;
-      builder.add(line.from, line.from, lineDecoration(`cm-live-heading-line cm-live-heading-line-${headingMatch[1].length}`));
+      builder.add(line.from, line.from, lineDecoration(`cm-live-heading-line cm-live-heading-line-${level}`));
       // Hide the `# ` prefix only when cursor is not within it
       if (!rangeHasSelection(state, line.from, markerEnd)) {
         builder.add(line.from, markerEnd, hiddenDecoration);
       }
-      builder.add(markerEnd, line.to, markDecoration(`cm-live-heading cm-live-heading-${headingMatch[1].length}`));
       usedRanges.push({ from: line.from, to: markerEnd });
     }
 
@@ -1282,13 +1290,22 @@ function buildDecorations(state: EditorState): DecorationSet {
   return builder.finish();
 }
 
+function buildDecorationsSafely(state: EditorState, fallback: DecorationSet = Decoration.none): DecorationSet {
+  try {
+    return buildDecorations(state);
+  } catch (error) {
+    log(`buildDecorations error: ${String(error)}`);
+    return fallback;
+  }
+}
+
 const livePreviewDecorations = StateField.define<DecorationSet>({
   create(state) {
-    return buildDecorations(state);
+    return buildDecorationsSafely(state);
   },
   update(value, transaction) {
     if (transaction.docChanged || transaction.selection) {
-      return buildDecorations(transaction.state);
+      return buildDecorationsSafely(transaction.state, value);
     }
     return value;
   },
@@ -1323,27 +1340,34 @@ function livePreviewTheme(appearance: "light" | "dark", fontSize: number): Exten
       height: "100%",
       backgroundColor: background,
       color: text,
-      fontSize: `${fontSize}px`
+      fontSize: `${fontSize}px`,
+      overflow: "hidden"
     },
     ".cm-scroller": {
       overflow: "auto",
       fontFamily: 'system-ui, -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "Helvetica Neue", sans-serif'
     },
     ".cm-content": {
+      width: "100%",
       maxWidth: "61em",
       margin: "0 auto",
-      padding: "16px 64px 48px",
+      boxSizing: "border-box",
+      padding: "16px clamp(20px, 6vw, 64px) 48px",
       minHeight: "100%",
       lineHeight: "1.75",
       caretColor: text,
-      WebkitFontSmoothing: "antialiased"
+      WebkitFontSmoothing: "antialiased",
+      overflowWrap: "anywhere"
     },
     ".cm-focused": {
       outline: "none"
     },
     ".cm-line": {
       padding: "0",
-      color: text
+      color: text,
+      maxWidth: "100%",
+      overflowWrap: "anywhere",
+      wordBreak: "break-word"
     },
     ".cm-selectionBackground, ::selection": {
       backgroundColor: selection
@@ -1354,37 +1378,43 @@ function livePreviewTheme(appearance: "light" | "dark", fontSize: number): Exten
     ".cm-activeLine": {
       backgroundColor: "transparent"
     },
-    ".cm-live-heading-line": {
-      marginTop: "0.2em"
-    },
-    ".cm-live-heading": {
+    ".cm-line.cm-live-heading-line": {
       color: text,
       fontFamily: 'system-ui, -apple-system, BlinkMacSystemFont, "SF Pro Display", "Helvetica Neue", sans-serif',
       fontWeight: "650",
       lineHeight: "1.25",
       letterSpacing: "-0.015em"
     },
-    ".cm-live-heading-1": {
+    ".cm-line.cm-live-heading-line-1": {
       fontSize: "2.25em",
       fontWeight: "700",
-      letterSpacing: "-0.025em"
+      lineHeight: "1.15",
+      letterSpacing: "-0.025em",
+      paddingTop: "0.08em",
+      paddingBottom: "0.1em"
     },
-    ".cm-live-heading-2": {
-      fontSize: "1.625em"
+    ".cm-line.cm-live-heading-line-2": {
+      fontSize: "1.625em",
+      lineHeight: "1.18",
+      paddingTop: "0.06em",
+      paddingBottom: "0.08em"
     },
-    ".cm-live-heading-3": {
+    ".cm-line.cm-live-heading-line-3": {
       fontSize: "1.3125em",
-      fontWeight: "600"
+      fontWeight: "600",
+      lineHeight: "1.22",
+      paddingTop: "0.05em",
+      paddingBottom: "0.06em"
     },
-    ".cm-live-heading-4": {
+    ".cm-line.cm-live-heading-line-4": {
       fontSize: "1.125em",
       fontWeight: "600"
     },
-    ".cm-live-heading-5": {
+    ".cm-line.cm-live-heading-line-5": {
       fontSize: "1em",
       fontWeight: "600"
     },
-    ".cm-live-heading-6": {
+    ".cm-line.cm-live-heading-line-6": {
       fontSize: "0.9375em",
       fontWeight: "600",
       textTransform: "uppercase",
@@ -1447,7 +1477,12 @@ function livePreviewTheme(appearance: "light" | "dark", fontSize: number): Exten
       marginRight: "0.45rem"
     },
     ".cm-live-block": {
-      margin: "0 0 1.25em"
+      display: "block",
+      boxSizing: "border-box",
+      paddingBottom: "1.25em"
+    },
+    ".cm-live-block:last-child": {
+      paddingBottom: "0"
     },
     ".cm-live-block pre": {
       position: "relative",
@@ -1467,8 +1502,7 @@ function livePreviewTheme(appearance: "light" | "dark", fontSize: number): Exten
       color: muted
     },
     ".code-block-wrapper": {
-      position: "relative",
-      marginBottom: "1.25em"
+      position: "relative"
     },
     ".code-block-wrapper > pre": {
       marginBottom: "0"
@@ -1485,7 +1519,6 @@ function livePreviewTheme(appearance: "light" | "dark", fontSize: number): Exten
       fontSize: "0.875em"
     },
     ".frontmatter": {
-      marginBottom: "1.5em",
       padding: "1em 1.25em",
       backgroundColor: quoteBackground,
       borderRadius: "10px",
@@ -1845,11 +1878,12 @@ window.clearlyLiveEditor = {
 
   insertText(payload: { text: string }) {
     if (!editor) { return; }
+    const text = payload.text.replace(/\r\n?/g, "\n");
     const { from, to } = editor.state.selection.main;
     try {
       editor.dispatch({
-        changes: { from, to, insert: payload.text },
-        selection: { anchor: from + payload.text.length }
+        changes: { from, to, insert: text },
+        selection: { anchor: from + text.length }
       });
     } catch (e) {
       log(`insertText dispatch error: ${String(e)}`);

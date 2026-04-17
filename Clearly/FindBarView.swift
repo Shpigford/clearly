@@ -3,7 +3,7 @@ import ClearlyCore
 
 struct FindBarView: View {
     @ObservedObject var findState: FindState
-    @FocusState private var isFieldFocused: Bool
+    @State private var isFieldFocused = false
     @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
@@ -13,20 +13,15 @@ struct FindBarView: View {
                     .foregroundStyle(.tertiary)
                     .font(.system(size: 12))
 
-                TextField("Find", text: $findState.query)
-                    .textFieldStyle(.plain)
-                    .font(.system(size: 13))
-                    .focused($isFieldFocused)
-                    .onSubmit {
-                        if NSApp.currentEvent?.modifierFlags.contains(.shift) == true {
-                            findState.navigateToPrevious?()
-                        } else {
-                            findState.navigateToNext?()
-                        }
-                    }
-                    .onExitCommand {
-                        findState.dismiss()
-                    }
+                FindQueryField(
+                    text: $findState.query,
+                    focusRequest: findState.focusRequest,
+                    isFocused: $isFieldFocused,
+                    onSubmitNext: { findState.navigateToNext?() },
+                    onSubmitPrevious: { findState.navigateToPrevious?() },
+                    onEscape: { findState.isVisible = false }
+                )
+                .frame(minWidth: 120)
 
                 if !findState.query.isEmpty {
                     if findState.matchCount > 0 {
@@ -106,6 +101,139 @@ private struct FindNavButton: View {
         .onHover { hovering in
             withAnimation(Theme.Motion.hover) {
                 isHovering = hovering
+            }
+        }
+    }
+}
+
+private struct FindQueryField: NSViewRepresentable {
+    @Binding var text: String
+    let focusRequest: UUID
+    @Binding var isFocused: Bool
+    let onSubmitNext: () -> Void
+    let onSubmitPrevious: () -> Void
+    let onEscape: () -> Void
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(parent: self)
+    }
+
+    func makeNSView(context: Context) -> NSTextField {
+        let textField = NSTextField(string: text)
+        textField.isBordered = false
+        textField.isBezeled = false
+        textField.drawsBackground = false
+        textField.focusRingType = .none
+        textField.font = .systemFont(ofSize: 13)
+        textField.placeholderString = "Find"
+        textField.lineBreakMode = .byClipping
+        textField.delegate = context.coordinator
+        context.coordinator.attach(textField)
+        return textField
+    }
+
+    func updateNSView(_ textField: NSTextField, context: Context) {
+        context.coordinator.parent = self
+        context.coordinator.attach(textField)
+        if textField.stringValue != text {
+            context.coordinator.isApplyingSwiftUpdate = true
+            textField.stringValue = text
+            context.coordinator.isApplyingSwiftUpdate = false
+        }
+
+        if context.coordinator.lastFocusRequest != focusRequest {
+            context.coordinator.lastFocusRequest = focusRequest
+            DispatchQueue.main.async {
+                guard let window = textField.window else { return }
+                window.makeFirstResponder(textField)
+                textField.currentEditor()?.selectAll(nil)
+            }
+        }
+    }
+
+    final class Coordinator: NSObject, NSTextFieldDelegate {
+        var parent: FindQueryField
+        var lastFocusRequest: UUID?
+        var isApplyingSwiftUpdate = false
+        weak var textField: NSTextField?
+        private var commandMonitor: Any?
+
+        init(parent: FindQueryField) {
+            self.parent = parent
+        }
+
+        deinit {
+            if let commandMonitor {
+                NSEvent.removeMonitor(commandMonitor)
+            }
+        }
+
+        func attach(_ textField: NSTextField) {
+            self.textField = textField
+            guard commandMonitor == nil else { return }
+
+            commandMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+                guard let self,
+                      self.parent.isFocused,
+                      let textField = self.textField,
+                      textField.window?.isKeyWindow == true else {
+                    return event
+                }
+
+                let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+                switch (modifiers, event.charactersIgnoringModifiers) {
+                case (.command, "a"):
+                    textField.window?.makeFirstResponder(textField)
+                    textField.currentEditor()?.selectAll(nil)
+                    return nil
+                case (.command, "v"):
+                    guard let pasted = NSPasteboard.general.string(forType: .string) else {
+                        return event
+                    }
+                    textField.window?.makeFirstResponder(textField)
+                    if let editor = textField.currentEditor() {
+                        editor.insertText(pasted)
+                        self.parent.text = textField.stringValue
+                    } else {
+                        textField.stringValue = pasted
+                        self.parent.text = pasted
+                    }
+                    return nil
+                default:
+                    return event
+                }
+            }
+        }
+
+        func controlTextDidBeginEditing(_ obj: Notification) {
+            parent.isFocused = true
+        }
+
+        func controlTextDidEndEditing(_ obj: Notification) {
+            parent.isFocused = false
+        }
+
+        func controlTextDidChange(_ obj: Notification) {
+            guard !isApplyingSwiftUpdate,
+                  let field = obj.object as? NSTextField else { return }
+            parent.text = field.stringValue
+        }
+
+        func control(_ control: NSControl, textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
+            switch commandSelector {
+            case #selector(NSResponder.cancelOperation(_:)):
+                parent.onEscape()
+                return true
+            case #selector(NSResponder.insertNewline(_:)),
+                 #selector(NSResponder.insertLineBreak(_:)):
+                if NSApp.currentEvent?.modifierFlags.contains(.shift) == true {
+                    parent.onSubmitPrevious()
+                } else {
+                    parent.onSubmitNext()
+                }
+                return true
+            default:
+                return false
             }
         }
     }

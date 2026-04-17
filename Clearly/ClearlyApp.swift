@@ -52,6 +52,8 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValid
     private var middleClickMonitor: Any?
     private var quickSwitcherMonitor: Any?
     private var themeObserver: Any?
+    private var startupLaunchWork: DispatchWorkItem?
+    private var didResolveInitialLaunch = false
     private var isProgrammaticallyClosingWindows = false
     private weak var trackedSettingsWindow: NSWindow?
     private var isOpeningSettingsFromMenuBar = false
@@ -98,6 +100,8 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValid
             guard let tag = notification.userInfo?["tag"] as? String else { return }
             QuickSwitcherManager.shared.show(tagFilter: tag)
         }
+        startupLaunchWork = startupWork
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2, execute: startupWork)
 
         // Watch multiple signals — window close, app deactivate, main window change
         let nc = NotificationCenter.default
@@ -235,6 +239,11 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValid
     // MARK: - Open files from Finder
 
     func application(_ application: NSApplication, open urls: [URL]) {
+        startupLaunchWork?.cancel()
+        startupLaunchWork = nil
+        didResolveInitialLaunch = true
+        DiagnosticLog.log("application(open:): received \(urls.count) url(s)")
+
         let workspace = WorkspaceManager.shared
         var openedDirectory = false
         var openedFile = false
@@ -559,6 +568,11 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValid
     }
 
     func applicationWillBecomeActive(_ notification: Notification) {
+        if !didResolveInitialLaunch {
+            guard startupLaunchWork == nil else { return }
+            resolveInitialLaunchIfNeeded()
+            return
+        }
         if hasDocumentWindows() && NSApp.activationPolicy() != .regular {
             NSApp.setActivationPolicy(.regular)
         }

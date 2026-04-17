@@ -3,21 +3,21 @@ import Combine
 import SwiftUI
 import WebKit
 
-enum LiveEditorSession {
-    static var currentDocumentID: UUID?
-    static var currentDocumentEpoch: Int = 0
-}
-
 /// WKWebView subclass that re-focuses CodeMirror when macOS routes
 /// first-responder to this view (e.g. after clicking a toolbar button).
 final class LiveEditorWebView: WKWebView {
     override func becomeFirstResponder() -> Bool {
         let result = super.becomeFirstResponder()
-        if result {
+        if result, allowsDOMFocusForwarding {
             evaluateJavaScript("window.clearlyLiveEditor?.focus()")
         }
         return result
     }
+
+    /// When auxiliary controls like the SwiftUI find bar are active, let them
+    /// keep first-responder ownership without immediately forcing DOM focus back
+    /// into CodeMirror.
+    var allowsDOMFocusForwarding = true
 }
 
 struct LiveEditorView: NSViewRepresentable {
@@ -41,6 +41,7 @@ struct LiveEditorView: NSViewRepresentable {
     }
 
     func makeNSView(context: Context) -> LiveEditorWebView {
+        DiagnosticLog.log("LiveEditorView.makeNSView: \(text.count) chars")
         let config = WKWebViewConfiguration()
         config.setURLSchemeHandler(LocalImageSchemeHandler(), forURLScheme: LocalImageSupport.scheme)
         config.userContentController.add(context.coordinator, name: "liveEditor")
@@ -48,19 +49,19 @@ struct LiveEditorView: NSViewRepresentable {
         let webView = LiveEditorWebView(frame: .zero, configuration: config)
         webView.navigationDelegate = context.coordinator
         webView.underPageBackgroundColor = Theme.backgroundColor
-        // Update the session ID before any async callbacks from the old view can race.
-        LiveEditorSession.currentDocumentID = documentID
-        LiveEditorSession.currentDocumentEpoch = documentEpoch
+        // Publish the active host revision before any async callbacks from an
+        // older web session can race with this view's setup.
+        LiveEditorSession.update(documentID: documentID, epoch: documentEpoch)
         context.coordinator.attach(webView: webView, findState: findState, outlineState: outlineState)
         loadEditorPage(in: webView)
         return webView
     }
 
     func updateNSView(_ webView: LiveEditorWebView, context: Context) {
+        DiagnosticLog.log("LiveEditorView.updateNSView: \(text.count) chars")
         context.coordinator.parent = self
         webView.underPageBackgroundColor = Theme.backgroundColor
-        LiveEditorSession.currentDocumentID = documentID
-        LiveEditorSession.currentDocumentEpoch = documentEpoch
+        LiveEditorSession.update(documentID: documentID, epoch: documentEpoch)
         context.coordinator.attach(webView: webView, findState: findState, outlineState: outlineState)
         context.coordinator.syncFromSwiftIfNeeded()
     }
@@ -104,6 +105,7 @@ struct LiveEditorView: NSViewRepresentable {
         private var hasRegisteredObservers = false
         private var isReady = false
         private var lastSyncedText = ""
+        private weak var observedFindState: FindState?
         /// True once the coordinator has received at least one `docChanged` from JS.
         /// Distinguishes "editor content is genuinely empty" (true, lastSyncedText=="")
         /// from "no docChanged has arrived yet" (false) so the synchronous flush
@@ -111,6 +113,8 @@ struct LiveEditorView: NSViewRepresentable {
         private var hasReceivedDocChanged = false
         private var lastKnownDocumentID: UUID?
         private var lastThemeSignature = ""
+        private var lastFindQuery = ""
+        private var lastFindVisibility = false
         private var findCancellables = Set<AnyCancellable>()
         /// Local event monitor that intercepts Cmd+V and routes it through
         /// NSPasteboard → CodeMirror's dispatch API, bypassing WKWebView's native
@@ -136,6 +140,7 @@ struct LiveEditorView: NSViewRepresentable {
         func attach(webView: WKWebView, findState: FindState?, outlineState: OutlineState?) {
             self.webView = webView
             self.parent.findState?.activeMode = .edit
+            (webView as? LiveEditorWebView)?.allowsDOMFocusForwarding = !(findState?.isVisible ?? false)
 
             if !hasRegisteredObservers {
                 NotificationCenter.default.addObserver(
@@ -171,6 +176,7 @@ struct LiveEditorView: NSViewRepresentable {
                     guard let self,
                           !self.isDismantled,
                           self.isReady,
+                          self.parent.findState?.isVisible != true,
                           event.modifierFlags.intersection(.deviceIndependentFlagsMask) == .command,
                           event.charactersIgnoringModifiers == "v",
                           let webView = self.webView,
@@ -191,7 +197,8 @@ struct LiveEditorView: NSViewRepresentable {
                 }
             }
 
-            if let findState {
+            if let findState, observedFindState !== findState {
+                observedFindState = findState
                 observeFindState(findState)
                 findState.editorNavigateToNext = { [weak self] in
                     self?.call(function: "applyCommand", payload: ["command": "findNext"])
@@ -239,9 +246,18 @@ struct LiveEditorView: NSViewRepresentable {
             }
 
             if parent.findState?.isVisible == true {
-                call(function: "setFindQuery", payload: ["query": parent.findState?.query ?? ""])
+                let query = parent.findState?.query ?? ""
+                if query != lastFindQuery || !lastFindVisibility {
+                    lastFindQuery = query
+                    lastFindVisibility = true
+                    call(function: "setFindQuery", payload: ["query": query])
+                }
             } else {
-                call(function: "setFindQuery", payload: ["query": ""])
+                if lastFindVisibility || !lastFindQuery.isEmpty {
+                    lastFindQuery = ""
+                    lastFindVisibility = false
+                    call(function: "setFindQuery", payload: ["query": ""])
+                }
             }
         }
 
@@ -254,6 +270,7 @@ struct LiveEditorView: NSViewRepresentable {
                     guard let self,
                           state.isVisible,
                           state.activeMode == .edit else { return }
+                    self.lastFindQuery = query
                     self.call(function: "setFindQuery", payload: ["query": query])
                 }
                 .store(in: &findCancellables)
@@ -262,7 +279,10 @@ struct LiveEditorView: NSViewRepresentable {
                 .removeDuplicates()
                 .sink { [weak self] visible in
                     guard let self else { return }
+                    self.lastFindVisibility = visible
+                    (self.webView as? LiveEditorWebView)?.allowsDOMFocusForwarding = !visible
                     let query = visible && state.activeMode == .edit ? state.query : ""
+                    self.lastFindQuery = query
                     self.call(function: "setFindQuery", payload: ["query": query])
                 }
                 .store(in: &findCancellables)
@@ -292,15 +312,17 @@ struct LiveEditorView: NSViewRepresentable {
             // string is a valid confirmed state (user deleted all content) and must
             // be flushed. Only skip when no docChanged has arrived yet (initial state
             // where lastSyncedText=="" means "uninitialized", not "empty document").
-            // Also guard against the window between a document switch or a
-            // same-document host revision
-            // (WorkspaceManager updated LiveEditorSession.currentDocumentID) and
-            // the next SwiftUI updateNSView (which updates parent.documentID /
-            // parent.documentEpoch). If they don't match, the coordinator's
-            // parent is stale and lastSyncedText belongs to an older host state.
+            // Document-identity guard only (no epoch): externalFileDidChange bumps
+            // LiveEditorSession.currentEpoch before updateNSView propagates the new
+            // epoch to parent.documentEpoch, so an epoch check here would incorrectly
+            // suppress valid same-document flushes in that window. The sync path only
+            // needs to confirm the coordinator is still for the right document;
+            // lastSyncedText is already the best synchronous approximation of the
+            // current editor content. The epoch guard belongs on the async path below,
+            // where requestedEpoch is captured at call time and compared against the
+            // live session value.
             if hasReceivedDocChanged,
-               parent.documentID == LiveEditorSession.currentDocumentID,
-               parent.documentEpoch == LiveEditorSession.currentDocumentEpoch {
+               LiveEditorSession.matches(documentID: parent.documentID) {
                 parent.onFlushContent?(lastSyncedText)
             }
 
@@ -315,7 +337,7 @@ struct LiveEditorView: NSViewRepresentable {
             webView.evaluateJavaScript("window.clearlyLiveEditor && window.clearlyLiveEditor.getDocument && window.clearlyLiveEditor.getDocument()") { [weak self] result, _ in
                 guard let self,
                       !self.isDismantled,
-                      requestedDocumentID == LiveEditorSession.currentDocumentID,
+                      LiveEditorSession.matches(documentID: requestedDocumentID, epoch: requestedEpoch),
                       requestedEpoch == self.parent.documentEpoch,
                       let markdown = result as? String else { return }
                 self.lastSyncedText = markdown
@@ -338,6 +360,7 @@ struct LiveEditorView: NSViewRepresentable {
         }
 
         private func mountEditor() {
+            DiagnosticLog.log("LiveEditorView: mounting editor (\(parent.text.count) chars)")
             // Reset lastSyncedText to "" so syncFromSwiftIfNeeded always calls
             // setDocument after mount. This is a defensive measure: if mount
             // initialised CodeMirror with incorrect content (e.g. due to a timing
@@ -363,7 +386,9 @@ struct LiveEditorView: NSViewRepresentable {
             // requiring the user to click the editor first.
             DispatchQueue.main.async { [weak self] in
                 guard let self, !self.isDismantled, let webView = self.webView else { return }
-                webView.window?.makeFirstResponder(webView)
+                if self.parent.findState?.isVisible != true {
+                    webView.window?.makeFirstResponder(webView)
+                }
             }
         }
 
@@ -372,12 +397,16 @@ struct LiveEditorView: NSViewRepresentable {
 
             switch type {
             case "ready":
+                DiagnosticLog.log("LiveEditorView: received ready from web content")
                 isReady = true
-                mountEditor()
+                DispatchQueue.main.async { [weak self] in
+                    guard let self, !self.isDismantled else { return }
+                    self.mountEditor()
+                }
 
             case "docChanged":
                 guard !isDismantled,
-                      parent.documentID == LiveEditorSession.currentDocumentID,
+                      LiveEditorSession.matches(documentID: parent.documentID),
                       let epochNumber = body["epoch"] as? NSNumber,
                       epochNumber.intValue == parent.documentEpoch,
                       let markdown = body["markdown"] as? String else { return }
@@ -392,7 +421,7 @@ struct LiveEditorView: NSViewRepresentable {
                 }
 
             case "findStatus":
-                guard parent.documentID == LiveEditorSession.currentDocumentID,
+                guard LiveEditorSession.matches(documentID: parent.documentID),
                       let matchCount = body["matchCount"] as? Int,
                       let currentIndex = body["currentIndex"] as? Int else { return }
                 DispatchQueue.main.async {
@@ -402,7 +431,7 @@ struct LiveEditorView: NSViewRepresentable {
                 }
 
             case "openLink":
-                guard parent.documentID == LiveEditorSession.currentDocumentID else { return }
+                guard LiveEditorSession.matches(documentID: parent.documentID) else { return }
                 let kind = body["kind"] as? String ?? "markdown"
                 switch kind {
                 case "wiki":
@@ -458,6 +487,13 @@ struct LiveEditorView: NSViewRepresentable {
 
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
             DiagnosticLog.log("LiveEditorView: web content loaded")
+            guard !isReady else { return }
+            DiagnosticLog.log("LiveEditorView: didFinish fallback mount")
+            isReady = true
+            DispatchQueue.main.async { [weak self] in
+                guard let self, !self.isDismantled else { return }
+                self.mountEditor()
+            }
         }
 
         func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {

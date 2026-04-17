@@ -68,6 +68,7 @@ final class WorkspaceManager {
     private var autoSaveWork: DispatchWorkItem?
     private var lastSavedText: String = ""
     private var accessedURLs: Set<URL> = []
+    private var hasPreparedInitialDocuments = false
 
     var activeVaultIndexes: [VaultIndex] { Array(vaultIndexes.values) }
     func vaultIndex(for location: BookmarkedLocation) -> VaultIndex? {
@@ -358,6 +359,22 @@ final class WorkspaceManager {
         return true
     }
 
+    func prepareInitialDocumentsIfNeeded() {
+        guard !hasPreparedInitialDocuments else { return }
+        hasPreparedInitialDocuments = true
+
+        let launchBehavior = UserDefaults.standard.string(forKey: Self.launchBehaviorKey) ?? "lastFile"
+        if launchBehavior == "newDocument" {
+            createUntitledDocument()
+            return
+        }
+
+        restoreLastFile()
+        if openDocuments.isEmpty {
+            createUntitledDocument()
+        }
+    }
+
     @discardableResult
     func prepareForWindowClose() -> Bool {
         snapshotActiveDocument()
@@ -506,7 +523,7 @@ final class WorkspaceManager {
         // Bump epoch so any docChanged messages already in-flight from before
         // this host-driven replacement are rejected by the coordinator's epoch guard.
         documentEpoch += 1
-        LiveEditorSession.currentDocumentEpoch = documentEpoch
+        LiveEditorSession.update(documentID: activeDocumentID, epoch: documentEpoch)
         currentFileText = newText
         lastSavedText = newText
         isDirty = false
@@ -1873,12 +1890,8 @@ final class WorkspaceManager {
     private func restoreActiveDocument() {
         guard let idx = activeDocumentIndex else { return }
         let doc = openDocuments[idx]
-        // Mirror activateDocument: update session ID before the epoch bump so
-        // evaluateJavaScript completions from the previous document see the new
-        // ID and are rejected before SwiftUI fires updateNSView.
-        LiveEditorSession.currentDocumentID = doc.id
         documentEpoch += 1
-        LiveEditorSession.currentDocumentEpoch = documentEpoch
+        LiveEditorSession.update(documentID: doc.id, epoch: documentEpoch)
         currentFileURL = doc.fileURL
         currentFileText = doc.text
         lastSavedText = doc.lastSavedText
@@ -1892,12 +1905,8 @@ final class WorkspaceManager {
 
     /// Set the given document as active and sync stored properties.
     private func activateDocument(_ doc: OpenDocument) {
-        // Update the session ID synchronously so any in-flight evaluateJavaScript
-        // completions that check LiveEditorSession.currentDocumentID see the new
-        // document immediately — before SwiftUI's updateNSView can fire.
-        LiveEditorSession.currentDocumentID = doc.id
         documentEpoch += 1
-        LiveEditorSession.currentDocumentEpoch = documentEpoch
+        LiveEditorSession.update(documentID: doc.id, epoch: documentEpoch)
         activeDocumentID = doc.id
         currentFileURL = doc.fileURL
         currentFileText = doc.text
