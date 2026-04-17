@@ -31331,6 +31331,31 @@
   var currentEpoch = 0;
   var tableFocusActive = false;
   var hiddenDecoration = Decoration.replace({});
+  var setOutlineFlashEffect = StateEffect.define();
+  var clearOutlineFlashEffect = StateEffect.define();
+  var outlineFlashField = StateField.define({
+    create() {
+      return Decoration.none;
+    },
+    update(value, transaction) {
+      let next = value.map(transaction.changes);
+      for (const effect of transaction.effects) {
+        if (effect.is(clearOutlineFlashEffect)) {
+          next = Decoration.none;
+        } else if (effect.is(setOutlineFlashEffect)) {
+          const clamped = Math.max(0, Math.min(effect.value, transaction.state.doc.length));
+          const line = transaction.state.doc.lineAt(clamped);
+          next = Decoration.set([
+            Decoration.line({ class: "cm-live-outline-flash" }).range(line.from)
+          ]);
+        }
+      }
+      return next;
+    },
+    provide(field) {
+      return EditorView.decorations.from(field);
+    }
+  });
   function postMessage(message) {
     window.webkit?.messageHandlers?.liveEditor?.postMessage(message);
   }
@@ -31975,10 +32000,8 @@
     let nextLine = trimmed;
     if (!hashes.length) {
       nextLine = `# ${trimmed}`;
-    } else if (hashes.length === 1) {
-      nextLine = `## ${trimmed}`;
-    } else if (hashes.length === 2) {
-      nextLine = `### ${trimmed}`;
+    } else if (hashes.length < 6) {
+      nextLine = `${"#".repeat(hashes.length + 1)} ${trimmed}`;
     }
     view.dispatch({
       changes: { from: line.from, to: line.to, insert: nextLine }
@@ -32486,6 +32509,11 @@ $$`);
         letterSpacing: "0.05em",
         color: isDark ? "rgba(245, 245, 247, 0.55)" : "rgba(29, 29, 31, 0.55)"
       },
+      ".cm-line.cm-live-outline-flash": {
+        backgroundColor: isDark ? "rgba(90, 191, 128, 0.18)" : "rgba(52, 133, 90, 0.12)",
+        boxShadow: isDark ? "0 0 0 1px rgba(90, 191, 128, 0.45) inset" : "0 0 0 1px rgba(52, 133, 90, 0.35) inset",
+        borderRadius: "8px"
+      },
       ".cm-live-strong": {
         fontWeight: "700"
       },
@@ -32774,6 +32802,7 @@ $$`);
       history(),
       markdown(),
       search(),
+      outlineFlashField,
       EditorView.lineWrapping,
       EditorView.contentAttributes.of({
         spellcheck: "true",
@@ -32832,6 +32861,7 @@ $$`);
       return;
     }
     currentEpoch = epoch;
+    tableFocusActive = false;
     if (editor.state.doc.toString() === markdownSource) {
       return;
     }
@@ -32873,18 +32903,44 @@ $$`);
     });
     updateFindStatus(editor.state);
   }
+  function centerAndFlashLineAt(position) {
+    if (!editor) {
+      return;
+    }
+    const clamped = Math.max(0, Math.min(position, editor.state.doc.length));
+    const line = editor.state.doc.lineAt(clamped);
+    editor.dispatch({
+      effects: clearOutlineFlashEffect.of()
+    });
+    requestAnimationFrame(() => {
+      if (!editor) {
+        return;
+      }
+      editor.dispatch({
+        effects: [
+          EditorView.scrollIntoView(line.from, { y: "center" }),
+          setOutlineFlashEffect.of(line.from)
+        ]
+      });
+      window.setTimeout(() => {
+        editor?.dispatch({
+          effects: clearOutlineFlashEffect.of()
+        });
+      }, 900);
+    });
+  }
   function scrollToLine(line) {
     if (!editor || line <= 0) {
       return;
     }
     const targetLine = editor.state.doc.line(Math.min(line, editor.state.doc.lines));
-    revealAt(editor, targetLine.from);
+    centerAndFlashLineAt(targetLine.from);
   }
   function scrollToOffset(offset) {
     if (!editor) {
       return;
     }
-    revealAt(editor, offset);
+    centerAndFlashLineAt(offset);
   }
   window.clearlyLiveEditor = {
     mount(payload) {

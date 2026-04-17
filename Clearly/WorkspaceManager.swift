@@ -1833,7 +1833,9 @@ final class WorkspaceManager {
 
         if wasCurrent {
             if openDocuments.isEmpty {
+                documentEpoch += 1
                 activeDocumentID = nil
+                LiveEditorSession.update(documentID: nil, epoch: documentEpoch)
                 currentFileURL = nil
                 currentFileText = ""
                 lastSavedText = ""

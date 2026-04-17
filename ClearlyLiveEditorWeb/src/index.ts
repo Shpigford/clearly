@@ -1,6 +1,6 @@
 import { defaultKeymap, history, historyKeymap, indentWithTab } from "@codemirror/commands";
 import { markdown } from "@codemirror/lang-markdown";
-import { EditorState, RangeSetBuilder, Compartment, StateField, type Extension } from "@codemirror/state";
+import { EditorState, RangeSetBuilder, Compartment, StateEffect, StateField, type Extension } from "@codemirror/state";
 import {
   search,
   searchKeymap,
@@ -92,6 +92,34 @@ let currentEpoch = 0;
 let tableFocusActive = false;
 
 const hiddenDecoration = Decoration.replace({});
+const setOutlineFlashEffect = StateEffect.define<number>();
+const clearOutlineFlashEffect = StateEffect.define<void>();
+
+const outlineFlashField = StateField.define<DecorationSet>({
+  create() {
+    return Decoration.none;
+  },
+  update(value, transaction) {
+    let next = value.map(transaction.changes);
+
+    for (const effect of transaction.effects) {
+      if (effect.is(clearOutlineFlashEffect)) {
+        next = Decoration.none;
+      } else if (effect.is(setOutlineFlashEffect)) {
+        const clamped = Math.max(0, Math.min(effect.value, transaction.state.doc.length));
+        const line = transaction.state.doc.lineAt(clamped);
+        next = Decoration.set([
+          Decoration.line({ class: "cm-live-outline-flash" }).range(line.from)
+        ]);
+      }
+    }
+
+    return next;
+  },
+  provide(field) {
+    return EditorView.decorations.from(field);
+  }
+});
 
 function postMessage(message: Record<string, unknown>) {
   window.webkit?.messageHandlers?.liveEditor?.postMessage(message);
@@ -855,10 +883,8 @@ function cycleHeading(view: EditorView) {
   let nextLine = trimmed;
   if (!hashes.length) {
     nextLine = `# ${trimmed}`;
-  } else if (hashes.length === 1) {
-    nextLine = `## ${trimmed}`;
-  } else if (hashes.length === 2) {
-    nextLine = `### ${trimmed}`;
+  } else if (hashes.length < 6) {
+    nextLine = `${"#".repeat(hashes.length + 1)} ${trimmed}`;
   }
 
   view.dispatch({
@@ -1421,6 +1447,13 @@ function livePreviewTheme(appearance: "light" | "dark", fontSize: number): Exten
       letterSpacing: "0.05em",
       color: isDark ? "rgba(245, 245, 247, 0.55)" : "rgba(29, 29, 31, 0.55)"
     },
+    ".cm-line.cm-live-outline-flash": {
+      backgroundColor: isDark ? "rgba(90, 191, 128, 0.18)" : "rgba(52, 133, 90, 0.12)",
+      boxShadow: isDark
+        ? "0 0 0 1px rgba(90, 191, 128, 0.45) inset"
+        : "0 0 0 1px rgba(52, 133, 90, 0.35) inset",
+      borderRadius: "8px"
+    },
     ".cm-live-strong": {
       fontWeight: "700"
     },
@@ -1715,6 +1748,7 @@ function createEditor(payload: MountPayload) {
     history(),
     markdown(),
     search(),
+    outlineFlashField,
     EditorView.lineWrapping,
     EditorView.contentAttributes.of({
       spellcheck: "true",
@@ -1780,6 +1814,7 @@ function setDocument(markdownSource: string, epoch = 0) {
   // Always update epoch first — even if content is unchanged — so that
   // any docChanged messages produced after this call carry the new epoch.
   currentEpoch = epoch;
+  tableFocusActive = false;
   if (editor.state.doc.toString() === markdownSource) {
     return;
   }
@@ -1827,19 +1862,51 @@ function setFindQuery(query: string) {
   updateFindStatus(editor.state);
 }
 
+function centerAndFlashLineAt(position: number) {
+  if (!editor) {
+    return;
+  }
+
+  const clamped = Math.max(0, Math.min(position, editor.state.doc.length));
+  const line = editor.state.doc.lineAt(clamped);
+
+  editor.dispatch({
+    effects: clearOutlineFlashEffect.of()
+  });
+
+  requestAnimationFrame(() => {
+    if (!editor) {
+      return;
+    }
+
+    editor.dispatch({
+      effects: [
+        EditorView.scrollIntoView(line.from, { y: "center" }),
+        setOutlineFlashEffect.of(line.from)
+      ]
+    });
+
+    window.setTimeout(() => {
+      editor?.dispatch({
+        effects: clearOutlineFlashEffect.of()
+      });
+    }, 900);
+  });
+}
+
 function scrollToLine(line: number) {
   if (!editor || line <= 0) {
     return;
   }
   const targetLine = editor.state.doc.line(Math.min(line, editor.state.doc.lines));
-  revealAt(editor, targetLine.from);
+  centerAndFlashLineAt(targetLine.from);
 }
 
 function scrollToOffset(offset: number) {
   if (!editor) {
     return;
   }
-  revealAt(editor, offset);
+  centerAndFlashLineAt(offset);
 }
 
 window.clearlyLiveEditor = {

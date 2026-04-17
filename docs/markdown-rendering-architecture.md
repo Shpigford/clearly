@@ -136,7 +136,7 @@ Before any save or document snapshot, `WorkspaceManager.snapshotActiveDocument()
 1. **Synchronous path**: if `hasReceivedDocChanged` is true, immediately deliver `lastSyncedText` via `onFlushContent`. This is the confirmed last known state from the previous `docChanged` message.
 2. **Async path**: fire `getDocument()` via `evaluateJavaScript` to capture any keystrokes that haven't yet posted a `docChanged` message. The completion is guarded by both `LiveEditorSession.currentDocumentID` and `documentEpoch` — stale completions are rejected.
 
-`LiveEditorSession.currentDocumentID` is updated synchronously in `WorkspaceManager.activateDocument` and `restoreActiveDocument` — before the epoch bump — so any in-flight async completions from the previous document are rejected before SwiftUI's `updateNSView` has a chance to run.
+`LiveEditorSession.currentDocumentID` and `documentEpoch` are updated together synchronously in `WorkspaceManager.activateDocument` and `restoreActiveDocument` via `LiveEditorSession.update(documentID:epoch:)`. That combined update happens before SwiftUI's `updateNSView` has a chance to run, so any in-flight async completions from the previous document are rejected.
 
 `hasReceivedDocChanged` is reset in the coordinator's `syncFromSwiftIfNeeded` whenever `documentID` changes (detected via `lastKnownDocumentID`). This ensures the synchronous flush path skips delivering stale content for the brief window between document activation and the first `docChanged` from the new document.
 
