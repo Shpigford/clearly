@@ -27,8 +27,8 @@ if [ ! -d "$FIXTURE" ]; then
 fi
 
 # ─── Build ─────────────────────────────────────────────────────────────────
-echo "→ xcodebuild -scheme Clearly -configuration Debug build"
-xcodebuild -scheme Clearly -configuration Debug build -quiet >/dev/null
+echo "→ xcodebuild -scheme ClearlyCLI -configuration Debug build"
+xcodebuild -scheme ClearlyCLI -configuration Debug build -quiet >/dev/null
 
 CLI="$(find ~/Library/Developer/Xcode/DerivedData/Clearly-*/Build/Products/Debug -maxdepth 2 -name ClearlyCLI -type f 2>/dev/null | head -1 || true)"
 if [ -z "$CLI" ] || [ ! -x "$CLI" ]; then
@@ -51,7 +51,7 @@ clearly() {
             ;;
     esac
 }
-trap 'rm -rf "$HOME/Library/Application Support/$BUNDLE_ID"' EXIT
+trap 'rm -rf "$HOME/Library/Application Support/$BUNDLE_ID" "$FIXTURE/Smoke"' EXIT
 
 # ─── Happy path: every subcommand emits valid JSON ─────────────────────────
 # Seed the index first. `index rebuild` is idempotent.
@@ -99,7 +99,6 @@ clearly tags architecture \
   | jq -e '.relative_path and .vault' >/dev/null
 
 echo "→ create + update + read round trip"
-mkdir -p "$FIXTURE/Smoke"
 NEW_REL="Smoke/smoke-$$-$(date +%s).md"
 clearly create "$NEW_REL" --content "# smoke\n\nbody\n" \
   | jq -e '.relative_path' >/dev/null

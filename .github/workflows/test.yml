@@ -28,8 +28,8 @@ jobs:
       - name: Generate Xcode project
         run: xcodegen generate
 
-      - name: Build Clearly (Debug)
-        run: xcodebuild -scheme Clearly -configuration Debug build -quiet
+      - name: Build ClearlyCLI (Debug)
+        run: xcodebuild -scheme ClearlyCLI -configuration Debug build -quiet
 
       - name: Integration tests
         run: |

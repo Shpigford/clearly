@@ -405,7 +405,7 @@ Every error response — whether emitted by the CLI to stderr or by the MCP serv
 | `path_outside_vault` | Path resolves outside the vault (traversal, absolute, unicode lookalike) | `relative_path` |
 | `ambiguous_path` | Multiple loaded vaults contain this path | `relative_path`, `matches` |
 | `note_exists` | `create_note` against an existing path | `relative_path` |
-| `no_vaults` | CLI-only: could not open any vault index | `bundle_id`, `attempted_count` |
+| `no_vaults` | CLI-only: could not open any vault index | `bundle_id` |
 | `no_vault_match` | `--in-vault` filter didn't match any loaded vault | `filter` |
 | `unknown_tool` | MCP `tools/call` for an unregistered tool name | `tool` |
 | `internal_error` | Uncategorized exception from a tool | `error_type` |

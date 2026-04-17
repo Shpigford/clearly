@@ -68,7 +68,7 @@ struct CreateCommand: AsyncParsableCommand {
             Emitter.emitError(
                 "no_vaults",
                 message: "Unable to open any vault index: \(error.localizedDescription)",
-                extra: ["bundle_id": globals.bundleID, "attempted_count": globals.vault.count]
+                extra: ["bundle_id": globals.bundleID]
             )
             throw ExitCode(Exit.general)
         }
