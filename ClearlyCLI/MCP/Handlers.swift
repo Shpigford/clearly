@@ -56,6 +56,32 @@ enum Handlers {
                 )
                 return await structuredCall { try await getFrontmatter(args, vaults: vaults) }
 
+
+            case "create_note":
+                return await structuredCall {
+                    let args = CreateNoteArgs(
+                        relativePath: params.arguments?["relative_path"]?.stringValue ?? "",
+                        content: params.arguments?["content"]?.stringValue ?? "",
+                        vault: params.arguments?["vault"]?.stringValue
+                    )
+                    return try await createNote(args, vaults: vaults)
+                }
+
+            case "update_note":
+                return await structuredCall {
+                    guard let modeStr = params.arguments?["mode"]?.stringValue,
+                          let mode = UpdateMode(rawValue: modeStr) else {
+                        throw ToolError.invalidArgument(name: "mode", reason: "must be one of: replace, append, prepend")
+                    }
+                    let args = UpdateNoteArgs(
+                        relativePath: params.arguments?["relative_path"]?.stringValue ?? "",
+                        content: params.arguments?["content"]?.stringValue ?? "",
+                        mode: mode,
+                        vault: params.arguments?["vault"]?.stringValue
+                    )
+                    return try await updateNote(args, vaults: vaults)
+                }
+
             default:
                 return .init(content: [.text("Unknown tool: \(params.name)")], isError: false)
             }

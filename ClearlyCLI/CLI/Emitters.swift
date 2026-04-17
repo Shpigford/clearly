@@ -58,3 +58,9 @@ enum Emitter {
 enum CLIError: Error {
     case textFormatUnavailable
 }
+
+func readAllStdin() -> String {
+    let data = FileHandle.standardInput.readDataToEndOfFile()
+    return String(data: data, encoding: .utf8) ?? ""
+}
+

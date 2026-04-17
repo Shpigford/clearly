@@ -45,4 +45,26 @@ enum VaultResolver {
         default: return .ambiguous(hits)
         }
     }
+
+    static func resolveForWrite(relativePath: String, hint: String?, in vaults: [LoadedVault]) throws -> Resolution {
+        let filtered: [LoadedVault]
+        if let hint = hint, !hint.isEmpty {
+            let hintPath = URL(fileURLWithPath: hint).standardizedFileURL.path
+            filtered = vaults.filter { vault in
+                vault.url.lastPathComponent == hint ||
+                vault.url.standardizedFileURL.path == hintPath
+            }
+            if filtered.isEmpty { return .notFound }
+        } else {
+            filtered = vaults
+        }
+
+        guard filtered.count == 1 else {
+            return .ambiguous(filtered)
+        }
+
+        let _ = try PathGuard.resolve(relativePath: relativePath, in: filtered[0].url)
+        return .resolved(filtered[0])
+    }
+
 }

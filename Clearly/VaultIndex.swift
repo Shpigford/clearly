@@ -148,6 +148,90 @@ final class VaultIndex: @unchecked Sendable {
         try migrator.migrate(dbPool)
     }
 
+
+    // MARK: Write — Single File
+
+    @discardableResult
+    func updateFile(at relativePath: String) throws -> IndexedFile? {
+        let fileURL = rootURL.appendingPathComponent(relativePath)
+
+        return try dbPool.write { db in
+            let existingRow = try Row.fetchOne(db, sql: "SELECT id, content_hash FROM files WHERE path = ?", arguments: [relativePath])
+
+            guard FileManager.default.fileExists(atPath: fileURL.path) else {
+                if let id: Int64 = existingRow?["id"] {
+                    try db.execute(sql: "DELETE FROM files_fts WHERE rowid = ?", arguments: [id])
+                    try db.execute(sql: "DELETE FROM links WHERE source_file_id = ?", arguments: [id])
+                    try db.execute(sql: "DELETE FROM tags WHERE file_id = ?", arguments: [id])
+                    try db.execute(sql: "DELETE FROM headings WHERE file_id = ?", arguments: [id])
+                    try db.execute(sql: "DELETE FROM files WHERE id = ?", arguments: [id])
+                }
+                return nil
+            }
+
+            guard let data = try? Data(contentsOf: fileURL),
+                  let content = String(data: data, encoding: .utf8) else {
+                return nil
+            }
+
+            let hash = Self.contentHash(data)
+            if let existingHash: String = existingRow?["content_hash"], existingHash == hash {
+                let row = try Row.fetchOne(db, sql: "SELECT * FROM files WHERE path = ?", arguments: [relativePath])
+                return row.map(Self.indexedFile(from:))
+            }
+
+            let filename = fileURL.deletingPathExtension().lastPathComponent
+            let modDate = Self.fileModDate(fileURL)
+            let now = Date()
+
+            if let existingId: Int64 = existingRow?["id"] {
+                try db.execute(sql: """
+                    UPDATE files SET filename = ?, content_hash = ?, modified_at = ?, indexed_at = ?
+                    WHERE id = ?
+                    """, arguments: [filename, hash, modDate.timeIntervalSince1970, now.timeIntervalSince1970, existingId])
+
+                try db.execute(sql: "DELETE FROM files_fts WHERE rowid = ?", arguments: [existingId])
+                try db.execute(sql: "INSERT INTO files_fts(rowid, filename, content) VALUES(?, ?, ?)",
+                               arguments: [existingId, filename, content])
+
+                try db.execute(sql: "DELETE FROM links WHERE source_file_id = ?", arguments: [existingId])
+                try db.execute(sql: "DELETE FROM tags WHERE file_id = ?", arguments: [existingId])
+                try db.execute(sql: "DELETE FROM headings WHERE file_id = ?", arguments: [existingId])
+
+                self.insertParsedData(db: db, fileId: existingId, content: content)
+
+                let row = try Row.fetchOne(db, sql: "SELECT * FROM files WHERE id = ?", arguments: [existingId])
+                return row.map(Self.indexedFile(from:))
+            } else {
+                try db.execute(sql: """
+                    INSERT INTO files (path, filename, content_hash, modified_at, indexed_at)
+                    VALUES (?, ?, ?, ?, ?)
+                    """, arguments: [relativePath, filename, hash, modDate.timeIntervalSince1970, now.timeIntervalSince1970])
+
+                let fileId = db.lastInsertedRowID
+
+                try db.execute(sql: "INSERT INTO files_fts(rowid, filename, content) VALUES(?, ?, ?)",
+                               arguments: [fileId, filename, content])
+
+                self.insertParsedData(db: db, fileId: fileId, content: content)
+
+                let row = try Row.fetchOne(db, sql: "SELECT * FROM files WHERE id = ?", arguments: [fileId])
+                return row.map(Self.indexedFile(from:))
+            }
+        }
+    }
+
+    func resolveLinksToFile(named filename: String) throws {
+        try dbPool.write { db in
+            let lower = filename.lowercased()
+            try db.execute(sql: """
+                UPDATE links SET target_file_id = (
+                    SELECT id FROM files WHERE LOWER(filename) = ? LIMIT 1
+                ) WHERE LOWER(target_name) = ? AND target_file_id IS NULL
+                """, arguments: [lower, lower])
+        }
+    }
+
     // MARK: Write — Full Index
 
     func indexAllFiles(showHiddenFiles: Bool = false) {

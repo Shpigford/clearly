@@ -13,6 +13,13 @@ enum ToolRegistry {
             openWorldHint: false
         )
 
+        let writeAnnotations = Tool.Annotations(
+            readOnlyHint: false,
+            destructiveHint: true,
+            idempotentHint: false,
+            openWorldHint: false
+        )
+
         return [
             Tool(
                 name: "search_notes",
@@ -191,6 +198,82 @@ enum ToolRegistry {
                         "has_frontmatter": .object(["type": .string("boolean")])
                     ]),
                     "required": .array([.string("vault"), .string("relative_path"), .string("frontmatter"), .string("has_frontmatter")])
+                ])
+            ),
+            Tool(
+                name: "create_note",
+                description: "Create a new markdown note at the specified vault-relative path. Parent directories are created automatically. Fails with a conflict error if the note already exists — use update_note to modify existing notes.",
+                inputSchema: .object([
+                    "type": .string("object"),
+                    "additionalProperties": .bool(false),
+                    "properties": .object([
+                        "relative_path": .object([
+                            "type": .string("string"),
+                            "description": .string("Vault-relative path for the new note, e.g. 'Daily/2026-04-17.md'. Must not start with '/' or contain '..'. Parent folders are created automatically.")
+                        ]),
+                        "content": .object([
+                            "type": .string("string"),
+                            "description": .string("Full markdown content, including optional YAML frontmatter delimited by '---'.")
+                        ]),
+                        "vault": .object([
+                            "type": .string("string"),
+                            "description": .string("Optional. Name of the vault to write to. Required only when multiple vaults are loaded.")
+                        ])
+                    ]),
+                    "required": .array([.string("relative_path"), .string("content")])
+                ]),
+                annotations: writeAnnotations,
+                outputSchema: .object([
+                    "type": .string("object"),
+                    "properties": .object([
+                        "vault":         .object(["type": .string("string")]),
+                        "relative_path": .object(["type": .string("string")]),
+                        "content_hash":  .object(["type": .string("string")]),
+                        "size_bytes":    .object(["type": .string("integer")]),
+                        "created_at":    .object(["type": .string("string"), "format": .string("date-time")])
+                    ]),
+                    "required": .array([.string("vault"), .string("relative_path"), .string("content_hash"), .string("size_bytes"), .string("created_at")])
+                ])
+            ),
+            Tool(
+                name: "update_note",
+                description: "Update an existing note. Mode 'replace' overwrites the entire file. Mode 'append' adds content to the end (with a leading newline if the file does not end in one). Mode 'prepend' inserts content after YAML frontmatter if present, or at the beginning of the file.",
+                inputSchema: .object([
+                    "type": .string("object"),
+                    "additionalProperties": .bool(false),
+                    "properties": .object([
+                        "relative_path": .object([
+                            "type": .string("string"),
+                            "description": .string("Vault-relative path of an existing note.")
+                        ]),
+                        "content": .object([
+                            "type": .string("string"),
+                            "description": .string("Markdown content to write.")
+                        ]),
+                        "mode": .object([
+                            "type": .string("string"),
+                            "enum": .array([.string("replace"), .string("append"), .string("prepend")]),
+                            "description": .string("Write mode. 'replace' overwrites the full note. 'append' adds content to the end. 'prepend' adds content to the start (after any YAML frontmatter block, if present).")
+                        ]),
+                        "vault": .object([
+                            "type": .string("string"),
+                            "description": .string("Optional vault name; required only when 'relative_path' is ambiguous across multiple loaded vaults.")
+                        ])
+                    ]),
+                    "required": .array([.string("relative_path"), .string("content"), .string("mode")])
+                ]),
+                annotations: writeAnnotations,
+                outputSchema: .object([
+                    "type": .string("object"),
+                    "properties": .object([
+                        "vault":         .object(["type": .string("string")]),
+                        "relative_path": .object(["type": .string("string")]),
+                        "mode":          .object(["type": .string("string")]),
+                        "content_hash":  .object(["type": .string("string")]),
+                        "size_bytes":    .object(["type": .string("integer")]),
+                        "modified_at":   .object(["type": .string("string"), "format": .string("date-time")])
+                    ]),
+                    "required": .array([.string("vault"), .string("relative_path"), .string("mode"), .string("content_hash"), .string("size_bytes"), .string("modified_at")])
                 ])
             )
         ]

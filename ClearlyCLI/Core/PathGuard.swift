@@ -21,9 +21,25 @@ enum PathGuard {
             throw ToolError.pathOutsideVault(relativePath)
         }
 
+        // Unicode traversal lookalikes
+        if relativePath.contains("\u{2025}") ||
+           relativePath.contains("\u{FF0E}\u{FF0E}") {
+            throw ToolError.pathOutsideVault(relativePath)
+        }
+
+        // Windows-style traversal
+        if relativePath.contains("..\\") {
+            throw ToolError.pathOutsideVault(relativePath)
+        }
+
+        // Shell metacharacters
+        if relativePath.contains("$(") || relativePath.contains("`") {
+            throw ToolError.invalidArgument(name: "relative_path", reason: "must not contain shell metacharacters")
+        }
+
         let components = relativePath.split(separator: "/", omittingEmptySubsequences: false)
         for component in components {
-            if component == ".." {
+            if component == ".." || component == "\u{2025}" {
                 throw ToolError.pathOutsideVault(relativePath)
             }
         }

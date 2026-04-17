@@ -7,6 +7,7 @@ enum ToolError: Error, LocalizedError {
     case noteNotFound(String)
     case pathOutsideVault(String)
     case ambiguousVault(relativePath: String, matches: [String])
+    case conflict(existingPath: String)
 
     // Exact text the MCP adapter emits in the `.text` content block. Preserves
     // byte-for-byte parity with the pre-refactor handler output — notably,
@@ -25,6 +26,8 @@ enum ToolError: Error, LocalizedError {
             return "Path resolves outside the vault: \(path)"
         case .ambiguousVault(let path, let matches):
             return "Ambiguous path '\(path)': matches \(matches.count) vaults (\(matches.joined(separator: ", "))). Specify --vault or the vault field."
+        case .conflict(let path):
+            return "Note already exists: \(path)\nUse update_note to modify existing notes."
         }
     }
 }
@@ -69,6 +72,11 @@ extension ToolError {
             payload["message"] = errorDescription ?? ""
             payload["relative_path"] = path
             payload["matches"] = matches
+        case .conflict(let path):
+            code = 5
+            payload["error"] = "note_exists"
+            payload["message"] = errorDescription ?? ""
+            payload["relative_path"] = path
         }
 
         let data = (try? JSONSerialization.data(withJSONObject: payload, options: [.sortedKeys])) ?? Data("{}".utf8)
