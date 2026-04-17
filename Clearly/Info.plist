@@ -2,10 +2,6 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-	<key>CFBundleIconFile</key>
-	<string>AppIcon</string>
-	<key>CFBundleIconName</key>
-	<string>AppIcon</string>
 	<key>CFBundleDisplayName</key>
 	<string>Clearly</string>
 	<key>CFBundleDocumentTypes</key>
@@ -37,6 +33,10 @@
 	</array>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
+	<key>CFBundleIconFile</key>
+	<string>AppIcon</string>
+	<key>CFBundleIconName</key>
+	<string>AppIcon</string>
 	<key>CFBundleIdentifier</key>
 	<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
 	<key>CFBundleName</key>
@@ -51,12 +51,14 @@
 	<false/>
 	<key>LSApplicationCategoryType</key>
 	<string>public.app-category.productivity</string>
+	<key>NSAppleEventsUsageDescription</key>
+	<string>Clearly uses Terminal to install the clearly command-line tool on your PATH.</string>
+	<key>SUEnableInstallerLauncherService</key>
+	<true/>
 	<key>SUFeedURL</key>
 	<string>https://clearly.md/appcast.xml</string>
 	<key>SUPublicEDKey</key>
 	<string>I1gi82QlV84mZZXMzxJyVMFKpDCmcatBYVSGcq1nJgE=</string>
-	<key>SUEnableInstallerLauncherService</key>
-	<true/>
 	<key>UTImportedTypeDeclarations</key>
 	<array>
 		<dict>

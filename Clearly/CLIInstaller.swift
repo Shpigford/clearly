@@ -11,7 +11,7 @@ enum CLIInstaller {
 
     enum CLIInstallerError: LocalizedError {
         case notBundled
-        case cancelled
+        case terminalUnavailable
         case scriptFailed(code: Int, message: String)
         case wrongOwner
 
@@ -19,10 +19,10 @@ enum CLIInstaller {
             switch self {
             case .notBundled:
                 return "The clearly binary isn't bundled with this build."
-            case .cancelled:
-                return "Installation was cancelled."
+            case .terminalUnavailable:
+                return "Couldn't open Terminal. Check Privacy & Security → Automation and allow Clearly to control Terminal."
             case .scriptFailed(let code, let message):
-                return "Install script failed (code \(code)): \(message)"
+                return "Couldn't open Terminal (code \(code)): \(message)"
             case .wrongOwner:
                 return "/usr/local/bin/clearly points at a different tool — remove it manually first."
             }
@@ -72,24 +72,35 @@ enum CLIInstaller {
         if case .installedElsewhere = symlinkState() {
             throw CLIInstallerError.wrongOwner
         }
-        let sourcePath = source.path
-        try await runPrivileged(
-            shellCommand: "mkdir -p /usr/local/bin && ln -sf '\(escape(sourcePath))' '\(symlinkPath)'"
-        )
+        let shellCommand =
+            "sudo mkdir -p /usr/local/bin && " +
+            "sudo ln -sf '\(shellEscape(source.path))' '\(symlinkPath)' && " +
+            "echo '' && " +
+            "echo '✓ Installed. You can close this window — clearly is on your PATH.'"
+        try await runInTerminal(shellCommand)
     }
 
     static func uninstall() async throws {
         guard symlinkState() == .installed else {
             throw CLIInstallerError.wrongOwner
         }
-        try await runPrivileged(shellCommand: "rm -f '\(symlinkPath)'")
+        let shellCommand =
+            "sudo rm -f '\(symlinkPath)' && " +
+            "echo '' && " +
+            "echo '✓ Uninstalled. You can close this window.'"
+        try await runInTerminal(shellCommand)
     }
 
-    private static func runPrivileged(shellCommand: String) async throws {
-        let escaped = shellCommand
+    private static func runInTerminal(_ shellCommand: String) async throws {
+        let escapedForAS = shellCommand
             .replacingOccurrences(of: "\\", with: "\\\\")
             .replacingOccurrences(of: "\"", with: "\\\"")
-        let script = "do shell script \"\(escaped)\" with administrator privileges"
+        let script = """
+        tell application "Terminal"
+            activate
+            do script "\(escapedForAS)"
+        end tell
+        """
         try await Task.detached(priority: .userInitiated) {
             var errorDict: NSDictionary?
             guard let apple = NSAppleScript(source: script) else {
@@ -98,16 +109,16 @@ enum CLIInstaller {
             _ = apple.executeAndReturnError(&errorDict)
             if let err = errorDict {
                 let code = (err["NSAppleScriptErrorNumber"] as? Int) ?? 0
-                if code == -128 {
-                    throw CLIInstallerError.cancelled
-                }
                 let msg = (err["NSAppleScriptErrorMessage"] as? String) ?? "Unknown error"
+                if code == -1743 || code == -600 {
+                    throw CLIInstallerError.terminalUnavailable
+                }
                 throw CLIInstallerError.scriptFailed(code: code, message: msg)
             }
         }.value
     }
 
-    private static func escape(_ path: String) -> String {
+    private static func shellEscape(_ path: String) -> String {
         path.replacingOccurrences(of: "'", with: "'\\''")
     }
 }

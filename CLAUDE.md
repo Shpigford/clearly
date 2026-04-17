@@ -79,6 +79,18 @@ The app ships through two channels from the same codebase:
 
 When adding new Sparkle-dependent code, always wrap it in `#if canImport(Sparkle)`. The App Store build must compile cleanly without the Sparkle module.
 
+### Privileged ops from the sandboxed app
+
+Clearly is sandboxed, so any operation that needs root (`/usr/local/bin/` writes, privileged installs) can't route through `NSAppleScript … with administrator privileges` — that path is silently blocked and surfaces as a misleading **"The administrator user name or password was incorrect"** error with no SecurityAgent dialog ever appearing. Don't use it.
+
+The working pattern (see `Clearly/CLIInstaller.swift`) is `tell application "Terminal" to do script "sudo …"`. Terminal's own inline sudo prompt handles authentication. Required pieces:
+
+- `com.apple.security.temporary-exception.apple-events` with `com.apple.Terminal` as the only target in `Clearly.entitlements`.
+- `NSAppleEventsUsageDescription` in `Info.plist` with a user-visible reason. **Without it, TCC silently auto-denies — the consent prompt never appears.** This was the single most time-consuming debug step during Phase 5 of `local-mcp-cli`.
+- For ad-hoc-signed Debug builds iterating on AppleEvents, TCC can cache stale denials across rebuilds. Reset with `tccutil reset AppleEvents com.sabotage.clearly.dev`.
+
+**Cross-channel warning:** the apple-events exception lives in `Clearly.entitlements` (direct/Sparkle) but **not** in `Clearly-AppStore.entitlements`, which strips temporary-exceptions to pass MAS review. That means the CLI install flow (and anything else that drives Terminal) won't work in the App Store build as-is. Either mirror the entitlement into the MAS file (review-risk) or gate the Install UI behind `#if canImport(Sparkle)` and ship a copy-paste fallback for MAS.
+
 ## Conventions
 
 - All colors go through `Theme` with dynamic light/dark resolution — don't hardcode colors

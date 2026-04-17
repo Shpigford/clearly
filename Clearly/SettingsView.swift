@@ -181,7 +181,7 @@ struct SettingsView: View {
                         .foregroundStyle(.red)
                 }
 
-                Text("Symlinks `/usr/local/bin/clearly` to the helper inside Clearly.app so `clearly` resolves on your shell PATH. Requires your admin password.")
+                Text("Opens Terminal and runs `sudo ln -sf` so `clearly` resolves on your shell PATH. Enter your admin password in Terminal when prompted, then switch back here — Clearly detects the install automatically.")
                     .font(.caption)
                     .foregroundStyle(.tertiary)
             }
@@ -202,6 +202,9 @@ struct SettingsView: View {
         .onAppear {
             cliSymlinkState = CLIInstaller.symlinkState()
         }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            cliSymlinkState = CLIInstaller.symlinkState()
+        }
     }
 
     private func runInstall() async {
@@ -211,8 +214,6 @@ struct SettingsView: View {
         do {
             try await CLIInstaller.install()
             cliSymlinkState = CLIInstaller.symlinkState()
-        } catch CLIInstaller.CLIInstallerError.cancelled {
-            // User cancelled; no-op
         } catch {
             cliInstallError = error.localizedDescription
         }
@@ -225,8 +226,6 @@ struct SettingsView: View {
         do {
             try await CLIInstaller.uninstall()
             cliSymlinkState = CLIInstaller.symlinkState()
-        } catch CLIInstaller.CLIInstallerError.cancelled {
-            // User cancelled; no-op
         } catch {
             cliInstallError = error.localizedDescription
         }
