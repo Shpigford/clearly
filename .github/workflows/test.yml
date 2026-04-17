@@ -12,15 +12,15 @@ concurrency:
 jobs:
   test:
     name: Build + Integration + Smoke
-    runs-on: macos-14
+    runs-on: macos-15
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
 
-      - name: Select latest Xcode 16.x
+      - name: Select latest stable Xcode
         uses: maxim-lobanov/setup-xcode@v1
         with:
-          xcode-version: "16.2"
+          xcode-version: "latest-stable"
 
       - name: Install xcodegen
         run: brew install xcodegen
