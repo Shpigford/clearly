@@ -6,6 +6,13 @@ enum ToolRegistry {
         let vaultPaths = vaults.map { $0.url.path }
         let vaultDescription = vaultPaths.joined(separator: ", ")
 
+        let readAnnotations = Tool.Annotations(
+            readOnlyHint: true,
+            destructiveHint: false,
+            idempotentHint: true,
+            openWorldHint: false
+        )
+
         return [
             Tool(
                 name: "search_notes",
@@ -50,6 +57,140 @@ enum ToolRegistry {
                             "description": .string("Specific tag to look up (without # prefix). Omit to list all tags.")
                         ])
                     ])
+                ])
+            ),
+            Tool(
+                name: "read_note",
+                description: "Read the full content of a note in a vault, optionally restricted to a line range. Returns content plus metadata (content hash, size, modification time, parsed frontmatter, headings, tags).",
+                inputSchema: .object([
+                    "type": .string("object"),
+                    "additionalProperties": .bool(false),
+                    "properties": .object([
+                        "relative_path": .object([
+                            "type": .string("string"),
+                            "description": .string("Vault-relative path, e.g. 'Daily/2026-04-16.md'. Must not start with '/' or contain '..'.")
+                        ]),
+                        "start_line": .object([
+                            "type": .string("integer"),
+                            "minimum": .int(1),
+                            "description": .string("Optional. 1-based line number to start reading from. Omit to read from the beginning.")
+                        ]),
+                        "end_line": .object([
+                            "type": .string("integer"),
+                            "minimum": .int(1),
+                            "description": .string("Optional. 1-based line number to stop at (inclusive). Omit to read to end of file.")
+                        ]),
+                        "vault": .object([
+                            "type": .string("string"),
+                            "description": .string("Optional vault name disambiguator. Required only when multiple vaults are loaded and 'relative_path' is ambiguous.")
+                        ])
+                    ]),
+                    "required": .array([.string("relative_path")])
+                ]),
+                annotations: readAnnotations,
+                outputSchema: .object([
+                    "type": .string("object"),
+                    "properties": .object([
+                        "vault":          .object(["type": .string("string")]),
+                        "relative_path":  .object(["type": .string("string")]),
+                        "content":        .object(["type": .string("string")]),
+                        "content_hash":   .object(["type": .string("string")]),
+                        "size_bytes":     .object(["type": .string("integer")]),
+                        "modified_at":    .object(["type": .string("string"), "format": .string("date-time")]),
+                        "frontmatter":    .object(["type": .string("object"), "additionalProperties": .object(["type": .string("string")])]),
+                        "headings":       .object(["type": .string("array"), "items": .object(["type": .string("object")])]),
+                        "tags":           .object(["type": .string("array"), "items": .object(["type": .string("string")])]),
+                        "line_range":     .object(["type": .string("object"), "description": .string("Present when start_line / end_line were specified.")])
+                    ]),
+                    "required": .array([.string("vault"), .string("relative_path"), .string("content"), .string("content_hash")])
+                ])
+            ),
+            Tool(
+                name: "list_notes",
+                description: "List notes in loaded vault(s). Uses a fresh filesystem walk (always current) rather than the index. Optionally restricted to a subpath prefix.",
+                inputSchema: .object([
+                    "type": .string("object"),
+                    "additionalProperties": .bool(false),
+                    "properties": .object([
+                        "under": .object([
+                            "type": .string("string"),
+                            "description": .string("Optional vault-relative directory prefix, e.g. 'Daily/'. Only notes whose path starts with this prefix are returned.")
+                        ]),
+                        "vault": .object([
+                            "type": .string("string"),
+                            "description": .string("Optional vault name. When omitted, notes across all loaded vaults are returned.")
+                        ])
+                    ])
+                ]),
+                annotations: readAnnotations,
+                outputSchema: .object([
+                    "type": .string("object"),
+                    "properties": .object([
+                        "notes": .object([
+                            "type": .string("array"),
+                            "items": .object(["type": .string("object")])
+                        ])
+                    ]),
+                    "required": .array([.string("notes")])
+                ])
+            ),
+            Tool(
+                name: "get_headings",
+                description: "Return the heading outline (H1–H6) of a note, including heading text, level, and 1-based line number. Sourced from the index.",
+                inputSchema: .object([
+                    "type": .string("object"),
+                    "additionalProperties": .bool(false),
+                    "properties": .object([
+                        "relative_path": .object([
+                            "type": .string("string"),
+                            "description": .string("Vault-relative path, e.g. 'Strategy/pricing.md'.")
+                        ]),
+                        "vault": .object([
+                            "type": .string("string"),
+                            "description": .string("Optional vault name disambiguator.")
+                        ])
+                    ]),
+                    "required": .array([.string("relative_path")])
+                ]),
+                annotations: readAnnotations,
+                outputSchema: .object([
+                    "type": .string("object"),
+                    "properties": .object([
+                        "vault":         .object(["type": .string("string")]),
+                        "relative_path": .object(["type": .string("string")]),
+                        "headings":      .object(["type": .string("array"), "items": .object(["type": .string("object")])])
+                    ]),
+                    "required": .array([.string("vault"), .string("relative_path"), .string("headings")])
+                ])
+            ),
+            Tool(
+                name: "get_frontmatter",
+                description: "Return the parsed YAML frontmatter of a note as a flat key-value map. Returns an empty map when the note has no frontmatter block.",
+                inputSchema: .object([
+                    "type": .string("object"),
+                    "additionalProperties": .bool(false),
+                    "properties": .object([
+                        "relative_path": .object([
+                            "type": .string("string"),
+                            "description": .string("Vault-relative path, e.g. 'Projects/2026-plan.md'.")
+                        ]),
+                        "vault": .object([
+                            "type": .string("string"),
+                            "description": .string("Optional vault name disambiguator.")
+                        ])
+                    ]),
+                    "required": .array([.string("relative_path")])
+                ]),
+                annotations: readAnnotations,
+                outputSchema: .object([
+                    "type": .string("object"),
+                    "properties": .object([
+                        "vault":           .object(["type": .string("string")]),
+                        "relative_path":   .object(["type": .string("string")]),
+                        "frontmatter":     .object(["type": .string("object"), "additionalProperties": .object(["type": .string("string")])]),
+                        "has_frontmatter": .object(["type": .string("boolean")])
+                    ]),
+                    "required": .array([.string("vault"), .string("relative_path"), .string("frontmatter"), .string("has_frontmatter")])
                 ])
             )
         ]

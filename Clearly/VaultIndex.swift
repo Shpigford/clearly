@@ -634,6 +634,46 @@ final class VaultIndex: @unchecked Sendable {
         }
     }
 
+    // MARK: Read — Headings by File
+
+    func headings(forFileId fileId: Int64) -> [ParsedHeading] {
+        do {
+            return try dbPool.read { db in
+                try Row.fetchAll(db, sql: """
+                    SELECT text, level, line_number FROM headings
+                    WHERE file_id = ?
+                    ORDER BY line_number
+                    """, arguments: [fileId])
+                    .map { row in
+                        ParsedHeading(
+                            text: row["text"],
+                            level: Int(row["level"] as Int64),
+                            lineNumber: Int(row["line_number"] as Int64)
+                        )
+                    }
+            }
+        } catch {
+            return []
+        }
+    }
+
+    // MARK: Read — Tags by File
+
+    func tags(forFileId fileId: Int64) -> [String] {
+        do {
+            return try dbPool.read { db in
+                try Row.fetchAll(db, sql: """
+                    SELECT DISTINCT tag FROM tags
+                    WHERE file_id = ?
+                    ORDER BY tag
+                    """, arguments: [fileId])
+                    .map { $0["tag"] as String }
+            }
+        } catch {
+            return []
+        }
+    }
+
     // MARK: Read — File by URL
 
     func file(forURL url: URL) -> IndexedFile? {
