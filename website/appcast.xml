@@ -3,6 +3,20 @@
   <channel>
     <title>Clearly</title>
     <item>
+      <title>Version 2.3.0</title>
+      <sparkle:version>2.3.0</sparkle:version>
+      <sparkle:shortVersionString>2.3.0</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+      <pubDate>Mon, 20 Apr 2026 16:51:35 +0000</pubDate>
+      <description><![CDATA[<ul><li>`clearly` command-line tool shipped — install from Settings → Command Line for terminal and MCP-client access to your vault</li><li>MCP server grows from 3 to 9 tools: `read_note`, `list_notes`, `get_headings`, `get_frontmatter` (reads) plus `create_note`, `update_note` (writes)</li><li>Structured JSON on every tool, input/output schemas published via MCP, stable error identifiers</li><li>Agent-friendly `--help` with examples on every CLI subcommand</li><li>XCTest integration suite drives every MCP tool end-to-end on every PR</li><li>`ClearlyMCP` target renamed to `ClearlyCLI` internally (same bundled binary, new subcommand tree)</li><li>New Command Line tab in Settings replaces the MCP Config tab</li></ul>]]></description>
+      <enclosure
+        url="https://github.com/Shpigford/clearly/releases/download/v2.3.0/Clearly.dmg"
+        sparkle:edSignature="XqVXPeC78101hUQXdAMNHsrCPk0fonO4BtbRrInoC4GN7Yv4UVuqYH0RhD4Iv/OHR6aWC0XHmfEFyj+8ezD3DQ=="
+        length="17328524"
+        type="application/octet-stream"
+      />
+    </item>
+    <item>
       <title>Version 2.2.0</title>
       <sparkle:version>2.2.0</sparkle:version>
       <sparkle:shortVersionString>2.2.0</sparkle:shortVersionString>
