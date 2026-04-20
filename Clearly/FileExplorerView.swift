@@ -867,7 +867,7 @@ struct FileExplorerOutlineView: NSViewRepresentable {
                     let addBtn = NSButton(frame: .zero)
                     addBtn.bezelStyle = .inline
                     addBtn.isBordered = false
-                    let btnConfig = NSImage.SymbolConfiguration(pointSize: 11, weight: .bold)
+                    let btnConfig = NSImage.SymbolConfiguration(pointSize: 10, weight: .bold)
                     addBtn.image = NSImage(systemSymbolName: "folder.badge.plus", accessibilityDescription: "Add Location")?.withSymbolConfiguration(btnConfig)
                     addBtn.imagePosition = .imageOnly
                     addBtn.toolTip = "Add Location (⌘O)"
@@ -887,7 +887,7 @@ struct FileExplorerOutlineView: NSViewRepresentable {
                     let clearBtn = NSButton(frame: .zero)
                     clearBtn.bezelStyle = .inline
                     clearBtn.isBordered = false
-                    let clearConfig = NSImage.SymbolConfiguration(pointSize: 11, weight: .bold)
+                    let clearConfig = NSImage.SymbolConfiguration(pointSize: 10, weight: .bold)
                     clearBtn.image = NSImage(systemSymbolName: "xmark", accessibilityDescription: "Clear Recents")?.withSymbolConfiguration(clearConfig)
                     clearBtn.imagePosition = .imageOnly
                     clearBtn.toolTip = "Clear Recents"
@@ -902,8 +902,8 @@ struct FileExplorerOutlineView: NSViewRepresentable {
                     NSLayoutConstraint.activate([
                         clearBtn.trailingAnchor.constraint(equalTo: cell.trailingAnchor, constant: -7),
                         clearBtn.centerYAnchor.constraint(equalTo: cell.centerYAnchor),
-                        clearBtn.widthAnchor.constraint(equalToConstant: 10),
-                        clearBtn.heightAnchor.constraint(equalToConstant: 10),
+                        clearBtn.widthAnchor.constraint(equalToConstant: 14),
+                        clearBtn.heightAnchor.constraint(equalToConstant: 14),
                     ])
                 }
 
