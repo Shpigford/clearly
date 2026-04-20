@@ -1,4 +1,5 @@
 import Foundation
+import ClearlyCore
 
 struct GetTagsArgs: Codable {
     let tag: String?

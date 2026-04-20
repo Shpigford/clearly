@@ -1,23 +1,30 @@
 import Foundation
 
-struct HeadingItem: Identifiable, Hashable {
-    let id = UUID()
-    let level: Int       // 1-6
-    let title: String    // Inline markdown stripped
-    let range: NSRange   // Location in document text
-    let previewAnchor: PreviewSourceAnchor
+public struct HeadingItem: Identifiable, Hashable {
+    public let id = UUID()
+    public let level: Int       // 1-6
+    public let title: String    // Inline markdown stripped
+    public let range: NSRange   // Location in document text
+    public let previewAnchor: PreviewSourceAnchor
+
+    public init(level: Int, title: String, range: NSRange, previewAnchor: PreviewSourceAnchor) {
+        self.level = level
+        self.title = title
+        self.range = range
+        self.previewAnchor = previewAnchor
+    }
 }
 
-final class OutlineState: ObservableObject {
-    @Published var isVisible: Bool {
+public final class OutlineState: ObservableObject {
+    @Published public var isVisible: Bool {
         didSet { UserDefaults.standard.set(isVisible, forKey: "outlineVisible") }
     }
-    @Published var headings: [HeadingItem] = []
+    @Published public var headings: [HeadingItem] = []
 
     /// Set by EditorView coordinator, called when user clicks a heading (editor scroll)
-    var scrollToRange: ((NSRange) -> Void)?
+    public var scrollToRange: ((NSRange) -> Void)?
     /// Set by PreviewView coordinator, called when user clicks a heading (preview scroll)
-    var scrollToPreviewAnchor: ((PreviewSourceAnchor) -> Void)?
+    public var scrollToPreviewAnchor: ((PreviewSourceAnchor) -> Void)?
 
     private static let atxHeadingRegex = try! NSRegularExpression(
         pattern: "^(#{1,6})\\s+(.+)$",
@@ -38,15 +45,15 @@ final class OutlineState: ObservableObject {
 
     private var parseWork: DispatchWorkItem?
 
-    init() {
+    public init() {
         self.isVisible = UserDefaults.standard.bool(forKey: "outlineVisible")
     }
 
-    func toggle() {
+    public func toggle() {
         isVisible.toggle()
     }
 
-    func parseHeadings(from text: String) {
+    public func parseHeadings(from text: String) {
         parseWork?.cancel()
         let work = DispatchWorkItem { [weak self] in
             self?.performParse(from: text)

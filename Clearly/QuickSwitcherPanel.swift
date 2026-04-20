@@ -1,4 +1,5 @@
 import AppKit
+import ClearlyCore
 
 // MARK: - Fuzzy Matching
 

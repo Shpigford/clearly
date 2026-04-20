@@ -28,6 +28,8 @@ packages:
   swift-argument-parser:
     url: https://github.com/apple/swift-argument-parser.git
     from: "1.5.0"
+  ClearlyCore:
+    path: Packages/ClearlyCore
 
 targets:
   Clearly:
@@ -35,7 +37,6 @@ targets:
     platform: macOS
     sources:
       - path: Clearly
-      - path: Shared
       - path: Shared/Resources/mermaid.min.js
         buildPhase: resources
       - path: Shared/Resources/katex.min.js
@@ -54,6 +55,7 @@ targets:
       - path: Shared/Resources/getting-started.md
         buildPhase: resources
     dependencies:
+      - package: ClearlyCore
       - package: cmark-gfm
         product: cmark
       - package: Sparkle
@@ -95,7 +97,6 @@ targets:
     platform: macOS
     sources:
       - path: ClearlyQuickLook
-      - path: Shared
       - path: Shared/Resources/mermaid.min.js
         buildPhase: resources
       - path: Shared/Resources/katex.min.js
@@ -110,6 +111,7 @@ targets:
       - path: Shared/Resources/highlight-theme.css
         buildPhase: resources
     dependencies:
+      - package: ClearlyCore
       - package: cmark-gfm
         product: cmark
     settings:
@@ -135,13 +137,8 @@ targets:
     platform: macOS
     sources:
       - path: ClearlyCLI
-      - path: Clearly/VaultIndex.swift
-      - path: Clearly/FileParser.swift
-      - path: Clearly/FileNode.swift
-      - path: Clearly/IgnoreRules.swift
-      - path: Clearly/DiagnosticLog.swift
-      - path: Shared/FrontmatterSupport.swift
     dependencies:
+      - package: ClearlyCore
       - package: GRDB
       - package: MCP
       - package: swift-argument-parser
@@ -168,17 +165,12 @@ targets:
       - path: ClearlyCLI
         excludes:
           - "CLI/ClearlyCLI.swift"
-      - path: Clearly/VaultIndex.swift
-      - path: Clearly/FileParser.swift
-      - path: Clearly/FileNode.swift
-      - path: Clearly/IgnoreRules.swift
-      - path: Clearly/DiagnosticLog.swift
-      - path: Shared/FrontmatterSupport.swift
       - path: ClearlyCLIIntegrationTests
       - path: ClearlyCLIIntegrationTests/FixtureVault
         buildPhase: resources
         type: folder
     dependencies:
+      - package: ClearlyCore
       - package: GRDB
       - package: MCP
       - package: swift-argument-parser

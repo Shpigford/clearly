@@ -1,4 +1,5 @@
 import SwiftUI
+import ClearlyCore
 
 struct FindBarView: View {
     @ObservedObject var findState: FindState

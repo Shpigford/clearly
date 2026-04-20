@@ -1,0 +1,23 @@
+{
+  "pins" : [
+    {
+      "identity" : "cmark-gfm",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/brokenhandsio/cmark-gfm.git",
+      "state" : {
+        "revision" : "e97450a77a40f12b4f88f95891621c3b5d8669de",
+        "version" : "2.1.0"
+      }
+    },
+    {
+      "identity" : "grdb.swift",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/groue/GRDB.swift.git",
+      "state" : {
+        "revision" : "36e30a6f1ef10e4194f6af0cff90888526f0c115",
+        "version" : "7.10.0"
+      }
+    }
+  ],
+  "version" : 2
+}

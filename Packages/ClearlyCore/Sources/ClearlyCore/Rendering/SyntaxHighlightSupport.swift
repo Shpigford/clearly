@@ -1,7 +1,7 @@
 import Foundation
 
-enum SyntaxHighlightSupport {
-    static func scriptHTML(for htmlBody: String) -> String {
+public enum SyntaxHighlightSupport {
+    public static func scriptHTML(for htmlBody: String) -> String {
         guard htmlBody.contains("class=\"language-") else { return "" }
         guard let cssURL = Bundle.main.url(forResource: "highlight-theme.css", withExtension: nil)?.absoluteString,
               let jsURL = Bundle.main.url(forResource: "highlight.min.js", withExtension: nil)?.absoluteString else {

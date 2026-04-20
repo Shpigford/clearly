@@ -1,4 +1,5 @@
 import SwiftUI
+import ClearlyCore
 #if canImport(Sparkle)
 import Sparkle
 #endif

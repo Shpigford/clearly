@@ -1,8 +1,8 @@
 import Foundation
 import cmark
 
-enum MarkdownRenderer {
-    static func renderHTML(_ markdown: String, appLinkURLs: Bool = false, includeFrontmatter: Bool = true) -> String {
+public enum MarkdownRenderer {
+    public static func renderHTML(_ markdown: String, appLinkURLs: Bool = false, includeFrontmatter: Bool = true) -> String {
         guard !markdown.isEmpty else { return "" }
 
         let frontmatter = FrontmatterSupport.extract(from: markdown)

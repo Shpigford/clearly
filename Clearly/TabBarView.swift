@@ -1,4 +1,5 @@
 import SwiftUI
+import ClearlyCore
 
 struct TabBarView: View {
     @Bindable var workspace: WorkspaceManager

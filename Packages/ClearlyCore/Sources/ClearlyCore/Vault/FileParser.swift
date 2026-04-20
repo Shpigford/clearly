@@ -2,38 +2,63 @@ import Foundation
 
 // MARK: - Data Types
 
-struct ParsedLink: Equatable {
-    let target: String
-    let heading: String?
-    let alias: String?
-    let lineNumber: Int
+public struct ParsedLink: Equatable {
+    public let target: String
+    public let heading: String?
+    public let alias: String?
+    public let lineNumber: Int
+
+    public init(target: String, heading: String?, alias: String?, lineNumber: Int) {
+        self.target = target
+        self.heading = heading
+        self.alias = alias
+        self.lineNumber = lineNumber
+    }
 }
 
-struct ParsedTag: Equatable {
-    enum Source: String {
+public struct ParsedTag: Equatable {
+    public enum Source: String {
         case inline
         case frontmatter
     }
-    let name: String      // normalized: lowercase, no #
-    let lineNumber: Int
-    let source: Source
+    public let name: String      // normalized: lowercase, no #
+    public let lineNumber: Int
+    public let source: Source
+
+    public init(name: String, lineNumber: Int, source: Source) {
+        self.name = name
+        self.lineNumber = lineNumber
+        self.source = source
+    }
 }
 
-struct ParsedHeading: Equatable {
-    let text: String
-    let level: Int        // 1-6
-    let lineNumber: Int
+public struct ParsedHeading: Equatable {
+    public let text: String
+    public let level: Int        // 1-6
+    public let lineNumber: Int
+
+    public init(text: String, level: Int, lineNumber: Int) {
+        self.text = text
+        self.level = level
+        self.lineNumber = lineNumber
+    }
 }
 
-struct ParseResult {
-    let links: [ParsedLink]
-    let tags: [ParsedTag]
-    let headings: [ParsedHeading]
+public struct ParseResult {
+    public let links: [ParsedLink]
+    public let tags: [ParsedTag]
+    public let headings: [ParsedHeading]
+
+    public init(links: [ParsedLink], tags: [ParsedTag], headings: [ParsedHeading]) {
+        self.links = links
+        self.tags = tags
+        self.headings = headings
+    }
 }
 
 // MARK: - Parser
 
-enum FileParser {
+public enum FileParser {
 
     // MARK: Regexes
 
@@ -64,7 +89,7 @@ enum FileParser {
 
     // MARK: Public API
 
-    static func parse(content: String) -> ParseResult {
+    public static func parse(content: String) -> ParseResult {
         let nsContent = content as NSString
         let fullRange = NSRange(location: 0, length: nsContent.length)
 

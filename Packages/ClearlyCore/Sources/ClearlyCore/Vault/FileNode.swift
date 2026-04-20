@@ -1,22 +1,29 @@
 import Foundation
 
 /// A node in the file tree representing a file or directory.
-struct FileNode: Identifiable, Hashable {
-    var id: URL { url }
-    let name: String
-    let url: URL
-    let isHidden: Bool
-    var children: [FileNode]?
+public struct FileNode: Identifiable, Hashable {
+    public var id: URL { url }
+    public let name: String
+    public let url: URL
+    public let isHidden: Bool
+    public var children: [FileNode]?
 
-    var isDirectory: Bool { children != nil }
+    public init(name: String, url: URL, isHidden: Bool, children: [FileNode]? = nil) {
+        self.name = name
+        self.url = url
+        self.isHidden = isHidden
+        self.children = children
+    }
 
-    static let markdownExtensions: Set<String> = [
+    public var isDirectory: Bool { children != nil }
+
+    public static let markdownExtensions: Set<String> = [
         "md", "markdown", "mdown", "mkd", "mkdn", "mdwn", "mdx", "txt"
     ]
 
     /// Build a file tree from a directory URL, filtering to markdown files.
     /// Skips hardcoded heavy directories and respects `.gitignore` rules.
-    static func buildTree(at url: URL, showHiddenFiles: Bool = false, ignoreRules: IgnoreRules? = nil) -> [FileNode] {
+    public static func buildTree(at url: URL, showHiddenFiles: Bool = false, ignoreRules: IgnoreRules? = nil) -> [FileNode] {
         let fm = FileManager.default
         let options: FileManager.DirectoryEnumerationOptions = showHiddenFiles ? [] : [.skipsHiddenFiles]
         guard let contents = try? fm.contentsOfDirectory(

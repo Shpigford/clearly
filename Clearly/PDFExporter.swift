@@ -1,4 +1,5 @@
 import AppKit
+import ClearlyCore
 import WebKit
 
 final class PDFExporter: NSObject, WKNavigationDelegate {

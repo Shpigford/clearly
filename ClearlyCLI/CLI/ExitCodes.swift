@@ -1,4 +1,5 @@
 import ArgumentParser
+import ClearlyCore
 
 enum Exit {
     static let success: Int32 = 0

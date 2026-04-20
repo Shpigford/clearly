@@ -1,4 +1,5 @@
 import Foundation
+import ClearlyCore
 
 enum ToolError: Error, LocalizedError {
     case missingArgument(String)

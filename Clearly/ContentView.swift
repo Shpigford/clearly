@@ -1,4 +1,5 @@
 import SwiftUI
+import ClearlyCore
 
 extension Notification.Name {
     static let scrollEditorToLine = Notification.Name("scrollEditorToLine")

@@ -1,4 +1,5 @@
 import Foundation
+import ClearlyCore
 
 struct SearchNotesArgs: Codable {
     let query: String

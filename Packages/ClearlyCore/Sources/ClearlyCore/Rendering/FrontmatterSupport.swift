@@ -1,19 +1,31 @@
 import Foundation
 
-enum FrontmatterSupport {
-    struct Field {
-        let key: String
-        let value: String
+public enum FrontmatterSupport {
+    public struct Field {
+        public let key: String
+        public let value: String
+
+        public init(key: String, value: String) {
+            self.key = key
+            self.value = value
+        }
     }
 
-    struct Block {
-        let fields: [Field]
-        let rawText: String
-        let body: String
-        let lineCount: Int
+    public struct Block {
+        public let fields: [Field]
+        public let rawText: String
+        public let body: String
+        public let lineCount: Int
+
+        public init(fields: [Field], rawText: String, body: String, lineCount: Int) {
+            self.fields = fields
+            self.rawText = rawText
+            self.body = body
+            self.lineCount = lineCount
+        }
     }
 
-    static func extract(from markdown: String) -> Block? {
+    public static func extract(from markdown: String) -> Block? {
         guard markdown.hasPrefix("---\n") || markdown.hasPrefix("---\r\n") else {
             return nil
         }

@@ -1,4 +1,5 @@
 import Foundation
+import ClearlyCore
 
 final class FileWatcher: ObservableObject {
     private var source: DispatchSourceFileSystemObject?

@@ -1,34 +1,42 @@
 import Foundation
 
-struct Backlink: Identifiable {
-    let id = UUID()
-    let sourceFilename: String
-    let sourcePath: String
-    let contextLine: String
-    let lineNumber: Int
-    let vaultRootURL: URL
+public struct Backlink: Identifiable {
+    public let id = UUID()
+    public let sourceFilename: String
+    public let sourcePath: String
+    public let contextLine: String
+    public let lineNumber: Int
+    public let vaultRootURL: URL
+
+    public init(sourceFilename: String, sourcePath: String, contextLine: String, lineNumber: Int, vaultRootURL: URL) {
+        self.sourceFilename = sourceFilename
+        self.sourcePath = sourcePath
+        self.contextLine = contextLine
+        self.lineNumber = lineNumber
+        self.vaultRootURL = vaultRootURL
+    }
 }
 
-final class BacklinksState: ObservableObject {
-    @Published var isVisible: Bool {
+public final class BacklinksState: ObservableObject {
+    @Published public var isVisible: Bool {
         didSet { UserDefaults.standard.set(isVisible, forKey: "backlinksVisible") }
     }
-    @Published var backlinks: [Backlink] = []
-    @Published var unlinkedMentions: [Backlink] = []
-    private(set) var currentFilename: String = ""
-    private(set) var currentLinkTarget: String = ""
+    @Published public var backlinks: [Backlink] = []
+    @Published public var unlinkedMentions: [Backlink] = []
+    public private(set) var currentFilename: String = ""
+    public private(set) var currentLinkTarget: String = ""
 
     private var updateWork: DispatchWorkItem?
 
-    init() {
+    public init() {
         self.isVisible = UserDefaults.standard.bool(forKey: "backlinksVisible")
     }
 
-    func toggle() {
+    public func toggle() {
         isVisible.toggle()
     }
 
-    func update(for fileURL: URL?, using indexes: [VaultIndex]) {
+    public func update(for fileURL: URL?, using indexes: [VaultIndex]) {
         updateWork?.cancel()
 
         guard let fileURL else {
@@ -48,7 +56,7 @@ final class BacklinksState: ObservableObject {
         DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + 0.3, execute: work)
     }
 
-    func removeUnlinkedMention(_ backlink: Backlink) {
+    public func removeUnlinkedMention(_ backlink: Backlink) {
         unlinkedMentions.removeAll { $0.id == backlink.id }
     }
 

@@ -1,7 +1,7 @@
 import Foundation
 
-enum EmojiShortcodes {
-    static let lookup: [String: String] = [
+public enum EmojiShortcodes {
+    public static let lookup: [String: String] = [
         // Smileys
         "smile": "😄", "laughing": "😆", "blush": "😊", "smiley": "😃",
         "grinning": "😀", "wink": "😉", "heart_eyes": "😍", "kissing_heart": "😘",

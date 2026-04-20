@@ -1,4 +1,5 @@
 import SwiftUI
+import ClearlyCore
 import AppKit
 import Combine
 import os

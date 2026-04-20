@@ -1,4 +1,5 @@
 import SwiftUI
+import ClearlyCore
 import AppKit
 
 // MARK: - Sidebar wrapper (SwiftUI)

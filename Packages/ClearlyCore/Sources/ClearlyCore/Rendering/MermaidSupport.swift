@@ -1,15 +1,15 @@
 import Foundation
 
-enum MermaidSupport {
+public enum MermaidSupport {
     /// Base URL pointing to the bundle's resource directory,
     /// allowing WKWebView to load bundled JS files via relative <script src>.
-    static var resourceBaseURL: URL? {
+    public static var resourceBaseURL: URL? {
         Bundle.main.resourceURL
     }
 
     /// Mermaid <script> tag + initialization JS for preview HTML.
     /// Vendored mermaid.min.js v11 — see Shared/Resources/mermaid.min.js
-    static var scriptHTML: String {
+    public static var scriptHTML: String {
         guard let mermaidURL = resourceURL(named: "mermaid.min.js") else {
             return ""
         }
@@ -48,8 +48,8 @@ enum MermaidSupport {
     }
 }
 
-enum MathSupport {
-    static func scriptHTML(for htmlBody: String) -> String {
+public enum MathSupport {
+    public static func scriptHTML(for htmlBody: String) -> String {
         guard htmlBody.contains("math-inline") || htmlBody.contains("math-block") else {
             return ""
         }

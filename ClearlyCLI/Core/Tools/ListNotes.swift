@@ -1,4 +1,5 @@
 import Foundation
+import ClearlyCore
 
 struct ListNotesArgs: Codable {
     let under: String?

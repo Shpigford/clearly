@@ -1,4 +1,5 @@
 import SwiftUI
+import ClearlyCore
 
 struct BacklinksView: View {
     @ObservedObject var backlinksState: BacklinksState

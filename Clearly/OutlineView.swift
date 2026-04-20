@@ -1,4 +1,5 @@
 import SwiftUI
+import ClearlyCore
 
 struct OutlineView: View {
     @ObservedObject var outlineState: OutlineState

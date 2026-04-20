@@ -4,55 +4,55 @@ import CryptoKit
 
 // MARK: - Record Types
 
-struct IndexedFile: Equatable {
-    let id: Int64
-    let path: String       // relative to vault root
-    let filename: String   // no extension
-    let contentHash: String
-    let modifiedAt: Date
-    let indexedAt: Date
+public struct IndexedFile: Equatable {
+    public let id: Int64
+    public let path: String       // relative to vault root
+    public let filename: String   // no extension
+    public let contentHash: String
+    public let modifiedAt: Date
+    public let indexedAt: Date
 }
 
-struct SearchResult {
-    let file: IndexedFile
-    let snippet: String
+public struct SearchResult {
+    public let file: IndexedFile
+    public let snippet: String
 }
 
-struct MatchExcerpt {
-    let lineNumber: Int        // 1-based
-    let contextLine: String    // the line containing the match
+public struct MatchExcerpt {
+    public let lineNumber: Int        // 1-based
+    public let contextLine: String    // the line containing the match
 }
 
-struct SearchFileGroup {
-    let file: IndexedFile
-    let vaultRootURL: URL
-    let matchesFilename: Bool
-    let relevanceRank: Double
-    let excerpts: [MatchExcerpt]
+public struct SearchFileGroup {
+    public let file: IndexedFile
+    public let vaultRootURL: URL
+    public let matchesFilename: Bool
+    public let relevanceRank: Double
+    public let excerpts: [MatchExcerpt]
 }
 
-struct LinkRecord {
-    let id: Int64
-    let sourceFileId: Int64
-    let targetName: String
-    let targetFileId: Int64?
-    let lineNumber: Int?
-    let displayText: String?
-    let context: String?
-    let sourceFilename: String?
-    let sourcePath: String?
+public struct LinkRecord {
+    public let id: Int64
+    public let sourceFileId: Int64
+    public let targetName: String
+    public let targetFileId: Int64?
+    public let lineNumber: Int?
+    public let displayText: String?
+    public let context: String?
+    public let sourceFilename: String?
+    public let sourcePath: String?
 }
 
 // MARK: - VaultIndex
 
-final class VaultIndex: @unchecked Sendable {
+public final class VaultIndex: @unchecked Sendable {
 
     private let dbPool: DatabasePool
-    let rootURL: URL
+    public let rootURL: URL
 
     // MARK: Init
 
-    init(locationURL: URL) throws {
+    public init(locationURL: URL) throws {
         self.rootURL = locationURL
 
         let indexDir = Self.indexDirectory()
@@ -67,7 +67,7 @@ final class VaultIndex: @unchecked Sendable {
     }
 
     /// Init with explicit bundle identifier — used by ClearlyMCP to open the main app's index
-    init(locationURL: URL, bundleIdentifier: String) throws {
+    public init(locationURL: URL, bundleIdentifier: String) throws {
         self.rootURL = locationURL
 
         let indexDir = Self.indexDirectory(bundleIdentifier: bundleIdentifier)
@@ -152,7 +152,7 @@ final class VaultIndex: @unchecked Sendable {
     // MARK: Write — Single File
 
     @discardableResult
-    func updateFile(at relativePath: String) throws -> IndexedFile? {
+    public func updateFile(at relativePath: String) throws -> IndexedFile? {
         let fileURL = rootURL.appendingPathComponent(relativePath)
 
         return try dbPool.write { db in
@@ -221,7 +221,7 @@ final class VaultIndex: @unchecked Sendable {
         }
     }
 
-    func resolveLinksToFile(named filename: String) throws {
+    public func resolveLinksToFile(named filename: String) throws {
         try dbPool.write { db in
             let lower = filename.lowercased()
             try db.execute(sql: """
@@ -234,7 +234,7 @@ final class VaultIndex: @unchecked Sendable {
 
     // MARK: Write — Full Index
 
-    func indexAllFiles(showHiddenFiles: Bool = false) {
+    public func indexAllFiles(showHiddenFiles: Bool = false) {
         let markdownFiles = collectMarkdownFiles(under: rootURL, showHiddenFiles: showHiddenFiles)
 
         do {
@@ -355,7 +355,7 @@ final class VaultIndex: @unchecked Sendable {
 
     // MARK: Read — Files
 
-    func allFiles() -> [IndexedFile] {
+    public func allFiles() -> [IndexedFile] {
         do {
             return try dbPool.read { db in
                 try Row.fetchAll(db, sql: "SELECT * FROM files ORDER BY filename")
@@ -366,7 +366,7 @@ final class VaultIndex: @unchecked Sendable {
         }
     }
 
-    func searchFiles(query: String) -> [SearchResult] {
+    public func searchFiles(query: String) -> [SearchResult] {
         guard !query.isEmpty else { return [] }
 
         // Escape FTS5 special characters and add prefix matching
@@ -403,7 +403,7 @@ final class VaultIndex: @unchecked Sendable {
         }
     }
 
-    func searchFilesGrouped(query: String) -> [SearchFileGroup] {
+    public func searchFilesGrouped(query: String) -> [SearchFileGroup] {
         guard !query.trimmingCharacters(in: .whitespaces).isEmpty else { return [] }
 
         // Parse quoted phrases and bare terms
@@ -526,7 +526,7 @@ final class VaultIndex: @unchecked Sendable {
         }
     }
 
-    func resolveWikiLink(name: String) -> IndexedFile? {
+    public func resolveWikiLink(name: String) -> IndexedFile? {
         let normalizedName = name
             .trimmingCharacters(in: .whitespacesAndNewlines)
             .replacingOccurrences(of: "\\", with: "/")
@@ -569,7 +569,7 @@ final class VaultIndex: @unchecked Sendable {
         }
     }
 
-    func lineNumberForHeading(in fileId: Int64, heading: String) -> Int? {
+    public func lineNumberForHeading(in fileId: Int64, heading: String) -> Int? {
         let normalized = heading.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !normalized.isEmpty else { return nil }
 
@@ -590,7 +590,7 @@ final class VaultIndex: @unchecked Sendable {
 
     // MARK: Read — Links
 
-    func linksTo(fileId: Int64) -> [LinkRecord] {
+    public func linksTo(fileId: Int64) -> [LinkRecord] {
         do {
             return try dbPool.read { db in
                 try Row.fetchAll(db, sql: """
@@ -607,7 +607,7 @@ final class VaultIndex: @unchecked Sendable {
         }
     }
 
-    func linksFrom(fileId: Int64) -> [LinkRecord] {
+    public func linksFrom(fileId: Int64) -> [LinkRecord] {
         do {
             return try dbPool.read { db in
                 try Row.fetchAll(db, sql: """
@@ -625,7 +625,7 @@ final class VaultIndex: @unchecked Sendable {
 
     // MARK: Read — Unlinked Mentions
 
-    func unlinkedMentions(for filename: String, excludingFileId: Int64) -> [(file: IndexedFile, lineNumber: Int, contextLine: String)] {
+    public func unlinkedMentions(for filename: String, excludingFileId: Int64) -> [(file: IndexedFile, lineNumber: Int, contextLine: String)] {
         guard filename.count >= 3 else { return [] }
 
         do {
@@ -685,7 +685,7 @@ final class VaultIndex: @unchecked Sendable {
 
     // MARK: Read — Tags
 
-    func allTags() -> [(tag: String, count: Int)] {
+    public func allTags() -> [(tag: String, count: Int)] {
         do {
             return try dbPool.read { db in
                 try Row.fetchAll(db, sql: """
@@ -701,7 +701,7 @@ final class VaultIndex: @unchecked Sendable {
         }
     }
 
-    func filesForTag(tag: String) -> [IndexedFile] {
+    public func filesForTag(tag: String) -> [IndexedFile] {
         do {
             return try dbPool.read { db in
                 try Row.fetchAll(db, sql: """
@@ -720,7 +720,7 @@ final class VaultIndex: @unchecked Sendable {
 
     // MARK: Read — Headings by File
 
-    func headings(forFileId fileId: Int64) -> [ParsedHeading] {
+    public func headings(forFileId fileId: Int64) -> [ParsedHeading] {
         do {
             return try dbPool.read { db in
                 try Row.fetchAll(db, sql: """
@@ -743,7 +743,7 @@ final class VaultIndex: @unchecked Sendable {
 
     // MARK: Read — Tags by File
 
-    func tags(forFileId fileId: Int64) -> [String] {
+    public func tags(forFileId fileId: Int64) -> [String] {
         do {
             return try dbPool.read { db in
                 try Row.fetchAll(db, sql: """
@@ -760,7 +760,7 @@ final class VaultIndex: @unchecked Sendable {
 
     // MARK: Read — Vault Summary
 
-    func fileCount() -> Int {
+    public func fileCount() -> Int {
         do {
             return try dbPool.read { db in
                 let row = try Row.fetchOne(db, sql: "SELECT COUNT(*) AS c FROM files")
@@ -771,7 +771,7 @@ final class VaultIndex: @unchecked Sendable {
         }
     }
 
-    func lastIndexedAt() -> Date? {
+    public func lastIndexedAt() -> Date? {
         do {
             return try dbPool.read { db in
                 let row = try Row.fetchOne(db, sql: "SELECT MAX(indexed_at) AS m FROM files")
@@ -785,14 +785,14 @@ final class VaultIndex: @unchecked Sendable {
 
     // MARK: Read — File by URL
 
-    func file(forURL url: URL) -> IndexedFile? {
+    public func file(forURL url: URL) -> IndexedFile? {
         let relativePath = Self.relativePath(of: url, from: rootURL)
         return file(forRelativePath: relativePath)
     }
 
     // MARK: Read — File by path
 
-    func file(forRelativePath path: String) -> IndexedFile? {
+    public func file(forRelativePath path: String) -> IndexedFile? {
         do {
             return try dbPool.read { db in
                 let row = try Row.fetchOne(db, sql: "SELECT * FROM files WHERE path = ?", arguments: [path])
@@ -805,7 +805,7 @@ final class VaultIndex: @unchecked Sendable {
 
     // MARK: Lifecycle
 
-    func close() {
+    public func close() {
         // DatabasePool is released when the instance is deallocated.
         // Explicit close not needed for GRDB v7, but we keep this for lifecycle clarity.
     }
@@ -847,7 +847,7 @@ final class VaultIndex: @unchecked Sendable {
         (try? FileManager.default.attributesOfItem(atPath: url.path)[.modificationDate] as? Date) ?? Date()
     }
 
-    static func relativePath(of fileURL: URL, from rootURL: URL) -> String {
+    public static func relativePath(of fileURL: URL, from rootURL: URL) -> String {
         let filePath = fileURL.standardizedFileURL.path
         let rootPath = rootURL.standardizedFileURL.path
         if filePath.hasPrefix(rootPath) {

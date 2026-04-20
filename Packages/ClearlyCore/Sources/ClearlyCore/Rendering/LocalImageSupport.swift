@@ -1,14 +1,14 @@
 import Foundation
 import WebKit
 
-enum LocalImageSupport {
-    static let scheme = "clearly-file"
+public enum LocalImageSupport {
+    public static let scheme = "clearly-file"
 
-    static func fileURLKeyFragment(_ fileURL: URL?) -> String {
+    public static func fileURLKeyFragment(_ fileURL: URL?) -> String {
         fileURL?.path ?? ""
     }
 
-    static func resolveImageSources(in html: String, relativeTo documentURL: URL?) -> String {
+    public static func resolveImageSources(in html: String, relativeTo documentURL: URL?) -> String {
         guard let regex = try? NSRegularExpression(
             pattern: #"(<img\s[^>]*?src\s*=\s*")([^"]+)("[^>]*?>)"#,
             options: .caseInsensitive
@@ -61,7 +61,7 @@ enum LocalImageSupport {
     }
 }
 
-final class LocalImageSchemeHandler: NSObject, WKURLSchemeHandler {
+public final class LocalImageSchemeHandler: NSObject, WKURLSchemeHandler {
     private static let mimeTypes: [String: String] = [
         "png": "image/png", "jpg": "image/jpeg", "jpeg": "image/jpeg",
         "gif": "image/gif", "webp": "image/webp", "svg": "image/svg+xml",
@@ -69,7 +69,11 @@ final class LocalImageSchemeHandler: NSObject, WKURLSchemeHandler {
         "heic": "image/heic"
     ]
 
-    func webView(_ webView: WKWebView, start urlSchemeTask: any WKURLSchemeTask) {
+    public override init() {
+        super.init()
+    }
+
+    public func webView(_ webView: WKWebView, start urlSchemeTask: any WKURLSchemeTask) {
         guard let url = urlSchemeTask.request.url else {
             urlSchemeTask.didFailWithError(URLError(.badURL))
             return
@@ -95,5 +99,5 @@ final class LocalImageSchemeHandler: NSObject, WKURLSchemeHandler {
         urlSchemeTask.didFinish()
     }
 
-    func webView(_ webView: WKWebView, stop urlSchemeTask: any WKURLSchemeTask) {}
+    public func webView(_ webView: WKWebView, stop urlSchemeTask: any WKURLSchemeTask) {}
 }

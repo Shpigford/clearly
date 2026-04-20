@@ -1,4 +1,5 @@
 import ArgumentParser
+import ClearlyCore
 
 enum OutputFormat: String, ExpressibleByArgument, Codable, Sendable {
     case json

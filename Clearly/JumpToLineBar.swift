@@ -1,4 +1,5 @@
 import SwiftUI
+import ClearlyCore
 
 struct JumpToLineBar: View {
     @ObservedObject var state: JumpToLineState

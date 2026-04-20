@@ -1,4 +1,5 @@
 import Foundation
+import ClearlyCore
 
 enum VaultDiscovery {
     static func discover(bundleID: String) -> [String] {

@@ -1,4 +1,5 @@
 import Foundation
+import ClearlyCore
 
 struct GetFrontmatterArgs: Codable {
     let relativePath: String

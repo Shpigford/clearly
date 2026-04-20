@@ -1,4 +1,5 @@
 import Foundation
+import ClearlyCore
 
 struct GetBacklinksArgs: Codable {
     let relativePath: String

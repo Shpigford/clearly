@@ -1,14 +1,16 @@
 import Foundation
 
-final class JumpToLineState: ObservableObject {
-    @Published var isVisible = false
-    @Published var lineText = ""
-    @Published var focusRequest = UUID()
-    var totalLines: Int = 1
-    var onJump: ((Int) -> Void)?
-    var editorLineInfo: (() -> (current: Int, total: Int))?
+public final class JumpToLineState: ObservableObject {
+    public init() {}
 
-    func toggle() {
+    @Published public var isVisible = false
+    @Published public var lineText = ""
+    @Published public var focusRequest = UUID()
+    public var totalLines: Int = 1
+    public var onJump: ((Int) -> Void)?
+    public var editorLineInfo: (() -> (current: Int, total: Int))?
+
+    public func toggle() {
         if isVisible {
             dismiss()
         } else {
@@ -16,7 +18,7 @@ final class JumpToLineState: ObservableObject {
         }
     }
 
-    func present() {
+    public func present() {
         if let info = editorLineInfo?() {
             totalLines = info.total
             lineText = "\(info.current)"
@@ -25,11 +27,11 @@ final class JumpToLineState: ObservableObject {
         focusRequest = UUID()
     }
 
-    func dismiss() {
+    public func dismiss() {
         isVisible = false
     }
 
-    func commit() {
+    public func commit() {
         guard let line = Int(lineText), line >= 1 else { return }
         onJump?(min(line, totalLines))
         dismiss()

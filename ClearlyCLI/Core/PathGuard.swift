@@ -1,4 +1,5 @@
 import Foundation
+import ClearlyCore
 
 enum PathGuard {
     /// Resolve a vault-relative path to an absolute URL inside the vault.

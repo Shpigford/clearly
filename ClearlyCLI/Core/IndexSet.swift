@@ -1,4 +1,5 @@
 import Foundation
+import ClearlyCore
 
 struct LoadedVault {
     let index: VaultIndex

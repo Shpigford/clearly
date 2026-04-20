@@ -1,4 +1,5 @@
 import Foundation
+import ClearlyCore
 import CryptoKit
 
 struct CreateNoteArgs: Codable {

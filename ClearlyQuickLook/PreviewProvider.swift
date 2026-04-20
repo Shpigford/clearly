@@ -1,4 +1,5 @@
 import Cocoa
+import ClearlyCore
 import QuickLookUI
 import WebKit
 

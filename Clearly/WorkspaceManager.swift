@@ -1,4 +1,5 @@
 import Foundation
+import ClearlyCore
 import AppKit
 import CoreServices
 import UniformTypeIdentifiers

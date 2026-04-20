@@ -1,8 +1,8 @@
 import Foundation
 import os
 
-enum DiagnosticLog {
-    static let logger = Logger(subsystem: "com.sabotage.clearly", category: "lifecycle")
+public enum DiagnosticLog {
+    public static let logger = Logger(subsystem: "com.sabotage.clearly", category: "lifecycle")
 
     private static let dateFormatter: DateFormatter = {
         let f = DateFormatter()
@@ -21,7 +21,7 @@ enum DiagnosticLog {
     private static let fileQueue = DispatchQueue(label: "com.sabotage.clearly.log")
 
     /// Log to both os_log and a persistent file that survives force-quit
-    static func log(_ message: String) {
+    public static func log(_ message: String) {
         logger.info("\(message, privacy: .public)")
         let timestamp = dateFormatter.string(from: Date())
         let line = "[\(timestamp)] [lifecycle] \(message)\n"
@@ -38,7 +38,7 @@ enum DiagnosticLog {
     }
 
     /// Trim log file if over 1MB, keeping the last ~500KB
-    static func trimIfNeeded() {
+    public static func trimIfNeeded() {
         guard let url = logFileURL else { return }
         fileQueue.async {
             guard let attrs = try? FileManager.default.attributesOfItem(atPath: url.path),
@@ -51,7 +51,7 @@ enum DiagnosticLog {
         }
     }
 
-    static func exportRecentLogs() throws -> String {
+    public static func exportRecentLogs() throws -> String {
         let info = Bundle.main.infoDictionary
         let appVersion = info?["CFBundleShortVersionString"] as? String ?? "?"
         let buildNumber = info?["CFBundleVersion"] as? String ?? "?"

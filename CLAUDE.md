@@ -23,16 +23,21 @@ Open in Xcode: `open Clearly.xcodeproj` (gitignored, so regenerate with xcodegen
 
 ## Architecture
 
-**Three targets** defined in `project.yml`:
+**Three targets** defined in `project.yml`, all depending on the local `ClearlyCore` Swift package:
 
 1. **Clearly** (main app) — document-based SwiftUI app
 2. **ClearlyQuickLook** (app extension) — QLPreviewProvider for Finder previews
-3. **ClearlyMCP** (command-line tool) — MCP server exposing vault index to AI agents. Shares `VaultIndex.swift`, `FileParser.swift`, `FileNode.swift`, `DiagnosticLog.swift` with the main app, plus `FrontmatterSupport.swift` from `Shared/`. Uses `init(locationURL:bundleIdentifier:)` to open the same SQLite index the sandboxed app creates. Exposes 3 tools: `search_notes` (FTS5 ranked search), `get_backlinks` (linked + unlinked mentions), `get_tags` (tag aggregation). Read-only index access via WAL mode.
+3. **ClearlyCLI** (command-line tool) — MCP server exposing vault index to AI agents. Uses `VaultIndex.init(locationURL:bundleIdentifier:)` from `ClearlyCore` to open the same SQLite index the sandboxed app creates. Exposes tools: `search_notes` (FTS5 ranked search), `get_backlinks` (linked + unlinked mentions), `get_tags` (tag aggregation), plus read/write note tools. Read-only index access via WAL mode.
 
-**Shared code** lives in `Shared/` and is compiled into both targets:
-- `MarkdownRenderer.swift` — wraps `cmark_gfm_markdown_to_html()` for GFM rendering. Post-processing pipeline (in order): math (`$...$` → KaTeX spans), highlight marks (`==text==` → `<mark>`), superscript/subscript, emoji shortcodes, callouts/admonitions (`[!TYPE]` blockquotes), TOC generation, table captions, code filename headers. All post-processing that touches inline syntax must use `protectCodeRegions()`/`restoreProtectedSegments()` to avoid transforming content inside `<pre>`/`<code>` tags.
-- `PreviewCSS.swift` — CSS string used by both the in-app preview and the QuickLook extension
-- `MathSupport.swift` / `MermaidSupport.swift` / `TableSupport.swift` — conditional JS injection for preview features. Each follows the same pattern: check if the HTML contains relevant content, return script HTML or empty string
+**`ClearlyCore`** — local Swift package at `Packages/ClearlyCore/`. Holds every platform-agnostic file. Platforms: `macOS 14` + `iOS 17`. Organized into `Rendering/` (`MarkdownRenderer`, `PreviewCSS`, `MermaidSupport`, `MathSupport` inside MermaidSupport.swift, `TableSupport`, `SyntaxHighlightSupport`, `EmojiShortcodes`, `LocalImageSupport`, `FrontmatterSupport`), `Vault/` (`VaultIndex`, `FileParser`, `FileNode`, `IgnoreRules`, `BookmarkedLocation`), `State/` (`OpenDocument`, `OutlineState`, `FindState`, `JumpToLineState`, `BacklinksState`, `PositionSync`), `Diagnostics/` (`DiagnosticLog`), and `Platform/Platform.swift` (typealiases `PlatformFont`/`PlatformColor`/`PlatformImage`/`PlatformPasteboard`).
+
+**Rules for `ClearlyCore`:**
+- Any type or member used across the package boundary must be `public`. Consuming files need `import ClearlyCore`.
+- No `import AppKit` inside the package — use the `Platform.swift` typealiases. AppKit-only code (editor, preview AppKit-representables, theme colors, syntax highlighter) stays in `Clearly/`. UIKit equivalents land in `Clearly/iOS/` when the iOS target arrives.
+- Pipeline contract for `MarkdownRenderer`: wraps `cmark_gfm_markdown_to_html()` for GFM rendering. Post-processing pipeline (in order): math (`$...$` → KaTeX spans), highlight marks (`==text==` → `<mark>`), superscript/subscript, emoji shortcodes, callouts/admonitions (`[!TYPE]` blockquotes), TOC generation, table captions, code filename headers. All post-processing that touches inline syntax must use `protectCodeRegions()`/`restoreProtectedSegments()` to avoid transforming content inside `<pre>`/`<code>` tags.
+- Preview JS/CSS helpers (`MathSupport`, `MermaidSupport`, `TableSupport`, `SyntaxHighlightSupport`) each expose a static `scriptHTML(for:)` that returns an empty string when the feature isn't needed for the current content.
+
+**Shared web assets** (katex, mermaid, highlight, fonts, `demo.md`, `getting-started.md`) live at `Shared/Resources/` and are loaded via `Bundle.main.url(forResource:)` inside `MermaidSupport.swift` and `SyntaxHighlightSupport.swift`. `project.yml` bundles them into Clearly + ClearlyQuickLook via explicit resource buildPhase entries. Do NOT move these under the package's `resources:` unless you also migrate every `Bundle.main` lookup to `Bundle.module`.
 
 **App code** in `Clearly/`:
 - `ClearlyApp.swift` — App entry point. `DocumentGroup` with `MarkdownDocument`, menu commands for switching view modes (⌘1 Editor, ⌘2 Preview)

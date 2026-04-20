@@ -1,4 +1,5 @@
 import ArgumentParser
+import ClearlyCore
 import Foundation
 
 struct SearchCommand: AsyncParsableCommand {

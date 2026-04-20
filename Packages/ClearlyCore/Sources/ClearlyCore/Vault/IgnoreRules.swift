@@ -3,12 +3,12 @@ import Foundation
 /// Consolidates directory ignore logic: hardcoded skip list + .gitignore parsing.
 /// Used by `FileNode.buildTree` and `VaultIndex.collectMarkdownFiles` to skip
 /// heavy directories like node_modules and respect .gitignore rules.
-struct IgnoreRules {
+public struct IgnoreRules {
 
     // MARK: - Hardcoded defaults
 
     /// Directories that are always skipped regardless of .gitignore.
-    static let defaultIgnoredDirectories: Set<String> = [
+    public static let defaultIgnoredDirectories: Set<String> = [
         // Version control
         ".git", ".svn", ".hg", "CVS",
         // Dependencies / packages
@@ -44,11 +44,11 @@ struct IgnoreRules {
     }
 
     private var rules: [Rule] = []
-    let rootURL: URL
+    public let rootURL: URL
 
     // MARK: - Init
 
-    init(rootURL: URL) {
+    public init(rootURL: URL) {
         self.rootURL = rootURL
         loadGitignore(at: rootURL)
     }
@@ -56,7 +56,7 @@ struct IgnoreRules {
     // MARK: - Public API
 
     /// Returns `true` if the item at `url` should be skipped.
-    func shouldIgnore(url: URL, isDirectory: Bool) -> Bool {
+    public func shouldIgnore(url: URL, isDirectory: Bool) -> Bool {
         let name = url.lastPathComponent
 
         // Fast path: hardcoded directory names
@@ -209,7 +209,7 @@ struct IgnoreRules {
 // MARK: - String helpers
 
 private extension String {
-    func trimmingTrailingWhitespace() -> String {
+    public func trimmingTrailingWhitespace() -> String {
         var s = self
         while let last = s.last, last == " " || last == "\t" {
             s.removeLast()
