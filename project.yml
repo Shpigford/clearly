@@ -3,6 +3,7 @@ options:
   bundleIdPrefix: com.sabotage
   deploymentTarget:
     macOS: "14.0"
+    iOS: "17.0"
   xcodeVersion: "16.0"
   createIntermediateGroups: true
   fileTypes:
@@ -37,6 +38,8 @@ targets:
     platform: macOS
     sources:
       - path: Clearly
+        excludes:
+          - "iOS/**"
       - path: Shared/Resources/mermaid.min.js
         buildPhase: resources
       - path: Shared/Resources/katex.min.js
@@ -91,6 +94,30 @@ targets:
         Release:
           CODE_SIGN_STYLE: Manual
           CODE_SIGN_IDENTITY: "Developer ID Application"
+
+  Clearly-iOS:
+    type: application
+    platform: iOS
+    sources:
+      - path: Clearly/iOS
+    dependencies:
+      - package: ClearlyCore
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.sabotage.clearly
+        PRODUCT_NAME: Clearly
+        MARKETING_VERSION: "2.3.0"
+        CURRENT_PROJECT_VERSION: "1"
+        SWIFT_VERSION: "5.9"
+        TARGETED_DEVICE_FAMILY: "1,2"
+        SUPPORTS_MACCATALYST: NO
+        CODE_SIGN_ENTITLEMENTS: Clearly/iOS/Clearly-iOS.entitlements
+        INFOPLIST_FILE: Clearly/iOS/Info-iOS.plist
+        GENERATE_INFOPLIST_FILE: NO
+      configs:
+        Debug:
+          PRODUCT_BUNDLE_IDENTIFIER: com.sabotage.clearly.dev
+          PRODUCT_NAME: "Clearly Dev"
 
   ClearlyQuickLook:
     type: app-extension

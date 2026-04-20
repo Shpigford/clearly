@@ -66,6 +66,7 @@ public final class VaultIndex: @unchecked Sendable {
         try migrate()
     }
 
+    #if os(macOS)
     /// Init with explicit bundle identifier — used by ClearlyMCP to open the main app's index
     public init(locationURL: URL, bundleIdentifier: String) throws {
         self.rootURL = locationURL
@@ -80,6 +81,7 @@ public final class VaultIndex: @unchecked Sendable {
 
         try migrate()
     }
+    #endif
 
     // MARK: Schema
 
@@ -818,6 +820,7 @@ public final class VaultIndex: @unchecked Sendable {
         return dir.appendingPathComponent("\(appName)/indexes")
     }
 
+    #if os(macOS)
     /// Index directory for a specific bundle identifier — resolves sandbox container path for non-sandboxed callers (ClearlyMCP CLI)
     private static func indexDirectory(bundleIdentifier: String) -> URL {
         // Try sandbox container path first (where the sandboxed app stores its index)
@@ -831,6 +834,7 @@ public final class VaultIndex: @unchecked Sendable {
         let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
         return dir.appendingPathComponent("\(bundleIdentifier)/indexes")
     }
+    #endif
 
     private static func pathHash(_ path: String) -> String {
         let data = Data(path.utf8)
