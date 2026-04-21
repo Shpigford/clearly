@@ -53,6 +53,18 @@
 	<string>public.app-category.productivity</string>
 	<key>NSAppleEventsUsageDescription</key>
 	<string>Clearly uses Terminal to install the clearly command-line tool on your PATH.</string>
+	<key>NSUbiquitousContainers</key>
+	<dict>
+		<key>iCloud.com.sabotage.clearly</key>
+		<dict>
+			<key>NSUbiquitousContainerIsDocumentScopePublic</key>
+			<true/>
+			<key>NSUbiquitousContainerName</key>
+			<string>Clearly</string>
+			<key>NSUbiquitousContainerSupportedFolderLevels</key>
+			<string>Any</string>
+		</dict>
+	</dict>
 	<key>SUEnableInstallerLauncherService</key>
 	<true/>
 	<key>SUFeedURL</key>

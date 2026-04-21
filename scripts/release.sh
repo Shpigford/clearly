@@ -183,6 +183,9 @@ if ! codesign -d --entitlements :- build/export/Clearly.app 2>/dev/null | grep -
   exit 1
 fi
 
+# Verify iCloud entitlements survived
+scripts/verify-entitlements.sh build/export/Clearly.app
+
 # Deep signature chain verification
 codesign --verify --deep --strict build/export/Clearly.app
 echo "✅ Code signature verified (deep + strict)."

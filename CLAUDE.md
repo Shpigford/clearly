@@ -96,6 +96,26 @@ The working pattern (see `Clearly/CLIInstaller.swift`) is `tell application "Ter
 
 **Cross-channel warning:** the apple-events exception lives in `Clearly.entitlements` (direct/Sparkle) but **not** in `Clearly-AppStore.entitlements`, which strips temporary-exceptions to pass MAS review. That means the CLI install flow (and anything else that drives Terminal) won't work in the App Store build as-is. Either mirror the entitlement into the MAS file (review-risk) or gate the Install UI behind `#if canImport(Sparkle)` and ship a copy-paste fallback for MAS.
 
+### iCloud (and any profile-requiring entitlement) breaks ad-hoc Debug signing
+
+Adding an entitlement that needs a provisioning profile — iCloud, Push, Keychain Sharing, App Groups — immediately breaks Debug builds that were previously signing ad-hoc with `-`. The failure looks like `"Clearly" requires a provisioning profile. Enable development signing and select a provisioning profile in the Signing & Capabilities editor.` The fix is in `project.yml`, not the entitlements file:
+
+- Add `DEVELOPMENT_TEAM: W33JZPPPFN` to `settings.base` on every affected target.
+- Add `CODE_SIGN_STYLE: Automatic` to each target's Debug config.
+- Run `xcodebuild … -allowProvisioningUpdates` — this is the CLI equivalent of Xcode's "Automatically manage signing" UI: it registers missing App IDs, associates capabilities/containers, and downloads profiles without opening Xcode.
+
+Verify entitlements survived on the signed app with `codesign -d --entitlements :- "<path>/Clearly Dev.app"`. The `com.apple.developer.team-identifier` key should read `W33JZPPPFN`.
+
+### Verifying iCloud container provisioning
+
+Finder's iCloud Drive sidebar is **not** authoritative. It does not reliably surface `NSUbiquitousContainers`-declared folders from Debug builds (`com.sabotage.clearly.dev`) or apps living under `DerivedData`. You can spend an hour trying to make it show the folder when iCloud is already fully wired.
+
+Use these instead:
+
+- **System Settings → [Your Name] → iCloud → Drive → Apps syncing to iCloud Drive** — authoritative app registration list.
+- `brctl status iCloud.com.sabotage.clearly` — `bird`'s view of sync state. `caught-up` + `ever-full-sync` = working.
+- `ls ~/Library/Mobile\ Documents/` — container directory exists once `FileManager.url(forUbiquityContainerIdentifier:)` has been called. Modern `iCloud.*` containers land at `iCloud~com~sabotage~clearly` *without* a team-ID prefix; that is correct, not a bug. Legacy-format containers (identifier without the `iCloud.` prefix, e.g. `com.dayoneapp.dayone`) get the `TEAMID~` prefix — both shapes coexist in `Mobile Documents/`.
+
 ## Conventions
 
 - All colors go through `Theme` with dynamic light/dark resolution — don't hardcode colors

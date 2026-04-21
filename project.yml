@@ -87,10 +87,12 @@ targets:
         GENERATE_INFOPLIST_FILE: NO
         ENABLE_HARDENED_RUNTIME: YES
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        DEVELOPMENT_TEAM: W33JZPPPFN
       configs:
         Debug:
           PRODUCT_BUNDLE_IDENTIFIER: com.sabotage.clearly.dev
           PRODUCT_NAME: "Clearly Dev"
+          CODE_SIGN_STYLE: Automatic
         Release:
           CODE_SIGN_STYLE: Manual
           CODE_SIGN_IDENTITY: "Developer ID Application"
@@ -114,10 +116,12 @@ targets:
         CODE_SIGN_ENTITLEMENTS: Clearly/iOS/Clearly-iOS.entitlements
         INFOPLIST_FILE: Clearly/iOS/Info-iOS.plist
         GENERATE_INFOPLIST_FILE: NO
+        DEVELOPMENT_TEAM: W33JZPPPFN
       configs:
         Debug:
           PRODUCT_BUNDLE_IDENTIFIER: com.sabotage.clearly.dev
           PRODUCT_NAME: "Clearly Dev"
+          CODE_SIGN_STYLE: Automatic
 
   ClearlyQuickLook:
     type: app-extension
@@ -152,9 +156,11 @@ targets:
         ENABLE_HARDENED_RUNTIME: YES
         CODE_SIGN_ENTITLEMENTS: ClearlyQuickLook/ClearlyQuickLook.entitlements
         INFOPLIST_FILE: ClearlyQuickLook/Info.plist
+        DEVELOPMENT_TEAM: W33JZPPPFN
       configs:
         Debug:
           PRODUCT_BUNDLE_IDENTIFIER: com.sabotage.clearly.dev.quicklook
+          CODE_SIGN_STYLE: Automatic
         Release:
           CODE_SIGN_STYLE: Manual
           CODE_SIGN_IDENTITY: "Developer ID Application"
@@ -180,7 +186,10 @@ targets:
         SWIFT_STRICT_CONCURRENCY: minimal
         ENABLE_HARDENED_RUNTIME: YES
         SKIP_INSTALL: YES
+        DEVELOPMENT_TEAM: W33JZPPPFN
       configs:
+        Debug:
+          CODE_SIGN_STYLE: Automatic
         Release:
           CODE_SIGN_STYLE: Manual
           CODE_SIGN_IDENTITY: "Developer ID Application"

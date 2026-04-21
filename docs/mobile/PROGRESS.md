@@ -1,6 +1,6 @@
 # Mobile Progress
 
-## Status: Phase 2 - Complete
+## Status: Phase 3 - Complete
 
 ## Quick Reference
 - Research: `docs/mobile/RESEARCH.md`
@@ -70,13 +70,32 @@
 ---
 
 ### Phase 3: iCloud ubiquity plumbing + entitlements on all three builds
-**Status:** Not Started
+**Status:** Complete (2026-04-21)
 
 #### Tasks Completed
-- (none yet)
+- [x] Added `com.apple.developer.icloud-container-identifiers = iCloud.com.sabotage.clearly` + `com.apple.developer.icloud-services = [CloudDocuments]` to all three entitlements files: `Clearly/Clearly.entitlements`, `Clearly/Clearly-AppStore.entitlements`, `Clearly/iOS/Clearly-iOS.entitlements`
+- [x] Added `NSUbiquitousContainers` dict to `Clearly/Info.plist` (Mac) with `NSUbiquitousContainerIsDocumentScopePublic = YES`, display name `Clearly`, `SupportedFolderLevels = Any`
+- [x] New `Packages/ClearlyCore/Sources/ClearlyCore/Sync/CloudVault.swift` — `containerIdentifier` constant, `ubiquityContainerURL() async -> URL?` running on a detached utility task (creates `Documents/` subdir on first resolution), `isAvailablePublisher` watching `NSUbiquityIdentityDidChange`
+- [x] New `Packages/ClearlyCore/Sources/ClearlyCore/Sync/CoordinatedFileIO.swift` — `read(at:)`, `write(_:to:)`, `move(from:to:)`, `delete(at:)` wrapping `NSFileCoordinator` (no `evictUbiquitousItem` helper — research risk #3 deadlock)
+- [x] New `scripts/verify-entitlements.sh` — runs `codesign -d --entitlements :-` on an exported `.app`, asserts both iCloud entitlement keys + container id present
+- [x] Wired verifier into `scripts/release.sh` (after mach-lookup check, before DMG) and `scripts/release-appstore.sh` (after export, before Info.plist restore)
+- [x] Added `DEVELOPMENT_TEAM: W33JZPPPFN` + `CODE_SIGN_STYLE: Automatic` (Debug) to all four targets in `project.yml` so Debug builds auto-provision against Sabotage Media's iCloud-capable App IDs instead of ad-hoc signing
+- [x] `xcodegen generate` clean
+- [x] `xcodebuild -scheme Clearly -configuration Debug build -allowProvisioningUpdates` — green; signed app entitlements show `com.apple.developer.team-identifier = W33JZPPPFN` + `com.apple.application-identifier = W33JZPPPFN.com.sabotage.clearly.dev` + iCloud keys intact
+- [x] `xcodebuild -scheme ClearlyQuickLook -configuration Debug build` — green
+- [x] `xcodebuild -scheme ClearlyCLI -configuration Debug build` — green
+- [x] `xcodebuild -scheme Clearly-iOS -destination 'platform=iOS Simulator,name=iPhone 17,OS=26.4' -configuration Debug build -allowProvisioningUpdates` — green
+- [x] `xcodebuild -scheme ClearlyCLIIntegrationTests test` — 23/23 pass
+- [x] Runtime: launched Debug Mac app; `CloudVault.ubiquityContainerURL()` returned `/Users/joshpigford/Library/Mobile Documents/iCloud~com~sabotage~clearly/Documents`; container directory auto-created on first resolution
+- [ ] Runtime: iPhone simulator signed into iCloud — **deferred.** Simulator builds are signed "to run locally" (ad-hoc) and have the iCloud entitlement stripped from the embedded signature; real iCloud semantics need a physical device with a development profile. Will verify on device during Phase 4 when the actual sidebar UI exists.
+- [ ] `release.sh` / `release-appstore.sh` verifier dry-run — **deferred** to next real release cycle; verifier is in place but not exercised against a fresh archive yet.
 
 #### Decisions Made
-- (none yet)
+- **Kept the `CoordinatedFileIO` surface minimal.** The plan mentioned a `presenter(for:) -> NSFilePresenter` factory; moved that to Phase 6 where per-document presenter lifecycle actually lands. Phase 3 ships only the four read/write/move/delete wrappers that Phase 4 will start calling.
+- **No `Bundle.module` migration.** `Sync/` sources are pure Foundation/Combine; no resources involved. The existing `Bundle.main` pattern for web assets stays untouched.
+- **No source glob changes to `project.yml`.** The `Sync/` subdirectory is picked up automatically by the `ClearlyCore` package's source glob — no target re-wiring. Unrelated, `project.yml` still needed `DEVELOPMENT_TEAM` + Debug `CODE_SIGN_STYLE: Automatic` added for signing (see above), because ad-hoc Debug signing doesn't honor iCloud entitlements.
+- **iOS Info.plist did NOT get `NSUbiquitousContainers`.** That key's iOS behavior is tied to `UISupportsDocumentBrowser` + `DocumentGroup`, both of which land in Phase 4. For Phase 3, iOS entitlements alone are sufficient to let `FileManager.url(forUbiquityContainerIdentifier:)` return a real URL.
+- **MAS dry-run deferred.** `release-appstore.sh` does not currently do a post-export re-sign. If Xcode strips the iCloud entitlement on archive, the verifier will catch it and we add a re-sign step then. Not worth proactively building against a bug that may not exist.
 
 #### Blockers
 - (none)
@@ -233,6 +252,9 @@
 - **Phase 1 executed and verified.** 20 Swift files relocated into `Packages/ClearlyCore`; all four Mac schemes build clean; all 23 `ClearlyCLIIntegrationTests` pass. Mac behavior unchanged — no functional changes, no UI changes.
 - **Phase 2 executed and verified.** `Clearly-iOS` target added to `project.yml`; three new files under `Clearly/iOS/` (app entry, Info plist, entitlements shell); Mac target picks up `excludes: ["iOS/**"]`. Fixed one Mac-only API leak in `ClearlyCore/Vault/VaultIndex.swift` (`homeDirectoryForCurrentUser`, gated behind `#if os(macOS)`). All Mac schemes still green; 23/23 CLI integration tests still pass; iOS builds succeed both via `-sdk iphonesimulator` and via a concrete simulator destination (`platform=iOS Simulator,name=iPhone 17,OS=26.4`); placeholder view renders on iPhone 17 simulator (iOS 26.4 runtime).
 
+### 2026-04-21
+- **Phase 3 complete.** iCloud entitlements added to all three channels; `NSUbiquitousContainers` on Mac Info.plist; `ClearlyCore/Sync/{CloudVault, CoordinatedFileIO}.swift` introduced; `scripts/verify-entitlements.sh` wired into both release scripts; `project.yml` updated with `DEVELOPMENT_TEAM = W33JZPPPFN` + automatic Debug signing so iCloud entitlements provision correctly. All Mac schemes + iOS build + integration tests (23/23) green. Runtime verified on Mac: `CloudVault.ubiquityContainerURL()` resolves to `~/Library/Mobile Documents/iCloud~com~sabotage~clearly/Documents` and the container bootstrap creates the `Documents/` subdir on first call. iOS on-device runtime verification deferred to Phase 4 (simulator strips entitlements, real device testing ships with the sidebar UI).
+
 ---
 
 ## Files Changed
@@ -245,6 +267,10 @@
 ### Phase 2 (2026-04-20)
 - **New:** `Clearly/iOS/ClearlyApp_iOS.swift`, `Clearly/iOS/Info-iOS.plist`, `Clearly/iOS/Clearly-iOS.entitlements`
 - **Modified:** `project.yml` (added `Clearly-iOS` target block; added `iOS: "17.0"` to `options.deploymentTarget`; added `excludes: ["iOS/**"]` to Mac `Clearly` source path), `Packages/ClearlyCore/Sources/ClearlyCore/Vault/VaultIndex.swift` (wrapped `init(locationURL:bundleIdentifier:)` and `indexDirectory(bundleIdentifier:)` in `#if os(macOS)`)
+
+### Phase 3 (2026-04-21)
+- **New:** `Packages/ClearlyCore/Sources/ClearlyCore/Sync/CloudVault.swift`, `Packages/ClearlyCore/Sources/ClearlyCore/Sync/CoordinatedFileIO.swift`, `scripts/verify-entitlements.sh`
+- **Modified:** `Clearly/Clearly.entitlements` + `Clearly/Clearly-AppStore.entitlements` + `Clearly/iOS/Clearly-iOS.entitlements` (added iCloud container + CloudDocuments service keys), `Clearly/Info.plist` (added `NSUbiquitousContainers`), `scripts/release.sh` + `scripts/release-appstore.sh` (call `verify-entitlements.sh` post-export), `project.yml` (added `DEVELOPMENT_TEAM: W33JZPPPFN` to all four targets' base settings + `CODE_SIGN_STYLE: Automatic` to each Debug config so iCloud-entitled Debug builds auto-provision against Sabotage Media's App IDs)
 
 ## Architectural Decisions
 

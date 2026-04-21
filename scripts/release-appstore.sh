@@ -191,6 +191,9 @@ xcodebuild -exportArchive \
   -exportPath build/export-appstore \
   -allowProvisioningUpdates
 
+# Verify iCloud entitlements survived Xcode archive/export
+scripts/verify-entitlements.sh build/export-appstore/Clearly.app
+
 # ── 6. Restore Info.plist and Xcode project (with Sparkle) ──────────────────
 echo "🔄 Restoring Sparkle project..."
 mv build/Info-Original.plist Clearly/Info.plist
