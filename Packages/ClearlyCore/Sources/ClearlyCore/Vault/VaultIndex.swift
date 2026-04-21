@@ -358,6 +358,8 @@ public final class VaultIndex: @unchecked Sendable {
         var processedPaths = Set<String>()
 
         for (idx, fileURL) in markdownFiles.enumerated() {
+            if Task.isCancelled { return }
+
             let relativePath = Self.relativePath(of: fileURL, from: rootURL)
             processedPaths.insert(relativePath)
 

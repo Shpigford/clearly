@@ -232,7 +232,15 @@ public final class VaultSession {
                 }
             )
             await MainActor.run { [weak self] in
-                self?.indexProgress = nil
+                guard let self = self else { return }
+                self.indexProgress = nil
+                if Task.isCancelled { return }
+                // Catch-up pass: any file that appeared or changed DURING the rebuild
+                // got filtered out of `scheduleIncrementalReindex` (because
+                // `indexProgress != nil`) and isn't guaranteed to produce another
+                // watcher event afterward. Feed the current `files` through
+                // incremental now; `updateFile` hash-skips unchanged entries.
+                self.scheduleIncrementalReindex(for: self.files)
             }
         }
     }
@@ -241,20 +249,20 @@ public final class VaultSession {
     /// set against `knownFiles`; for each add / remove / modified-date change, calls
     /// `VaultIndex.updateFile(at:)` on a utility queue. `updateFile` already handles
     /// hash-based skip + delete-if-missing semantics (`VaultIndex.swift:157`).
+    ///
+    /// While a full rebuild is running, this method no-ops and leaves `knownFiles`
+    /// untouched. When the rebuild completes, it calls this method once with the
+    /// current `files` to catch any changes that landed during the rebuild window.
     private func scheduleIncrementalReindex(for newFiles: [VaultFile]) {
+        guard let index = index else { return }
+
+        // Rebuild owns the snapshot while it runs; don't update knownFiles here or the
+        // post-rebuild catch-up pass would miss files added mid-rebuild.
+        if indexProgress != nil { return }
+
         let oldKnown = knownFiles
         let newKnown = Dictionary(uniqueKeysWithValues: newFiles.map { ($0.url, $0.modified) })
         knownFiles = newKnown
-
-        guard let index = index else { return }
-
-        // Full rebuild owns the authoritative snapshot while it runs; incremental would
-        // race with it. Resume incremental after rebuild completes.
-        if indexProgress != nil { return }
-
-        // First post-attach update: the initial full rebuild already covered these files;
-        // nothing to incremental-index.
-        if oldKnown.isEmpty { return }
 
         let rootURL = currentVault?.url ?? index.rootURL
         let oldKeys = Set(oldKnown.keys)
@@ -278,6 +286,7 @@ public final class VaultSession {
         Task.detached(priority: .utility) { [weak index] in
             guard let index = index else { return }
             for path in changedPaths {
+                if Task.isCancelled { return }
                 _ = try? index.updateFile(at: path)
             }
         }
