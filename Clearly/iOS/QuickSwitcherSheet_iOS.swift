@@ -5,6 +5,12 @@ struct QuickSwitcherSheet_iOS: View {
     @Environment(VaultSession.self) private var vault
     @Environment(\.dismiss) private var dismiss
 
+    /// How a picked file is surfaced. iPhone replaces `VaultSession.navigationPath`
+    /// with `[file]`; iPad routes through `IPadTabController.openOrActivate`. The
+    /// closure is responsible for both navigation AND `markRecent` so the switcher
+    /// doesn't have to know which model it's driving.
+    let onOpenFile: (VaultFile) -> Void
+
     @State private var query: String = ""
     @State private var rows: [QuickSwitcherRow] = []
     @FocusState private var searchFocused: Bool
@@ -234,14 +240,8 @@ struct QuickSwitcherSheet_iOS: View {
         }
     }
 
-    /// Replace the navigation stack with a single-entry `[file]` — true "jump to" semantics.
-    /// Avoids duplicating the current file if it's already at the top of the stack and
-    /// prevents the stack from accumulating duplicates when the switcher is used as the
-    /// main navigation tool.
     private func navigate(to file: VaultFile) {
-        if vault.navigationPath == [file] { return }
-        vault.navigationPath = [file]
-        vault.markRecent(file)
+        onOpenFile(file)
     }
 
     // MARK: - Formatting helpers

@@ -69,8 +69,13 @@ public final class IOSDocumentSession {
         }
     }
 
-    public func close() async {
-        await flush()
+    public func close(discardUnsavedChanges: Bool = false) async {
+        if discardUnsavedChanges {
+            autosaveTask?.cancel()
+            autosaveTask = nil
+        } else {
+            await flush()
+        }
         detachPresenter()
         autosaveTask?.cancel()
         autosaveTask = nil
@@ -171,7 +176,7 @@ public final class IOSDocumentSession {
 
     fileprivate func handleRemoteMove(to newURL: URL) {
         guard let f = file else { return }
-        file = VaultFile(url: newURL, name: f.name, modified: f.modified, isPlaceholder: f.isPlaceholder)
+        file = VaultFile(url: newURL, name: newURL.lastPathComponent, modified: f.modified, isPlaceholder: f.isPlaceholder)
     }
 
     fileprivate func handleRemoteDeletion() {

@@ -9,6 +9,7 @@ struct BacklinksSheet_iOS: View {
     @Environment(VaultSession.self) private var vault
     @Environment(\.dismiss) private var dismiss
     @ObservedObject var backlinksState: BacklinksState
+    let onOpenFile: (VaultFile) -> Void
 
     private var totalCount: Int {
         backlinksState.backlinks.count + backlinksState.unlinkedMentions.count
@@ -91,6 +92,6 @@ struct BacklinksSheet_iOS: View {
             isPlaceholder: false
         )
         dismiss()
-        vault.navigationPath.append(match)
+        onOpenFile(match)
     }
 }

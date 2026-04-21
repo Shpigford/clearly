@@ -1,17 +1,13 @@
 import SwiftUI
 import ClearlyCore
 
+/// Compact-width (iPhone, iPad split-screen narrow) root. Sidebar + file list
+/// live in a single `NavigationStack` push/pop flow; detail view opens
+/// full-screen on tap. For the regular-width iPad path see `IPadRootView`.
 struct SidebarView_iOS: View {
     @Environment(VaultSession.self) private var session
     @State private var showWelcome: Bool = false
     @State private var showTags: Bool = false
-
-    @State private var renameTarget: VaultFile?
-    @State private var renameDraft: String = ""
-    @State private var renameError: String?
-
-    @State private var deleteTarget: VaultFile?
-    @State private var operationError: String?
 
     var body: some View {
         @Bindable var session = session
@@ -23,18 +19,10 @@ struct SidebarView_iOS: View {
                         .frame(height: 2)
                         .tint(.accentColor)
                 }
-                Group {
-                    if session.currentVault == nil {
-                        placeholder
-                    } else if session.files.isEmpty && session.isLoading {
-                        ProgressView("Loading…")
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    } else if session.files.isEmpty {
-                        emptyVault
-                    } else {
-                        fileList
-                    }
-                }
+                FileListView_iOS(onOpen: { file in
+                    session.navigationPath.append(file)
+                }, onDelete: { _ in
+                })
             }
             .navigationTitle(navTitle)
             .navigationBarTitleDisplayMode(.inline)
@@ -72,6 +60,9 @@ struct SidebarView_iOS: View {
             .background {
                 QuickSwitcherShortcuts()
             }
+            .navigationDestination(for: VaultFile.self) { file in
+                RawTextDetailView_iOS(file: file)
+            }
         }
         .fullScreenCover(isPresented: shouldShowWelcomeBinding) {
             WelcomeView_iOS()
@@ -83,46 +74,19 @@ struct SidebarView_iOS: View {
                 }
         }
         .sheet(isPresented: $session.isShowingQuickSwitcher) {
-            QuickSwitcherSheet_iOS()
-                .environment(session)
+            QuickSwitcherSheet_iOS(onOpenFile: { file in
+                if session.navigationPath != [file] {
+                    session.navigationPath = [file]
+                }
+                session.markRecent(file)
+            })
+            .environment(session)
         }
         .sheet(isPresented: $showTags) {
-            TagsSheet_iOS()
+            TagsSheet_iOS(onOpenFile: { file in
+                session.navigationPath.append(file)
+            })
                 .environment(session)
-        }
-        .alert("Rename note", isPresented: renameAlertBinding) {
-            TextField("Name", text: $renameDraft)
-                .textInputAutocapitalization(.never)
-                .autocorrectionDisabled()
-            Button("Cancel", role: .cancel) { renameTarget = nil }
-            Button("Save") { commitRename() }
-        } message: {
-            if let err = renameError {
-                Text(err)
-            } else {
-                Text("Enter a new name (extension preserved).")
-            }
-        }
-        .confirmationDialog(
-            deleteTarget.map { "Delete \u{201C}\($0.name)\u{201D}?" } ?? "",
-            isPresented: deleteConfirmBinding,
-            titleVisibility: .visible
-        ) {
-            Button("Delete", role: .destructive) { commitDelete() }
-            Button("Cancel", role: .cancel) { deleteTarget = nil }
-        } message: {
-            Text("This can't be undone from within Clearly.")
-        }
-        .alert(
-            "Something went wrong",
-            isPresented: Binding(
-                get: { operationError != nil },
-                set: { if !$0 { operationError = nil } }
-            )
-        ) {
-            Button("OK", role: .cancel) { operationError = nil }
-        } message: {
-            Text(operationError ?? "")
         }
     }
 
@@ -135,112 +99,7 @@ struct SidebarView_iOS: View {
         )
     }
 
-    private var renameAlertBinding: Binding<Bool> {
-        Binding(
-            get: { renameTarget != nil },
-            set: { newValue in
-                if !newValue {
-                    renameTarget = nil
-                    renameError = nil
-                }
-            }
-        )
-    }
-
-    private var deleteConfirmBinding: Binding<Bool> {
-        Binding(
-            get: { deleteTarget != nil },
-            set: { newValue in
-                if !newValue { deleteTarget = nil }
-            }
-        )
-    }
-
     private var navTitle: String {
         session.currentVault?.displayName ?? "Clearly"
-    }
-
-    private var placeholder: some View {
-        Color.clear
-    }
-
-    private var emptyVault: some View {
-        VStack(spacing: 8) {
-            Image(systemName: "tray")
-                .font(.system(size: 36, weight: .light))
-                .foregroundStyle(.secondary)
-            Text("No notes yet")
-                .font(.headline)
-            Text("Drop a `.md` file into this folder via Files to get started.")
-                .font(.footnote)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
-                .padding(.horizontal, 32)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-    }
-
-    private var fileList: some View {
-        List(session.files) { file in
-            NavigationLink(value: file) {
-                HStack(spacing: 10) {
-                    Image(systemName: file.isPlaceholder ? "icloud.and.arrow.down" : "doc.text")
-                        .foregroundStyle(file.isPlaceholder ? .secondary : .primary)
-                        .frame(width: 22)
-                    Text(file.name)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                }
-            }
-            .contextMenu {
-                Button {
-                    beginRename(file)
-                } label: {
-                    Label("Rename", systemImage: "pencil")
-                }
-                Button(role: .destructive) {
-                    deleteTarget = file
-                } label: {
-                    Label("Delete", systemImage: "trash")
-                }
-            }
-        }
-        .listStyle(.insetGrouped)
-        .navigationDestination(for: VaultFile.self) { file in
-            RawTextDetailView_iOS(file: file)
-        }
-    }
-
-    private func beginRename(_ file: VaultFile) {
-        renameTarget = file
-        renameError = nil
-        renameDraft = (file.name as NSString).deletingPathExtension
-    }
-
-    private func commitRename() {
-        guard let target = renameTarget else { return }
-        let draft = renameDraft
-        renameTarget = nil
-        Task {
-            do {
-                try await session.renameFile(target, to: draft)
-            } catch VaultSessionError.readFailed(let msg) {
-                operationError = msg
-            } catch {
-                operationError = error.localizedDescription
-            }
-        }
-    }
-
-    private func commitDelete() {
-        guard let target = deleteTarget else { return }
-        deleteTarget = nil
-        Task {
-            do {
-                try await session.deleteFile(target)
-            } catch {
-                operationError = error.localizedDescription
-            }
-        }
     }
 }
