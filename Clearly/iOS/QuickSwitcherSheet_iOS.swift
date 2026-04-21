@@ -219,18 +219,14 @@ struct QuickSwitcherSheet_iOS: View {
         switch row {
         case .recent(let file), .filename(let file, _), .content(let file, _, _):
             dismiss()
-            vault.navigationPath.append(file)
-            vault.markRecent(file)
+            navigate(to: file)
         case .create(let name):
             let target = name
             dismiss()
             Task {
                 do {
                     let file = try await vault.openOrCreate(name: target)
-                    await MainActor.run {
-                        vault.navigationPath.append(file)
-                        vault.markRecent(file)
-                    }
+                    await MainActor.run { navigate(to: file) }
                 } catch {
                     DiagnosticLog.log("Quick switcher create failed for \(target): \(error)")
                 }
@@ -238,20 +234,22 @@ struct QuickSwitcherSheet_iOS: View {
         }
     }
 
+    /// Replace the navigation stack with a single-entry `[file]` — true "jump to" semantics.
+    /// Avoids duplicating the current file if it's already at the top of the stack and
+    /// prevents the stack from accumulating duplicates when the switcher is used as the
+    /// main navigation tool.
+    private func navigate(to file: VaultFile) {
+        if vault.navigationPath == [file] { return }
+        vault.navigationPath = [file]
+        vault.markRecent(file)
+    }
+
     // MARK: - Formatting helpers
 
     private func highlighted(_ text: String, ranges: [Range<String.Index>]) -> AttributedString {
         var attributed = AttributedString(text)
         for range in ranges {
-            let nsRange = NSRange(range, in: text)
-            guard let lower = AttributedString.Index(
-                String.Index(utf16Offset: nsRange.lowerBound, in: text),
-                within: attributed
-            ), let upper = AttributedString.Index(
-                String.Index(utf16Offset: nsRange.lowerBound + nsRange.length, in: text),
-                within: attributed
-            ) else { continue }
-            let attrRange = lower..<upper
+            guard let attrRange = Range(range, in: attributed) else { continue }
             attributed[attrRange].foregroundColor = .accentColor
             attributed[attrRange].font = .body.bold()
         }
@@ -291,16 +289,9 @@ struct QuickSwitcherSheet_iOS: View {
 
         var out = AttributedString(plain)
         for range in highlightRanges {
-            let nsRange = NSRange(range, in: plain)
-            guard let lower = AttributedString.Index(
-                String.Index(utf16Offset: nsRange.lowerBound, in: plain),
-                within: out
-            ), let upper = AttributedString.Index(
-                String.Index(utf16Offset: nsRange.lowerBound + nsRange.length, in: plain),
-                within: out
-            ) else { continue }
-            out[lower..<upper].foregroundColor = .accentColor
-            out[lower..<upper].font = .footnote.bold()
+            guard let attrRange = Range(range, in: out) else { continue }
+            out[attrRange].foregroundColor = .accentColor
+            out[attrRange].font = .footnote.bold()
         }
         if let line {
             out.append(AttributedString(" · line \(line)"))
@@ -314,33 +305,34 @@ struct QuickSwitcherSheet_iOS: View {
     }
 }
 
-/// Zero-size view that registers the ⌘K / ⌘⇧F shortcuts. Place in `.background { ... }`
+/// Hidden buttons that register the ⌘K / ⌘⇧F shortcuts. Place in `.background { ... }`
 /// at each top-level iOS destination (sidebar, detail) so the shortcut fires regardless
 /// of which view owns focus on a hardware keyboard.
+///
+/// Uses `.hidden()` rather than a zero-size / opacity-0 ZStack: `.hidden()` keeps the
+/// view in the layout (so the shortcut stays registered) while removing it from both
+/// visual rendering and the accessibility tree. `.disabled` gates the shortcut when no
+/// vault is attached so stray hits don't open an inert sheet.
 struct QuickSwitcherShortcuts: View {
     @Environment(VaultSession.self) private var session
 
     var body: some View {
         ZStack {
-            Button {
+            Color.clear
+            Button("Quick Switcher") {
                 session.isShowingQuickSwitcher = true
-            } label: {
-                Text("Quick Switcher")
             }
             .keyboardShortcut("k", modifiers: .command)
-            .opacity(0)
-            .allowsHitTesting(false)
+            .hidden()
 
-            Button {
+            Button("Global Search") {
                 session.isShowingQuickSwitcher = true
-            } label: {
-                Text("Global Search")
             }
             .keyboardShortcut("f", modifiers: [.command, .shift])
-            .opacity(0)
-            .allowsHitTesting(false)
+            .hidden()
         }
-        .frame(width: 0, height: 0)
+        .accessibilityHidden(true)
+        .disabled(session.currentVault == nil)
     }
 }
 
