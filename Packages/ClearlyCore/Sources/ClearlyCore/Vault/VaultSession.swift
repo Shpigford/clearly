@@ -38,6 +38,15 @@ public final class VaultSession {
     /// `nil` until a vault is attached and its index is constructed.
     public var currentIndex: VaultIndex? { index }
 
+    /// Most-recently-opened files, most-recent-first. Capped at 10. Drives the empty-query
+    /// state of the quick switcher sheet. Persisted per-vault in UserDefaults.
+    public private(set) var recentFiles: [VaultFile] = []
+
+    /// Global flag any iOS view can flip to present the quick-switcher sheet. Lives here
+    /// (not in a local `@State`) so `.keyboardShortcut` handlers attached at different
+    /// view levels all trigger the same sheet.
+    public var isShowingQuickSwitcher: Bool = false
+
     @ObservationIgnored private var watcher: VaultWatcher?
     @ObservationIgnored private var index: VaultIndex?
     @ObservationIgnored private var indexingTask: Task<Void, Never>?
@@ -45,6 +54,10 @@ public final class VaultSession {
     @ObservationIgnored private var knownFiles: [URL: FileSnapshot] = [:]
     @ObservationIgnored private var cancellables: Set<AnyCancellable> = []
     @ObservationIgnored private let defaults: UserDefaults
+    @ObservationIgnored private var hasRestoredRecents: Bool = false
+
+    private static let recentsKey = "iosVaultRecentFilesByVault"
+    private static let recentsCap = 10
 
     private struct FileSnapshot: Equatable {
         let modified: Date?
@@ -70,7 +83,14 @@ public final class VaultSession {
 
         watcher.$files
             .receive(on: RunLoop.main)
-            .sink { [weak self] value in self?.files = value }
+            .sink { [weak self] value in
+                guard let self else { return }
+                self.files = value
+                if !self.hasRestoredRecents && !value.isEmpty {
+                    self.hasRestoredRecents = true
+                    self.restoreRecents()
+                }
+            }
             .store(in: &cancellables)
         // Debounced to coalesce NSMetadataQuery update storms into a single incremental
         // reindex per burst. The `files` publish above stays immediate so UI doesn't lag.
@@ -121,6 +141,9 @@ public final class VaultSession {
         currentVault = nil
         files = []
         navigationPath = []
+        recentFiles = []
+        hasRestoredRecents = false
+        isShowingQuickSwitcher = false
         isLoading = false
     }
 
@@ -385,6 +408,46 @@ public final class VaultSession {
         let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         let forbidden: Set<Character> = ["/", "\\", ":", "?", "*", "\"", "<", ">", "|"]
         return String(trimmed.filter { !forbidden.contains($0) })
+    }
+
+    // MARK: - Recent files
+
+    /// Record that `file` was just opened. Dedupes by URL, moves to front, trims to cap,
+    /// and persists. Called from detail-view load paths after a successful read.
+    public func markRecent(_ file: VaultFile) {
+        let standardized = file.url.standardizedFileURL
+        recentFiles.removeAll { $0.url.standardizedFileURL == standardized }
+        recentFiles.insert(file, at: 0)
+        if recentFiles.count > Self.recentsCap {
+            recentFiles = Array(recentFiles.prefix(Self.recentsCap))
+        }
+        persistRecents()
+    }
+
+    private func vaultKey() -> String? {
+        currentVault?.url.standardizedFileURL.path
+    }
+
+    private func persistRecents() {
+        guard let key = vaultKey() else { return }
+        var all = defaults.dictionary(forKey: Self.recentsKey) as? [String: [String]] ?? [:]
+        all[key] = recentFiles.map { $0.url.standardizedFileURL.path }
+        defaults.set(all, forKey: Self.recentsKey)
+    }
+
+    /// Restore recents for the current vault and drop any paths that don't appear in
+    /// `files`. Called exactly once per attach, on the first non-empty watcher emission.
+    private func restoreRecents() {
+        guard let key = vaultKey(),
+              let all = defaults.dictionary(forKey: Self.recentsKey) as? [String: [String]],
+              let paths = all[key] else {
+            recentFiles = []
+            return
+        }
+        let byPath: [String: VaultFile] = Dictionary(
+            uniqueKeysWithValues: files.map { ($0.url.standardizedFileURL.path, $0) }
+        )
+        recentFiles = paths.compactMap { byPath[$0] }
     }
 }
 #endif

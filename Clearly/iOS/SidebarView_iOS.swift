@@ -33,6 +33,15 @@ struct SidebarView_iOS: View {
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {
+                        session.isShowingQuickSwitcher = true
+                    } label: {
+                        Image(systemName: "magnifyingglass")
+                    }
+                    .accessibilityLabel("Search notes")
+                    .disabled(session.currentVault == nil)
+                }
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button {
                         showWelcome = true
                     } label: {
                         Image(systemName: "folder")
@@ -43,6 +52,9 @@ struct SidebarView_iOS: View {
             .refreshable {
                 session.refresh()
             }
+            .background {
+                QuickSwitcherShortcuts()
+            }
         }
         .fullScreenCover(isPresented: shouldShowWelcomeBinding) {
             WelcomeView_iOS()
@@ -52,6 +64,10 @@ struct SidebarView_iOS: View {
                         showWelcome = false
                     }
                 }
+        }
+        .sheet(isPresented: $session.isShowingQuickSwitcher) {
+            QuickSwitcherSheet_iOS()
+                .environment(session)
         }
     }
 
