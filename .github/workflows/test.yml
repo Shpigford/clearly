@@ -28,6 +28,16 @@ jobs:
       - name: Generate Xcode project
         run: xcodegen generate
 
+      - name: Cache DerivedData and SPM
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/Library/Developer/Xcode/DerivedData
+            ~/Library/Caches/org.swift.swiftpm
+          key: ${{ runner.os }}-xcode-${{ hashFiles('project.yml', 'Packages/ClearlyCore/Package.swift', 'Packages/ClearlyCore/Package.resolved') }}
+          restore-keys: |
+            ${{ runner.os }}-xcode-
+
       - name: Build ClearlyCLI (Debug)
         run: xcodebuild -scheme ClearlyCLI -configuration Debug build -quiet
 
