@@ -132,6 +132,18 @@ Use these instead:
 
 Every `addFilePresenter(_:)` call MUST be paired with `removeFilePresenter(_:)` before the presenter's owning object deallocates, or the presenter zombies in the global registry and `presentedItemDidChange` callbacks fire into a nil weak target (silent, but the remote-refresh path is dead). `IOSDocumentSession.close()` handles the pairing; `RawTextDetailView_iOS.onDisappear` calls `close()` specifically so `NavigationStack`'s teardown doesn't leak a registration. Any future presenter owners — Phase 11's conflict resolver, Phase 12's iPad multi-document tabs — follow the same add/remove discipline. Presenter is keyed on `presentedItemURL`, so keep one per open document, not one per vault (folder-level presenters fire `didChange` for every file in the vault, which is the wrong granularity).
 
+### `NSFileVersion` conflict API is `unresolvedConflictVersionsOfItem(at:)`
+
+Note the "Conflict" in the middle. Apple's older sample code and docs show `unresolvedVersionsOfItem(at:)` — that method does not exist. `ConflictResolver` and every call site in `IOSDocumentSession` / `WorkspaceManager` use the correct spelling. Don't type from memory or paste from `docs/mobile/RESEARCH.md` / older `IMPLEMENTATION.md` revisions — both still contain the wrong name in narrative text, and every mistyped use eats a compile cycle.
+
+### Never wrap `evictUbiquitousItem(at:)` in `NSFileCoordinator.coordinate`
+
+Known iCloud deadlock (research risk #3). `FileManager.default.evictUbiquitousItem(at:)` must be called directly — iCloud serializes it internally. `CoordinatedFileIO` deliberately exposes no eviction helper to prevent accidental wrapping. Every other vault-file operation (read, write, move, delete) must still route through `CoordinatedFileIO` so coordination discipline isn't diluted.
+
+### Mac conflict detection does NOT require `NSFilePresenter`
+
+`NSFileVersion.unresolvedConflictVersionsOfItem(at:)` is populated by iCloud's `bird` daemon regardless of whether your process registered a presenter. `WorkspaceManager.refreshConflictOutcomeForActiveDocument()` on Mac passes `presenter: nil` to `ConflictResolver.resolveIfNeeded(at:presenter:)` and still detects conflicts correctly — `FileWatcher`'s dispatch-source change events are enough to decide when to re-run the resolver. iOS keeps a per-document presenter because it also wants in-place remote-change refresh callbacks, which are a separate need from version queries. Don't migrate the Mac to presenters "to enable conflicts" — conflicts already work.
+
 ## Conventions
 
 - All colors go through `Theme` with dynamic light/dark resolution — don't hardcode colors

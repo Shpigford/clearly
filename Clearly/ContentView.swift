@@ -118,6 +118,7 @@ struct ContentView: View {
     @AppStorage("showLineNumbers") private var showLineNumbers = false
     @AppStorage("contentWidth") private var contentWidth = "off"
     @State private var isFullscreen = false
+    @State private var showingConflictDiff = false
     @Environment(\.colorScheme) private var colorScheme
 
     private var hasTabBar: Bool { workspace.openDocuments.count >= 2 }
@@ -318,6 +319,16 @@ struct ContentView: View {
         let chars = text.count
 
         return VStack(spacing: 0) {
+            if let conflictOutcome = workspace.currentConflictOutcome {
+                ConflictBannerView(
+                    outcome: conflictOutcome,
+                    onViewDiff: { showingConflictDiff = true }
+                )
+                .padding(.leading, trafficLightInset)
+                Rectangle()
+                    .fill(Color.primary.opacity(0.08))
+                    .frame(height: 1)
+            }
             if findState.isVisible {
                 FindBarView(findState: findState)
                     .padding(.leading, trafficLightInset)
@@ -463,6 +474,22 @@ struct ContentView: View {
                 guard let target = notification.userInfo?["target"] as? String else { return }
                 let heading = notification.userInfo?["heading"] as? String
                 navigateToWikiLink(target: target, heading: heading, destinationMode: .edit)
+            }
+            .sheet(isPresented: $showingConflictDiff) {
+                if let outcome = workspace.currentConflictOutcome {
+                    DiffView(
+                        leftTitle: workspace.currentFileURL?.lastPathComponent ?? "Current",
+                        leftText: outcome.currentText,
+                        rightTitle: "Conflict copy",
+                        rightText: outcome.siblingText,
+                        footer: "Conflict saved as \(outcome.siblingURL.lastPathComponent) — edit either file to keep it.",
+                        onDismiss: {
+                            workspace.dismissCurrentConflict()
+                            showingConflictDiff = false
+                        }
+                    )
+                    .frame(minWidth: 720, minHeight: 480)
+                }
             }
     }
 

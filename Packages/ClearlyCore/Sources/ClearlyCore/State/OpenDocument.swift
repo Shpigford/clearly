@@ -14,18 +14,21 @@ public struct OpenDocument: Identifiable {
     public var lastSavedText: String
     public var untitledNumber: Int?
     public var viewMode: ViewMode = .edit
+    public var conflictOutcome: ConflictResolver.Outcome?
 
-    public init(id: UUID = UUID(), fileURL: URL? = nil, text: String = "", lastSavedText: String = "", untitledNumber: Int? = nil, viewMode: ViewMode = .edit) {
+    public init(id: UUID = UUID(), fileURL: URL? = nil, text: String = "", lastSavedText: String = "", untitledNumber: Int? = nil, viewMode: ViewMode = .edit, conflictOutcome: ConflictResolver.Outcome? = nil) {
         self.id = id
         self.fileURL = fileURL
         self.text = text
         self.lastSavedText = lastSavedText
         self.untitledNumber = untitledNumber
         self.viewMode = viewMode
+        self.conflictOutcome = conflictOutcome
     }
 
     public var isDirty: Bool { text != lastSavedText }
     public var isUntitled: Bool { fileURL == nil }
+    public var hasConflict: Bool { conflictOutcome != nil }
 
     public var displayName: String {
         if let url = fileURL { return url.lastPathComponent }
