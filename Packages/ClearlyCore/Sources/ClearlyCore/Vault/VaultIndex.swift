@@ -330,6 +330,135 @@ public final class VaultIndex: @unchecked Sendable {
         }
     }
 
+    /// Async variant with optional per-file placeholder-download hook and progress reporting.
+    /// iOS uses the hook to materialize `.icloud` placeholders via `startDownloadingUbiquitousItem`
+    /// before parsing. Mac can pass `nil` (equivalent to the sync `indexAllFiles`).
+    ///
+    /// The hook returns `true` if the file is ready to read, `false` if it should be skipped
+    /// (e.g. still a placeholder after a timeout); the watcher will re-drive it via `updateFile`
+    /// once the download lands.
+    public func indexAllFiles(
+        showHiddenFiles: Bool = false,
+        downloadPlaceholder: ((URL) async -> Bool)?,
+        progress: ((Double) -> Void)?
+    ) async {
+        let markdownFiles = collectMarkdownFiles(under: rootURL, showHiddenFiles: showHiddenFiles)
+        let total = max(markdownFiles.count, 1)
+
+        struct PendingFile {
+            let relativePath: String
+            let filename: String
+            let content: String
+            let contentHash: String
+            let modifiedAt: Date
+        }
+
+        var pending: [PendingFile] = []
+        pending.reserveCapacity(markdownFiles.count)
+        var processedPaths = Set<String>()
+
+        for (idx, fileURL) in markdownFiles.enumerated() {
+            let relativePath = Self.relativePath(of: fileURL, from: rootURL)
+            processedPaths.insert(relativePath)
+
+            var usable = true
+            if let hook = downloadPlaceholder {
+                usable = await hook(fileURL)
+            }
+
+            if usable,
+               let data = try? Data(contentsOf: fileURL),
+               let content = String(data: data, encoding: .utf8) {
+                pending.append(PendingFile(
+                    relativePath: relativePath,
+                    filename: fileURL.deletingPathExtension().lastPathComponent,
+                    content: content,
+                    contentHash: Self.contentHash(data),
+                    modifiedAt: Self.fileModDate(fileURL)
+                ))
+            }
+
+            progress?(Double(idx + 1) / Double(total))
+        }
+
+        let fileBatch = pending
+        let processed = processedPaths
+
+        do {
+            try await dbPool.write { db in
+                let existingRows = try Row.fetchAll(db, sql: "SELECT id, path, content_hash FROM files")
+                var existingByPath: [String: (id: Int64, hash: String)] = [:]
+                for row in existingRows {
+                    let path: String = row["path"]
+                    let id: Int64 = row["id"]
+                    let hash: String = row["content_hash"]
+                    existingByPath[path] = (id, hash)
+                }
+
+                for file in fileBatch {
+                    if let existing = existingByPath[file.relativePath], existing.hash == file.contentHash {
+                        continue
+                    }
+
+                    let now = Date()
+
+                    if let existing = existingByPath[file.relativePath] {
+                        try db.execute(sql: """
+                            UPDATE files SET filename = ?, content_hash = ?, modified_at = ?, indexed_at = ?
+                            WHERE id = ?
+                            """, arguments: [file.filename, file.contentHash, file.modifiedAt.timeIntervalSince1970, now.timeIntervalSince1970, existing.id])
+
+                        try db.execute(sql: "DELETE FROM files_fts WHERE rowid = ?", arguments: [existing.id])
+                        try db.execute(sql: "INSERT INTO files_fts(rowid, filename, content) VALUES(?, ?, ?)",
+                                       arguments: [existing.id, file.filename, file.content])
+
+                        try db.execute(sql: "DELETE FROM links WHERE source_file_id = ?", arguments: [existing.id])
+                        try db.execute(sql: "DELETE FROM tags WHERE file_id = ?", arguments: [existing.id])
+                        try db.execute(sql: "DELETE FROM headings WHERE file_id = ?", arguments: [existing.id])
+
+                        self.insertParsedData(db: db, fileId: existing.id, content: file.content)
+                    } else {
+                        try db.execute(sql: """
+                            INSERT INTO files (path, filename, content_hash, modified_at, indexed_at)
+                            VALUES (?, ?, ?, ?, ?)
+                            """, arguments: [file.relativePath, file.filename, file.contentHash, file.modifiedAt.timeIntervalSince1970, now.timeIntervalSince1970])
+
+                        let fileId = db.lastInsertedRowID
+
+                        try db.execute(sql: "INSERT INTO files_fts(rowid, filename, content) VALUES(?, ?, ?)",
+                                       arguments: [fileId, file.filename, file.content])
+
+                        self.insertParsedData(db: db, fileId: fileId, content: file.content)
+                    }
+                }
+
+                // Remove files that no longer exist on disk (pruned against the enumerated set,
+                // not the successfully-read set — placeholders that timed out still count as present).
+                let existingPaths = Set(existingByPath.keys)
+                let removedPaths = existingPaths.subtracting(processed)
+                for path in removedPaths {
+                    if let existing = existingByPath[path] {
+                        try db.execute(sql: "DELETE FROM files_fts WHERE rowid = ?", arguments: [existing.id])
+                        try db.execute(sql: "DELETE FROM links WHERE source_file_id = ?", arguments: [existing.id])
+                        try db.execute(sql: "DELETE FROM tags WHERE file_id = ?", arguments: [existing.id])
+                        try db.execute(sql: "DELETE FROM headings WHERE file_id = ?", arguments: [existing.id])
+                        try db.execute(sql: "DELETE FROM files WHERE id = ?", arguments: [existing.id])
+                    }
+                }
+
+                try db.execute(sql: """
+                    UPDATE links SET target_file_id = (
+                        SELECT f.id FROM files f
+                        WHERE LOWER(f.filename) = LOWER(links.target_name)
+                        LIMIT 1
+                    )
+                    """)
+            }
+        } catch {
+            DiagnosticLog.log("VaultIndex: indexAllFiles (async) failed — \(error.localizedDescription)")
+        }
+    }
+
     private func insertParsedData(db: Database, fileId: Int64, content: String) {
         let parsed = FileParser.parse(content: content)
 
@@ -815,9 +944,17 @@ public final class VaultIndex: @unchecked Sendable {
     // MARK: Helpers
 
     private static func indexDirectory() -> URL {
+        #if os(iOS)
+        // Caches lives inside the iOS app sandbox — never inside the ubiquity container,
+        // where SQLite WAL/SHM files would race against iCloud sync. The system may reclaim
+        // Caches under disk pressure; next launch rebuilds from vault contents.
+        let dir = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first!
+        return dir.appendingPathComponent("indexes")
+        #else
         let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
         let appName = Bundle.main.bundleIdentifier ?? "com.sabotage.clearly"
         return dir.appendingPathComponent("\(appName)/indexes")
+        #endif
     }
 
     #if os(macOS)
