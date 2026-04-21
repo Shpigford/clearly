@@ -3,9 +3,15 @@ import ClearlyCore
 
 @main
 struct ClearlyApp_iOS: App {
+    @State private var vaultSession = VaultSession()
+
     var body: some Scene {
         WindowGroup {
-            Text("Clearly — iOS scaffolding")
+            SidebarView_iOS()
+                .environment(vaultSession)
+                .task {
+                    await vaultSession.restoreFromPersistence()
+                }
         }
     }
 }

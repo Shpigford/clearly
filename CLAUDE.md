@@ -116,6 +116,10 @@ Use these instead:
 - `brctl status iCloud.com.sabotage.clearly` — `bird`'s view of sync state. `caught-up` + `ever-full-sync` = working.
 - `ls ~/Library/Mobile\ Documents/` — container directory exists once `FileManager.url(forUbiquityContainerIdentifier:)` has been called. Modern `iCloud.*` containers land at `iCloud~com~sabotage~clearly` *without* a team-ID prefix; that is correct, not a bug. Legacy-format containers (identifier without the `iCloud.` prefix, e.g. `com.dayoneapp.dayone`) get the `TEAMID~` prefix — both shapes coexist in `Mobile Documents/`.
 
+### iOS scene architecture — `WindowGroup`, not `DocumentGroup`
+
+`Clearly/iOS/ClearlyApp_iOS.swift` roots the app in a `WindowGroup` hosting `SidebarView_iOS`, mirroring how the Mac app uses `Window` + `WorkspaceManager` instead of `DocumentGroup`. Don't "fix" this back to `DocumentGroup` — its one-document-per-scene model is incompatible with the custom vault-folder sidebar (first screen needs to show a list of a user-picked folder's `.md` files, not the system document browser). `MarkdownDocument` is still a `FileDocument` so Phase 5's editor can bind to it, but no scene instantiates `DocumentGroup`. If Files.app "open in Clearly" integration is needed later, add `DocumentGroup` as a *second* scene alongside `WindowGroup`, don't swap it in.
+
 ## Conventions
 
 - All colors go through `Theme` with dynamic light/dark resolution — don't hardcode colors
