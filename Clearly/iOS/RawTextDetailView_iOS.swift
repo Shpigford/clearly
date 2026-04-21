@@ -27,8 +27,14 @@ struct RawTextDetailView_iOS: View {
                 .frame(maxWidth: 180)
             }
         }
+        .background {
+            QuickSwitcherShortcuts()
+        }
         .task(id: file.id) {
             await document.open(file, via: vault)
+            if document.errorMessage == nil {
+                vault.markRecent(file)
+            }
         }
         .onChange(of: scenePhase) { _, newPhase in
             if newPhase == .inactive || newPhase == .background {

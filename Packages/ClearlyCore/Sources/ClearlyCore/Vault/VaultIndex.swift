@@ -21,6 +21,7 @@ public struct SearchResult {
 public struct MatchExcerpt {
     public let lineNumber: Int        // 1-based
     public let contextLine: String    // the line containing the match
+    public let highlightedContextLine: String
 }
 
 public struct SearchFileGroup {
@@ -598,14 +599,13 @@ public final class VaultIndex: @unchecked Sendable {
                     var excerpts: [MatchExcerpt] = []
                     for (i, line) in lines.enumerated() {
                         if line.contains("<<") {
+                            let highlightedLine = Self.truncatedHighlightedLine(line, visibleLimit: 200)
                             excerpts.append(MatchExcerpt(
                                 lineNumber: i + 1,
-                                contextLine: String(
-                                    line
-                                        .replacingOccurrences(of: "<<", with: "")
-                                        .replacingOccurrences(of: ">>", with: "")
-                                        .prefix(200)
-                                )
+                                contextLine: highlightedLine
+                                    .replacingOccurrences(of: "<<", with: "")
+                                    .replacingOccurrences(of: ">>", with: ""),
+                                highlightedContextLine: highlightedLine
                             ))
                             if excerpts.count >= 5 { break }
                         }
@@ -988,6 +988,39 @@ public final class VaultIndex: @unchecked Sendable {
 
     private static func fileModDate(_ url: URL) -> Date {
         (try? FileManager.default.attributesOfItem(atPath: url.path)[.modificationDate] as? Date) ?? Date()
+    }
+
+    private static func truncatedHighlightedLine(_ line: String, visibleLimit: Int) -> String {
+        var out = ""
+        var visible = 0
+        var current = line.startIndex
+        var inHighlight = false
+
+        while current < line.endIndex && visible < visibleLimit {
+            if line[current...].hasPrefix("<<") {
+                if !inHighlight {
+                    out += "<<"
+                    inHighlight = true
+                }
+                current = line.index(current, offsetBy: 2)
+                continue
+            }
+            if line[current...].hasPrefix(">>") {
+                if inHighlight {
+                    out += ">>"
+                    inHighlight = false
+                }
+                current = line.index(current, offsetBy: 2)
+                continue
+            }
+
+            out.append(line[current])
+            visible += 1
+            current = line.index(after: current)
+        }
+
+        if inHighlight { out += ">>" }
+        return out
     }
 
     public static func relativePath(of fileURL: URL, from rootURL: URL) -> String {
