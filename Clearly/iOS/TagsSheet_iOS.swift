@@ -3,11 +3,12 @@ import ClearlyCore
 
 /// Two-step tag browser. Root view lists every tag with its file count; tapping
 /// a tag pushes a filtered file list onto the sheet's internal NavigationStack.
-/// Tapping a file dismisses the sheet and appends the file to
-/// `vault.navigationPath` (the app-level sidebar stack).
+/// Tapping a file dismisses the sheet and lets the caller route navigation.
 struct TagsSheet_iOS: View {
     @Environment(VaultSession.self) private var vault
     @Environment(\.dismiss) private var dismiss
+
+    let onOpenFile: (VaultFile) -> Void
 
     @State private var tags: [(tag: String, count: Int)] = []
 
@@ -54,7 +55,7 @@ struct TagsSheet_iOS: View {
             .navigationDestination(for: String.self) { tag in
                 TaggedFilesView(tag: tag) { file in
                     dismiss()
-                    vault.navigationPath.append(file)
+                    onOpenFile(file)
                 }
             }
         }
