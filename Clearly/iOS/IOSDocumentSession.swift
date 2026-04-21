@@ -166,6 +166,10 @@ public final class IOSDocumentSession {
 
     fileprivate func handleRemoteDeletion() {
         detachPresenter()
+        if isDirty {
+            hasConflict = true
+            return
+        }
         file = nil
         text = ""
         lastSavedText = ""
