@@ -41,9 +41,15 @@ public final class VaultSession {
     @ObservationIgnored private var watcher: VaultWatcher?
     @ObservationIgnored private var index: VaultIndex?
     @ObservationIgnored private var indexingTask: Task<Void, Never>?
-    @ObservationIgnored private var knownFiles: [URL: Date?] = [:]
+    @ObservationIgnored private var indexingGeneration: Int = 0
+    @ObservationIgnored private var knownFiles: [URL: FileSnapshot] = [:]
     @ObservationIgnored private var cancellables: Set<AnyCancellable> = []
     @ObservationIgnored private let defaults: UserDefaults
+
+    private struct FileSnapshot: Equatable {
+        let modified: Date?
+        let isPlaceholder: Bool
+    }
 
     public init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
@@ -101,6 +107,7 @@ public final class VaultSession {
         if let current = currentVault, current.kind != .defaultICloud {
             current.url.stopAccessingSecurityScopedResource()
         }
+        indexingGeneration += 1
         indexingTask?.cancel()
         indexingTask = nil
         index?.close()
@@ -203,6 +210,8 @@ public final class VaultSession {
     /// incremental re-index once the download lands.
     private func beginIndexing(using index: VaultIndex) {
         indexingTask?.cancel()
+        indexingGeneration += 1
+        let generation = indexingGeneration
         indexProgress = 0.0
 
         indexingTask = Task.detached(priority: .utility) { [weak self] in
@@ -226,15 +235,23 @@ public final class VaultSession {
                     return false
                 },
                 progress: { value in
-                    Task { @MainActor [weak self] in
-                        self?.indexProgress = value
+                    Task { @MainActor [weak self, weak index] in
+                        guard let self,
+                              let index,
+                              let currentIndex = self.index,
+                              currentIndex === index,
+                              self.indexingGeneration == generation else { return }
+                        self.indexProgress = value
                     }
                 }
             )
+            if Task.isCancelled { return }
             await MainActor.run { [weak self] in
                 guard let self = self else { return }
+                guard let currentIndex = self.index,
+                      currentIndex === index,
+                      self.indexingGeneration == generation else { return }
                 self.indexProgress = nil
-                if Task.isCancelled { return }
                 // Catch-up pass: any file that appeared or changed DURING the rebuild
                 // got filtered out of `scheduleIncrementalReindex` (because
                 // `indexProgress != nil`) and isn't guaranteed to produce another
@@ -261,7 +278,9 @@ public final class VaultSession {
         if indexProgress != nil { return }
 
         let oldKnown = knownFiles
-        let newKnown = Dictionary(uniqueKeysWithValues: newFiles.map { ($0.url, $0.modified) })
+        let newKnown = Dictionary(uniqueKeysWithValues: newFiles.map {
+            ($0.url, FileSnapshot(modified: $0.modified, isPlaceholder: $0.isPlaceholder))
+        })
         knownFiles = newKnown
 
         let rootURL = currentVault?.url ?? index.rootURL

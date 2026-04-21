@@ -278,6 +278,36 @@ final class MCPIntegrationTests: XCTestCase {
         XCTAssertTrue(read.content.contains("Line 2"))
     }
 
+    func testUpdateNoteLinkShowsInBacklinks() async throws {
+        struct Ignored: Decodable {}
+        _ = try await harness.callTool(
+            "create_note",
+            arguments: [
+                "relative_path": .string("Inbox/link-added-later.md"),
+                "content": .string("No links yet.\n")
+            ],
+            as: Ignored.self
+        )
+        _ = try await harness.callTool(
+            "update_note",
+            arguments: [
+                "relative_path": .string("Inbox/link-added-later.md"),
+                "mode": .string("append"),
+                "content": .string("Now links [[Link Target]].\n")
+            ],
+            as: Ignored.self
+        )
+
+        struct LinkedEntry: Decodable { let relativePath: String }
+        struct Result: Decodable { let linked: [LinkedEntry] }
+        let backlinks = try await harness.callTool(
+            "get_backlinks",
+            arguments: ["relative_path": .string("Notes/Link Target.md")],
+            as: Result.self
+        )
+        XCTAssertTrue(backlinks.linked.contains { $0.relativePath == "Inbox/link-added-later.md" })
+    }
+
     func testUpdateNotePrependPreservesFrontmatter() async throws {
         struct Ignored: Decodable {}
         _ = try await harness.callTool(

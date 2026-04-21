@@ -167,6 +167,7 @@ public final class VaultIndex: @unchecked Sendable {
                     try db.execute(sql: "DELETE FROM tags WHERE file_id = ?", arguments: [id])
                     try db.execute(sql: "DELETE FROM headings WHERE file_id = ?", arguments: [id])
                     try db.execute(sql: "DELETE FROM files WHERE id = ?", arguments: [id])
+                    try self.resolveWikiLinkTargets(db: db)
                 }
                 return nil
             }
@@ -201,6 +202,7 @@ public final class VaultIndex: @unchecked Sendable {
                 try db.execute(sql: "DELETE FROM headings WHERE file_id = ?", arguments: [existingId])
 
                 self.insertParsedData(db: db, fileId: existingId, content: content)
+                try self.resolveWikiLinkTargets(db: db)
 
                 let row = try Row.fetchOne(db, sql: "SELECT * FROM files WHERE id = ?", arguments: [existingId])
                 return row.map(Self.indexedFile(from:))
@@ -216,6 +218,7 @@ public final class VaultIndex: @unchecked Sendable {
                                arguments: [fileId, filename, content])
 
                 self.insertParsedData(db: db, fileId: fileId, content: content)
+                try self.resolveWikiLinkTargets(db: db)
 
                 let row = try Row.fetchOne(db, sql: "SELECT * FROM files WHERE id = ?", arguments: [fileId])
                 return row.map(Self.indexedFile(from:))
@@ -316,14 +319,7 @@ public final class VaultIndex: @unchecked Sendable {
                     }
                 }
 
-                // Resolve wiki-link targets
-                try db.execute(sql: """
-                    UPDATE links SET target_file_id = (
-                        SELECT f.id FROM files f
-                        WHERE LOWER(f.filename) = LOWER(links.target_name)
-                        LIMIT 1
-                    )
-                    """)
+                try self.resolveWikiLinkTargets(db: db)
             }
         } catch {
             DiagnosticLog.log("VaultIndex: indexAllFiles failed — \(error.localizedDescription)")
@@ -448,17 +444,21 @@ public final class VaultIndex: @unchecked Sendable {
                     }
                 }
 
-                try db.execute(sql: """
-                    UPDATE links SET target_file_id = (
-                        SELECT f.id FROM files f
-                        WHERE LOWER(f.filename) = LOWER(links.target_name)
-                        LIMIT 1
-                    )
-                    """)
+                try self.resolveWikiLinkTargets(db: db)
             }
         } catch {
             DiagnosticLog.log("VaultIndex: indexAllFiles (async) failed — \(error.localizedDescription)")
         }
+    }
+
+    private func resolveWikiLinkTargets(db: Database) throws {
+        try db.execute(sql: """
+            UPDATE links SET target_file_id = (
+                SELECT f.id FROM files f
+                WHERE LOWER(f.filename) = LOWER(links.target_name)
+                LIMIT 1
+            )
+            """)
     }
 
     private func insertParsedData(db: Database, fileId: Int64, content: String) {
