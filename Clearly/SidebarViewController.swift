@@ -1,5 +1,6 @@
 import AppKit
 import SwiftUI
+import ClearlyCore
 
 /// Pure AppKit sidebar view controller — no SwiftUI hosting view for the main content.
 /// The outline view is built directly in AppKit so the background is fully controlled.

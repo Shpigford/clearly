@@ -1,6 +1,6 @@
 # Mobile Progress
 
-## Status: Phase 4 - Complete
+## Status: Phase 5 - Complete
 
 ## Quick Reference
 - Research: `docs/mobile/RESEARCH.md`
@@ -143,13 +143,32 @@
 ---
 
 ### Phase 5: iOS syntax-highlighted editor (read-only save path)
-**Status:** Not Started
+**Status:** Complete (2026-04-21)
 
 #### Tasks Completed
-- (none yet)
+- [x] `git mv Clearly/Theme.swift → Packages/ClearlyCore/Sources/ClearlyCore/Rendering/Theme.swift`. Collapsed 19 dynamic color declarations behind `PlatformColor.clearlyDynamic(name:light:dark:)` in `Platform.swift`; `Theme` itself imports SwiftUI only. `editorFont` returns `PlatformFont`; `folderColorPalette` stores `PlatformColor`. SwiftUI `Color` bridging uses `Color(platformColor:)`. All accessed members marked `public`.
+- [x] `git mv Clearly/MarkdownSyntaxHighlighter.swift → Packages/ClearlyCore/Sources/ClearlyCore/Rendering/`. Rendering file imports `Foundation` + `os` + `QuartzCore` only; AppKit/UIKit APIs are hidden behind `PlatformTextStorage`, `PlatformParagraphStyle`, `PlatformTextAttributes`, and `PlatformFont` helpers in `Platform.swift`. Class, init, `highlightAll`, `highlightAround`, `isInsideProtectedRange`, `needsFullHighlight` all `public`. Removed `import ClearlyCore` (this file now lives inside the package).
+- [x] Added platform wrappers to `Packages/ClearlyCore/Sources/ClearlyCore/Platform/Platform.swift`: `PlatformTextView`, `PlatformTextStorage`, `PlatformParagraphStyle`, `PlatformTextAttributes`, `PlatformFontWeight`, `PlatformColor.clearlyColor`, `PlatformColor.clearlyDynamic`, `Color(platformColor:)`, `PlatformFont.withItalicTrait()`, `PlatformFont.clearlyMonospacedSystemFont`, and `PlatformFont.clearlyMonospacedBoldItalic`.
+- [x] Added `import ClearlyCore` to nine Mac-only consumers that pulled `Theme`/`MarkdownSyntaxHighlighter` from the old module-local scope: `WelcomeView`, `SidebarViewController`, `ScratchpadManager`, `ScratchpadEditorView`, `LineNumberRulerView`, `IconPickerView`, `ClearlyTextView`, `ClearlySegmentedControl`, `ClearlyButtonStyle`. The remaining 11 consumers already had the import from Phase 1.
+- [x] New `Clearly/iOS/ClearlyUITextView.swift` — `UITextView` subclass. Owns its own `NSTextStorage`/`NSLayoutManager`/`NSTextContainer` chain. Sets `backgroundColor`/`textColor`/`font`/`tintColor` from `Theme`. Sets `isEditable = false` + `isSelectable = true` for the Phase 5 read-only contract. Disables autocorrect + smart quotes + smart dashes + smart insert/delete + spell check globally. `keyboardDismissMode = .interactive`. Applies `textContainerInset` modeled on `Theme.editorInsetTop/Bottom` (left/right = 16). `typingAttributes` carries `editorFont` + `textColor` + paragraph style with `min/maxLineHeight = Theme.editorLineHeight` + `baselineOffset = Theme.editorBaselineOffset`. `init(coder:)` unavailable.
+- [x] New `Clearly/iOS/EditorView_iOS.swift` — `UIViewRepresentable<ClearlyUITextView>`. `text: String` is a value (not `@Binding`) — read-only contract enforced structurally. `Coordinator: NSObject, UITextViewDelegate` owns a `MarkdownSyntaxHighlighter`. `pendingBindingUpdates: Int` counter + `pendingBindingUpdateToken: UUID?` ported verbatim from the Mac `EditorView.Coordinator`. `textView(_:shouldChangeTextIn:replacementText:)` returns `false` when `isEditable == false`; future editable mode captures `lastEditedRange` + `lastReplacementLength`. `textViewDidChange(_:)` increments the counter synchronously, runs `highlightAround` (or `highlightAll` on fallback), handles block-delimiter deferred full highlight (300 ms async), then schedules a 150 ms async token-gated decrement. `updateUIView` skips when counter > 0, else compares `text != lastAppliedText` and rebuilds.
+- [x] Replaced `RawTextDetailView_iOS`'s `ScrollView { Text(text).monospaced() … }` with `EditorView_iOS(text: text)`. Footer copy → "Editing disabled — saving lands in next build."
+- [x] `xcodegen generate` — clean (no `project.yml` diff)
+- [x] `xcodebuild -scheme Clearly -configuration Debug build -allowProvisioningUpdates` — green (Mac unchanged)
+- [x] `xcodebuild -scheme ClearlyQuickLook -configuration Debug build` — green
+- [x] `xcodebuild -scheme ClearlyCLI -configuration Debug build` — green
+- [x] `xcodebuild -scheme ClearlyCLIIntegrationTests test` — 23/23 pass
+- [x] `xcodebuild -scheme Clearly-iOS -destination 'platform=iOS Simulator,name=iPhone 17,OS=26.4' -configuration Debug build -allowProvisioningUpdates` — green
+- [x] Booted iPhone 17 / iOS 26.4 simulator, installed `Clearly Dev.app`, launched `com.sabotage.clearly.dev`. App stays alive (PID 4743, `launchctl list` shows it running `rb-legacy`). Welcome screen renders (no iCloud identity; the same proven state from Phase 4).
+- [ ] **NOT programmatically verified (needs Josh's manual pass):** (1) tap "Choose local folder" → pick folder → sidebar populates → tap a `.md` file → editor renders with syntax highlighting; (2) side-by-side visual match against the Mac app for a file with headings / bold / italic / bold-italic / code / wiki-links / tags / blockquotes / math / frontmatter; (3) cursor-jump stress test under rapid 200-char typing burst; (4) 1 MB file smoothness check. Only the build/launch and unit-test layers are machine-verifiable in this workspace.
 
 #### Decisions Made
-- (none yet)
+- **Highlighter lives on the Coordinator, not the UITextView.** First draft placed the `MarkdownSyntaxHighlighter` as an owned property of `ClearlyUITextView` via `NSTextStorageDelegate`. Moved it to the `UIViewRepresentable.Coordinator` to mirror the Mac pattern (where the coordinator owns the highlighter and drives it from `NSTextViewDelegate.textDidChange`) and to avoid the `NSTextStorageDelegate.didProcessEditing` → nested `beginEditing`/`endEditing` re-entry risk. `UITextViewDelegate.textViewDidChange` fires outside the text storage's internal editing transaction, so there's no recursion concern.
+- **`text` passed as `let`, not `@Binding`.** Read-only contract enforced structurally — the editor can't accidentally write back. Phase 6 promotes to `@Binding` + wires a parent callback; the Coordinator's `pendingBindingUpdates` counter is already in place for that promotion.
+- **Global autocorrect / smart-quote disable.** Plan called out a per-range code-fence disable as a stretch goal. Shipped with a global disable on all five (`autocapitalization`, `autocorrection`, `smartQuotes`, `smartDashes`, `smartInsertDelete`, `spellChecking`) since markdown authoring is the single use case. Per-range logic can come in Phase 6 if user feedback demands it.
+- **Dynamic-color refactor in `Theme`.** Rather than replicating 19 individual `NSColor(name:)` / `UIColor(dynamicProvider:)` declarations inside `Theme`, added `PlatformColor.clearlyDynamic(name:light:dark:)` in `Platform.swift`. Same colors, same dynamic behavior, and rendering files stay free of AppKit/UIKit imports.
+- **PlatformFont trait helpers live on `PlatformFont`.** Extension on the typealias, not free functions, so the highlighter reads naturally: `Theme.editorFont.withItalicTrait()` and `PlatformFont.clearlyMonospacedBoldItalic(size:)`. Works identically on both platforms. `NSFontManager` + `NSFontTraitMask` are fully hidden inside the extension.
+- **No source globs changed in `project.yml`.** `Packages/ClearlyCore/Sources/ClearlyCore/**/*.swift` picks up the two new files in `Rendering/` automatically; `Clearly/iOS/**` globbed for the iOS target picks up the two new files there. Re-ran `xcodegen generate` after adding `EditorView_iOS.swift` because the first build missed the new file (expected — xcodegen only sees what's on disk when it runs).
 
 #### Blockers
 - (none)
@@ -278,7 +297,10 @@
 - **Phase 1 executed and verified.** 20 Swift files relocated into `Packages/ClearlyCore`; all four Mac schemes build clean; all 23 `ClearlyCLIIntegrationTests` pass. Mac behavior unchanged — no functional changes, no UI changes.
 - **Phase 2 executed and verified.** `Clearly-iOS` target added to `project.yml`; three new files under `Clearly/iOS/` (app entry, Info plist, entitlements shell); Mac target picks up `excludes: ["iOS/**"]`. Fixed one Mac-only API leak in `ClearlyCore/Vault/VaultIndex.swift` (`homeDirectoryForCurrentUser`, gated behind `#if os(macOS)`). All Mac schemes still green; 23/23 CLI integration tests still pass; iOS builds succeed both via `-sdk iphonesimulator` and via a concrete simulator destination (`platform=iOS Simulator,name=iPhone 17,OS=26.4`); placeholder view renders on iPhone 17 simulator (iOS 26.4 runtime).
 
-### 2026-04-21
+### 2026-04-21 (Phase 5)
+- **Phase 5 complete.** iOS now has a real markdown editor with syntax highlighting. Moved `Theme.swift` and `MarkdownSyntaxHighlighter.swift` into `ClearlyCore/Rendering/`; AppKit/UIKit-specific color, font, text-storage, paragraph-style, and attributed-string-key APIs live behind wrappers in `Platform.swift`. Rendering files import no AppKit/UIKit. Added `PlatformTextView` and related text-rendering wrappers. New iOS files: `ClearlyUITextView` (read-only `UITextView` subclass) + `EditorView_iOS` (`UIViewRepresentable` with a Coordinator that owns the highlighter and ports the Mac `pendingBindingUpdates` cursor-jump counter verbatim). Swapped `RawTextDetailView_iOS`'s `ScrollView{Text(...)}` for `EditorView_iOS(text:)`. All Mac schemes still green, 23/23 CLI integration tests pass, iOS simulator build green, app launches and stays alive. Real UI visual verification (tap-through + side-by-side color match) deferred to Josh's manual pass — no programmatic driver for simulator taps in this workspace.
+
+### 2026-04-21 (Phase 3 + 4)
 - **Phase 3 complete.** iCloud entitlements added to all three channels; `NSUbiquitousContainers` on Mac Info.plist; `ClearlyCore/Sync/{CloudVault, CoordinatedFileIO}.swift` introduced; `scripts/verify-entitlements.sh` wired into both release scripts; `project.yml` updated with `DEVELOPMENT_TEAM = W33JZPPPFN` + automatic Debug signing so iCloud entitlements provision correctly. All Mac schemes + iOS build + integration tests (23/23) green. Runtime verified on Mac: `CloudVault.ubiquityContainerURL()` resolves to `~/Library/Mobile Documents/iCloud~com~sabotage~clearly/Documents` and the container bootstrap creates the `Documents/` subdir on first call. iOS on-device runtime verification deferred to Phase 4 (simulator strips entitlements, real device testing ships with the sidebar UI).
 - **Phase 4 complete.** First user-visible iOS milestone. Added `VaultLocation` + `VaultWatcher` (NSMetadataQuery for default iCloud / FileNode.buildTree for picked/local) + `VaultSession` (`@Observable @MainActor`, owns one watcher, persists `StoredVaultLocation` under `UserDefaults` key `"iosVaultLocation"`, reads raw UTF-8 via `CoordinatedFileIO.read` off-main, downloads iCloud placeholders on demand). Promoted `MarkdownDocument` to `FileDocument` (writes still throw; consumers arrive in Phase 5/6). New iOS views: `WelcomeView_iOS` (three buttons, SwiftUI `.fileImporter`, watches `CloudVault.isAvailablePublisher` to gate the default-iCloud button), `SidebarView_iOS` (`NavigationStack` + `List`, change-vault toolbar button, placeholder SF Symbol, pull-to-refresh, full-screen welcome cover when no vault), `RawTextDetailView_iOS` (monospace text with read-only footer, placeholder-download-aware). Rewired `ClearlyApp_iOS` to host a single `VaultSession` and call `restoreFromPersistence()` on launch. Added `NSUbiquitousContainers` to the iOS Info.plist. All four schemes build green; 23/23 integration tests still pass. Welcome screen verified on iPhone 17 simulator (iOS 26.4) — default-iCloud button correctly disabled because simulator has no iCloud identity, proving the availability wiring. Deviations from plan logged: `WindowGroup` over `DocumentGroup` (custom vault sidebar is incompatible with DocumentGroup's per-scene document model), `FileDocument` over `ReferenceFileDocument` (value semantics are enough until autosave lands). End-to-end iCloud sync verification deferred to device testing.
 
@@ -304,6 +326,13 @@
 - **New (iOS app):** `Clearly/iOS/WelcomeView_iOS.swift`, `Clearly/iOS/SidebarView_iOS.swift`, `Clearly/iOS/RawTextDetailView_iOS.swift`
 - **Modified:** `Clearly/MarkdownDocument.swift` (promoted to `FileDocument`), `Clearly/iOS/ClearlyApp_iOS.swift` (placeholder → real app scene owning `VaultSession`), `Clearly/iOS/Info-iOS.plist` (added `NSUbiquitousContainers`)
 
+### Phase 5 (2026-04-21)
+- **Moved (via `git mv`, history preserved):** `Clearly/Theme.swift` → `Packages/ClearlyCore/Sources/ClearlyCore/Rendering/Theme.swift`; `Clearly/MarkdownSyntaxHighlighter.swift` → `Packages/ClearlyCore/Sources/ClearlyCore/Rendering/MarkdownSyntaxHighlighter.swift`
+- **Modified (ClearlyCore):** `Theme.swift` (cross-platform dynamic color helper, `PlatformFont` extensions, all accessed members `public`), `MarkdownSyntaxHighlighter.swift` (cross-platform imports, `PlatformFont`/`PlatformColor` in signatures, four `NSFontManager.convert` sites swapped for helpers, class + entry points `public`), `Platform/Platform.swift` (added `PlatformTextView` typealias)
+- **New (iOS app):** `Clearly/iOS/ClearlyUITextView.swift`, `Clearly/iOS/EditorView_iOS.swift`
+- **Modified (iOS app):** `Clearly/iOS/RawTextDetailView_iOS.swift` (swapped `ScrollView{Text}` for `EditorView_iOS`, updated footer copy)
+- **Modified (Mac):** added `import ClearlyCore` to 9 consumers (`WelcomeView`, `SidebarViewController`, `ScratchpadManager`, `ScratchpadEditorView`, `LineNumberRulerView`, `IconPickerView`, `ClearlyTextView`, `ClearlySegmentedControl`, `ClearlyButtonStyle`)
+
 ## Architectural Decisions
 
 ### 2026-04-20 — Universal Purchase with shared bundle ID across all three channels
@@ -320,6 +349,15 @@ First draft had 8 phases but several were 2–3 days of work each. Split to 13 p
 
 ### 2026-04-20 — iOS simulator verification path
 Preferred verification path for the iOS target is a normal destination-based build: `xcodebuild -scheme Clearly-iOS -destination 'platform=iOS Simulator,name=iPhone 17,OS=26.4' -configuration Debug build`. `xcrun simctl install` + `xcrun simctl launch` remain useful when we want an explicit post-build launch check, but they are not required to work around destination resolution in this workspace.
+
+### 2026-04-21 — Highlighter lives on Coordinator, not UITextView (Phase 5)
+First draft had `ClearlyUITextView` own a `MarkdownSyntaxHighlighter` and install itself as `NSTextStorageDelegate`. Moved the highlighter to `EditorView_iOS.Coordinator` to mirror the Mac pattern (`EditorView.Coordinator` owns the highlighter; `NSTextViewDelegate.textDidChange` drives it). Avoids the `NSTextStorageDelegate.didProcessEditing` → nested `beginEditing`/`endEditing` re-entry risk — `UITextViewDelegate.textViewDidChange` fires outside the text storage's internal editing transaction. `ClearlyUITextView` is now a pure-config subclass (typing attributes, insets, keyboard config only).
+
+### 2026-04-21 — `text` as `let`, not `@Binding`, in Phase 5 editor
+Read-only contract enforced structurally rather than by convention. Phase 6 will promote to `@Binding` when writes land. The `pendingBindingUpdates` counter is already in place in the Coordinator so that promotion won't require re-architecting the cursor-jump guard.
+
+### 2026-04-21 — Collapsed 19 dynamic-color declarations in `Theme`
+The original Mac `Theme.swift` had 19 separate `NSColor(name:dynamicProvider:)` declarations. Making each one cross-platform directly in `Theme` would have doubled the rendering file with `#if os(macOS)`/`#else` branches. Instead introduced `PlatformColor.clearlyDynamic(name:light:dark:)` in `Platform.swift` — 19 call sites become one-line declarations and `Theme` stays platform-wrapper-only. Same palette, same dynamic behavior.
 
 ### 2026-04-21 — WindowGroup over DocumentGroup on iOS (Phase 4)
 `IMPLEMENTATION.md` Phase 4 described `DocumentGroup` as the root iOS scene plus a separate welcome `WindowGroup`. Shipped as a single `WindowGroup` instead. `DocumentGroup` on iOS 17 opens the system document browser at launch with one-document-per-scene semantics — incompatible with the phase's requirement to show a vault-folder sidebar as the root UI. A single `WindowGroup` hosting welcome + sidebar + detail views matches the Mac app's mental model (Mac uses `Window` + `WorkspaceManager`, not `DocumentGroup`). `MarkdownDocument` was still promoted to `FileDocument` for Phase 5's editor binding. If Files.app "open in Clearly" integration is needed later, `DocumentGroup` can be added as a secondary scene. Phase 12 will revisit scene architecture for iPad multi-tab either way. `IMPLEMENTATION.md` should be updated if this deviation holds through Phase 5.

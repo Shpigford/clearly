@@ -1,4 +1,5 @@
 import SwiftUI
+import ClearlyCore
 
 struct ClearlySegmentedControl<T: Hashable & CaseIterable & RawRepresentable>: View where T.RawValue == String, T.AllCases: RandomAccessCollection {
     @Binding var selection: T

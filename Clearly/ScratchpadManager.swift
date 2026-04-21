@@ -2,6 +2,7 @@ import AppKit
 import SwiftUI
 import UniformTypeIdentifiers
 import KeyboardShortcuts
+import ClearlyCore
 
 struct Scratchpad: Identifiable {
     let id = UUID()

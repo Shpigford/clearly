@@ -120,13 +120,17 @@ Use these instead:
 
 `Clearly/iOS/ClearlyApp_iOS.swift` roots the app in a `WindowGroup` hosting `SidebarView_iOS`, mirroring how the Mac app uses `Window` + `WorkspaceManager` instead of `DocumentGroup`. Don't "fix" this back to `DocumentGroup` — its one-document-per-scene model is incompatible with the custom vault-folder sidebar (first screen needs to show a list of a user-picked folder's `.md` files, not the system document browser). `MarkdownDocument` is still a `FileDocument` so Phase 5's editor can bind to it, but no scene instantiates `DocumentGroup`. If Files.app "open in Clearly" integration is needed later, add `DocumentGroup` as a *second* scene alongside `WindowGroup`, don't swap it in.
 
+### `ClearlyUITextView` must stay on TextKit 1, not TextKit 2
+
+`Clearly/iOS/ClearlyUITextView.swift` calls `super.init(frame:textContainer:)` with a manually-constructed `NSTextStorage` → `NSLayoutManager` → `NSTextContainer` chain. Passing a non-nil `textContainer` is what forces TextKit 1 on iOS 16+; the default `UITextView(frame:)` defaults to TextKit 2, where `textView.textStorage` is effectively dead. Every path that reaches into `textStorage` — `MarkdownSyntaxHighlighter.highlightAll` / `highlightAround`, typing attributes, `NSTextStorageDelegate`, future save path in Phase 6 — depends on TextKit 1. Don't "simplify" the init to `super.init(frame:)` or use `UITextView(usingTextLayoutManager: true)`; highlighting will silently stop working with no crash.
+
 ## Conventions
 
 - All colors go through `Theme` with dynamic light/dark resolution — don't hardcode colors
 - Preview CSS in `PreviewCSS.swift` must stay in sync with `Theme` colors for visual consistency between editor and preview modes
 - CSS changes in `PreviewCSS.swift` must cover four contexts: base (light), `@media (prefers-color-scheme: dark)`, `@media print`, and the `forExport` override string. Interactive elements (copy buttons, sort indicators) should be hidden in print/export
 - **CSS source order in `PreviewCSS.swift`**: Base (light) styles for new elements must be defined BEFORE any `@media (prefers-color-scheme: dark)` overrides for those elements. If a base style comes after a dark-mode `@media` block, the base style wins by source order and dark mode breaks. Place the dark-mode override immediately after the base definition (in its own `@media` block if needed), not in the consolidated dark-mode block near the top of the file.
-- Changes to `project.yml` require running `xcodegen generate` to update the Xcode project
+- Changes to `project.yml` require running `xcodegen generate` to update the Xcode project. **Adding or removing source files also requires `xcodegen generate`**, even in glob-based paths like `Clearly/iOS` or `Packages/ClearlyCore/Sources/ClearlyCore/**` — xcodegen snapshots the file list at generation time and writes it into the `.xcodeproj`. A new file added after the last `xcodegen generate` will not be in the project until you re-run it, and the compiler will fail with `cannot find 'X' in scope` even though the file exists on disk.
 
 ### Adding sidebar sections
 

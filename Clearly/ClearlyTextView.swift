@@ -1,4 +1,5 @@
 import AppKit
+import ClearlyCore
 
 enum TextCheckingPreferences {
     private static let continuousSpellCheckingKey = "continuousSpellCheckingEnabled"

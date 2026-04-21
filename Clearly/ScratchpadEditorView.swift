@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import ClearlyCore
 
 final class ScratchpadTextView: PersistentTextCheckingTextView {
     var onSave: (() -> Void)?

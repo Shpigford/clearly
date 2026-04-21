@@ -1,4 +1,5 @@
 import AppKit
+import ClearlyCore
 
 final class LineNumberGutterView: NSView {
     weak var textView: NSTextView?

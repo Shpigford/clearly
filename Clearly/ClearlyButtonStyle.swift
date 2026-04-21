@@ -1,4 +1,5 @@
 import SwiftUI
+import ClearlyCore
 
 struct ClearlyToolbarButtonStyle: ButtonStyle {
     var isActive: Bool = false

@@ -42,18 +42,12 @@ struct RawTextDetailView_iOS: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
-            ScrollView {
-                Text(text)
-                    .font(.system(.body, design: .monospaced))
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .textSelection(.enabled)
-                    .padding(16)
-            }
+            EditorView_iOS(text: text)
         }
     }
 
     private var footer: some View {
-        Text("Read-only preview — editing lands in the next build.")
+        Text("Editing disabled — saving lands in next build.")
             .font(.caption)
             .foregroundStyle(.secondary)
             .padding(.vertical, 8)

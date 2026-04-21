@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import ClearlyCore
 
 struct WelcomeView: View {
     var workspace: WorkspaceManager
