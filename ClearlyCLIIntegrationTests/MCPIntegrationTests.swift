@@ -58,6 +58,15 @@ final class MCPIntegrationTests: XCTestCase {
         )
     }
 
+    func testSearchFilesGroupedKeepsHighlightedExcerptForUI() async throws {
+        let groups = harness.loadedVaults[0].index.searchFilesGrouped(query: "standup")
+        let excerpt = try XCTUnwrap(groups.flatMap(\.excerpts).first)
+        XCTAssertFalse(excerpt.contextLine.contains("<<"))
+        XCTAssertFalse(excerpt.contextLine.contains(">>"))
+        XCTAssertTrue(excerpt.highlightedContextLine.contains("<<"))
+        XCTAssertTrue(excerpt.highlightedContextLine.contains(">>"))
+    }
+
     // MARK: - read_note
 
     func testReadNoteReturnsContentAndHash() async throws {

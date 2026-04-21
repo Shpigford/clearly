@@ -190,7 +190,7 @@ struct QuickSwitcherSheet_iOS: View {
                 let excerpt = group.excerpts.first
                 contentHits.append(.content(
                     file,
-                    snippet: excerpt?.contextLine.trimmingCharacters(in: .whitespaces),
+                    snippet: excerpt?.highlightedContextLine.trimmingCharacters(in: .whitespaces),
                     lineNumber: excerpt?.lineNumber
                 ))
                 if contentHits.count >= Self.contentLimit { break }
