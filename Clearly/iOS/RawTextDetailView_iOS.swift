@@ -9,6 +9,10 @@ struct RawTextDetailView_iOS: View {
 
     @State private var document = IOSDocumentSession()
     @State private var viewMode: ViewMode = .edit
+    @StateObject private var backlinksState = BacklinksState()
+    @StateObject private var outlineState = OutlineState()
+    @State private var showBacklinks = false
+    @State private var showOutline = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -26,6 +30,22 @@ struct RawTextDetailView_iOS: View {
                 .pickerStyle(.segmented)
                 .frame(maxWidth: 180)
             }
+            ToolbarItem(placement: .topBarTrailing) {
+                Button {
+                    showOutline = true
+                } label: {
+                    Image(systemName: "list.bullet.indent")
+                }
+                .accessibilityLabel("Outline")
+            }
+            ToolbarItem(placement: .topBarTrailing) {
+                Button {
+                    showBacklinks = true
+                } label: {
+                    Image(systemName: "link")
+                }
+                .accessibilityLabel("Backlinks")
+            }
         }
         .background {
             QuickSwitcherShortcuts()
@@ -34,6 +54,8 @@ struct RawTextDetailView_iOS: View {
             await document.open(file, via: vault)
             if document.errorMessage == nil {
                 vault.markRecent(file)
+                outlineState.parseHeadings(from: document.text)
+                refreshBacklinks()
             }
         }
         .onChange(of: scenePhase) { _, newPhase in
@@ -41,8 +63,21 @@ struct RawTextDetailView_iOS: View {
                 Task { await document.flush() }
             }
         }
+        .onChange(of: document.text) { _, newText in
+            outlineState.parseHeadings(from: newText)
+        }
+        .onChange(of: vault.indexProgress) { _, newValue in
+            if newValue == nil { refreshBacklinks() }
+        }
         .onDisappear {
             Task { await document.close() }
+        }
+        .sheet(isPresented: $showBacklinks) {
+            BacklinksSheet_iOS(backlinksState: backlinksState)
+                .environment(vault)
+        }
+        .sheet(isPresented: $showOutline) {
+            OutlineSheet_iOS(outlineState: outlineState, onJump: jumpToHeading)
         }
     }
 
@@ -68,10 +103,13 @@ struct RawTextDetailView_iOS: View {
         } else {
             switch viewMode {
             case .edit:
-                EditorView_iOS(text: Binding(
-                    get: { document.text },
-                    set: { document.text = $0 }
-                ))
+                EditorView_iOS(
+                    text: Binding(
+                        get: { document.text },
+                        set: { document.text = $0 }
+                    ),
+                    outlineState: outlineState
+                )
             case .preview:
                 PreviewView_iOS(
                     markdown: document.text,
@@ -80,6 +118,18 @@ struct RawTextDetailView_iOS: View {
                     onTaskToggle: handleTaskToggle
                 )
             }
+        }
+    }
+
+    private func refreshBacklinks() {
+        let indexes = [vault.currentIndex].compactMap { $0 }
+        backlinksState.update(for: file.url, using: indexes)
+    }
+
+    private func jumpToHeading(_ heading: HeadingItem) {
+        viewMode = .edit
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+            outlineState.scrollToRange?(heading.range)
         }
     }
 

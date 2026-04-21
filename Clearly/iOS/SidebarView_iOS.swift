@@ -4,6 +4,14 @@ import ClearlyCore
 struct SidebarView_iOS: View {
     @Environment(VaultSession.self) private var session
     @State private var showWelcome: Bool = false
+    @State private var showTags: Bool = false
+
+    @State private var renameTarget: VaultFile?
+    @State private var renameDraft: String = ""
+    @State private var renameError: String?
+
+    @State private var deleteTarget: VaultFile?
+    @State private var operationError: String?
 
     var body: some View {
         @Bindable var session = session
@@ -42,6 +50,15 @@ struct SidebarView_iOS: View {
                 }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {
+                        showTags = true
+                    } label: {
+                        Image(systemName: "tag")
+                    }
+                    .accessibilityLabel("Browse tags")
+                    .disabled(session.currentVault == nil)
+                }
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button {
                         showWelcome = true
                     } label: {
                         Image(systemName: "folder")
@@ -69,6 +86,44 @@ struct SidebarView_iOS: View {
             QuickSwitcherSheet_iOS()
                 .environment(session)
         }
+        .sheet(isPresented: $showTags) {
+            TagsSheet_iOS()
+                .environment(session)
+        }
+        .alert("Rename note", isPresented: renameAlertBinding) {
+            TextField("Name", text: $renameDraft)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+            Button("Cancel", role: .cancel) { renameTarget = nil }
+            Button("Save") { commitRename() }
+        } message: {
+            if let err = renameError {
+                Text(err)
+            } else {
+                Text("Enter a new name (extension preserved).")
+            }
+        }
+        .confirmationDialog(
+            deleteTarget.map { "Delete \u{201C}\($0.name)\u{201D}?" } ?? "",
+            isPresented: deleteConfirmBinding,
+            titleVisibility: .visible
+        ) {
+            Button("Delete", role: .destructive) { commitDelete() }
+            Button("Cancel", role: .cancel) { deleteTarget = nil }
+        } message: {
+            Text("This can't be undone from within Clearly.")
+        }
+        .alert(
+            "Something went wrong",
+            isPresented: Binding(
+                get: { operationError != nil },
+                set: { if !$0 { operationError = nil } }
+            )
+        ) {
+            Button("OK", role: .cancel) { operationError = nil }
+        } message: {
+            Text(operationError ?? "")
+        }
     }
 
     private var shouldShowWelcomeBinding: Binding<Bool> {
@@ -76,6 +131,27 @@ struct SidebarView_iOS: View {
             get: { session.currentVault == nil || showWelcome },
             set: { newValue in
                 if !newValue { showWelcome = false }
+            }
+        )
+    }
+
+    private var renameAlertBinding: Binding<Bool> {
+        Binding(
+            get: { renameTarget != nil },
+            set: { newValue in
+                if !newValue {
+                    renameTarget = nil
+                    renameError = nil
+                }
+            }
+        )
+    }
+
+    private var deleteConfirmBinding: Binding<Bool> {
+        Binding(
+            get: { deleteTarget != nil },
+            set: { newValue in
+                if !newValue { deleteTarget = nil }
             }
         )
     }
@@ -116,10 +192,55 @@ struct SidebarView_iOS: View {
                         .truncationMode(.middle)
                 }
             }
+            .contextMenu {
+                Button {
+                    beginRename(file)
+                } label: {
+                    Label("Rename", systemImage: "pencil")
+                }
+                Button(role: .destructive) {
+                    deleteTarget = file
+                } label: {
+                    Label("Delete", systemImage: "trash")
+                }
+            }
         }
         .listStyle(.insetGrouped)
         .navigationDestination(for: VaultFile.self) { file in
             RawTextDetailView_iOS(file: file)
+        }
+    }
+
+    private func beginRename(_ file: VaultFile) {
+        renameTarget = file
+        renameError = nil
+        renameDraft = (file.name as NSString).deletingPathExtension
+    }
+
+    private func commitRename() {
+        guard let target = renameTarget else { return }
+        let draft = renameDraft
+        renameTarget = nil
+        Task {
+            do {
+                try await session.renameFile(target, to: draft)
+            } catch VaultSessionError.readFailed(let msg) {
+                operationError = msg
+            } catch {
+                operationError = error.localizedDescription
+            }
+        }
+    }
+
+    private func commitDelete() {
+        guard let target = deleteTarget else { return }
+        deleteTarget = nil
+        Task {
+            do {
+                try await session.deleteFile(target)
+            } catch {
+                operationError = error.localizedDescription
+            }
         }
     }
 }

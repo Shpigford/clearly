@@ -410,6 +410,95 @@ public final class VaultSession {
         return String(trimmed.filter { !forbidden.contains($0) })
     }
 
+    // MARK: - File operations
+
+    /// Rename a file within the same directory. `newBaseName` is the filename stem
+    /// without extension; the original extension is preserved. Throws if the new
+    /// name is empty, contains forbidden characters, or a file already exists at
+    /// the destination URL. Also prunes the renamed file from `navigationPath`
+    /// and from recents, since both are URL-keyed.
+    public func renameFile(_ file: VaultFile, to newBaseName: String) async throws {
+        let trimmed = newBaseName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            throw VaultSessionError.readFailed("new name is empty")
+        }
+        let forbidden: Set<Character> = ["/", "\\", ":", "?", "*", "\"", "<", ">", "|"]
+        guard !trimmed.contains(where: { forbidden.contains($0) }) else {
+            throw VaultSessionError.readFailed("new name contains forbidden characters")
+        }
+        // Strip a trailing markdown extension the user may have typed themselves
+        // so we don't produce `note.md.md`. Matches any of `FileNode.markdownExtensions`.
+        let stem: String = {
+            let ns = trimmed as NSString
+            let typedExt = ns.pathExtension.lowercased()
+            if !typedExt.isEmpty && FileNode.markdownExtensions.contains(typedExt) {
+                return ns.deletingPathExtension
+            }
+            return trimmed
+        }()
+        guard !stem.isEmpty else {
+            throw VaultSessionError.readFailed("new name is empty")
+        }
+        let ext = (file.url.pathExtension.isEmpty ? "md" : file.url.pathExtension)
+        let parent = file.url.deletingLastPathComponent()
+        let destURL = parent.appendingPathComponent("\(stem).\(ext)")
+        if destURL.standardizedFileURL == file.url.standardizedFileURL { return }
+        if FileManager.default.fileExists(atPath: destURL.path) {
+            throw VaultSessionError.readFailed("a file with that name already exists")
+        }
+        let src = file.url
+        try await Task.detached(priority: .userInitiated) {
+            try CoordinatedFileIO.move(from: src, to: destURL)
+        }.value
+        dropFromNavigationPath(file.url)
+        dropFromRecents(file.url)
+        refresh()
+    }
+
+    /// Delete a file from the vault. Prunes from `navigationPath` and recents.
+    public func deleteFile(_ file: VaultFile) async throws {
+        let url = file.url
+        try await Task.detached(priority: .userInitiated) {
+            try CoordinatedFileIO.delete(at: url)
+        }.value
+        dropFromNavigationPath(file.url)
+        dropFromRecents(file.url)
+        refresh()
+    }
+
+    /// Files tagged with `tag` (case-insensitive). Returns an empty array when no
+    /// index is attached. Maps each `IndexedFile` back to a `VaultFile` from the
+    /// watcher's current list, falling back to a provisional record constructed
+    /// from the absolute URL when the watcher hasn't caught up yet.
+    public func filesForTag(_ tag: String) -> [VaultFile] {
+        guard let index = index else { return [] }
+        let rootURL = currentVault?.url ?? index.rootURL
+        let byURL: [URL: VaultFile] = Dictionary(
+            uniqueKeysWithValues: files.map { ($0.url.standardizedFileURL, $0) }
+        )
+        return index.filesForTag(tag: tag).map { indexed in
+            let absoluteURL = rootURL.appendingPathComponent(indexed.path)
+            if let match = byURL[absoluteURL.standardizedFileURL] { return match }
+            return VaultFile(
+                url: absoluteURL,
+                name: absoluteURL.lastPathComponent,
+                modified: indexed.modifiedAt,
+                isPlaceholder: false
+            )
+        }
+    }
+
+    private func dropFromNavigationPath(_ url: URL) {
+        let target = url.standardizedFileURL
+        navigationPath.removeAll { $0.url.standardizedFileURL == target }
+    }
+
+    private func dropFromRecents(_ url: URL) {
+        let target = url.standardizedFileURL
+        recentFiles.removeAll { $0.url.standardizedFileURL == target }
+        persistRecents()
+    }
+
     // MARK: - Recent files
 
     /// Record that `file` was just opened. Dedupes by URL, moves to front, trims to cap,

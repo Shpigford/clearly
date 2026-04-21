@@ -10,6 +10,7 @@ import ClearlyCore
 struct EditorView_iOS: UIViewRepresentable {
 
     @Binding var text: String
+    var outlineState: OutlineState? = nil
 
     func makeCoordinator() -> Coordinator { Coordinator(parent: self) }
 
@@ -18,11 +19,13 @@ struct EditorView_iOS: UIViewRepresentable {
         textView.delegate = context.coordinator
         context.coordinator.textView = textView
         context.coordinator.applyExternalText(text)
+        context.coordinator.attachOutlineState(outlineState)
         return textView
     }
 
     func updateUIView(_ textView: ClearlyUITextView, context: Context) {
         context.coordinator.parent = self
+        context.coordinator.attachOutlineState(outlineState)
         guard context.coordinator.pendingBindingUpdates == 0 else { return }
         guard text != context.coordinator.lastAppliedText else { return }
         context.coordinator.applyExternalText(text)
@@ -41,9 +44,36 @@ struct EditorView_iOS: UIViewRepresentable {
         private var lastReplacementLength: Int = 0
         private(set) var lastAppliedText: String = ""
         private var pendingFullHighlightWork: DispatchWorkItem?
+        private weak var attachedOutlineState: OutlineState?
 
         init(parent: EditorView_iOS) {
             self.parent = parent
+        }
+
+        /// Ownership note: `OutlineState.scrollToRange` is a property the state
+        /// holds for whichever editor is currently active. We re-assign it on
+        /// every `updateUIView` pass when the state reference changes so the
+        /// closure always targets the live text view.
+        func attachOutlineState(_ state: OutlineState?) {
+            guard attachedOutlineState !== state else { return }
+            attachedOutlineState = state
+            state?.scrollToRange = { [weak self] range in
+                self?.scrollToRange(range)
+            }
+        }
+
+        private func scrollToRange(_ range: NSRange) {
+            guard let textView else { return }
+            let clamped = NSRange(
+                location: min(range.location, textView.textStorage.length),
+                length: min(range.length, max(0, textView.textStorage.length - range.location))
+            )
+            textView.scrollRangeToVisible(clamped)
+            let previous = textView.selectedRange
+            textView.selectedRange = clamped
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak textView] in
+                textView?.selectedRange = previous
+            }
         }
 
         func applyExternalText(_ newText: String) {
