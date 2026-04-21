@@ -6,7 +6,8 @@ struct SidebarView_iOS: View {
     @State private var showWelcome: Bool = false
 
     var body: some View {
-        NavigationStack {
+        @Bindable var session = session
+        NavigationStack(path: $session.navigationPath) {
             Group {
                 if session.currentVault == nil {
                     placeholder

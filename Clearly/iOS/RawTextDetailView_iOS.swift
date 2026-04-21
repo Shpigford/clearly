@@ -8,6 +8,7 @@ struct RawTextDetailView_iOS: View {
     let file: VaultFile
 
     @State private var document = IOSDocumentSession()
+    @State private var viewMode: ViewMode = .edit
 
     var body: some View {
         VStack(spacing: 0) {
@@ -16,6 +17,16 @@ struct RawTextDetailView_iOS: View {
         }
         .navigationTitle(document.isDirty ? "• \(file.name)" : file.name)
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .principal) {
+                Picker("View mode", selection: $viewMode) {
+                    Text("Edit").tag(ViewMode.edit)
+                    Text("Preview").tag(ViewMode.preview)
+                }
+                .pickerStyle(.segmented)
+                .frame(maxWidth: 180)
+            }
+        }
         .task(id: file.id) {
             await document.open(file, via: vault)
         }
@@ -49,11 +60,53 @@ struct RawTextDetailView_iOS: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
-            EditorView_iOS(text: Binding(
-                get: { document.text },
-                set: { document.text = $0 }
-            ))
+            switch viewMode {
+            case .edit:
+                EditorView_iOS(text: Binding(
+                    get: { document.text },
+                    set: { document.text = $0 }
+                ))
+            case .preview:
+                PreviewView_iOS(
+                    markdown: document.text,
+                    fileURL: file.url,
+                    onWikiLinkClicked: handleWikiLink,
+                    onTaskToggle: handleTaskToggle
+                )
+            }
         }
+    }
+
+    private func handleWikiLink(_ target: String) {
+        Task {
+            do {
+                let file = try await vault.openOrCreate(name: target)
+                vault.navigationPath.append(file)
+            } catch {
+                DiagnosticLog.log("Wiki-link open/create failed for \(target): \(error)")
+            }
+        }
+    }
+
+    private func handleTaskToggle(_ line: Int, _ checked: Bool) {
+        var lines = document.text.components(separatedBy: "\n")
+        let idx = line - 1
+        guard idx >= 0, idx < lines.count else { return }
+        if checked {
+            lines[idx] = lines[idx]
+                .replacingOccurrences(of: "- [ ]", with: "- [x]")
+                .replacingOccurrences(of: "* [ ]", with: "* [x]")
+                .replacingOccurrences(of: "+ [ ]", with: "+ [x]")
+        } else {
+            lines[idx] = lines[idx]
+                .replacingOccurrences(of: "- [x]", with: "- [ ]")
+                .replacingOccurrences(of: "- [X]", with: "- [ ]")
+                .replacingOccurrences(of: "* [x]", with: "* [ ]")
+                .replacingOccurrences(of: "* [X]", with: "* [ ]")
+                .replacingOccurrences(of: "+ [x]", with: "+ [ ]")
+                .replacingOccurrences(of: "+ [X]", with: "+ [ ]")
+        }
+        document.text = lines.joined(separator: "\n")
     }
 
     private var conflictBanner: some View {

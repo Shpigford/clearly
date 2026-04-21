@@ -102,6 +102,19 @@ targets:
     platform: iOS
     sources:
       - path: Clearly/iOS
+      - path: Shared/Resources/mermaid.min.js
+        buildPhase: resources
+      - path: Shared/Resources/katex.min.js
+        buildPhase: resources
+      - path: Shared/Resources/katex.min.css
+        buildPhase: resources
+      - path: Shared/Resources/fonts
+        buildPhase: resources
+        type: folder
+      - path: Shared/Resources/highlight.min.js
+        buildPhase: resources
+      - path: Shared/Resources/highlight-theme.css
+        buildPhase: resources
     dependencies:
       - package: ClearlyCore
     settings:

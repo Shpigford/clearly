@@ -26,6 +26,10 @@ public final class VaultSession {
     public private(set) var isLoading: Bool = false
     public private(set) var error: VaultSessionError?
 
+    /// Navigation stack binding for `SidebarView_iOS`'s `NavigationStack(path:)`. Detail
+    /// views (e.g. preview wiki-link taps) can mutate this to push another note.
+    public var navigationPath: [VaultFile] = []
+
     @ObservationIgnored private var watcher: VaultWatcher?
     @ObservationIgnored private var cancellables: Set<AnyCancellable> = []
     @ObservationIgnored private let defaults: UserDefaults
@@ -79,6 +83,7 @@ public final class VaultSession {
         cancellables.removeAll()
         currentVault = nil
         files = []
+        navigationPath = []
         isLoading = false
     }
 
@@ -158,6 +163,64 @@ public final class VaultSession {
 
     public func clearError() {
         error = nil
+    }
+
+    // MARK: - Wiki-link resolution
+
+    /// Case-insensitive lookup for `[[name]]`-style wiki links against the current vault file list.
+    /// Matches by stem (filename without markdown extension) first, then by full filename.
+    public func resolveWikiLink(name: String) -> VaultFile? {
+        let target = name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !target.isEmpty else { return nil }
+        if let byStem = files.first(where: { Self.stem(of: $0.name).lowercased() == target }) {
+            return byStem
+        }
+        return files.first(where: { $0.name.lowercased() == target })
+    }
+
+    /// Resolve `[[name]]`, creating an empty `.md` file at the vault root if no match exists.
+    /// Returns the `VaultFile` to navigate to. The watcher will replace the provisional
+    /// record with a real one on its next refresh tick.
+    public func openOrCreate(name: String) async throws -> VaultFile {
+        if let existing = resolveWikiLink(name: name) { return existing }
+        guard let vault = currentVault else {
+            throw VaultSessionError.readFailed("no vault attached")
+        }
+        let sanitized = Self.sanitizeWikiName(name)
+        guard !sanitized.isEmpty else {
+            throw VaultSessionError.readFailed("invalid wiki link name")
+        }
+        let lowered = sanitized.lowercased()
+        let filename = lowered.hasSuffix(".md") || FileNode.markdownExtensions.contains(where: { lowered.hasSuffix(".\($0)") })
+            ? sanitized
+            : "\(sanitized).md"
+        let url = vault.url.appendingPathComponent(filename)
+        // Guard: a file may exist on disk that the watcher hasn't surfaced in `files` yet
+        // (iCloud metadata lag, pending local-walk refresh). Overwriting would destroy
+        // its contents with an empty file.
+        if FileManager.default.fileExists(atPath: url.path) {
+            return VaultFile(url: url, name: filename, modified: nil, isPlaceholder: false)
+        }
+        try await Task.detached(priority: .userInitiated) {
+            try CoordinatedFileIO.write(Data(), to: url)
+        }.value
+        refresh()
+        return VaultFile(url: url, name: filename, modified: Date(), isPlaceholder: false)
+    }
+
+    private static func stem(of filename: String) -> String {
+        let ns = filename as NSString
+        let ext = ns.pathExtension.lowercased()
+        if FileNode.markdownExtensions.contains(ext) {
+            return ns.deletingPathExtension
+        }
+        return filename
+    }
+
+    private static func sanitizeWikiName(_ raw: String) -> String {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        let forbidden: Set<Character> = ["/", "\\", ":", "?", "*", "\"", "<", ">", "|"]
+        return String(trimmed.filter { !forbidden.contains($0) })
     }
 }
 #endif
