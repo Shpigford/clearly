@@ -186,10 +186,7 @@ targets:
         SWIFT_STRICT_CONCURRENCY: minimal
         ENABLE_HARDENED_RUNTIME: YES
         SKIP_INSTALL: YES
-        DEVELOPMENT_TEAM: W33JZPPPFN
       configs:
-        Debug:
-          CODE_SIGN_STYLE: Automatic
         Release:
           CODE_SIGN_STYLE: Manual
           CODE_SIGN_IDENTITY: "Developer ID Application"
