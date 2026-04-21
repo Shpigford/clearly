@@ -24,11 +24,13 @@ public final class IOSDocumentSession {
         }
     }
     public private(set) var lastSavedText: String = ""
-    public private(set) var hasConflict: Bool = false
+    public private(set) var conflictOutcome: ConflictResolver.Outcome?
+    public private(set) var wasDeletedRemotely: Bool = false
     public private(set) var errorMessage: String?
     public private(set) var isLoading: Bool = false
 
     public var isDirty: Bool { text != lastSavedText }
+    public var hasConflict: Bool { conflictOutcome != nil || wasDeletedRemotely }
 
     @ObservationIgnored private var presenter: DocumentPresenter?
     @ObservationIgnored private var autosaveTask: Task<Void, Never>?
@@ -48,7 +50,8 @@ public final class IOSDocumentSession {
         errorMessage = nil
         text = ""
         lastSavedText = ""
-        hasConflict = false
+        conflictOutcome = nil
+        wasDeletedRemotely = false
 
         do {
             if file.isPlaceholder {
@@ -59,7 +62,7 @@ public final class IOSDocumentSession {
             text = loaded
             isLoading = false
             attachPresenter(for: file.url)
-            checkForConflict()
+            resolveConflictIfNeeded()
         } catch {
             errorMessage = error.localizedDescription
             isLoading = false
@@ -74,9 +77,16 @@ public final class IOSDocumentSession {
         file = nil
         text = ""
         lastSavedText = ""
-        hasConflict = false
+        conflictOutcome = nil
+        wasDeletedRemotely = false
         errorMessage = nil
         isLoading = false
+    }
+
+    /// Called by the UI after the user has viewed the diff sheet and tapped "Done".
+    public func dismissConflict() {
+        conflictOutcome = nil
+        wasDeletedRemotely = false
     }
 
     // MARK: - Save path
@@ -152,7 +162,7 @@ public final class IOSDocumentSession {
                     lastSavedText = remote
                     text = remote
                 }
-                checkForConflict()
+                resolveConflictIfNeeded()
             } catch {
                 // Transient read failures are recoverable on the next change or reopen.
             }
@@ -167,19 +177,38 @@ public final class IOSDocumentSession {
     fileprivate func handleRemoteDeletion() {
         detachPresenter()
         if isDirty {
-            hasConflict = true
+            wasDeletedRemotely = true
             return
         }
         file = nil
         text = ""
         lastSavedText = ""
-        hasConflict = false
+        conflictOutcome = nil
+        wasDeletedRemotely = false
     }
 
-    private func checkForConflict() {
-        guard let url = file?.url else { hasConflict = false; return }
-        let versions = NSFileVersion.unresolvedConflictVersionsOfItem(at: url) ?? []
-        hasConflict = !versions.isEmpty
+    private func resolveConflictIfNeeded() {
+        guard let url = file?.url else {
+            conflictOutcome = nil
+            return
+        }
+        let capturedPresenter = presenter
+        Task { [weak self] in
+            let result = await Task.detached(priority: .userInitiated) { () -> Result<ConflictResolver.Outcome?, Error> in
+                do {
+                    return .success(try ConflictResolver.resolveIfNeeded(at: url, presenter: capturedPresenter))
+                } catch {
+                    return .failure(error)
+                }
+            }.value
+            guard let self, self.file?.url == url else { return }
+            switch result {
+            case .success(let outcome):
+                if let outcome { self.conflictOutcome = outcome }
+            case .failure(let error):
+                DiagnosticLog.log("ConflictResolver failed for \(url.lastPathComponent): \(error.localizedDescription)")
+            }
+        }
     }
 }
 

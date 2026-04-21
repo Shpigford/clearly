@@ -13,6 +13,7 @@ struct RawTextDetailView_iOS: View {
     @StateObject private var outlineState = OutlineState()
     @State private var showBacklinks = false
     @State private var showOutline = false
+    @State private var showConflictDiff = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -78,6 +79,26 @@ struct RawTextDetailView_iOS: View {
         }
         .sheet(isPresented: $showOutline) {
             OutlineSheet_iOS(outlineState: outlineState, onJump: jumpToHeading)
+        }
+        .sheet(isPresented: $showConflictDiff) {
+            conflictDiffSheet
+        }
+    }
+
+    @ViewBuilder
+    private var conflictDiffSheet: some View {
+        if let outcome = document.conflictOutcome {
+            DiffView(
+                leftTitle: file.name,
+                leftText: outcome.currentText,
+                rightTitle: "Conflict copy",
+                rightText: outcome.siblingText,
+                footer: "Conflict saved as \(outcome.siblingURL.lastPathComponent) — edit either file to keep it.",
+                onDismiss: {
+                    document.dismissConflict()
+                    showConflictDiff = false
+                }
+            )
         }
     }
 
@@ -169,16 +190,24 @@ struct RawTextDetailView_iOS: View {
         HStack(spacing: 8) {
             Image(systemName: "exclamationmark.triangle.fill")
                 .foregroundStyle(.orange)
-            Text("This note has an offline conflict")
+            Text(bannerText)
                 .font(.footnote)
             Spacer()
-            Button("Resolve") { }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
-                .disabled(true)
+            if document.conflictOutcome != nil {
+                Button("View diff") { showConflictDiff = true }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+            }
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
         .background(.yellow.opacity(0.12))
+    }
+
+    private var bannerText: String {
+        if document.wasDeletedRemotely {
+            return "This note was deleted on another device."
+        }
+        return "This note has an offline conflict"
     }
 }

@@ -28,6 +28,7 @@ final class WorkspaceManager {
     var currentFileText: String = ""
     var isDirty: Bool = false
     var currentViewMode: ViewMode = .edit
+    var currentConflictOutcome: ConflictResolver.Outcome?
 
     // MARK: - Open Documents
 
@@ -319,10 +320,13 @@ final class WorkspaceManager {
             openDocuments[idx].text = text
             openDocuments[idx].lastSavedText = text
             openDocuments[idx].untitledNumber = nil
+            openDocuments[idx].conflictOutcome = nil
             currentFileURL = url
             currentFileText = text
             lastSavedText = text
             isDirty = false
+            currentConflictOutcome = nil
+            refreshConflictOutcomeForActiveDocument()
         } else {
             // No active document — create one
             let doc = OpenDocument(
@@ -404,6 +408,45 @@ final class WorkspaceManager {
         if let idx = activeDocumentIndex {
             openDocuments[idx].text = newText
             openDocuments[idx].lastSavedText = newText
+        }
+        refreshConflictOutcomeForActiveDocument()
+    }
+
+    /// Clears the active document's resolved-conflict record after the user has
+    /// viewed the diff sheet.
+    func dismissCurrentConflict() {
+        currentConflictOutcome = nil
+        if let idx = activeDocumentIndex {
+            openDocuments[idx].conflictOutcome = nil
+        }
+    }
+
+    private func refreshConflictOutcomeForActiveDocument() {
+        guard let url = currentFileURL else {
+            currentConflictOutcome = nil
+            return
+        }
+        DispatchQueue.global(qos: .utility).async { [weak self] in
+            let result: Result<ConflictResolver.Outcome?, Error>
+            do {
+                result = .success(try ConflictResolver.resolveIfNeeded(at: url, presenter: nil))
+            } catch {
+                result = .failure(error)
+            }
+            DispatchQueue.main.async {
+                guard let self, self.currentFileURL == url else { return }
+                switch result {
+                case .success(let outcome):
+                    guard let outcome else { return }
+                    self.currentConflictOutcome = outcome
+                    if let idx = self.activeDocumentIndex,
+                       self.openDocuments[idx].fileURL == url {
+                        self.openDocuments[idx].conflictOutcome = outcome
+                    }
+                case .failure(let error):
+                    DiagnosticLog.log("ConflictResolver failed for \(url.lastPathComponent): \(error.localizedDescription)")
+                }
+            }
         }
     }
 
@@ -1362,6 +1405,10 @@ final class WorkspaceManager {
         lastSavedText = doc.lastSavedText
         isDirty = doc.isDirty
         currentViewMode = doc.viewMode
+        currentConflictOutcome = doc.conflictOutcome
+        if doc.fileURL != nil {
+            refreshConflictOutcomeForActiveDocument()
+        }
     }
 
     /// Set the given document as active and sync stored properties.
@@ -1372,6 +1419,10 @@ final class WorkspaceManager {
         lastSavedText = doc.lastSavedText
         isDirty = doc.isDirty
         currentViewMode = doc.viewMode
+        currentConflictOutcome = doc.conflictOutcome
+        if doc.fileURL != nil {
+            refreshConflictOutcomeForActiveDocument()
+        }
     }
 
     private func persistLastOpenFile(_ url: URL) {

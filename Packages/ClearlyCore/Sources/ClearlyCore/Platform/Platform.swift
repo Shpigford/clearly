@@ -28,6 +28,17 @@ public enum PlatformFontWeight {
     case bold
 }
 
+public enum PlatformDevice {
+    /// User-visible device name, used in conflict sibling filenames.
+    public static func currentName() -> String {
+        #if os(iOS)
+        return UIDevice.current.name
+        #else
+        return Host.current().localizedName ?? ProcessInfo.processInfo.hostName
+        #endif
+    }
+}
+
 public enum PlatformTextAttributes {
     public static let font = NSAttributedString.Key.font
     public static let foregroundColor = NSAttributedString.Key.foregroundColor
