@@ -1,6 +1,6 @@
 # Mobile Progress
 
-## Status: Phase 7 - Complete
+## Status: Phase 8 - Complete
 
 ## Quick Reference
 - Research: `docs/mobile/RESEARCH.md`
@@ -252,13 +252,28 @@
 ---
 
 ### Phase 8: Index rebuild + `.icloud` placeholder coordination
-**Status:** Not Started
+**Status:** Complete (2026-04-21)
 
 #### Tasks Completed
-- (none yet)
+- [x] `VaultIndex.indexDirectory()` (`Packages/ClearlyCore/Sources/ClearlyCore/Vault/VaultIndex.swift:817`) gained an `#if os(iOS)` branch pointing at `URL.cachesDirectory/indexes/`. macOS + ClearlyMCP paths unchanged.
+- [x] New async `VaultIndex.indexAllFiles(showHiddenFiles:downloadPlaceholder:progress:)` added alongside the existing sync version. Collects file data in an async loop (awaits the `downloadPlaceholder` hook before each read), then does one batched `dbPool.write`.
+- [x] `VaultSession` gained: `indexProgress: Double?` (published), `currentIndex: VaultIndex?` accessor, `index` + `indexingTask` + `knownFiles` private storage, `beginIndexing(using:)` launched from `attach(_:)`, tear-down on `teardown()`.
+- [x] `beginIndexing` inlines a placeholder-aware download loop (5s per-file deadline; returns `false` on timeout so the file is skipped this pass and picked up on the next watcher tick).
+- [x] `scheduleIncrementalReindex` wires `VaultWatcher.$files` → debounced 500 ms → diff against `knownFiles` → `VaultIndex.updateFile(at:)` per changed path. Skips while the full rebuild is in flight.
+- [x] `VaultSession.resolveWikiLink` now checks `VaultIndex` first and falls back to the file-list scan. Phase 7's deferred "point iOS wiki-link at real index" is now done.
+- [x] `SidebarView_iOS` inserts a 2pt `ProgressView(value:)` under the nav bar while `indexProgress != nil`.
+- [x] Mac Debug build: **passed** (`xcodebuild -scheme Clearly -configuration Debug build`). iOS Debug build: **passed** (`xcodebuild -scheme Clearly-iOS -configuration Debug -destination 'generic/platform=iOS Simulator' build`). CLI integration tests: **23/23 passed**.
 
 #### Decisions Made
-- (none yet)
+- **iOS-only cache-dir switch, not universal.** The spec wanted `URL.cachesDirectory/indexes/<hash>/vault.sqlite` on **both** platforms. Moving Mac would break ClearlyMCP CLI (`VaultIndex.swift:825` resolves `Library/Containers/<bundleId>/Data/Library/Application Support/<bundleId>/indexes`). Phase 8 ships the iOS branch only; Mac stays on Application Support. Spec intent ("never inside the ubiquity container") is preserved because Mac's App Support is inside the sandbox container, not iCloud.
+- **Flat layout inside `indexes/`, not a per-vault subdirectory.** Kept the Mac convention of `<path-hash>.sqlite` (not `<path-hash>/vault.sqlite`). One less directory, same uniqueness guarantee via SHA-256 truncation.
+- **No spinner-on-sidebar-row for placeholder taps.** Plan called for per-row tap → spinner + download. Dropped because the existing navigation path already handles this: `IOSDocumentSession.open(_:via:)` (`Clearly/iOS/IOSDocumentSession.swift:54`) sees `file.isPlaceholder`, calls `vault.ensureDownloaded`, and the detail view renders "Downloading from iCloud…". The sidebar tap gesture would have layered on top of `NavigationLink`'s own tap handling and risked gesture-conflict regressions.
+- **Async `indexAllFiles` is an overload, not a replacement.** Mac's `WorkspaceManager.reindexVault` (`Clearly/WorkspaceManager.swift:1222`), `ClearlyCLI/CLI/Commands/IndexCommand.swift:101`, and `ClearlyCLIIntegrationTests/TestVaultHarness.swift:47` all call the existing sync `indexAllFiles(showHiddenFiles:)`. Leaving that untouched kept the 23 integration tests green without refactoring three callers.
+- **Debounce incremental re-index at 500 ms on a separate subscription.** Split the `watcher.$files` sink into two: one immediate (feeds `session.files` for UI), one debounced (feeds `scheduleIncrementalReindex`). The immediate publish keeps the sidebar snappy; the debounce coalesces NSMetadataQuery update storms.
+- **`knownFiles` updates every tick, even during rebuild.** Always snapshot the latest file set on each watcher emission so the first post-rebuild tick has the correct "previous" state to diff against. Skip the actual `updateFile` pass while `indexProgress != nil`.
+- **First post-attach watcher tick does no incremental re-index.** `oldKnown.isEmpty` short-circuits — the full rebuild already covers every file. Without this, the initial watcher publication would fire `updateFile` for every file in parallel with the rebuild.
+- **Wiki-link resolver keeps the file-scan fallback.** There's a race window between the watcher surfacing a new file and the 500ms-debounced incremental re-index writing it to the DB. Fall back to the current file-list scan so `openOrCreate` works instantly in that window.
+- **`downloadPlaceholder` returns `Bool`, not `throws`.** A download timeout is not an error; it's a signal to skip this file this pass. Exceptions in the indexing loop would prematurely abort the whole rebuild. Returning a Bool keeps the loop going and delegates timeout handling to the caller's policy.
 
 #### Blockers
 - (none)
@@ -345,6 +360,9 @@
 - **Phase 1 executed and verified.** 20 Swift files relocated into `Packages/ClearlyCore`; all four Mac schemes build clean; all 23 `ClearlyCLIIntegrationTests` pass. Mac behavior unchanged — no functional changes, no UI changes.
 - **Phase 2 executed and verified.** `Clearly-iOS` target added to `project.yml`; three new files under `Clearly/iOS/` (app entry, Info plist, entitlements shell); Mac target picks up `excludes: ["iOS/**"]`. Fixed one Mac-only API leak in `ClearlyCore/Vault/VaultIndex.swift` (`homeDirectoryForCurrentUser`, gated behind `#if os(macOS)`). All Mac schemes still green; 23/23 CLI integration tests still pass; iOS builds succeed both via `-sdk iphonesimulator` and via a concrete simulator destination (`platform=iOS Simulator,name=iPhone 17,OS=26.4`); placeholder view renders on iPhone 17 simulator (iOS 26.4 runtime).
 
+### 2026-04-21 (Phase 8)
+- **Phase 8 complete.** iOS now has a live FTS5 index and placeholder-aware coordination. `VaultIndex` stores its SQLite on iOS under `URL.cachesDirectory/indexes/<hash>.sqlite` (Mac path unchanged — keeps ClearlyMCP working). New async `indexAllFiles(showHiddenFiles:downloadPlaceholder:progress:)` overload collects file data in an async loop (awaits a per-file placeholder-download hook) and writes in one batched `try await dbPool.write`. `VaultSession` owns a `VaultIndex` per attached vault, publishes `indexProgress: Double?` for the sidebar progress bar, and exposes `currentIndex` for Phase 9 consumers. `beginIndexing` inlines a 5s-per-file placeholder poll (skip on timeout, let watcher catch up on next tick). A second debounced `watcher.$files` subscription drives `scheduleIncrementalReindex`, diffing known vs current files and calling `VaultIndex.updateFile(at:)` per changed path — skipped while a full rebuild is running. `resolveWikiLink` now checks the index first (resolves Phase 7's deferred "point iOS wiki-link at real index"). `SidebarView_iOS` shows a 2pt `ProgressView(value:)` under the nav bar while indexing. Plan's sidebar-side per-row tap/spinner was dropped — `IOSDocumentSession.open` already downloads placeholders on navigation and the detail view shows "Downloading from iCloud…" natively, so sidebar-layer gesture fiddling would have added UX conflict without new function. Mac + iOS Debug builds pass; 23/23 CLI integration tests still pass (the sync `indexAllFiles` path used by Mac + CLI is untouched). **End-to-end placeholder download, incremental re-index on file drop, and vault-switch invalidation still need Josh's manual device pass** — iOS simulator doesn't model real iCloud placeholder state, and there's no programmatic way to drive Files.app file drops in this workspace.
+
 ### 2026-04-21 (Phase 7)
 - **Phase 7 complete.** iOS now has a rendered preview pane and cross-file wiki-link navigation. Six web-asset resources added to the `Clearly-iOS` target (katex/mermaid/highlight + fonts). New `PreviewView_iOS` (`UIViewRepresentable<WKWebView>`) renders HTML via the shared `MarkdownRenderer` + `PreviewCSS` + Math/Table/Mermaid/SyntaxHighlight scripts, with `LocalImageSchemeHandler` for the `clearly-file://` scheme. Registers only the two script handlers we use on iPhone today: `linkClicked` + `taskToggle`. Mac's scroll sync / dblclick-to-source / footnote popover / find-in-preview / selection capture are left off — iPhone doesn't need them in Phase 7, they can port later if Phase 9 / 12 require them. `VaultSession` grew three public surfaces: `navigationPath: [VaultFile]` (binding for `NavigationStack(path:)`), `resolveWikiLink(name:)` (stem-match against `files` — Phase 8 will replace this with VaultIndex queries), `openOrCreate(name:) async throws` (writes an empty `.md` at vault root via `CoordinatedFileIO.write(Data(), to:)`, returns a provisional `VaultFile` immediately). `RawTextDetailView_iOS` gained a `@State var viewMode` + a toolbar segmented `Picker` + conditional Edit/Preview rendering. `SidebarView_iOS` switched to `NavigationStack(path: $session.navigationPath)` so preview wiki-link taps can push. Phase 7 plan's "move renderer files" + "add iOS CSS branch" tasks were dropped — both were already done by Phase 1 / already present in `PreviewCSS:133`. Build matrix green across Mac / QuickLook / CLI / iOS; 23/23 integration tests pass; iPhone 17 / iOS 26.4 simulator launches the app cleanly. **End-to-end preview, wiki-link tap, task-checkbox toggle, external-link open, and relaunch-resource-resolution flows need Josh's manual device pass** — no way to drive simulator taps + compare rendered HTML visually in this workspace.
 
@@ -379,6 +397,10 @@
 - **New (ClearlyCore):** `Packages/ClearlyCore/Sources/ClearlyCore/Vault/VaultLocation.swift`, `Packages/ClearlyCore/Sources/ClearlyCore/Sync/VaultWatcher.swift`, `Packages/ClearlyCore/Sources/ClearlyCore/Vault/VaultSession.swift`
 - **New (iOS app):** `Clearly/iOS/WelcomeView_iOS.swift`, `Clearly/iOS/SidebarView_iOS.swift`, `Clearly/iOS/RawTextDetailView_iOS.swift`
 - **Modified:** `Clearly/MarkdownDocument.swift` (promoted to `FileDocument`), `Clearly/iOS/ClearlyApp_iOS.swift` (placeholder → real app scene owning `VaultSession`), `Clearly/iOS/Info-iOS.plist` (added `NSUbiquitousContainers`)
+
+### Phase 8 (2026-04-21)
+- **Modified (ClearlyCore):** `Vault/VaultIndex.swift` (`indexDirectory()` iOS `.cachesDirectory` branch; new async overload `indexAllFiles(showHiddenFiles:downloadPlaceholder:progress:)` that collects file data in an async loop and writes in one `try await dbPool.write` batch). `Vault/VaultSession.swift` (`indexProgress` + `currentIndex` published/accessor; `index` + `indexingTask` + `knownFiles` storage; `beginIndexing(using:)`; `scheduleIncrementalReindex(for:)`; inline placeholder-download polling; `resolveWikiLink(name:)` upgraded to check `VaultIndex` first; debounced second `watcher.$files` subscription for incremental re-index).
+- **Modified (iOS app):** `Clearly/iOS/SidebarView_iOS.swift` (VStack wraps content to host a 2pt `ProgressView(value:)` when `indexProgress != nil`).
 
 ### Phase 7 (2026-04-21)
 - **New (iOS app):** `Clearly/iOS/PreviewView_iOS.swift` (UIViewRepresentable WKWebView preview with `linkClicked` + `taskToggle` script handlers, `LocalImageSchemeHandler`, trimmed JS template, `skipNextReload` flag).

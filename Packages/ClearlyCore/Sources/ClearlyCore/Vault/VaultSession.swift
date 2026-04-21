@@ -26,13 +26,30 @@ public final class VaultSession {
     public private(set) var isLoading: Bool = false
     public private(set) var error: VaultSessionError?
 
+    /// 0.0…1.0 while a full vault re-index is running. `nil` when idle. Drives the
+    /// sidebar progress bar.
+    public private(set) var indexProgress: Double?
+
     /// Navigation stack binding for `SidebarView_iOS`'s `NavigationStack(path:)`. Detail
     /// views (e.g. preview wiki-link taps) can mutate this to push another note.
     public var navigationPath: [VaultFile] = []
 
+    /// Read-only access for consumers that need to query the FTS5 index (search, backlinks).
+    /// `nil` until a vault is attached and its index is constructed.
+    public var currentIndex: VaultIndex? { index }
+
     @ObservationIgnored private var watcher: VaultWatcher?
+    @ObservationIgnored private var index: VaultIndex?
+    @ObservationIgnored private var indexingTask: Task<Void, Never>?
+    @ObservationIgnored private var indexingGeneration: Int = 0
+    @ObservationIgnored private var knownFiles: [URL: FileSnapshot] = [:]
     @ObservationIgnored private var cancellables: Set<AnyCancellable> = []
     @ObservationIgnored private let defaults: UserDefaults
+
+    private struct FileSnapshot: Equatable {
+        let modified: Date?
+        let isPlaceholder: Bool
+    }
 
     public init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
@@ -55,6 +72,12 @@ public final class VaultSession {
             .receive(on: RunLoop.main)
             .sink { [weak self] value in self?.files = value }
             .store(in: &cancellables)
+        // Debounced to coalesce NSMetadataQuery update storms into a single incremental
+        // reindex per burst. The `files` publish above stays immediate so UI doesn't lag.
+        watcher.$files
+            .debounce(for: .milliseconds(500), scheduler: RunLoop.main)
+            .sink { [weak self] value in self?.scheduleIncrementalReindex(for: value) }
+            .store(in: &cancellables)
         watcher.$isLoading
             .receive(on: RunLoop.main)
             .sink { [weak self] value in self?.isLoading = value }
@@ -62,6 +85,13 @@ public final class VaultSession {
 
         watcher.start()
         persist(location)
+
+        if let newIndex = try? VaultIndex(locationURL: location.url) {
+            self.index = newIndex
+            beginIndexing(using: newIndex)
+        } else {
+            DiagnosticLog.log("VaultSession: failed to open VaultIndex for \(location.url.lastPathComponent)")
+        }
     }
 
     /// Forget the current vault entirely. Clears persistence; next launch shows welcome.
@@ -77,6 +107,13 @@ public final class VaultSession {
         if let current = currentVault, current.kind != .defaultICloud {
             current.url.stopAccessingSecurityScopedResource()
         }
+        indexingGeneration += 1
+        indexingTask?.cancel()
+        indexingTask = nil
+        index?.close()
+        index = nil
+        indexProgress = nil
+        knownFiles.removeAll()
         watcher?.stop()
         watcher = nil
         cancellables.forEach { $0.cancel() }
@@ -165,13 +202,140 @@ public final class VaultSession {
         error = nil
     }
 
+    // MARK: - Indexing
+
+    /// Full vault re-index. Runs off-main on a utility queue. For each `.icloud`
+    /// placeholder, kicks off `startDownloadingUbiquitousItem` and waits up to 5s;
+    /// files that remain placeholders are skipped this pass — the watcher triggers
+    /// incremental re-index once the download lands.
+    private func beginIndexing(using index: VaultIndex) {
+        indexingTask?.cancel()
+        indexingGeneration += 1
+        let generation = indexingGeneration
+        indexProgress = 0.0
+
+        indexingTask = Task.detached(priority: .utility) { [weak self] in
+            await index.indexAllFiles(
+                downloadPlaceholder: { url in
+                    try? FileManager.default.startDownloadingUbiquitousItem(at: url)
+                    let deadline = Date().addingTimeInterval(5)
+                    while Date() < deadline {
+                        if Task.isCancelled { return false }
+                        let values = try? url.resourceValues(forKeys: [.ubiquitousItemDownloadingStatusKey])
+                        if let status = values?.ubiquitousItemDownloadingStatus {
+                            if status == .current || status == .downloaded {
+                                return true
+                            }
+                        } else {
+                            // Not ubiquitous — local file, safe to read immediately.
+                            return true
+                        }
+                        try? await Task.sleep(nanoseconds: 300_000_000)
+                    }
+                    return false
+                },
+                progress: { value in
+                    Task { @MainActor [weak self, weak index] in
+                        guard let self,
+                              let index,
+                              let currentIndex = self.index,
+                              currentIndex === index,
+                              self.indexingGeneration == generation else { return }
+                        self.indexProgress = value
+                    }
+                }
+            )
+            if Task.isCancelled { return }
+            await MainActor.run { [weak self] in
+                guard let self = self else { return }
+                guard let currentIndex = self.index,
+                      currentIndex === index,
+                      self.indexingGeneration == generation else { return }
+                self.indexProgress = nil
+                // Catch-up pass: any file that appeared or changed DURING the rebuild
+                // got filtered out of `scheduleIncrementalReindex` (because
+                // `indexProgress != nil`) and isn't guaranteed to produce another
+                // watcher event afterward. Feed the current `files` through
+                // incremental now; `updateFile` hash-skips unchanged entries.
+                self.scheduleIncrementalReindex(for: self.files)
+            }
+        }
+    }
+
+    /// Debounced incremental re-index driven by `VaultWatcher.$files`. Diffs the incoming
+    /// set against `knownFiles`; for each add / remove / modified-date change, calls
+    /// `VaultIndex.updateFile(at:)` on a utility queue. `updateFile` already handles
+    /// hash-based skip + delete-if-missing semantics (`VaultIndex.swift:157`).
+    ///
+    /// While a full rebuild is running, this method no-ops and leaves `knownFiles`
+    /// untouched. When the rebuild completes, it calls this method once with the
+    /// current `files` to catch any changes that landed during the rebuild window.
+    private func scheduleIncrementalReindex(for newFiles: [VaultFile]) {
+        guard let index = index else { return }
+
+        // Rebuild owns the snapshot while it runs; don't update knownFiles here or the
+        // post-rebuild catch-up pass would miss files added mid-rebuild.
+        if indexProgress != nil { return }
+
+        let oldKnown = knownFiles
+        let newKnown = Dictionary(uniqueKeysWithValues: newFiles.map {
+            ($0.url, FileSnapshot(modified: $0.modified, isPlaceholder: $0.isPlaceholder))
+        })
+        knownFiles = newKnown
+
+        let rootURL = currentVault?.url ?? index.rootURL
+        let oldKeys = Set(oldKnown.keys)
+        let newKeys = Set(newKnown.keys)
+        var changedPaths: [String] = []
+
+        for url in newKeys.subtracting(oldKeys) {
+            changedPaths.append(VaultIndex.relativePath(of: url, from: rootURL))
+        }
+        for url in oldKeys.subtracting(newKeys) {
+            changedPaths.append(VaultIndex.relativePath(of: url, from: rootURL))
+        }
+        for url in newKeys.intersection(oldKeys) {
+            if (oldKnown[url] ?? nil) != (newKnown[url] ?? nil) {
+                changedPaths.append(VaultIndex.relativePath(of: url, from: rootURL))
+            }
+        }
+
+        guard !changedPaths.isEmpty else { return }
+
+        Task.detached(priority: .utility) { [weak index] in
+            guard let index = index else { return }
+            for path in changedPaths {
+                if Task.isCancelled { return }
+                _ = try? index.updateFile(at: path)
+            }
+        }
+    }
+
     // MARK: - Wiki-link resolution
 
-    /// Case-insensitive lookup for `[[name]]`-style wiki links against the current vault file list.
-    /// Matches by stem (filename without markdown extension) first, then by full filename.
+    /// Case-insensitive lookup for `[[name]]`-style wiki links. Prefers the FTS5 index
+    /// (more accurate — considers every file on disk, not just the watcher's current view)
+    /// and falls back to scanning `files` when the index has not caught up yet (e.g. the
+    /// file was just created by the watcher but not yet indexed).
     public func resolveWikiLink(name: String) -> VaultFile? {
         let target = name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         guard !target.isEmpty else { return nil }
+
+        if let index = index,
+           let indexed = index.resolveWikiLink(name: target) {
+            let rootURL = currentVault?.url ?? index.rootURL
+            let absoluteURL = rootURL.appendingPathComponent(indexed.path)
+            if let match = files.first(where: { $0.url.standardizedFileURL == absoluteURL.standardizedFileURL }) {
+                return match
+            }
+            return VaultFile(
+                url: absoluteURL,
+                name: absoluteURL.lastPathComponent,
+                modified: indexed.modifiedAt,
+                isPlaceholder: false
+            )
+        }
+
         if let byStem = files.first(where: { Self.stem(of: $0.name).lowercased() == target }) {
             return byStem
         }

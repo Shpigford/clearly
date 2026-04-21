@@ -8,16 +8,24 @@ struct SidebarView_iOS: View {
     var body: some View {
         @Bindable var session = session
         NavigationStack(path: $session.navigationPath) {
-            Group {
-                if session.currentVault == nil {
-                    placeholder
-                } else if session.files.isEmpty && session.isLoading {
-                    ProgressView("Loading…")
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                } else if session.files.isEmpty {
-                    emptyVault
-                } else {
-                    fileList
+            VStack(spacing: 0) {
+                if let progress = session.indexProgress {
+                    ProgressView(value: progress)
+                        .progressViewStyle(.linear)
+                        .frame(height: 2)
+                        .tint(.accentColor)
+                }
+                Group {
+                    if session.currentVault == nil {
+                        placeholder
+                    } else if session.files.isEmpty && session.isLoading {
+                        ProgressView("Loading…")
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    } else if session.files.isEmpty {
+                        emptyVault
+                    } else {
+                        fileList
+                    }
                 }
             }
             .navigationTitle(navTitle)
