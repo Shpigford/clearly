@@ -2,40 +2,38 @@ import SwiftUI
 import UIKit
 import ClearlyCore
 
-/// Read-only Phase 5 editor: renders markdown with full syntax highlighting on iOS.
-/// `text` is a value (not a `@Binding`) — saves ship in Phase 6. The `pendingBindingUpdates`
-/// counter and edit-time highlighting wiring are in place now so Phase 6 can promote
-/// the value to a binding without re-architecting.
+/// Writable iOS markdown editor. Binding writes back inside
+/// `textViewDidChange` so the parent (typically `IOSDocumentSession.text`)
+/// sees every keystroke. The `pendingBindingUpdates` token counter guards
+/// `updateUIView` from clobbering the text view during the async SwiftUI
+/// state-propagation window. Pattern mirrors the Mac `EditorView`.
 struct EditorView_iOS: UIViewRepresentable {
 
-    let text: String
+    @Binding var text: String
 
-    func makeCoordinator() -> Coordinator { Coordinator() }
+    func makeCoordinator() -> Coordinator { Coordinator(parent: self) }
 
     func makeUIView(context: Context) -> ClearlyUITextView {
         let textView = ClearlyUITextView()
         textView.delegate = context.coordinator
         context.coordinator.textView = textView
-        context.coordinator.applyInitialText(text)
+        context.coordinator.applyExternalText(text)
         return textView
     }
 
     func updateUIView(_ textView: ClearlyUITextView, context: Context) {
-        let coordinator = context.coordinator
-        guard coordinator.pendingBindingUpdates == 0 else { return }
-        guard text != coordinator.lastAppliedText else { return }
-        coordinator.applyInitialText(text)
+        context.coordinator.parent = self
+        guard context.coordinator.pendingBindingUpdates == 0 else { return }
+        guard text != context.coordinator.lastAppliedText else { return }
+        context.coordinator.applyExternalText(text)
     }
 
     final class Coordinator: NSObject, UITextViewDelegate {
 
+        var parent: EditorView_iOS
         weak var textView: ClearlyUITextView?
         let highlighter = MarkdownSyntaxHighlighter()
 
-        /// Counter (not a boolean): incremented synchronously in `textViewDidChange`,
-        /// decremented in the async block. Guards `updateUIView` from overwriting the
-        /// text view while SwiftUI state updates are in flight. Pattern mirrors the Mac
-        /// `EditorView`'s `pendingBindingUpdates` in `Clearly/EditorView.swift`.
         var pendingBindingUpdates = 0
         private var pendingBindingUpdateToken: UUID?
         private var isHighlighting = false
@@ -44,12 +42,16 @@ struct EditorView_iOS: UIViewRepresentable {
         private(set) var lastAppliedText: String = ""
         private var pendingFullHighlightWork: DispatchWorkItem?
 
-        func applyInitialText(_ newText: String) {
+        init(parent: EditorView_iOS) {
+            self.parent = parent
+        }
+
+        func applyExternalText(_ newText: String) {
             guard let textView else { return }
             isHighlighting = true
             let selectedRange = textView.selectedRange
             textView.text = newText
-            highlighter.highlightAll(textView.textStorage, caller: "applyInitial")
+            highlighter.highlightAll(textView.textStorage, caller: "applyExternal")
             let clamped = NSRange(
                 location: min(selectedRange.location, (newText as NSString).length),
                 length: 0
@@ -103,6 +105,10 @@ struct EditorView_iOS: UIViewRepresentable {
                 pendingFullHighlightWork = work
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.3, execute: work)
             }
+
+            let newText = ctv.text ?? ""
+            lastAppliedText = newText
+            parent.text = newText
 
             let token = UUID()
             pendingBindingUpdateToken = token

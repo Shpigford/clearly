@@ -21,7 +21,7 @@ final class ClearlyUITextView: UITextView {
         textColor = Theme.textColor
         font = Theme.editorFont
         tintColor = Theme.accentColor
-        isEditable = false
+        isEditable = true
         isSelectable = true
         allowsEditingTextAttributes = false
         autocapitalizationType = .none

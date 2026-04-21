@@ -124,6 +124,14 @@ Use these instead:
 
 `Clearly/iOS/ClearlyUITextView.swift` calls `super.init(frame:textContainer:)` with a manually-constructed `NSTextStorage` → `NSLayoutManager` → `NSTextContainer` chain. Passing a non-nil `textContainer` is what forces TextKit 1 on iOS 16+; the default `UITextView(frame:)` defaults to TextKit 2, where `textView.textStorage` is effectively dead. Every path that reaches into `textStorage` — `MarkdownSyntaxHighlighter.highlightAll` / `highlightAround`, typing attributes, `NSTextStorageDelegate`, future save path in Phase 6 — depends on TextKit 1. Don't "simplify" the init to `super.init(frame:)` or use `UITextView(usingTextLayoutManager: true)`; highlighting will silently stop working with no crash.
 
+### Save failures on iOS must not unmount the editor
+
+`IOSDocumentSession.errorMessage` drives the full-screen "Couldn't open this note" view in `RawTextDetailView_iOS` — it is reserved for load-blocking failures only. **Never set it on a save failure.** A transient save error (iCloud offline, disk hiccup) must keep the editor mounted so the user's in-progress text survives. `performSave` routes failures through `DiagnosticLog.log` and leaves `lastSavedText` unchanged, which keeps `isDirty` true — the nav-title `•` is the user-visible signal that something's unsaved, and the next autosave / scene-phase flush retries. The same discipline applies to any future save path (Phase 11 conflict resolver, Phase 12 multi-document tab writes).
+
+### `NSFileCoordinator.addFilePresenter(_:)` does not retain its presenter
+
+Every `addFilePresenter(_:)` call MUST be paired with `removeFilePresenter(_:)` before the presenter's owning object deallocates, or the presenter zombies in the global registry and `presentedItemDidChange` callbacks fire into a nil weak target (silent, but the remote-refresh path is dead). `IOSDocumentSession.close()` handles the pairing; `RawTextDetailView_iOS.onDisappear` calls `close()` specifically so `NavigationStack`'s teardown doesn't leak a registration. Any future presenter owners — Phase 11's conflict resolver, Phase 12's iPad multi-document tabs — follow the same add/remove discipline. Presenter is keyed on `presentedItemURL`, so keep one per open document, not one per vault (folder-level presenters fire `didChange` for every file in the vault, which is the wrong granularity).
+
 ## Conventions
 
 - All colors go through `Theme` with dynamic light/dark resolution — don't hardcode colors

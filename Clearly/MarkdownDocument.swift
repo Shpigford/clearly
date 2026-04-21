@@ -29,7 +29,6 @@ struct MarkdownDocument: FileDocument {
     }
 
     func fileWrapper(configuration: WriteConfiguration) throws -> FileWrapper {
-        // Writes land in Phase 6; Phase 4 is deliberately read-only.
-        throw CocoaError(.featureUnsupported)
+        FileWrapper(regularFileWithContents: Data(text.utf8))
     }
 }

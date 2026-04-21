@@ -14,9 +14,18 @@ public enum CoordinatedFileIO {
     }
 
     public static func write(_ data: Data, to url: URL) throws {
+        try write(data, to: url, presenter: nil)
+    }
+
+    /// Writes `data` atomically to `url`, passing `presenter` to the
+    /// `NSFileCoordinator`. When a presenter is supplied, the coordinator
+    /// suppresses callbacks back to that presenter for this operation — so
+    /// the caller doesn't see its own write echo back through
+    /// `presentedItemDidChange`.
+    public static func write(_ data: Data, to url: URL, presenter: NSFilePresenter?) throws {
         var coordinatorError: NSError?
         var writeError: Error?
-        NSFileCoordinator(filePresenter: nil).coordinate(
+        NSFileCoordinator(filePresenter: presenter).coordinate(
             writingItemAt: url, options: .forReplacing, error: &coordinatorError
         ) { resolved in
             do { try data.write(to: resolved, options: .atomic) }
