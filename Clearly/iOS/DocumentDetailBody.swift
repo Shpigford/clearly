@@ -21,20 +21,42 @@ struct DocumentDetailBody: View {
     @State private var showBacklinks = false
     @State private var showOutline = false
     @State private var showConflictDiff = false
+    @StateObject private var findState = FindState()
 
     var body: some View {
         VStack(spacing: 0) {
             if session.hasConflict { conflictBanner }
+            if findState.isVisible {
+                FindOverlay_iOS(findState: findState)
+                    .transition(.move(edge: .top).combined(with: .opacity))
+            }
             content
         }
+        .animation(Theme.Motion.smooth, value: findState.isVisible)
+        .onChange(of: viewMode) { _, newMode in
+            findState.activeMode = newMode
+            if newMode != .edit, findState.isVisible {
+                findState.dismiss()
+            }
+        }
+        .onAppear { findState.activeMode = viewMode }
         .toolbar {
-            ToolbarItem(placement: .principal) {
-                Picker("View mode", selection: $viewMode) {
-                    Text("Edit").tag(ViewMode.edit)
-                    Text("Preview").tag(ViewMode.preview)
+            ToolbarItem(placement: .topBarTrailing) {
+                Button {
+                    viewMode = (viewMode == .edit) ? .preview : .edit
+                } label: {
+                    Image(systemName: viewMode == .edit ? "eye" : "square.and.pencil")
                 }
-                .pickerStyle(.segmented)
-                .frame(maxWidth: 180)
+                .accessibilityLabel(viewMode == .edit ? "Show preview" : "Show editor")
+            }
+            ToolbarItem(placement: .topBarTrailing) {
+                Button {
+                    findState.toggle()
+                } label: {
+                    Image(systemName: "magnifyingglass")
+                }
+                .keyboardShortcut("f", modifiers: .command)
+                .accessibilityLabel("Find in note")
             }
             ToolbarItem(placement: .topBarTrailing) {
                 Button { showOutline = true } label: {
@@ -104,8 +126,8 @@ struct DocumentDetailBody: View {
         } else if let err = session.errorMessage {
             VStack(spacing: 8) {
                 Image(systemName: "exclamationmark.triangle")
-                    .font(.system(size: 32, weight: .light))
-                    .foregroundStyle(.orange)
+                    .font(.largeTitle.weight(.light))
+                    .foregroundStyle(Theme.warningColorSwiftUI)
                 Text("Couldn't open this note")
                     .font(.headline)
                 Text(err)
@@ -116,22 +138,31 @@ struct DocumentDetailBody: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
-            switch viewMode {
-            case .edit:
+            // Both editor and preview stay mounted; toggling viewMode just
+            // flips opacity + hit-testing. Prevents the ~2s WKWebView cold
+            // start every time the user hits Preview — first mount still
+            // pays that cost, subsequent edit↔preview flips are instant.
+            ZStack {
                 EditorView_iOS(
                     text: Binding(
                         get: { session.text },
                         set: { session.text = $0 }
                     ),
-                    outlineState: outlineState
+                    outlineState: outlineState,
+                    findState: findState
                 )
-            case .preview:
+                .opacity(viewMode == .edit ? 1 : 0)
+                .allowsHitTesting(viewMode == .edit)
+
                 PreviewView_iOS(
                     markdown: session.text,
                     fileURL: file.url,
+                    isVisible: viewMode == .preview,
                     onWikiLinkClicked: handleWikiLink,
                     onTaskToggle: handleTaskToggle
                 )
+                .opacity(viewMode == .preview ? 1 : 0)
+                .allowsHitTesting(viewMode == .preview)
             }
         }
     }
@@ -183,7 +214,7 @@ struct DocumentDetailBody: View {
     private var conflictBanner: some View {
         HStack(spacing: 8) {
             Image(systemName: "exclamationmark.triangle.fill")
-                .foregroundStyle(.orange)
+                .foregroundStyle(Theme.warningColorSwiftUI)
             Text(bannerText)
                 .font(.footnote)
             Spacer()
@@ -195,7 +226,7 @@ struct DocumentDetailBody: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
-        .background(.yellow.opacity(0.12))
+        .background(Theme.warningColorSwiftUI.opacity(0.12))
     }
 
     private var bannerText: String {

@@ -8,6 +8,11 @@ struct PreviewView_iOS: UIViewRepresentable {
     let fontSize: CGFloat
     let fontFamily: String
     let hideFrontmatter: Bool
+    /// When false, the WebView stays mounted but markdown→HTML rendering is
+    /// skipped entirely. Avoids running the cmark + post-processing pipeline
+    /// on every keystroke when the user is in edit mode and the preview is
+    /// hidden. The HTML refreshes the moment `isVisible` flips back to true.
+    let isVisible: Bool
     var onWikiLinkClicked: ((String) -> Void)?
     var onTaskToggle: ((Int, Bool) -> Void)?
 
@@ -17,6 +22,7 @@ struct PreviewView_iOS: UIViewRepresentable {
         fontSize: CGFloat = 18,
         fontFamily: String = "sanFrancisco",
         hideFrontmatter: Bool = false,
+        isVisible: Bool = true,
         onWikiLinkClicked: ((String) -> Void)? = nil,
         onTaskToggle: ((Int, Bool) -> Void)? = nil
     ) {
@@ -25,6 +31,7 @@ struct PreviewView_iOS: UIViewRepresentable {
         self.fontSize = fontSize
         self.fontFamily = fontFamily
         self.hideFrontmatter = hideFrontmatter
+        self.isVisible = isVisible
         self.onWikiLinkClicked = onWikiLinkClicked
         self.onTaskToggle = onTaskToggle
     }
@@ -54,7 +61,9 @@ struct PreviewView_iOS: UIViewRepresentable {
         context.coordinator.onWikiLinkClicked = onWikiLinkClicked
         context.coordinator.onTaskToggle = onTaskToggle
 
-        loadHTML(in: webView, context: context)
+        if isVisible {
+            loadHTML(in: webView, context: context)
+        }
         return webView
     }
 
@@ -62,6 +71,11 @@ struct PreviewView_iOS: UIViewRepresentable {
         context.coordinator.fileURL = fileURL
         context.coordinator.onWikiLinkClicked = onWikiLinkClicked
         context.coordinator.onTaskToggle = onTaskToggle
+
+        // Skip the markdown→HTML pipeline when the preview is hidden. The
+        // moment `isVisible` flips back to true, the next `updateUIView`
+        // sees a stale `lastContentKey` and renders fresh content.
+        guard isVisible else { return }
 
         if context.coordinator.lastContentKey != contentKey {
             if context.coordinator.skipNextReload {
@@ -90,7 +104,12 @@ struct PreviewView_iOS: UIViewRepresentable {
         <meta charset="utf-8">
         <meta name="viewport" content="width=device-width, initial-scale=1">
         <style>\(PreviewCSS.css(fontSize: fontSize, fontFamily: fontFamily, bodyMaxWidth: "100%"))
-        body { padding: 16px 20px 32px; }
+        body {
+            padding-top: max(16px, env(safe-area-inset-top));
+            padding-right: max(20px, env(safe-area-inset-right));
+            padding-bottom: max(32px, env(safe-area-inset-bottom));
+            padding-left: max(20px, env(safe-area-inset-left));
+        }
         </style>
         </head>
         <body>\(htmlBody)</body>

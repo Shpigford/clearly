@@ -54,7 +54,8 @@ iCloud container provisioned once against the Team ID and shared by all three. O
 | 10 | Backlinks + outline + tags surfaces on iOS | Parity with Mac's KM features on both form factors |
 | 11 | Conflict detection + sibling-file + banner + diff view | Offline edits from two devices produce a visible conflict, never a silent overwrite |
 | 12 | iPad 3-column layout + multi-document tab bar port | iPad feels like the Mac app with real tabs |
-| 13 | Release: iPhone polish, find overlay, Settings "Sync", CI matrix, App Store submission | Shipped to App Store; Universal Purchase live |
+| 12b | iOS/iPadOS design polish (hard gate before Phase 13) | Unified `.xcassets` token system; iPad visually mirrors Mac; iPhone native-iOS but shares tokens; preview tracks editor palette; `FindOverlay_iOS`; empty/error states; motion pass |
+| 13 | Release: Settings "Sync", CI matrix, App Store submission | Shipped to App Store; Universal Purchase live |
 
 ---
 
@@ -409,33 +410,222 @@ Research default was single-document-per-scene on iPad. Overridden in favor of t
 
 ---
 
-## Phase 13: Release — polish + CI matrix + App Store submission
+## Phase 12b: iOS/iPadOS design polish
 
 ### Objective
-iOS build live on App Store; CI green for Mac + iOS; release scripts documented.
+Bring the iOS and iPadOS apps visually in line with the macOS app so all three platforms feel cohesive. iPad mirrors Mac closely (same tab bar chrome, sidebar treatment, column proportions, hover/pointer affordances). iPhone is iOS-native — `NavigationStack`, sheets with detents, swipe actions, safe-area-aware — but shares the same design tokens. **Hard gate: must merge before any Phase 13 work starts.**
 
 ### Rationale
-Ship.
+Phases 1–12 shipped feature parity with zero opportunistic polish: only `ClearlyUITextView` (1 of 18 iOS files) consumes `Theme` tokens; the iPad tab bar uses `Color(.secondarySystemBackground)`; the sidebar is default `.insetGrouped`; WKWebView preview colors don't inherit editor tokens; 17 other surfaces use raw system colors. Phase 13 as originally scoped bundled a thin polish pass with release infrastructure, which is too thin for the actual gap and blocks visual iteration behind infra work. Pulling all design/polish into a dedicated phase unblocks visual iteration and lets Phase 13 stay focused on shipping.
+
+### Strategy
+- **Tokens live in one place.** Colors migrate from `Theme.swift`'s in-code `clearlyDynamic(name:light:dark:)` provider into an `.xcassets` catalog inside `ClearlyCore` with Any/Dark appearance variants, consumed by both AppKit (`NSColor(named:bundle:)`) and SwiftUI (`Color(_:bundle:)`). Unblocks High Contrast later.
+- **Preview CSS uses CSS custom properties.** `:root { --color-link: ... }` injected at render time from Theme; media queries override for dark/print. Preview finally tracks editor colors on both platforms.
+- **iPad mirrors Mac.** `NavigationSplitView` column widths, `.listStyle(.sidebar)` translucency, `.hoverEffect` for trackpad, custom tab bar repainted against Mac's `TabBarView`.
+- **iPhone is iOS-native.** Swipe actions, sheets with detents, safe-area, Dynamic Type on chrome (editor canvas stays fixed-size).
+- **Out of scope:** VoiceOver labels, Reduce Motion, Increase Contrast variant, Settings "Sync" tab (stays Phase 13), release infrastructure.
+
+### Sub-phases
+Each sub-phase is sized for one focused session (half-day to full-day) matching the existing phase cadence. Each merges independently.
+
+| # | Title | Shippable result |
+|---|-------|------------------|
+| 12b.1 | Asset catalog migration in `ClearlyCore` | All 23 Theme colors live in `Resources/Colors.xcassets`; Mac runtime bit-for-bit unchanged |
+| 12b.2 | `Theme` SwiftUI bridge expansion | Every `PlatformColor` has a `…SwiftUI: Color` counterpart; `Theme.Typography` + `Theme.Spacing` namespaces added |
+| 12b.3 | PreviewCSS rewrite with CSS custom properties | Preview colors on both platforms match editor palette; dark + print variants unified |
+| 12b.4 | iPad chrome upgrade | iPad split view + tab bar visually match Mac; hover/pointer/keyboard-discoverability wired |
+| 12b.5 | iOS sidebar, file list, welcome repaint | Sidebar / file list / welcome use Theme tokens and match Mac's visual hierarchy |
+| 12b.6 | iOS functional completion (final) | `FindOverlay_iOS`, iPhone swipe actions, bookmark re-pick, safe-area pass, Dynamic Type on chrome, warning token |
+
+---
+
+### Phase 12b.1: Asset catalog migration in `ClearlyCore`
+
+Move all 23 dynamic colors from `Theme.swift`'s in-code provider into an `.xcassets` catalog. `Theme`'s public API is unchanged from the outside. Mac runtime bit-for-bit unchanged.
+
+**Tasks:**
+- [ ] New `Packages/ClearlyCore/Sources/ClearlyCore/Resources/Colors.xcassets/` with 23 color sets, each with Any Appearance (light) + Dark Appearance variants. Values sourced from current `Theme.swift` RGBA tuples verbatim: `Background`, `Text`, `Syntax`, `Heading`, `Bold`, `Italic`, `Code`, `Link`, `Math`, `Blockquote`, `Frontmatter`, `Highlight`, `HighlightBackground`, `Footnote`, `WikiLink`, `WikiLinkBroken`, `Tag`, `HtmlTag`, `FindHighlight`, `FindCurrentHighlight`, `Accent`, `SidebarBackground`, `OutlinePanelBackground`
+- [ ] `Package.swift`: add `resources: [.process("Resources")]` to the `ClearlyCore` target
+- [ ] Refactor `Theme.swift` color properties to `PlatformColor(named: "X", in: .module, compatibleWith: nil)!` — same names, same types
+- [ ] Delete the unused `PlatformColor.clearlyDynamic(name:light:dark:)` helper from `Platform.swift`
+- [ ] No `project.yml` changes (package resources propagate via `Bundle.module` automatically)
+- [ ] Mac regression sweep: light + dark, every surface visually unchanged
+
+**Success criteria:**
+- Mac + iOS builds green
+- Mac app visually identical before/after
+- `grep "clearlyDynamic" Packages/` empty
+
+---
+
+### Phase 12b.2: `Theme` SwiftUI bridge expansion
+
+Extend `Theme` so every color has a SwiftUI `Color` counterpart (only 4 of 23 do today). Add `Theme.Typography` + `Theme.Spacing` namespaces so iOS views consume semantic primitives instead of hardcoded values.
+
+**Tasks:**
+- [ ] 19 new `…SwiftUI: Color` properties on `Theme` (one per uncovered `PlatformColor`)
+- [ ] `Theme.Typography` namespace: `tabLabel` (12pt medium), `sidebarRow` (13pt), `sectionHeader` (11pt semibold tracking 1.5), `countBadge` (10pt medium), `toolbarLabel` (14pt medium), `findField` (13pt), `findCount` (11pt medium), `welcomeTitle` (26pt semibold), `welcomeSubtitle` (14pt)
+- [ ] `Theme.Spacing` namespace: `xs`/`sm`/`md`/`lg`/`xl` (4/6/8/12/16), `sidebarRowHeight` (28), `tabBarHeight` (38), `bottomToolbarHeight` (40), corner radii (6/8/12/24)
+- [ ] `Theme.separatorColor(inDark:) -> Color` and `Theme.hoverColor(inDark:) -> Color` helpers picking the right opacity for a given color scheme
+
+**Success criteria:**
+- No iOS view needs to hardcode a `Color(...)` or a `.font(.system(size: 13))` after this phase
+
+---
+
+### Phase 12b.3: PreviewCSS rewrite with CSS custom properties
+
+Unify preview colors under the token system. All ~30 hardcoded hex/rgba values in `PreviewCSS.swift` become references to CSS custom properties set once at render time from Theme values.
+
+**Tasks:**
+- [ ] `cssHexString(for: Appearance) -> String` helper on `PlatformColor`
+- [ ] Generate a `:root { --color-link: ...; --color-code: ...; ... }` block from Theme light tokens at render time
+- [ ] `@media (prefers-color-scheme: dark) { :root { ... } }` overrides from dark-variant tokens
+- [ ] `@media print { :root { ... } }` overrides from explicit print values
+- [ ] `forExport` path injects print palette inline via `:root`
+- [ ] All selectors reference `var(--color-link)` etc. — zero hex literals in rule bodies
+- [ ] iOS-specific additions: `-webkit-text-size-adjust: 100%` and `env(safe-area-inset-*)` padding
+- [ ] Update `PreviewView.swift` (Mac), `PreviewView_iOS.swift`, `PDFExporter.swift`, `ClearlyQuickLook/PreviewProvider.swift` to pass Theme colors into the generator
+- [ ] Fixture test (new `Packages/ClearlyCore/Tests/ClearlyCoreTests/PreviewCSSTests.swift`): snapshot-diff the old vs new CSS for light/dark/print on a canonical markdown sample
+
+**Success criteria:**
+- Mac preview visually identical before/after (light + dark + print)
+- iOS preview uses the same palette as the editor
+- QuickLook + PDF export still render correctly
+- `grep -E '#[0-9A-Fa-f]{6}|rgba\(' PreviewCSS.swift` only matches inside `:root { ... }` definitions
+
+---
+
+### Phase 12b.4: iPad chrome upgrade
+
+iPad's 3-column split view and tab bar visually match the Mac. Hover/pointer affordances wired for trackpad. Keyboard-discoverability HUD titles verified.
+
+**Tasks:**
+- [ ] `IPadRootView.swift`: apply `navigationSplitViewColumnWidth(min:ideal:max:)` — sidebar `(200, 240, 320)`, content `(240, 280, 420)`, detail flexible. `.toolbar(removing: .sidebarToggle)` for always-visible three-column look on iPad Pro
+- [ ] `IPadTabBar.swift`: full repaint against Mac's `TabBarView`:
+  - Height `Theme.Spacing.tabBarHeight` (38pt)
+  - Theme-driven background (new `Theme.tabBarBackgroundSwiftUI`: light `primary.opacity(0.04)`, dark `sidebarBackground.opacity(0.6)`)
+  - Active tab: `RoundedRectangle(cornerRadius: Theme.Spacing.cornerRadiusSmall)` with Theme fill + shadow
+  - 1pt divider below with `Theme.separatorColor(inDark:)`
+  - Tab label `Theme.Typography.tabLabel`; close button 8pt semibold xmark tertiary; dirty indicator 6×6pt circle opacity 0.3
+  - `.hoverEffect(.lift)` on tab caps + `.contentShape(.hoverEffect, .rect(cornerRadius: 6))`
+- [ ] iPad sidebar: `.listStyle(.sidebar)` for translucent vibrancy; rows get `.hoverEffect(.highlight)`
+- [ ] `UIKeyCommand` discoverability: every keyboard shortcut has a readable `Label` / `.accessibilityLabel` so the iPad Cmd-hold HUD shows meaningful names (⌘T, ⌘W, ⌘1–9, ⌘K, ⌘⇧F, ⌘F, ⌘P)
+- [ ] `.contextMenu(menuItems:preview:)` on file rows in `FileListView_iOS` for long-press preview cards
+- [ ] `IPadDetailView_iOS` empty state styled to match Mac's "no document" treatment
+- [ ] Visual-only changes — no touches to `IPadTabController` (drag, close, keyboard shortcuts behavior unchanged)
+
+**Success criteria:**
+- iPad 3-column layout matches Mac's column proportions
+- iPad tab bar visually indistinguishable from Mac's tab bar (side-by-side screenshot)
+- Cmd-hold HUD on iPad shows labels for every shortcut
+- Trackpad hover visibly lifts tabs and highlights sidebar rows
+
+---
+
+### Phase 12b.5: iOS sidebar, file list, welcome repaint
+
+Apply Theme tokens to `SidebarView_iOS`, `FileListView_iOS`, `WelcomeView_iOS`. iPad matches Mac row heights / icon treatment / section-header typography; iPhone keeps native touch targets but shares colors/fonts.
+
+**Tasks:**
+- [ ] `SidebarView_iOS`: `.tint(Theme.accentColorSwiftUI)`; `Theme.sidebarBackgroundSwiftUI` on list via `.listRowBackground` + `.scrollContentBackground(.hidden)`; section headers use `Theme.Typography.sectionHeader` (11pt semibold tertiary tracking 1.5)
+- [ ] `FileListView_iOS`: row height `Theme.Spacing.sidebarRowHeight` (28pt) on iPad, native (44pt) on iPhone; row font `Theme.Typography.sidebarRow`; SF Symbol icons 13pt medium; empty state + separator opacity from Theme
+- [ ] `WelcomeView_iOS`: 64×64pt app icon; `Theme.Typography.welcomeTitle` / `welcomeSubtitle`; option cards 520pt max width on iPad, full-width on iPhone; error message via new `Theme.errorColor` / `Theme.errorColorSwiftUI`
+
+**Success criteria:**
+- iPad sidebar + file list side-by-side with Mac: matching row heights, icon sizes, section-header style
+- iPhone sidebar uses same colors/fonts, keeps 44pt touch targets
+
+---
+
+### Phase 12b.6: iOS functional completion (final)
+
+The 12b.4/5 pivot settled the chrome direction — iPad reverts to stock `NavigationSplitView` + `ContentUnavailableView`, iPhone stays iOS-native. That supersedes the original 12b.6–12b.9 repaint / token-audit agenda. What remains in this sub-phase are **real features and functional bugs** that the native-chrome direction doesn't address. One consolidated pass.
+
+**Tasks:**
+- [ ] `FindOverlay_iOS` (pulled from original 12b.7 + Phase 13): new `Clearly/iOS/FindOverlay_iOS.swift`. Top-of-editor overlay with search field (magnifying glass leading, clear trailing), result count ("3 of 7"), prev/next arrow buttons, close. Consumes shared `FindState` from `ClearlyCore`. Wire to `ClearlyUITextView`: expose `selectedRange` / scroll-to-range helpers; highlight matches via `NSAttributedString` background attributes using `Theme.findHighlightColor` / `Theme.findCurrentHighlightColor`. iPad: `⌘F` via `.keyboardShortcut("f", modifiers: .command)` + toolbar button on `IPadDetailView_iOS`. iPhone: toolbar button on `DocumentDetailBody`. Dismiss on editor blur / Esc / tap-outside. This is the only remaining spot to apply `Theme.Motion.smooth` for show/hide.
+- [ ] iPhone swipe actions: `.swipeActions(edge: .trailing)` for delete + rename on `FolderListView_iOS` and the compact path of `FileListView_iOS`. iPad keeps long-press context menu (unchanged from 12b.4).
+- [ ] Bookmark re-pick on launch: if the `UserDefaults`-stored security-scoped bookmark fails to resolve, surface `ContentUnavailableView` in the welcome flow with a "Choose Vault" action. No auto-fallback to default iCloud — explicit user action. Wire through `IOSDocumentSession` / `WelcomeView_iOS`.
+- [ ] Safe-area audit: `DocumentDetailBody`, `PreviewView_iOS`, `FindOverlay_iOS`, `ClearlyUITextView` keyboard accessory. Editor bottom must respect keyboard + home indicator; preview padding must respect safe area; find overlay must sit below the status bar.
+- [ ] Dynamic Type on chrome: every `.font()` in iOS chrome uses `@ScaledMetric`-driven sizes or `Font.custom(_, size:, relativeTo:)` so it scales with user settings. Editor canvas stays fixed via `Font.custom(_, fixedSize:)`. iPad tab bar stays fixed-size for Mac parity.
+- [ ] `Theme.warningColor` + `warningColorSwiftUI` token: add to `Packages/ClearlyCore/Sources/ClearlyCore/Resources/Colors.xcassets/Warning.colorset/` (mirrors `Error.colorset` from 12b.5). Replace `.yellow.opacity(0.12)` on the `DocumentDetailBody` conflict banner. Error color already landed in 12b.5.
+- [ ] Keyboard accessory bar spacing audit on `ClearlyUITextView` input accessory: 28×28pt button frames, 6pt corner radius, clear dismiss-keyboard affordance on the right.
+
+**Success criteria:**
+- `⌘F` on iPad hardware keyboard opens overlay with focus in search field; typing highlights all matches and scrolls first into view; prev/next cycles; Esc dismisses and returns focus to editor
+- Swipe-left on an iPhone file row reveals Delete + Rename
+- Deleting the bookmark-backing folder while the app runs and relaunching surfaces the re-pick prompt
+- Dynamic Type at largest size scales chrome but not editor canvas
+- Keyboard does not cover editor bottom or find overlay
+- No `.yellow` / `.red` literals remain in iOS error/warning states
+
+**Dropped from the original 12b.6–12b.9 (superseded by the 12b.4/5 native-chrome pivot):**
+- `QuickSwitcherSheet` / `BacklinksSheet` / `OutlineSheet` / `TagsSheet` Theme repaints — stock sheet chrome is now the direction
+- Custom `EmptyStateView_iOS` component — `ContentUnavailableView` (iOS 17+) is used everywhere it's needed
+- Custom `ClearlySegmentedControl` mimicry in `DocumentDetailBody` — stock `Picker(.segmented)` is the HIG answer
+- `.presentationBackground(.ultraThinMaterial)` + custom `sheetCornerRadius` on iPhone sheets — stock sheets
+- Global `Theme.Motion.*` audit across every transition — applied only to FindOverlay show/hide; stock SwiftUI animations are fine elsewhere
+
+---
+
+### Gating + verification (for the whole phase)
+
+**Phase 12b must merge before Phase 13 begins.** Each sub-phase merges independently.
+
+End-of-phase verification:
+1. `xcodegen generate` (no planned `project.yml` changes, but verify clean)
+2. `xcodebuild -scheme Clearly -configuration Debug build` — green
+3. `xcodebuild -scheme Clearly -configuration Release build` — green (catches Sparkle-conditional breakage)
+4. `xcodebuild -scheme Clearly-iOS -destination 'platform=iOS Simulator,name=iPhone 17' build` — green
+5. `xcodebuild -scheme Clearly-iOS -destination 'platform=iOS Simulator,name=iPad Pro 13-inch (M4)' build` — green
+6. `swift test --filter PreviewCSSTests` passes (added in 12b.3)
+7. Manual visual parity sweep — Mac + iPad Pro side-by-side; iPhone Dynamic Type at largest size; dark mode toggle on all three platforms
+8. `scripts/verify-entitlements.sh` on exported Mac builds
+
+### Files Likely Affected
+
+- `Packages/ClearlyCore/Sources/ClearlyCore/Rendering/Theme.swift` (sub-phases 1, 2, 3, 4, 5, 6)
+- `Packages/ClearlyCore/Sources/ClearlyCore/Rendering/PreviewCSS.swift` (sub-phase 3)
+- `Packages/ClearlyCore/Sources/ClearlyCore/Resources/Colors.xcassets/**` (sub-phases 1, 5, 6 — `Warning.colorset` added in 6)
+- `Packages/ClearlyCore/Package.swift` (sub-phase 1)
+- `Packages/ClearlyCore/Tests/ClearlyCoreTests/PreviewCSSTests.swift` (sub-phase 3, new)
+- `Clearly/iOS/IPadRootView.swift`, `IPadDetailView_iOS.swift`, `FileListView_iOS.swift`, `FileRowPreviewCard.swift` (sub-phase 4)
+- `Clearly/iOS/FolderListView_iOS.swift`, `WelcomeView_iOS.swift` (sub-phase 5)
+- `Clearly/iOS/FindOverlay_iOS.swift` (sub-phase 6, new), `ClearlyUITextView.swift` (sub-phase 6), `DocumentDetailBody.swift` (sub-phase 6), `PreviewView_iOS.swift` (sub-phase 6), `IOSDocumentSession.swift` (sub-phase 6), `IPadDetailView_iOS.swift` (sub-phase 6)
+- `Clearly/PreviewView.swift`, `Clearly/PDFExporter.swift`, `ClearlyQuickLook/PreviewProvider.swift` (sub-phase 3)
+
+---
+
+## Phase 13: Release — Settings "Sync" + CI matrix + App Store submission
+
+### Objective
+iOS build live on App Store; CI green for Mac + iOS; release scripts documented. Polish was pulled into Phase 12b — this phase is release infrastructure + the one remaining feature (`Settings "Sync"`).
+
+### Rationale
+Ship. Phase 12b gates this — do not start Phase 13 until 12b is merged.
 
 ### Tasks
-- [ ] `Clearly/iOS/FindOverlay_iOS.swift` — custom in-document find (match count + prev/next, no replace). No `NSTextFinder` on UIKit. Toolbar button + `⌘F` on iPad
-- [ ] iPhone polish: keyboard-accessory spacing, sidebar swipe actions for delete / rename, safe-area handling, dynamic type
 - [ ] `SettingsView.swift` cross-platform "Sync" tab (Mac + iOS): vault location path, last sync time, iCloud account state, vault disk usage, "attachments local only" toggle (research risk #6)
-- [ ] Bookmark-invalidation polish: if `UserDefaults`-stored security-scoped bookmark fails to resolve on launch, show a clear prompt to re-pick the folder instead of silent failure (research risk #8)
 - [ ] `.github/workflows/test.yml`: add `build-app-macos` and `build-app-ios` jobs. Gate `build-app-ios` to paths `Clearly/**`, `Packages/ClearlyCore/**`, `project.yml`, `Shared/**`. Cache `DerivedData`. Full matrix on `main` + release tags only (research risk #7 — CI time explosion)
 - [ ] New `scripts/release-ios.sh` — archive + `notarytool`/`altool` upload to App Store Connect; auto-bump `CFBundleVersion`; mirrors `release-appstore.sh` structure
 - [ ] App Store Connect setup: iOS listing, iPhone + iPad screenshots, privacy labels ("no data collected"), Universal Purchase link to the existing MAS SKU, TestFlight build submitted
 - [ ] `CLAUDE.md` gets an "iOS development" section covering the package layout, `Platform.swift` shims, iOS-only entitlements. `docs/ROADMAP.md` marks `mobile` shipped
 
 ### Success Criteria
+- Phase 12b merged first (hard gate)
 - CI green on `main` for both platforms
 - TestFlight build accepted by Review
 - Universal Purchase verified: buying the MAS app unlocks iOS and vice versa
 - iOS build in App Store
 
 ### Files Likely Affected
-- New: `Clearly/iOS/FindOverlay_iOS.swift`, `scripts/release-ios.sh`
+- New: `scripts/release-ios.sh`
 - Modified: `Clearly/SettingsView.swift`, `.github/workflows/test.yml`, `CLAUDE.md`, `docs/ROADMAP.md`
+
+### Moved to Phase 12b
+- `FindOverlay_iOS.swift` → 12b.6 (final)
+- iPhone polish (keyboard-accessory spacing, swipe actions, safe-area, dynamic type) → 12b.6 (final)
+- Bookmark-invalidation re-pick prompt → 12b.6 (final)
 
 ---
 
@@ -456,11 +646,12 @@ Ship.
 ## Critical files to touch (across phases)
 
 - `project.yml` — phases 1, 2, 13
-- `Packages/ClearlyCore/**` — phases 1, 3, 5, 7, 8, 11
+- `Packages/ClearlyCore/**` — phases 1, 3, 5, 7, 8, 11, 12b (all sub-phases touch `Theme.swift`; 12b.1 adds `Resources/Colors.xcassets` + modifies `Package.swift`; 12b.3 rewrites `PreviewCSS.swift`)
 - `Clearly.entitlements`, `Clearly-AppStore.entitlements`, `Clearly-iOS.entitlements` — phase 3 (all three), phase 13 (audit)
 - `Clearly/Info.plist` — phase 3
-- `Clearly/iOS/**` — new; phases 2, 4, 5, 6, 7, 9, 10, 11, 12, 13
+- `Clearly/iOS/**` — new; phases 2, 4, 5, 6, 7, 9, 10, 11, 12, 12b, 13
 - `Clearly/MarkdownDocument.swift` — phases 4, 6
+- `Clearly/PreviewView.swift`, `Clearly/PDFExporter.swift`, `ClearlyQuickLook/PreviewProvider.swift` — phase 12b.3
 - `scripts/release.sh`, `scripts/release-appstore.sh`, `scripts/release-ios.sh`, `scripts/verify-entitlements.sh` — phases 3, 13
 - `.github/workflows/test.yml` — phase 13
 
@@ -469,4 +660,5 @@ Ship.
 - Sparkle stays wrapped in `#if canImport(Sparkle)` throughout. Direct Mac build participates in iCloud sync alongside MAS and iOS
 - ClearlyMCP, ClearlyQuickLook, ScratchpadManager, CLIInstaller, PDFExporter, LineNumberRulerView remain macOS-only via per-target source exclusions
 - `NSFileCoordinator` discipline is non-negotiable everywhere that touches vault files (research risk #3)
-- Next step after approval of this plan: run `/build progress mobile` to set up progress tracking; then `/build phase 1 mobile` to start Phase 1
+- **Phase 12b is a hard gate before Phase 13.** All design/polish was pulled out of Phase 13 into 12b so visual iteration isn't blocked by release infra. Release work does not start until 12b is merged.
+- Next step: run `/build phase 12b.1 mobile` to start the asset catalog migration

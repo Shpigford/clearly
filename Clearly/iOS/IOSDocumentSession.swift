@@ -35,6 +35,7 @@ public final class IOSDocumentSession {
     @ObservationIgnored private var presenter: DocumentPresenter?
     @ObservationIgnored private var autosaveTask: Task<Void, Never>?
     @ObservationIgnored private var isOwnWriteInFlight = false
+    @ObservationIgnored private weak var vault: VaultSession?
 
     public static let autosaveDebounceSeconds: Double = 2.0
 
@@ -45,6 +46,7 @@ public final class IOSDocumentSession {
     public func open(_ file: VaultFile, via vault: VaultSession) async {
         await close()
 
+        self.vault = vault
         self.file = file
         isLoading = true
         errorMessage = nil
@@ -124,6 +126,7 @@ public final class IOSDocumentSession {
                 try CoordinatedFileIO.write(data, to: url, presenter: capturedPresenter)
             }.value
             lastSavedText = text
+            await autoRenameIfApplicable(text: text)
         } catch {
             // Don't clobber `errorMessage` here — that slot drives the
             // load-failure full-screen view, and a save failure must not
@@ -133,6 +136,15 @@ public final class IOSDocumentSession {
             // the scene-phase flush) will retry the write.
             DiagnosticLog.log("IOSDocumentSession save failed for \(url.lastPathComponent): \(error.localizedDescription)")
         }
+    }
+
+    /// Notes.app pattern: when an `Untitled.md` file gets meaningful content,
+    /// rename it to derive its name from the first heading / line. The vault's
+    /// renameFile fires `presentedItemDidMove`, which calls `handleRemoteMove`
+    /// to update `self.file` — no need to set it manually here.
+    private func autoRenameIfApplicable(text: String) async {
+        guard let vault, let currentFile = self.file else { return }
+        _ = await vault.autoRenameUntitledIfApplicable(currentFile, basedOn: text)
     }
 
     // MARK: - File presenter

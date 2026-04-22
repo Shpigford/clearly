@@ -129,6 +129,37 @@ public final class IPadTabController {
 
     // MARK: - Tab actions
 
+    /// Single-document open: close any open document and replace it with `file`.
+    /// iPad uses sorted-by-recency sidebar as its "tab bar" — one document
+    /// shows in the detail pane at a time. If `file` is already the open
+    /// document, no-op (still marks recent + persists for ordering).
+    public func openExclusive(_ file: VaultFile) {
+        let target = file.url.standardizedFileURL
+        let existing = tabs.first(where: { tab in
+            let url = (tab.session.file?.url ?? tab.file.url).standardizedFileURL
+            return url == target
+        })
+
+        // Tear down anything that isn't the target.
+        for tab in tabs where tab.id != existing?.id {
+            Task { await tab.session.close() }
+        }
+
+        if let existing {
+            tabs = [existing]
+            activeTabID = existing.id
+        } else {
+            let newTab = IPadTab(file: file)
+            tabs = [newTab]
+            activeTabID = newTab.id
+            if let vault {
+                Task { [v = vault] in await newTab.session.open(file, via: v) }
+            }
+        }
+        vault?.markRecent(file)
+        persist()
+    }
+
     /// Activate an existing tab for `file` or append a new tab. Used for
     /// sidebar taps, wiki-link navigation, and quick-switcher picks. Matches
     /// against `session.file` first (current URL after any rename) and falls

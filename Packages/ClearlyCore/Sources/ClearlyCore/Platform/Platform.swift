@@ -100,24 +100,61 @@ public extension PlatformColor {
         #endif
     }
 
-    static func clearlyDynamic(
-        name: String,
-        light: (CGFloat, CGFloat, CGFloat, CGFloat),
-        dark: (CGFloat, CGFloat, CGFloat, CGFloat)
-    ) -> PlatformColor {
+    /// Loads a named color from the `ClearlyCore` asset catalog (`Bundle.module`).
+    /// The asset must exist — unresolved names trap.
+    static func clearlyAsset(named name: String) -> PlatformColor {
         #if os(macOS)
-        return NSColor(name: NSColor.Name(name)) { appearance in
-            appearance.clearlyIsDark
-                ? NSColor(red: dark.0, green: dark.1, blue: dark.2, alpha: dark.3)
-                : NSColor(red: light.0, green: light.1, blue: light.2, alpha: light.3)
+        guard let color = NSColor(named: NSColor.Name(name), bundle: .module) else {
+            fatalError("Missing color asset '\(name)' in ClearlyCore Colors.xcassets")
+        }
+        return color
+        #else
+        guard let color = UIColor(named: name, in: .module, compatibleWith: nil) else {
+            fatalError("Missing color asset '\(name)' in ClearlyCore Colors.xcassets")
+        }
+        return color
+        #endif
+    }
+
+    enum Appearance: Sendable {
+        case light
+        case dark
+    }
+
+    /// Resolves this color's sRGB components for the given appearance and returns a CSS
+    /// color string: `#RRGGBB` when alpha rounds to 1, `rgba(r, g, b, a)` otherwise.
+    func cssHexString(for appearance: Appearance) -> String {
+        var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 1
+        #if os(macOS)
+        let target = NSAppearance(named: appearance == .dark ? .darkAqua : .aqua) ?? NSAppearance(named: .aqua)!
+        var resolved: NSColor?
+        target.performAsCurrentDrawingAppearance {
+            resolved = self.usingColorSpace(.sRGB)
+        }
+        if let resolved {
+            r = resolved.redComponent
+            g = resolved.greenComponent
+            b = resolved.blueComponent
+            a = resolved.alphaComponent
         }
         #else
-        return UIColor { traits in
-            traits.userInterfaceStyle == .dark
-                ? UIColor(red: dark.0, green: dark.1, blue: dark.2, alpha: dark.3)
-                : UIColor(red: light.0, green: light.1, blue: light.2, alpha: light.3)
-        }
+        let traits = UITraitCollection(userInterfaceStyle: appearance == .dark ? .dark : .light)
+        self.resolvedColor(with: traits).getRed(&r, green: &g, blue: &b, alpha: &a)
         #endif
+        let ri = Int((r * 255).rounded())
+        let gi = Int((g * 255).rounded())
+        let bi = Int((b * 255).rounded())
+        if a >= 0.9995 {
+            return String(format: "#%02X%02X%02X", ri, gi, bi)
+        }
+        let alpha = (a * 1000).rounded() / 1000
+        let alphaStr: String
+        if alpha == alpha.rounded() {
+            alphaStr = String(Int(alpha))
+        } else {
+            alphaStr = String(format: "%g", alpha)
+        }
+        return "rgba(\(ri), \(gi), \(bi), \(alphaStr))"
     }
 }
 
@@ -130,11 +167,3 @@ public extension Color {
         #endif
     }
 }
-
-#if os(macOS)
-private extension NSAppearance {
-    var clearlyIsDark: Bool {
-        bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
-    }
-}
-#endif

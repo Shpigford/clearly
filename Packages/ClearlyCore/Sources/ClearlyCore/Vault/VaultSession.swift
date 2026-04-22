@@ -395,6 +395,168 @@ public final class VaultSession {
         return VaultFile(url: url, name: filename, modified: Date(), isPlaceholder: false)
     }
 
+    /// Notes.app-style auto-rename: if `file` is currently named `Untitled.md`
+    /// (or `Untitled 2.md`, …) and `text` has a meaningful first line, rename
+    /// the file to derive its name from that line. Returns the new `VaultFile`
+    /// on success, `nil` if no rename was applicable. Once the file has any
+    /// other name, this method is a no-op — manual renames stick.
+    public func autoRenameUntitledIfApplicable(_ file: VaultFile, basedOn text: String) async -> VaultFile? {
+        let stem = (file.name as NSString).deletingPathExtension
+        guard Self.isUntitledStem(stem) else { return nil }
+        guard let rawTitle = Self.extractTitleForAutoRename(from: text) else { return nil }
+        let sanitized = Self.sanitizeKebab(rawTitle)
+        guard !sanitized.isEmpty, sanitized != stem else { return nil }
+
+        let parent = file.url.deletingLastPathComponent()
+        let ext = file.url.pathExtension.isEmpty ? "md" : file.url.pathExtension
+
+        var candidate = sanitized
+        var attempt = 1
+        while FileManager.default.fileExists(atPath: parent.appendingPathComponent("\(candidate).\(ext)").path) {
+            attempt += 1
+            candidate = "\(sanitized)-\(attempt)"
+            if attempt > 50 { return nil }
+        }
+
+        do {
+            try await renameFile(file, to: candidate)
+        } catch {
+            DiagnosticLog.log("auto-rename failed for \(file.name): \(error.localizedDescription)")
+            return nil
+        }
+        let newURL = parent.appendingPathComponent("\(candidate).\(ext)")
+        return VaultFile(
+            url: newURL,
+            name: "\(candidate).\(ext)",
+            modified: Date(),
+            isPlaceholder: false
+        )
+    }
+
+    /// Matches `untitled`, `untitled-2`, `untitled 2`, `Untitled`, `Untitled 2`, …
+    /// Case-insensitive, accepts both space and dash separators, so legacy
+    /// title-case files still trigger auto-rename after the kebab pivot.
+    private static func isUntitledStem(_ stem: String) -> Bool {
+        return stem.range(of: #"^untitled([\s-]\d+)?$"#, options: [.regularExpression, .caseInsensitive]) != nil
+    }
+
+    private static func extractTitleForAutoRename(from text: String) -> String? {
+        let stripped = Self.stripLeadingFrontmatter(text)
+        for raw in stripped.split(separator: "\n", omittingEmptySubsequences: false) {
+            let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty else { continue }
+            if trimmed.hasPrefix("#") {
+                let withoutHashes = String(trimmed.drop(while: { $0 == "#" }))
+                let cleaned = withoutHashes.trimmingCharacters(in: .whitespacesAndNewlines)
+                return cleaned.isEmpty ? nil : cleaned
+            }
+            return trimmed
+        }
+        return nil
+    }
+
+    private static func stripLeadingFrontmatter(_ text: String) -> String {
+        let lines = text.split(separator: "\n", omittingEmptySubsequences: false)
+        guard lines.first?.trimmingCharacters(in: .whitespaces) == "---" else { return text }
+        var endIdx: Int?
+        for i in 1..<lines.count where lines[i].trimmingCharacters(in: .whitespaces) == "---" {
+            endIdx = i
+            break
+        }
+        guard let endIdx else { return text }
+        return lines[(endIdx + 1)...].joined(separator: "\n")
+    }
+
+    /// Sanitize a string into a strict kebab-case filename stem: only ASCII
+    /// letters (a–z) and digits (0–9), separated by single dashes. Accented
+    /// characters are transliterated to ASCII first ("café" → "cafe"),
+    /// emoji / punctuation / other non-alphanumerics become dash separators,
+    /// runs of separators collapse to one dash, leading/trailing dashes are
+    /// trimmed, and the result is capped at 80 chars. Idempotent — safe to
+    /// call on already-kebab-cased input.
+    public static func sanitizeKebab(_ raw: String) -> String {
+        let mutable = NSMutableString(string: raw)
+        CFStringTransform(mutable, nil, "Any-Latin; Latin-ASCII" as CFString, false)
+        let lowered = String(mutable).lowercased()
+
+        var result = ""
+        var inDashRun = true // treat start as "just emitted a dash" so leading non-alnum is dropped
+        for char in lowered {
+            if char.isASCII && (char.isLetter || char.isNumber) {
+                result.append(char)
+                inDashRun = false
+            } else if !inDashRun {
+                result.append("-")
+                inDashRun = true
+            }
+        }
+        while result.hasSuffix("-") { result.removeLast() }
+        if result.count > 80 { result = String(result.prefix(80)) }
+        return result
+    }
+
+    /// Create an empty `Untitled.md` (or `Untitled 2.md`, `Untitled 3.md`, …) at the
+    /// vault root and return the resulting `VaultFile`. The provisional record is
+    /// replaced with a real one on the watcher's next refresh tick.
+    /// Create a new folder in the vault. `name` is kebab-case-sanitized
+    /// before use so folder names stay consistent with file names. Parent
+    /// defaults to the vault root; a non-nil parent is validated to live
+    /// inside the vault. Throws if the folder already exists or name is
+    /// empty after sanitization. Returns the created folder's URL.
+    public func createFolder(named name: String, in parent: URL? = nil) async throws -> URL {
+        guard let vault = currentVault else {
+            throw VaultSessionError.readFailed("no vault attached")
+        }
+        let cleanName = Self.sanitizeKebab(name)
+        guard !cleanName.isEmpty else {
+            throw VaultSessionError.readFailed("folder name is empty")
+        }
+        let parentURL: URL = {
+            guard let parent else { return vault.url }
+            let parentPath = parent.standardizedFileURL.path
+            let rootPath = vault.url.standardizedFileURL.path
+            return parentPath.hasPrefix(rootPath) ? parent : vault.url
+        }()
+        let folderURL = parentURL.appendingPathComponent(cleanName)
+        if FileManager.default.fileExists(atPath: folderURL.path) {
+            throw VaultSessionError.readFailed("a folder with that name already exists")
+        }
+        try await Task.detached(priority: .userInitiated) {
+            try FileManager.default.createDirectory(at: folderURL, withIntermediateDirectories: false)
+        }.value
+        refresh()
+        return folderURL
+    }
+
+    public func createUntitledNote(in parent: URL? = nil) async throws -> VaultFile {
+        guard let vault = currentVault else {
+            throw VaultSessionError.readFailed("no vault attached")
+        }
+        // Default to vault root if no parent specified, but only honor the
+        // override if the requested parent is inside the vault — defends
+        // against stale/external URLs leaking into the create path.
+        let target: URL = {
+            guard let parent else { return vault.url }
+            let standardized = parent.standardizedFileURL.path
+            let root = vault.url.standardizedFileURL.path
+            return standardized.hasPrefix(root) ? parent : vault.url
+        }()
+        var attempt = 0
+        var url: URL
+        var filename: String
+        repeat {
+            attempt += 1
+            filename = attempt == 1 ? "untitled.md" : "untitled-\(attempt).md"
+            url = target.appendingPathComponent(filename)
+        } while FileManager.default.fileExists(atPath: url.path)
+
+        try await Task.detached(priority: .userInitiated) {
+            try CoordinatedFileIO.write(Data(), to: url)
+        }.value
+        refresh()
+        return VaultFile(url: url, name: filename, modified: Date(), isPlaceholder: false)
+    }
+
     private static func stem(of filename: String) -> String {
         let ns = filename as NSString
         let ext = ns.pathExtension.lowercased()
@@ -422,13 +584,10 @@ public final class VaultSession {
         guard !trimmed.isEmpty else {
             throw VaultSessionError.readFailed("new name is empty")
         }
-        let forbidden: Set<Character> = ["/", "\\", ":", "?", "*", "\"", "<", ">", "|"]
-        guard !trimmed.contains(where: { forbidden.contains($0) }) else {
-            throw VaultSessionError.readFailed("new name contains forbidden characters")
-        }
-        // Strip a trailing markdown extension the user may have typed themselves
-        // so we don't produce `note.md.md`. Matches any of `FileNode.markdownExtensions`.
-        let stem: String = {
+        // Strip a trailing markdown extension the user may have typed so we
+        // don't produce `note.md.md`, then kebab-case the rest. Filename
+        // sanitization is uniform across manual + auto rename paths.
+        let preExt: String = {
             let ns = trimmed as NSString
             let typedExt = ns.pathExtension.lowercased()
             if !typedExt.isEmpty && FileNode.markdownExtensions.contains(typedExt) {
@@ -436,6 +595,7 @@ public final class VaultSession {
             }
             return trimmed
         }()
+        let stem = Self.sanitizeKebab(preExt)
         guard !stem.isEmpty else {
             throw VaultSessionError.readFailed("new name is empty")
         }

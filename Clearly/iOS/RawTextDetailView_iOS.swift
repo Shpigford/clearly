@@ -25,7 +25,7 @@ struct RawTextDetailView_iOS: View {
             backlinksState: backlinksState,
             onOpenFile: { vault.navigationPath.append($0) }
         )
-        .navigationTitle(document.isDirty ? "• \(file.name)" : file.name)
+        .navigationTitle(titleText)
         .navigationBarTitleDisplayMode(.inline)
         .background {
             QuickSwitcherShortcuts()
@@ -46,6 +46,14 @@ struct RawTextDetailView_iOS: View {
         .onDisappear {
             Task { await document.close() }
         }
+    }
+
+    /// Pulls the file name from the live document session first so the title
+    /// tracks auto-rename (Notes-style `untitled.md` → derived-from-content).
+    /// Falls back to the captured `file.name` while the session is loading.
+    private var titleText: String {
+        let name = document.file?.name ?? file.name
+        return document.isDirty ? "• \(name)" : name
     }
 
     private func refreshBacklinks() {

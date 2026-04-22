@@ -769,18 +769,7 @@ struct EditorView: NSViewRepresentable {
                 return
             }
 
-            // Find all matches (case-insensitive)
-            let nsText = textView.string as NSString
-            var ranges: [NSRange] = []
-            var searchRange = NSRange(location: 0, length: nsText.length)
-            while searchRange.location < nsText.length {
-                let found = nsText.range(of: query, options: .caseInsensitive, range: searchRange)
-                if found.location == NSNotFound { break }
-                ranges.append(found)
-                searchRange.location = found.upperBound
-                searchRange.length = nsText.length - searchRange.location
-            }
-
+            let ranges = TextMatcher.ranges(of: query, in: textView.string)
             matchRanges = ranges
             currentMatchIdx = ranges.isEmpty ? 0 : 0
 

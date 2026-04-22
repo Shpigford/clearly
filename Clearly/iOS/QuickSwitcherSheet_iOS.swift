@@ -13,63 +13,36 @@ struct QuickSwitcherSheet_iOS: View {
 
     @State private var query: String = ""
     @State private var rows: [QuickSwitcherRow] = []
-    @FocusState private var searchFocused: Bool
 
     private static let filenameLimit = 20
     private static let contentLimit = 30
 
     var body: some View {
         NavigationStack {
-            VStack(spacing: 0) {
-                searchField
-                list
-            }
-            .navigationTitle("Jump to Note")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button("Cancel") { dismiss() }
-                        .keyboardShortcut(.cancelAction)
+            list
+                .navigationTitle("Jump to Note")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button("Cancel") { dismiss() }
+                            .keyboardShortcut(.cancelAction)
+                    }
                 }
-            }
+                .searchable(
+                    text: $query,
+                    placement: .navigationBarDrawer(displayMode: .always),
+                    prompt: "Jump to or create a note"
+                )
+                .autocorrectionDisabled()
+                .textInputAutocapitalization(.never)
+                .onSubmit(of: .search) { openFirstRow() }
+                .submitLabel(.go)
         }
         .onAppear {
-            searchFocused = true
             recomputeRows()
         }
         .onChange(of: query) { _, _ in recomputeRows() }
         .onChange(of: vault.files) { _, _ in recomputeRows() }
-    }
-
-    private var searchField: some View {
-        HStack(spacing: 8) {
-            Image(systemName: "magnifyingglass")
-                .foregroundStyle(.secondary)
-            TextField("Jump to or create a note", text: $query)
-                .textFieldStyle(.plain)
-                .focused($searchFocused)
-                .submitLabel(.go)
-                .onSubmit { openFirstRow() }
-                .autocorrectionDisabled()
-                .textInputAutocapitalization(.never)
-            if !query.isEmpty {
-                Button {
-                    query = ""
-                } label: {
-                    Image(systemName: "xmark.circle.fill")
-                        .foregroundStyle(.secondary)
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Clear")
-            }
-        }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 10)
-        .background(Color(.secondarySystemBackground))
-        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-        .padding(.horizontal, 16)
-        .padding(.top, 8)
-        .padding(.bottom, 6)
     }
 
     @ViewBuilder
@@ -161,7 +134,18 @@ struct QuickSwitcherSheet_iOS: View {
     private func recomputeRows() {
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
         if trimmed.isEmpty {
-            rows = vault.recentFiles.map { .recent($0) }
+            if !vault.recentFiles.isEmpty {
+                rows = vault.recentFiles.map { .recent($0) }
+            } else {
+                // No opened-history yet: show everything sorted by mtime
+                // descending so the sheet is useful on a fresh vault. Most
+                // recently touched files float to the top — same sort as
+                // the iPad file column.
+                let sorted = vault.files.sorted { lhs, rhs in
+                    (lhs.modified ?? .distantPast) > (rhs.modified ?? .distantPast)
+                }
+                rows = sorted.prefix(Self.filenameLimit).map { .recent($0) }
+            }
             return
         }
 
@@ -299,9 +283,17 @@ struct QuickSwitcherSheet_iOS: View {
         return out
     }
 
+    /// Turn the user's query into the filename we'll create. Runs through the
+    /// same kebab-case sanitization as manual renames and Notes-style
+    /// auto-naming so filenames across the app stay consistent.
     private func createName(for query: String) -> String {
-        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        return trimmed.lowercased().hasSuffix(".md") ? trimmed : "\(trimmed).md"
+        var stem = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        if stem.lowercased().hasSuffix(".md") {
+            stem = String(stem.dropLast(3))
+        }
+        let sanitized = VaultSession.sanitizeKebab(stem)
+        guard !sanitized.isEmpty else { return "untitled.md" }
+        return "\(sanitized).md"
     }
 }
 

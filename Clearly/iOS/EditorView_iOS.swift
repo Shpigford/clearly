@@ -11,6 +11,7 @@ struct EditorView_iOS: UIViewRepresentable {
 
     @Binding var text: String
     var outlineState: OutlineState? = nil
+    var findState: FindState? = nil
 
     func makeCoordinator() -> Coordinator { Coordinator(parent: self) }
 
@@ -20,12 +21,24 @@ struct EditorView_iOS: UIViewRepresentable {
         context.coordinator.textView = textView
         context.coordinator.applyExternalText(text)
         context.coordinator.attachOutlineState(outlineState)
+        context.coordinator.attachFindState(findState)
+        // Auto-focus on mount when the document is empty — matches Notes.app
+        // where a fresh note drops you straight into typing. Existing notes
+        // with content stay un-focused so the user can read/scroll without
+        // the keyboard popping up. The async hop is required because the
+        // text view isn't in the window hierarchy yet during `makeUIView`.
+        if text.isEmpty {
+            DispatchQueue.main.async { [weak textView] in
+                textView?.becomeFirstResponder()
+            }
+        }
         return textView
     }
 
     func updateUIView(_ textView: ClearlyUITextView, context: Context) {
         context.coordinator.parent = self
         context.coordinator.attachOutlineState(outlineState)
+        context.coordinator.attachFindState(findState)
         guard context.coordinator.pendingBindingUpdates == 0 else { return }
         guard text != context.coordinator.lastAppliedText else { return }
         context.coordinator.applyExternalText(text)
@@ -45,6 +58,11 @@ struct EditorView_iOS: UIViewRepresentable {
         private(set) var lastAppliedText: String = ""
         private var pendingFullHighlightWork: DispatchWorkItem?
         private weak var attachedOutlineState: OutlineState?
+        private weak var attachedFindState: FindState?
+        private var lastFindQuery: String = ""
+        private var lastFindVisible: Bool = false
+        private var matchRanges: [NSRange] = []
+        private var currentMatchIdx: Int = 0
 
         init(parent: EditorView_iOS) {
             self.parent = parent
@@ -60,6 +78,115 @@ struct EditorView_iOS: UIViewRepresentable {
             state?.scrollToRange = { [weak self] range in
                 self?.scrollToRange(range)
             }
+        }
+
+        /// Wires the FindState's editor-mode navigation callbacks to the
+        /// coordinator and re-runs the search when the query/visibility
+        /// changes between SwiftUI update passes.
+        func attachFindState(_ state: FindState?) {
+            if attachedFindState !== state {
+                attachedFindState = state
+                state?.editorNavigateToNext = { [weak self] in self?.navigateToNextMatch() }
+                state?.editorNavigateToPrevious = { [weak self] in self?.navigateToPreviousMatch() }
+            }
+            guard let state else {
+                if lastFindVisible {
+                    clearFindHighlights()
+                    lastFindVisible = false
+                    lastFindQuery = ""
+                }
+                return
+            }
+            if !state.isVisible {
+                if lastFindVisible {
+                    clearFindHighlights()
+                }
+                lastFindVisible = false
+                lastFindQuery = ""
+                return
+            }
+            if !lastFindVisible || state.query != lastFindQuery {
+                lastFindVisible = true
+                lastFindQuery = state.query
+                performFind(for: state)
+            }
+        }
+
+        private func performFind(for state: FindState) {
+            guard let textView else { return }
+            let ranges = TextMatcher.ranges(of: state.query, in: textView.text ?? "")
+            matchRanges = ranges
+            currentMatchIdx = 0
+            applyFindHighlights()
+
+            DispatchQueue.main.async { [weak self, weak state] in
+                guard let state, state.activeMode == .edit else { return }
+                state.matchCount = ranges.count
+                state.currentIndex = ranges.isEmpty ? 0 : 1
+                _ = self
+            }
+
+            if let first = ranges.first {
+                textView.scrollRangeToVisible(first)
+            }
+        }
+
+        private func navigateToNextMatch() {
+            guard !matchRanges.isEmpty else { return }
+            currentMatchIdx = (currentMatchIdx + 1) % matchRanges.count
+            applyFindHighlights()
+            textView?.scrollRangeToVisible(matchRanges[currentMatchIdx])
+            let idx = currentMatchIdx
+            DispatchQueue.main.async { [weak self] in
+                guard let self, let state = self.attachedFindState, state.activeMode == .edit else { return }
+                state.currentIndex = idx + 1
+            }
+        }
+
+        private func navigateToPreviousMatch() {
+            guard !matchRanges.isEmpty else { return }
+            currentMatchIdx = (currentMatchIdx - 1 + matchRanges.count) % matchRanges.count
+            applyFindHighlights()
+            textView?.scrollRangeToVisible(matchRanges[currentMatchIdx])
+            let idx = currentMatchIdx
+            DispatchQueue.main.async { [weak self] in
+                guard let self, let state = self.attachedFindState, state.activeMode == .edit else { return }
+                state.currentIndex = idx + 1
+            }
+        }
+
+        private func applyFindHighlights() {
+            guard let textView else { return }
+            let storage = textView.textStorage
+            let fullRange = NSRange(location: 0, length: storage.length)
+            storage.beginEditing()
+            storage.removeAttribute(.backgroundColor, range: fullRange)
+            for (i, range) in matchRanges.enumerated() {
+                guard range.upperBound <= storage.length else { continue }
+                let color = (i == currentMatchIdx) ? Theme.findCurrentHighlightColor : Theme.findHighlightColor
+                storage.addAttribute(.backgroundColor, value: color, range: range)
+            }
+            storage.endEditing()
+        }
+
+        private func clearFindHighlights() {
+            guard let textView else { return }
+            let storage = textView.textStorage
+            let fullRange = NSRange(location: 0, length: storage.length)
+            storage.beginEditing()
+            storage.removeAttribute(.backgroundColor, range: fullRange)
+            storage.endEditing()
+            matchRanges = []
+            currentMatchIdx = 0
+        }
+
+        /// Called at the tail of `textViewDidChange` so the syntax-highlighter's
+        /// attribute rewrite doesn't wipe find backgrounds. Mirrors the Mac
+        /// `restoreFindHighlightsIfNeeded` pattern — if the query is still
+        /// active, re-run the search so match ranges track the edit too.
+        private func restoreFindHighlightsIfNeeded() {
+            guard let state = attachedFindState, state.isVisible, !state.query.isEmpty else { return }
+            performFind(for: state)
         }
 
         private func scrollToRange(_ range: NSRange) {
@@ -139,6 +266,8 @@ struct EditorView_iOS: UIViewRepresentable {
             let newText = ctv.text ?? ""
             lastAppliedText = newText
             parent.text = newText
+
+            restoreFindHighlightsIfNeeded()
 
             let token = UUID()
             pendingBindingUpdateToken = token

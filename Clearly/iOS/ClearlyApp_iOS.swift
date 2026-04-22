@@ -32,7 +32,7 @@ struct ContentRoot_iOS: View {
             if hSizeClass == .regular {
                 IPadRootView(controller: tabController)
             } else {
-                SidebarView_iOS()
+                FolderListView_iOS()
             }
         }
     }

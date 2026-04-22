@@ -17,7 +17,14 @@ let package = Package(
             dependencies: [
                 .product(name: "cmark", package: "cmark-gfm"),
                 .product(name: "GRDB", package: "GRDB.swift"),
+            ],
+            resources: [
+                .process("Resources"),
             ]
+        ),
+        .testTarget(
+            name: "ClearlyCoreTests",
+            dependencies: ["ClearlyCore"]
         ),
     ]
 )
