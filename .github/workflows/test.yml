@@ -86,6 +86,9 @@ jobs:
             -scheme Clearly \
             -configuration Debug \
             -destination 'platform=macOS' \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO \
             build -quiet
 
   build-app-ios:
@@ -122,4 +125,7 @@ jobs:
             -scheme Clearly-iOS \
             -configuration Debug \
             -destination 'platform=iOS Simulator,name=iPhone 17,OS=latest' \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO \
             build -quiet
