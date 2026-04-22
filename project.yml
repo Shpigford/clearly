@@ -139,7 +139,6 @@ targets:
           CODE_SIGN_STYLE: Automatic
         Release:
           CODE_SIGN_STYLE: Automatic
-          CODE_SIGN_IDENTITY: "Apple Distribution"
 
   ClearlyQuickLook:
     type: app-extension
