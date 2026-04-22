@@ -139,6 +139,11 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValid
     private(set) var splitViewController: ClearlySplitViewController?
 
     func createMainWindow() {
+        // Phase M2: when the native SwiftUI shell is enabled, the SwiftUI
+        // `Window("Clearly", id: "main")` scene owns the window. Short-circuit
+        // the AppKit path so we don't end up with two main windows.
+        if NativeMacShell.isEnabled { return }
+
         guard mainWindow == nil else {
             mainWindow?.makeKeyAndOrderFront(nil)
             return
@@ -1042,12 +1047,15 @@ struct ClearlyApp: App {
     }
 
     var body: some Scene {
+        // Legacy AppKit-shell launcher. Stays declared so the old shell keeps
+        // working while the native rebuild (M2–M12) is flag-gated.
         Window("Clearly", id: "launcher") {
             LauncherSceneMarker()
                 .frame(width: 0, height: 0)
                 .hidden()
         }
         .defaultSize(width: 1, height: 1)
+        .defaultLaunchBehavior(NativeMacShell.isEnabled ? .suppressed : .presented)
         .commands {
             // Replace New/Open with our own
             CommandGroup(replacing: .newItem) {
@@ -1220,6 +1228,17 @@ struct ClearlyApp: App {
                 }
             }
         }
+
+        // Native SwiftUI shell (Phase M2 — scaffold; populated in M3–M5).
+        // Presented only when `UseNativeMacShell` is true so the legacy AppKit
+        // shell keeps rendering unchanged for everyone else during the rebuild.
+        Window("Clearly", id: "main") {
+            NativeMainWindowContent()
+                .preferredColorScheme(resolvedColorScheme)
+        }
+        .defaultSize(width: 1100, height: 720)
+        .defaultLaunchBehavior(NativeMacShell.isEnabled ? .presented : .suppressed)
+        .windowToolbarStyle(.unified(showsTitle: false))
 
         Settings {
             #if canImport(Sparkle)
