@@ -87,6 +87,10 @@ jobs:
             ${{ runner.os }}-app-macos-
 
       - name: Build Clearly (Mac, Debug)
+        # Skip the AppIcon.icon (Icon Composer) asset compile in CI: ibtoold
+        # crashes on the macos-15 runner image due to dyld AVFCore symbol
+        # mismatches. The Swift code still compiles fully — only the icon is
+        # skipped, which we don't ship from CI anyway.
         run: |
           xcodebuild \
             -scheme Clearly \
@@ -95,6 +99,8 @@ jobs:
             CODE_SIGN_IDENTITY="" \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGNING_ALLOWED=NO \
+            ASSETCATALOG_COMPILER_APPICON_NAME="" \
+            EXCLUDED_SOURCE_FILE_NAMES="AppIcon.icon" \
             build -quiet
 
   build-app-ios:
@@ -129,6 +135,7 @@ jobs:
             ${{ runner.os }}-app-ios-
 
       - name: Build Clearly-iOS (iPhone simulator, Debug)
+        # Skip the AppIcon.icon asset compile in CI — see Mac build job above.
         run: |
           xcodebuild \
             -scheme Clearly-iOS \
@@ -137,4 +144,6 @@ jobs:
             CODE_SIGN_IDENTITY="" \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGNING_ALLOWED=NO \
+            ASSETCATALOG_COMPILER_APPICON_NAME="" \
+            EXCLUDED_SOURCE_FILE_NAMES="AppIcon.icon" \
             build -quiet
