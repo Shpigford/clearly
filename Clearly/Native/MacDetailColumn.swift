@@ -218,7 +218,9 @@ struct MacDetailColumn: View {
 
     @ToolbarContentBuilder
     private var detailToolbar: some ToolbarContent {
-        ToolbarItemGroup(placement: .primaryAction) {
+        // Format cluster — left of the toolbar, next to the sidebar toggle
+        // SwiftUI contributes automatically.
+        ToolbarItemGroup(placement: .navigation) {
             Picker("Mode", selection: $workspace.currentViewMode) {
                 Image(systemName: "pencil").tag(ViewMode.edit)
                 Image(systemName: "eye").tag(ViewMode.preview)
@@ -232,6 +234,7 @@ struct MacDetailColumn: View {
                 Label("Format", systemImage: "textformat")
             }
             .help("Format")
+            .disabled(workspace.activeDocumentID == nil || workspace.currentViewMode != .edit)
             .popover(isPresented: $showFormatPopover, arrowEdge: .bottom) {
                 MacFormatPopover()
             }
@@ -251,15 +254,22 @@ struct MacDetailColumn: View {
                 Button("Insert Image…") {
                     NSApp.sendAction(#selector(ClearlyTextView.insertImage(_:)), to: nil, from: nil)
                 }
+                Button("Insert Table") {
+                    NSApp.sendAction(#selector(ClearlyTextView.insertMarkdownTable(_:)), to: nil, from: nil)
+                }
                 Button("Insert Code Block") {
                     NSApp.sendAction(#selector(ClearlyTextView.insertCodeBlock(_:)), to: nil, from: nil)
                 }
             } label: {
                 Label("Insert", systemImage: "paperclip")
             }
-            .help("Insert link, image, or code")
+            .help("Insert link, image, table, or code")
             .menuIndicator(.hidden)
+            .disabled(workspace.activeDocumentID == nil || workspace.currentViewMode != .edit)
+        }
 
+        // Panel + share cluster — right side of the toolbar
+        ToolbarItemGroup(placement: .primaryAction) {
             Button {
                 withAnimation(Theme.Motion.smooth) { backlinksState.toggle() }
             } label: {

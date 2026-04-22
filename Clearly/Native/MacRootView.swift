@@ -36,6 +36,8 @@ struct MacRootView: View {
         }
         .navigationSplitViewStyle(.balanced)
         .searchable(text: $searchQuery, placement: .toolbar, prompt: "Search")
+        .navigationTitle(windowTitle)
+        .navigationDocument(workspace.currentFileURL ?? URL(fileURLWithPath: "/"))
         .onAppear {
             defaultSelectionIfNeeded()
         }
@@ -59,5 +61,13 @@ struct MacRootView: View {
         if sidebarSelection == nil, let first = workspace.locations.first {
             sidebarSelection = .allNotes(locationID: first.id)
         }
+    }
+
+    private var windowTitle: String {
+        guard let docID = workspace.activeDocumentID,
+              let doc = workspace.openDocuments.first(where: { $0.id == docID }) else {
+            return "Clearly"
+        }
+        return workspace.isDirty ? "\u{2022} \(doc.displayName)" : doc.displayName
     }
 }
