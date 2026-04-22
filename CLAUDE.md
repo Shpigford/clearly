@@ -39,8 +39,8 @@ xcodebuild -scheme Clearly -configuration Debug build   # Build from CLI
 
 Open in Xcode: `open Clearly.xcodeproj` (gitignored, so regenerate with xcodegen first).
 
-- Deployment target: macOS 14.0
-- Swift 5.9, Xcode 16+
+- Deployment target: macOS 15.0 (raised from 14.0 to enable SwiftUI API parity with iPad shell and ship with macOS 26 SDK); iOS 17.0
+- Swift 5.9 app / Swift 5 language mode for ClearlyCore (tools 6.0 so we can declare `.macOS(.v15)`). Xcode 26+ required to compile against the macOS 26 SDK so Liquid Glass lights up automatically on stock SwiftUI chrome.
 - Dependencies: `cmark-gfm` (GFM markdown → HTML), `Sparkle` (auto-updates, direct distribution only), `GRDB` (SQLite + FTS5), `MCP` (Model Context Protocol SDK) via Swift Package Manager
 
 ## Architecture
@@ -51,7 +51,7 @@ Open in Xcode: `open Clearly.xcodeproj` (gitignored, so regenerate with xcodegen
 2. **ClearlyQuickLook** (app extension) — QLPreviewProvider for Finder previews
 3. **ClearlyCLI** (command-line tool) — MCP server exposing vault index to AI agents. Uses `VaultIndex.init(locationURL:bundleIdentifier:)` from `ClearlyCore` to open the same SQLite index the sandboxed app creates. Exposes tools: `search_notes` (FTS5 ranked search), `get_backlinks` (linked + unlinked mentions), `get_tags` (tag aggregation), plus read/write note tools. Read-only index access via WAL mode.
 
-**`ClearlyCore`** — local Swift package at `Packages/ClearlyCore/`. Holds every platform-agnostic file. Platforms: `macOS 14` + `iOS 17`. Organized into `Rendering/` (`MarkdownRenderer`, `PreviewCSS`, `MermaidSupport`, `MathSupport` inside MermaidSupport.swift, `TableSupport`, `SyntaxHighlightSupport`, `EmojiShortcodes`, `LocalImageSupport`, `FrontmatterSupport`), `Vault/` (`VaultIndex`, `FileParser`, `FileNode`, `IgnoreRules`, `BookmarkedLocation`), `State/` (`OpenDocument`, `OutlineState`, `FindState`, `JumpToLineState`, `BacklinksState`, `PositionSync`), `Diagnostics/` (`DiagnosticLog`), and `Platform/Platform.swift` (typealiases `PlatformFont`/`PlatformColor`/`PlatformImage`/`PlatformPasteboard`).
+**`ClearlyCore`** — local Swift package at `Packages/ClearlyCore/`. Holds every platform-agnostic file. Platforms: `macOS 15` + `iOS 17`. Package.swift uses swift-tools-version 6.0 so it can declare `.v15`, but pins target language mode to `.v5` (via `swiftSettings: [.swiftLanguageMode(.v5)]`) to keep Swift 5 semantics — Swift 6 strict concurrency would flag existing shared state in `State/PositionSync.swift` and others. Organized into `Rendering/` (`MarkdownRenderer`, `PreviewCSS`, `MermaidSupport`, `MathSupport` inside MermaidSupport.swift, `TableSupport`, `SyntaxHighlightSupport`, `EmojiShortcodes`, `LocalImageSupport`, `FrontmatterSupport`), `Vault/` (`VaultIndex`, `FileParser`, `FileNode`, `IgnoreRules`, `BookmarkedLocation`), `State/` (`OpenDocument`, `OutlineState`, `FindState`, `JumpToLineState`, `BacklinksState`, `PositionSync`), `Diagnostics/` (`DiagnosticLog`), and `Platform/Platform.swift` (typealiases `PlatformFont`/`PlatformColor`/`PlatformImage`/`PlatformPasteboard`).
 
 **Rules for `ClearlyCore`:**
 - Any type or member used across the package boundary must be `public`. Consuming files need `import ClearlyCore`.
