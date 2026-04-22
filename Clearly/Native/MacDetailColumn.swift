@@ -12,6 +12,7 @@ struct MacDetailColumn: View {
     @StateObject private var outlineState = OutlineState()
     @StateObject private var backlinksState = BacklinksState()
     @StateObject private var jumpToLineState = JumpToLineState()
+    @StateObject private var fileWatcher = FileWatcher()
 
     @State private var positionSyncID: String = UUID().uuidString
     @State private var showFormatPopover = false
@@ -49,6 +50,7 @@ struct MacDetailColumn: View {
             outlineState.parseHeadings(from: workspace.currentFileText)
             backlinksState.update(for: workspace.currentFileURL, using: workspace.activeVaultIndexes)
             isFullscreen = NSApp.mainWindow?.styleMask.contains(.fullScreen) ?? false
+            setupFileWatcher()
         }
         .onReceive(NotificationCenter.default.publisher(for: NSWindow.didEnterFullScreenNotification)) { _ in
             isFullscreen = true
@@ -62,9 +64,13 @@ struct MacDetailColumn: View {
             jumpToLineState.dismiss()
             outlineState.parseHeadings(from: workspace.currentFileText)
             backlinksState.update(for: workspace.currentFileURL, using: workspace.activeVaultIndexes)
+            setupFileWatcher()
         }
         .onChange(of: workspace.currentFileText) { _, text in
             outlineState.parseHeadings(from: text)
+        }
+        .onChange(of: workspace.currentFileURL) { _, _ in
+            setupFileWatcher()
         }
         .modifier(FocusedValuesModifier(
             workspace: workspace,
@@ -317,6 +323,20 @@ struct MacDetailColumn: View {
     }
 
     // MARK: - Helpers
+
+    private func setupFileWatcher() {
+        fileWatcher.liveCurrentText = { [workspace] in
+            workspace.liveCurrentFileText()
+        }
+        guard let url = workspace.currentFileURL else {
+            fileWatcher.watch(nil, currentText: nil)
+            return
+        }
+        fileWatcher.onChange = { [workspace] newText in
+            workspace.externalFileDidChange(newText)
+        }
+        fileWatcher.watch(url, currentText: workspace.currentFileText)
+    }
 
     private func toggleTask(at line: Int, checked: Bool, workspace: WorkspaceManager) {
         var lines = workspace.currentFileText.components(separatedBy: "\n")

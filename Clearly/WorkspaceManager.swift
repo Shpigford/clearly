@@ -1460,12 +1460,8 @@ final class WorkspaceManager {
 
     private func showSidebar() {
         Task { @MainActor in
-            if let appDelegate = NSApp.delegate as? ClearlyAppDelegate {
-                appDelegate.setSidebarVisible(true, animated: false)
-            } else {
-                isSidebarVisible = true
-                UserDefaults.standard.set(true, forKey: Self.sidebarVisibleKey)
-            }
+            isSidebarVisible = true
+            UserDefaults.standard.set(true, forKey: Self.sidebarVisibleKey)
         }
     }
 

@@ -79,10 +79,8 @@ struct WelcomeView: View {
             workspace.handleFirstLocationIfNeeded(folderURL: url)
         }
 
-        // Show sidebar by finding the split view controller through the window hierarchy
-        if let splitVC = NSApp.mainWindow?.contentViewController as? ClearlySplitViewController {
-            splitVC.setSidebarVisible(true, animated: false)
-        }
+        // Native shell: sidebar is owned by NavigationSplitView. Toggle via the
+        // AppKit responder chain; the framework routes to the active split view.
         workspace.isSidebarVisible = true
         UserDefaults.standard.set(true, forKey: "sidebarVisible")
     }
