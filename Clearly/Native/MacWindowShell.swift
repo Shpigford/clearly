@@ -23,10 +23,11 @@ enum NativeMacShell {
 /// flag is on, otherwise a zero-sized hidden view so the scene stays inert.
 struct NativeMainWindowContent: View {
     @AppStorage(NativeMacShell.userDefaultsKey) private var useNative = false
+    @Bindable var workspace: WorkspaceManager = .shared
 
     var body: some View {
         if useNative {
-            MacRootView()
+            MacRootView(workspace: workspace)
         } else {
             // Suppressed path — keeps the scene declaration valid without
             // rendering anything. `.defaultLaunchBehavior(.suppressed)` on

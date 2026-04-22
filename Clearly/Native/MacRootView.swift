@@ -1,64 +1,63 @@
 import SwiftUI
 import ClearlyCore
 
-/// Root view for the native macOS shell (Phase M2 — scaffold).
-///
-/// Three-column `NavigationSplitView` that mirrors the iPad shell in
-/// `IPadRootView.swift`. Populated progressively in M3 (folder sidebar),
-/// M4 (notes list), and M5 (detail column + toolbar). This file intentionally
-/// contains placeholder content — functional feature code lands in subsequent
-/// phases, not here.
+/// Root view for the native macOS shell. Three-column `NavigationSplitView`:
+/// folder sidebar, notes list, detail column with editor + preview, toolbar,
+/// and inspector panels. Mirrors `IPadRootView.swift` structurally while
+/// diverging where macOS conventions call for it (unified toolbar, ShareLink,
+/// native `.inspector()`).
 struct MacRootView: View {
+    @Bindable var workspace: WorkspaceManager
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
+    @State private var sidebarSelection: SidebarSelection? = nil
+    @State private var selectedFileURL: URL? = nil
+    @State private var searchQuery: String = ""
 
     var body: some View {
         NavigationSplitView(columnVisibility: $columnVisibility) {
-            FoldersColumnPlaceholder()
-                .navigationSplitViewColumnWidth(min: 200, ideal: 240, max: 320)
+            MacFolderSidebar(
+                workspace: workspace,
+                selection: $sidebarSelection
+            )
+            .navigationSplitViewColumnWidth(min: 200, ideal: 240, max: 320)
         } content: {
-            NotesListColumnPlaceholder()
-                .navigationSplitViewColumnWidth(min: 280, ideal: 320, max: 400)
+            MacNotesListColumn(
+                workspace: workspace,
+                selection: sidebarSelection,
+                selectedFileURL: $selectedFileURL,
+                searchQuery: $searchQuery
+            )
+            .navigationSplitViewColumnWidth(min: 280, ideal: 320, max: 400)
         } detail: {
-            DetailColumnPlaceholder()
+            VStack(spacing: 0) {
+                MacTabBar(workspace: workspace)
+                MacDetailColumn(workspace: workspace)
+            }
         }
         .navigationSplitViewStyle(.balanced)
-    }
-}
-
-private struct FoldersColumnPlaceholder: View {
-    var body: some View {
-        ContentUnavailableView(
-            "Folders",
-            systemImage: "folder",
-            description: Text("Sidebar arrives in Phase M3.")
-        )
-    }
-}
-
-private struct NotesListColumnPlaceholder: View {
-    var body: some View {
-        ContentUnavailableView(
-            "Notes",
-            systemImage: "doc.text",
-            description: Text("Notes list arrives in Phase M4.")
-        )
-    }
-}
-
-private struct DetailColumnPlaceholder: View {
-    var body: some View {
-        ContentUnavailableView(
-            "Editor",
-            systemImage: "square.and.pencil",
-            description: Text("Editor + toolbar arrive in Phase M5.")
-        )
-        .toolbar {
-            ToolbarItem(placement: .primaryAction) {
-                Button {} label: {
-                    Label("New Note", systemImage: "square.and.pencil")
-                }
-                .disabled(true)
+        .searchable(text: $searchQuery, placement: .toolbar, prompt: "Search")
+        .onAppear {
+            defaultSelectionIfNeeded()
+        }
+        .onChange(of: workspace.locations.map(\.id)) { _, _ in
+            defaultSelectionIfNeeded()
+        }
+        .onChange(of: selectedFileURL) { _, newURL in
+            guard let url = newURL else { return }
+            if workspace.currentFileURL != url {
+                workspace.openFile(at: url)
             }
+        }
+        .onChange(of: workspace.currentFileURL) { _, newURL in
+            if selectedFileURL != newURL {
+                selectedFileURL = newURL
+            }
+        }
+    }
+
+    private func defaultSelectionIfNeeded() {
+        if sidebarSelection == nil, let first = workspace.locations.first {
+            sidebarSelection = .allNotes(locationID: first.id)
         }
     }
 }
