@@ -4,14 +4,15 @@ on:
   pull_request:
   push:
     branches: [main]
+    tags: ['v*']
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  test:
-    name: Build + Integration + Smoke
+  cli:
+    name: CLI Build + Integration + Smoke
     runs-on: macos-15
     timeout-minutes: 20
     steps:
@@ -34,9 +35,9 @@ jobs:
           path: |
             ~/Library/Developer/Xcode/DerivedData
             ~/Library/Caches/org.swift.swiftpm
-          key: ${{ runner.os }}-xcode-${{ hashFiles('project.yml', 'Packages/ClearlyCore/Package.swift', 'Packages/ClearlyCore/Package.resolved') }}
+          key: ${{ runner.os }}-cli-${{ hashFiles('project.yml', 'Packages/ClearlyCore/Package.swift', 'Packages/ClearlyCore/Package.resolved') }}
           restore-keys: |
-            ${{ runner.os }}-xcode-
+            ${{ runner.os }}-cli-
 
       - name: Build ClearlyCLI (Debug)
         run: xcodebuild -scheme ClearlyCLI -configuration Debug build -quiet
@@ -50,3 +51,75 @@ jobs:
 
       - name: CLI smoke test
         run: ./scripts/cli-smoke.sh
+
+  build-app-macos:
+    name: Build Mac app (Debug)
+    runs-on: macos-15
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select latest stable Xcode
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: "latest-stable"
+
+      - name: Install xcodegen
+        run: brew install xcodegen
+
+      - name: Generate Xcode project
+        run: xcodegen generate
+
+      - name: Cache DerivedData and SPM
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/Library/Developer/Xcode/DerivedData
+            ~/Library/Caches/org.swift.swiftpm
+          key: ${{ runner.os }}-app-macos-${{ hashFiles('project.yml', 'Packages/ClearlyCore/**/*.swift', 'Packages/ClearlyCore/Package.swift') }}
+          restore-keys: |
+            ${{ runner.os }}-app-macos-
+
+      - name: Build Clearly (Mac, Debug)
+        run: |
+          xcodebuild \
+            -scheme Clearly \
+            -configuration Debug \
+            -destination 'platform=macOS' \
+            build -quiet
+
+  build-app-ios:
+    name: Build iOS app (Debug)
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select latest stable Xcode
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: "latest-stable"
+
+      - name: Install xcodegen
+        run: brew install xcodegen
+
+      - name: Generate Xcode project
+        run: xcodegen generate
+
+      - name: Cache DerivedData and SPM
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/Library/Developer/Xcode/DerivedData
+            ~/Library/Caches/org.swift.swiftpm
+          key: ${{ runner.os }}-app-ios-${{ hashFiles('project.yml', 'Packages/ClearlyCore/**/*.swift', 'Packages/ClearlyCore/Package.swift') }}
+          restore-keys: |
+            ${{ runner.os }}-app-ios-
+
+      - name: Build Clearly-iOS (iPhone simulator, Debug)
+        run: |
+          xcodebuild \
+            -scheme Clearly-iOS \
+            -configuration Debug \
+            -destination 'platform=iOS Simulator,name=iPhone 17,OS=latest' \
+            build -quiet

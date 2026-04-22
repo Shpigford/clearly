@@ -144,6 +144,18 @@ Known iCloud deadlock (research risk #3). `FileManager.default.evictUbiquitousIt
 
 `NSFileVersion.unresolvedConflictVersionsOfItem(at:)` is populated by iCloud's `bird` daemon regardless of whether your process registered a presenter. `WorkspaceManager.refreshConflictOutcomeForActiveDocument()` on Mac passes `presenter: nil` to `ConflictResolver.resolveIfNeeded(at:presenter:)` and still detects conflicts correctly — `FileWatcher`'s dispatch-source change events are enough to decide when to re-run the resolver. iOS keeps a per-document presenter because it also wants in-place remote-change refresh callbacks, which are a separate need from version queries. Don't migrate the Mac to presenters "to enable conflicts" — conflicts already work.
 
+## iOS development
+
+The iOS app is a second target (`Clearly-iOS` in `project.yml`) that shares most business logic with Mac through the `ClearlyCore` Swift package at `Packages/ClearlyCore/`.
+
+**Package layout:** Everything platform-agnostic (markdown rendering, vault indexing, FTS5, syntax helpers) lives in `ClearlyCore`. UI code stays in the per-platform folders: `Clearly/*.swift` is AppKit/Mac-only, `Clearly/iOS/*.swift` is UIKit/iOS-only. Cross-platform SwiftUI code inside `ClearlyCore` must use the typealiases from `Platform.swift` (`PlatformFont`, `PlatformColor`, `PlatformImage`, `PlatformPasteboard`) — never `import AppKit`/`import UIKit` directly inside the package.
+
+**Entitlements:** iOS uses its own file at `Clearly/iOS/Clearly-iOS.entitlements` with only `com.apple.developer.icloud-container-identifiers` + `com.apple.developer.icloud-services = CloudDocuments`. No temporary-exceptions (App Store hard-rejects them), no mach-lookup (no Sparkle on iOS), no App Sandbox entitlement (iOS apps are sandboxed by default without that key).
+
+**Bundle ids:** Release = `com.sabotage.clearly` (shared with Mac — Universal Purchase-ready, though Universal Purchase pairing is a later-phase manual step in ASC). Debug = `com.sabotage.clearly.dev` so Debug and Release installs coexist on the same device.
+
+**TestFlight release:** `scripts/release-ios.sh <version>` archives, exports, and uploads to App Store Connect. Builds land in TestFlight, not on the public App Store. Complete the encryption export-compliance question and add testers through the ASC UI after upload.
+
 ## Conventions
 
 - All colors go through `Theme` with dynamic light/dark resolution — don't hardcode colors
