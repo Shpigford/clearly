@@ -19,6 +19,7 @@ struct IPadRootView: View {
 
     @State private var showWelcome: Bool = false
     @State private var showTags: Bool = false
+    @State private var showSettings: Bool = false
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
 
     @State private var folderTree: [FileNode] = []
@@ -73,6 +74,10 @@ struct IPadRootView: View {
                 openFile(file)
             })
             .environment(session)
+        }
+        .sheet(isPresented: $showSettings) {
+            SettingsView_iOS()
+                .environment(session)
         }
         .background {
             QuickSwitcherShortcuts()
@@ -196,6 +201,11 @@ struct IPadRootView: View {
         }
         ToolbarItem(placement: .topBarTrailing) {
             Menu {
+                Button {
+                    showSettings = true
+                } label: {
+                    Label("Settings", systemImage: "gear")
+                }
                 Button {
                     showWelcome = true
                 } label: {

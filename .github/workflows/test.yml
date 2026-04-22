@@ -4,23 +4,27 @@ on:
   pull_request:
   push:
     branches: [main]
+    tags: ['v*']
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  test:
-    name: Build + Integration + Smoke
+  cli:
+    name: CLI Build + Integration + Smoke
     runs-on: macos-15
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
 
-      - name: Select latest stable Xcode
+      - name: Select Xcode
         uses: maxim-lobanov/setup-xcode@v1
         with:
-          xcode-version: "latest-stable"
+          # Pinned: Xcode 26.3 + macos-15 runner crashes ibtoold during
+          # AppIcon.icon (Icon Composer) compile with dyld AVFCore symbol
+          # mismatches. 26.2 builds the .icon asset cleanly.
+          xcode-version: "26.2"
 
       - name: Install xcodegen
         run: brew install xcodegen
@@ -34,9 +38,9 @@ jobs:
           path: |
             ~/Library/Developer/Xcode/DerivedData
             ~/Library/Caches/org.swift.swiftpm
-          key: ${{ runner.os }}-xcode-${{ hashFiles('project.yml', 'Packages/ClearlyCore/Package.swift', 'Packages/ClearlyCore/Package.resolved') }}
+          key: ${{ runner.os }}-cli-${{ hashFiles('project.yml', 'Packages/ClearlyCore/Package.swift', 'Packages/ClearlyCore/Package.resolved') }}
           restore-keys: |
-            ${{ runner.os }}-xcode-
+            ${{ runner.os }}-cli-
 
       - name: Build ClearlyCLI (Debug)
         run: xcodebuild -scheme ClearlyCLI -configuration Debug build -quiet
@@ -50,3 +54,96 @@ jobs:
 
       - name: CLI smoke test
         run: ./scripts/cli-smoke.sh
+
+  build-app-macos:
+    name: Build Mac app (Debug)
+    runs-on: macos-15
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select Xcode
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          # Pinned: Xcode 26.3 + macos-15 runner crashes ibtoold during
+          # AppIcon.icon (Icon Composer) compile with dyld AVFCore symbol
+          # mismatches. 26.2 builds the .icon asset cleanly.
+          xcode-version: "26.2"
+
+      - name: Install xcodegen
+        run: brew install xcodegen
+
+      - name: Generate Xcode project
+        run: xcodegen generate
+
+      - name: Cache DerivedData and SPM
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/Library/Developer/Xcode/DerivedData
+            ~/Library/Caches/org.swift.swiftpm
+          key: ${{ runner.os }}-app-macos-${{ hashFiles('project.yml', 'Packages/ClearlyCore/**/*.swift', 'Packages/ClearlyCore/Package.swift') }}
+          restore-keys: |
+            ${{ runner.os }}-app-macos-
+
+      - name: Build Clearly (Mac, Debug)
+        # Skip the AppIcon.icon (Icon Composer) asset compile in CI: ibtoold
+        # crashes on the macos-15 runner image due to dyld AVFCore symbol
+        # mismatches. The Swift code still compiles fully — only the icon is
+        # skipped, which we don't ship from CI anyway.
+        run: |
+          xcodebuild \
+            -scheme Clearly \
+            -configuration Debug \
+            -destination 'platform=macOS' \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO \
+            ASSETCATALOG_COMPILER_APPICON_NAME="" \
+            EXCLUDED_SOURCE_FILE_NAMES="AppIcon.icon" \
+            build -quiet
+
+  build-app-ios:
+    name: Build iOS app (Debug)
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select Xcode
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          # Pinned: Xcode 26.3 + macos-15 runner crashes ibtoold during
+          # AppIcon.icon (Icon Composer) compile with dyld AVFCore symbol
+          # mismatches. 26.2 builds the .icon asset cleanly.
+          xcode-version: "26.2"
+
+      - name: Install xcodegen
+        run: brew install xcodegen
+
+      - name: Generate Xcode project
+        run: xcodegen generate
+
+      - name: Cache DerivedData and SPM
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/Library/Developer/Xcode/DerivedData
+            ~/Library/Caches/org.swift.swiftpm
+          key: ${{ runner.os }}-app-ios-${{ hashFiles('project.yml', 'Packages/ClearlyCore/**/*.swift', 'Packages/ClearlyCore/Package.swift') }}
+          restore-keys: |
+            ${{ runner.os }}-app-ios-
+
+      - name: Build Clearly-iOS (iPhone simulator, Debug)
+        # Skip the AppIcon.icon asset compile in CI — see Mac build job above.
+        run: |
+          xcodebuild \
+            -scheme Clearly-iOS \
+            -configuration Debug \
+            -destination 'platform=iOS Simulator,name=iPhone 17,OS=latest' \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO \
+            ASSETCATALOG_COMPILER_APPICON_NAME="" \
+            EXCLUDED_SOURCE_FILE_NAMES="AppIcon.icon" \
+            build -quiet

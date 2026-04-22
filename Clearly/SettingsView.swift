@@ -1,4 +1,6 @@
 import SwiftUI
+import ClearlyCore
+import Combine
 import KeyboardShortcuts
 import ServiceManagement
 #if canImport(Sparkle)
@@ -21,6 +23,11 @@ struct SettingsView: View {
             generalSettings
                 .tabItem {
                     Label("General", systemImage: "gearshape")
+                }
+
+            SyncSettingsTab()
+                .tabItem {
+                    Label("Sync", systemImage: "icloud")
                 }
 
             commandLineSettings
@@ -311,5 +318,138 @@ struct SettingsView: View {
         let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?"
         let build = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "?"
         return "\(version) (\(build))"
+    }
+}
+
+// MARK: - Sync Settings Tab
+
+private struct SyncSettingsTab: View {
+    @State private var iCloudAvailable = FileManager.default.ubiquityIdentityToken != nil
+    @State private var usageByLocation: [UUID: VaultDiskUsage] = [:]
+    @State private var computingLocationIDs: Set<UUID> = []
+
+    private var workspace: WorkspaceManager { .shared }
+
+    var body: some View {
+        Form {
+            Section("iCloud") {
+                HStack {
+                    Image(systemName: iCloudAvailable ? "checkmark.icloud.fill" : "xmark.icloud")
+                        .foregroundStyle(iCloudAvailable ? .green : .secondary)
+                    Text(iCloudAvailable ? "iCloud Drive is available" : "iCloud Drive is not available")
+                    Spacer()
+                }
+                if !iCloudAvailable {
+                    Text("Sign in to iCloud in System Settings to enable sync across devices.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Button("Open iCloud Settings") {
+                        if let url = URL(string: "x-apple.systempreferences:com.apple.preferences.AppleIDPrefPane") {
+                            NSWorkspace.shared.open(url)
+                        }
+                    }
+                    .buttonStyle(.bordered)
+                }
+            }
+
+            Section("Locations") {
+                if workspace.locations.isEmpty {
+                    Text("No locations added. Open a folder from the sidebar to see its sync details here.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                } else {
+                    ForEach(workspace.locations) { location in
+                        locationRow(location)
+                    }
+                }
+            }
+        }
+        .formStyle(.grouped)
+        .onAppear { refreshAll() }
+    }
+
+    @ViewBuilder
+    private func locationRow(_ location: BookmarkedLocation) -> some View {
+        let usage = usageByLocation[location.id]
+        let isComputing = computingLocationIDs.contains(location.id)
+        let iCloud = isICloudLocation(location.url)
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Image(systemName: iCloud ? "icloud" : "folder")
+                    .foregroundStyle(iCloud ? AnyShapeStyle(.tint) : AnyShapeStyle(.secondary))
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(location.name)
+                        .font(.system(size: 13, weight: .medium))
+                    Text(location.url.path)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                }
+                Spacer()
+                Button {
+                    NSWorkspace.shared.activateFileViewerSelecting([location.url])
+                } label: {
+                    Image(systemName: "arrow.up.forward.app")
+                }
+                .buttonStyle(.borderless)
+                .help("Show in Finder")
+            }
+            HStack(spacing: 12) {
+                if let usage {
+                    Text("\(usage.totalCount) file\(usage.totalCount == 1 ? "" : "s") · \(formattedBytes(usage.totalBytes))")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    if iCloud && usage.placeholderCount > 0 {
+                        Text("\(usage.placeholderCount) not downloaded")
+                            .font(.caption)
+                            .foregroundStyle(.orange)
+                    }
+                } else if isComputing {
+                    Text("Calculating…")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                } else {
+                    Text("—")
+                        .font(.caption)
+                        .foregroundStyle(.tertiary)
+                }
+                Spacer()
+                Button("Refresh") { refresh(location) }
+                    .buttonStyle(.borderless)
+                    .font(.caption)
+                    .disabled(isComputing)
+            }
+        }
+        .padding(.vertical, 2)
+    }
+
+    private func refreshAll() {
+        iCloudAvailable = FileManager.default.ubiquityIdentityToken != nil
+        for location in workspace.locations {
+            refresh(location)
+        }
+    }
+
+    private func refresh(_ location: BookmarkedLocation) {
+        guard !computingLocationIDs.contains(location.id) else { return }
+        computingLocationIDs.insert(location.id)
+        let id = location.id
+        let url = location.url
+        Task {
+            let usage = await VaultDiskUsage.compute(walking: url)
+            await MainActor.run {
+                usageByLocation[id] = usage
+                computingLocationIDs.remove(id)
+            }
+        }
+    }
+
+    private func isICloudLocation(_ url: URL) -> Bool {
+        url.path.contains("/Mobile Documents/") || (try? url.resourceValues(forKeys: [.isUbiquitousItemKey]))?.isUbiquitousItem == true
+    }
+
+    private func formattedBytes(_ bytes: Int64) -> String {
+        ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file)
     }
 }

@@ -16,6 +16,7 @@ struct FolderListView_iOS: View {
     @State private var folderTree: [FileNode] = []
     @State private var showWelcome: Bool = false
     @State private var showTags: Bool = false
+    @State private var showSettings: Bool = false
 
     @State private var isCreatingFolder: Bool = false
     @State private var newFolderDraft: String = ""
@@ -64,6 +65,10 @@ struct FolderListView_iOS: View {
                 navPath.append(file)
             })
             .environment(session)
+        }
+        .sheet(isPresented: $showSettings) {
+            SettingsView_iOS()
+                .environment(session)
         }
         .alert("New Folder", isPresented: $isCreatingFolder) {
             TextField("Name", text: $newFolderDraft)
@@ -161,6 +166,11 @@ struct FolderListView_iOS: View {
                     Label("Tags", systemImage: "tag")
                 }
                 .disabled(session.currentVault == nil)
+                Button {
+                    showSettings = true
+                } label: {
+                    Label("Settings", systemImage: "gear")
+                }
                 Button {
                     showWelcome = true
                 } label: {

@@ -137,6 +137,8 @@ targets:
           PRODUCT_BUNDLE_IDENTIFIER: com.sabotage.clearly.dev
           PRODUCT_NAME: "Clearly Dev"
           CODE_SIGN_STYLE: Automatic
+        Release:
+          CODE_SIGN_STYLE: Automatic
 
   ClearlyQuickLook:
     type: app-extension
