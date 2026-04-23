@@ -214,23 +214,12 @@ final class WorkspaceManager {
     /// location if `folder` is the vault root, expands the disclosure group
     /// otherwise, and kicks a debounced tree refresh so the new child shows.
     private func revealFolderInSidebar(_ folder: URL) {
-        let target = folder.standardizedFileURL.path
-        var matchedLocationID: UUID?
-        for loc in locations {
-            let root = loc.url.standardizedFileURL.path
-            guard target == root || target.hasPrefix(root + "/") else { continue }
-            matchedLocationID = loc.id
-            if target == root {
-                setLocationCollapsed(false, for: loc.id.uuidString)
-            }
-            break
+        guard let (location, rootURL) = containingLocationAndRoot(for: folder) else { return }
+        if folder.standardizedFileURL.path == rootURL.path {
+            setLocationCollapsed(false, for: location.id.uuidString)
         }
-        if matchedLocationID != nil {
-            setFolderExpanded(true, for: folder)
-            if let id = matchedLocationID {
-                refreshTree(for: id)
-            }
-        }
+        setFolderExpanded(true, for: folder)
+        refreshTree(for: location.id)
     }
 
     @discardableResult
@@ -990,6 +979,179 @@ final class WorkspaceManager {
         }
     }
 
+    // MARK: - Sidebar drop handling
+
+    /// Entry point for the Mac sidebar's `.dropDestination`. Partitions the
+    /// dropped URLs into same-vault moves, cross-vault moves, and external
+    /// (Finder) imports, then executes each group. Cross-vault moves trigger
+    /// a single confirmation alert naming the destination vault; the entire
+    /// drop is cancelled if the user declines. Collisions and folder-into-
+    /// descendant drops are filtered or surfaced via a terminal alert.
+    @discardableResult
+    func handleSidebarDrop(urls: [URL], into destFolder: URL) -> Bool {
+        guard location(containing: destFolder) != nil else { return false }
+        // Defer the actual move/confirm to the next runloop tick so the
+        // drag-session's nested event loop finishes first. NSAlert.runModal
+        // inside a live drop handler doesn't present reliably.
+        DispatchQueue.main.async { [weak self] in
+            self?.performSidebarDrop(urls: urls, into: destFolder)
+        }
+        return true
+    }
+
+    private func performSidebarDrop(urls: [URL], into destFolder: URL) {
+        guard let destLocation = location(containing: destFolder) else { return }
+
+        var sameVaultMoves: [URL] = []
+        var crossVaultMoves: [URL] = []
+        var externalImports: [URL] = []
+
+        for url in urls {
+            let resolved = url.standardizedFileURL
+            if let sourceLocation = location(containing: resolved) {
+                if areNestedOrSame(sourceLocation, destLocation) {
+                    sameVaultMoves.append(resolved)
+                } else {
+                    crossVaultMoves.append(resolved)
+                }
+            } else {
+                externalImports.append(resolved)
+            }
+        }
+
+        sameVaultMoves = filterValidMoveSources(sameVaultMoves, destFolder: destFolder)
+        crossVaultMoves = filterValidMoveSources(crossVaultMoves, destFolder: destFolder)
+        externalImports = externalImports.filter { isMarkdownOrFolder($0) }
+
+        if !crossVaultMoves.isEmpty {
+            guard confirmCrossVaultMove(count: crossVaultMoves.count, to: destLocation) else { return }
+        }
+
+        var moveFailures: [String] = []
+        var importFailures: [String] = []
+        for url in sameVaultMoves {
+            if moveItem(at: url, into: destFolder) == nil {
+                moveFailures.append(url.lastPathComponent)
+            }
+        }
+        for url in crossVaultMoves {
+            if moveItem(at: url, into: destFolder) == nil {
+                moveFailures.append(url.lastPathComponent)
+            }
+        }
+        for url in externalImports {
+            if copyImportedItem(at: url, into: destFolder) == nil {
+                importFailures.append(url.lastPathComponent)
+            }
+        }
+
+        if !moveFailures.isEmpty || !importFailures.isEmpty {
+            presentDropFailureAlert(moveFailures: moveFailures, importFailures: importFailures, destFolder: destFolder)
+        }
+    }
+
+    /// Drops that would place a folder inside itself or one of its descendants,
+    /// or that resolve to a no-op (already in the destination), are filtered out.
+    private func filterValidMoveSources(_ sources: [URL], destFolder: URL) -> [URL] {
+        sources.filter { source in
+            if isSameOrDescendant(destFolder, of: source) { return false }
+            if source.deletingLastPathComponent().standardizedFileURL == destFolder.standardizedFileURL {
+                return false
+            }
+            return true
+        }
+    }
+
+    /// Returns the bookmarked location whose root contains (or equals) `url`.
+    private func location(containing url: URL) -> BookmarkedLocation? {
+        containingLocationAndRoot(for: url)?.location
+    }
+
+    /// Two locations are considered "the same vault" for drag-drop purposes
+    /// if one is nested inside the other on disk. Prevents a confusing
+    /// "move between vaults" prompt when the user registered a subfolder of
+    /// an existing vault as its own location.
+    private func areNestedOrSame(_ a: BookmarkedLocation, _ b: BookmarkedLocation) -> Bool {
+        if a.id == b.id { return true }
+        let aPath = a.url.standardizedFileURL.path
+        let bPath = b.url.standardizedFileURL.path
+        return aPath == bPath || aPath.hasPrefix(bPath + "/") || bPath.hasPrefix(aPath + "/")
+    }
+
+    /// Copy an external file (or folder) into `destFolder`, appending a
+    /// " 2", " 3", … suffix when a collision exists. Returns the resulting
+    /// URL or `nil` on failure.
+    @discardableResult
+    private func copyImportedItem(at sourceURL: URL, into destFolder: URL) -> URL? {
+        let destURL = uniqueDestinationURL(for: sourceURL.lastPathComponent, in: destFolder)
+        do {
+            try FileManager.default.copyItem(at: sourceURL, to: destURL)
+            DiagnosticLog.log("Imported: \(sourceURL.lastPathComponent) → \(destFolder.lastPathComponent)/")
+            return destURL
+        } catch {
+            DiagnosticLog.log("Failed to import \(sourceURL.lastPathComponent): \(error.localizedDescription)")
+            return nil
+        }
+    }
+
+    /// `foo.md` → `foo.md` if free, else `foo 2.md`, `foo 3.md`, up to 50.
+    private func uniqueDestinationURL(for fileName: String, in folder: URL) -> URL {
+        let initial = folder.appendingPathComponent(fileName)
+        if !FileManager.default.fileExists(atPath: initial.path) { return initial }
+
+        let stem = (fileName as NSString).deletingPathExtension
+        let ext = (fileName as NSString).pathExtension
+        for attempt in 2...50 {
+            let candidateName = ext.isEmpty ? "\(stem) \(attempt)" : "\(stem) \(attempt).\(ext)"
+            let candidate = folder.appendingPathComponent(candidateName)
+            if !FileManager.default.fileExists(atPath: candidate.path) { return candidate }
+        }
+        return initial
+    }
+
+    /// Folder: accept. File: accept only `.md` / `.markdown`.
+    private func isMarkdownOrFolder(_ url: URL) -> Bool {
+        var isDir: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: url.path, isDirectory: &isDir) else { return false }
+        if isDir.boolValue { return true }
+        let ext = url.pathExtension.lowercased()
+        return ext == "md" || ext == "markdown"
+    }
+
+    private func confirmCrossVaultMove(count: Int, to destLocation: BookmarkedLocation) -> Bool {
+        let alert = NSAlert()
+        alert.messageText = count == 1
+            ? "Move this item to \"\(destLocation.name)\"?"
+            : "Move \(count) items to \"\(destLocation.name)\"?"
+        alert.informativeText = "This moves \(count == 1 ? "the item" : "these items") into a different vault."
+        alert.alertStyle = .informational
+        alert.addButton(withTitle: "Move")
+        alert.addButton(withTitle: "Cancel")
+        return alert.runModal() == .alertFirstButtonReturn
+    }
+
+    private func presentDropFailureAlert(moveFailures: [String], importFailures: [String], destFolder: URL) {
+        let total = moveFailures.count + importFailures.count
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "OK")
+
+        let allNames = moveFailures + importFailures
+        alert.messageText = total == 1
+            ? "Couldn't add \"\(allNames[0])\" to \(destFolder.lastPathComponent)"
+            : "\(total) items couldn't be added to \(destFolder.lastPathComponent)"
+
+        var lines: [String] = []
+        if !moveFailures.isEmpty {
+            lines.append("A name collision prevented moving: " + moveFailures.joined(separator: ", "))
+        }
+        if !importFailures.isEmpty {
+            lines.append("Couldn't import: " + importFailures.joined(separator: ", "))
+        }
+        alert.informativeText = lines.joined(separator: "\n\n")
+        alert.runModal()
+    }
+
     func deleteItem(at url: URL) -> Bool {
         do {
             try FileManager.default.trashItem(at: url, resultingItemURL: nil)
@@ -1050,6 +1212,8 @@ final class WorkspaceManager {
             persistPinnedFiles()
         }
 
+        rewriteMovedSidebarState(from: sourceURL, to: destURL)
+
         if let currentFileURL {
             persistLastOpenFile(currentFileURL)
         }
@@ -1078,23 +1242,78 @@ final class WorkspaceManager {
     }
 
     private func remappedURL(for candidateURL: URL, moving sourceURL: URL, to destURL: URL) -> URL? {
-        let sourcePath = sourceURL.standardizedFileURL.path
-        let candidatePath = candidateURL.standardizedFileURL.path
-
-        if candidatePath == sourcePath {
-            return destURL.standardizedFileURL
+        guard let remappedPath = remappedPath(for: candidateURL.standardizedFileURL.path,
+                                              movingPath: sourceURL.standardizedFileURL.path,
+                                              toPath: destURL.standardizedFileURL.path) else {
+            return nil
         }
-
-        guard candidatePath.hasPrefix(sourcePath + "/") else { return nil }
-        let relativePath = String(candidatePath.dropFirst(sourcePath.count))
-        let destPath = destURL.standardizedFileURL.path
-        return URL(fileURLWithPath: destPath + relativePath)
+        return URL(fileURLWithPath: remappedPath).standardizedFileURL
     }
 
     private func isSameOrDescendant(_ candidateURL: URL, of rootURL: URL) -> Bool {
         let rootPath = rootURL.standardizedFileURL.path
         let candidatePath = candidateURL.standardizedFileURL.path
         return candidatePath == rootPath || candidatePath.hasPrefix(rootPath + "/")
+    }
+
+    private func remappedPath(for candidatePath: String, movingPath sourcePath: String, toPath destPath: String) -> String? {
+        if candidatePath == sourcePath {
+            return destPath
+        }
+
+        guard candidatePath.hasPrefix(sourcePath + "/") else { return nil }
+        let relativePath = String(candidatePath.dropFirst(sourcePath.count))
+        return destPath + relativePath
+    }
+
+    private func rewriteMovedSidebarState(from sourceURL: URL, to destURL: URL) {
+        let sourcePath = sourceURL.standardizedFileURL.path
+        let destPath = destURL.standardizedFileURL.path
+
+        var remappedIcons: [String: String] = [:]
+        var iconsChanged = false
+        for (path, icon) in folderIcons {
+            if let newPath = remappedPath(for: path, movingPath: sourcePath, toPath: destPath) {
+                remappedIcons[newPath] = icon
+                iconsChanged = true
+            } else {
+                remappedIcons[path] = icon
+            }
+        }
+        if iconsChanged {
+            folderIcons = remappedIcons
+            UserDefaults.standard.set(folderIcons, forKey: Self.folderIconsKey)
+        }
+
+        var remappedColors: [String: String] = [:]
+        var colorsChanged = false
+        for (path, color) in folderColors {
+            if let newPath = remappedPath(for: path, movingPath: sourcePath, toPath: destPath) {
+                remappedColors[newPath] = color
+                colorsChanged = true
+            } else {
+                remappedColors[path] = color
+            }
+        }
+        if colorsChanged {
+            folderColors = remappedColors
+            UserDefaults.standard.set(folderColors, forKey: Self.folderColorsKey)
+        }
+
+        var remappedExpandedPaths: Set<String> = []
+        var expandedChanged = false
+        for path in expandedFolderPaths {
+            if let newPath = remappedPath(for: path, movingPath: sourcePath, toPath: destPath) {
+                remappedExpandedPaths.insert(newPath)
+                expandedChanged = true
+            } else {
+                remappedExpandedPaths.insert(path)
+            }
+        }
+        if expandedChanged {
+            expandedFolderPaths = remappedExpandedPaths
+            UserDefaults.standard.set(Array(expandedFolderPaths), forKey: Self.expandedFolderPathsKey)
+        }
     }
 
     // MARK: - Open Panel (supports both files and folders)
@@ -1217,7 +1436,19 @@ final class WorkspaceManager {
     }
 
     private func containingVaultRoot(for url: URL) -> URL? {
-        locations.first(where: { url.path == $0.url.path || url.path.hasPrefix($0.url.path + "/") })?.url
+        containingLocationAndRoot(for: url)?.rootURL
+    }
+
+    private func containingLocationAndRoot(for url: URL) -> (location: BookmarkedLocation, rootURL: URL)? {
+        let target = url.standardizedFileURL.path
+        return locations
+            .compactMap { location -> (location: BookmarkedLocation, rootURL: URL)? in
+                let rootURL = location.url.standardizedFileURL
+                let rootPath = rootURL.path
+                guard target == rootPath || target.hasPrefix(rootPath + "/") else { return nil }
+                return (location, rootURL)
+            }
+            .max { lhs, rhs in lhs.rootURL.path.count < rhs.rootURL.path.count }
     }
 
     // MARK: - Persistence: Locations

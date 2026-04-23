@@ -151,6 +151,9 @@ struct MacFolderSidebar: View {
                     workspace.removeLocationClosingOpenDocuments(location)
                 }
             }
+            .dropDestination(for: URL.self) { urls, _ in
+                workspace.handleSidebarDrop(urls: urls, into: location.url)
+            }
         }
     }
 
@@ -242,29 +245,48 @@ struct MacFolderSidebar: View {
     private func outlineRow(node: FileNode) -> some View {
         if node.isDirectory {
             let folderTint = workspace.folderColor(for: node.url).map(Color.init(nsColor:))
+            let folderIcon = workspace.folderIcon(for: node.url) ?? "folder"
             SidebarRowLabel(
                 title: node.name,
-                systemImage: workspace.folderIcon(for: node.url) ?? "folder",
+                systemImage: folderIcon,
                 iconTint: folderTint,
                 isSelected: false
             )
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
             .listRowBackground(SelectionPill(tint: folderTint, isSelected: false))
             .contextMenu { folderContextMenu(url: node.url) }
             .popover(isPresented: popoverBinding(for: node.url), arrowEdge: .trailing) {
                 FolderCustomizerView(url: node.url, workspace: workspace)
             }
+            .onDrag {
+                NSItemProvider(object: node.url as NSURL)
+            } preview: {
+                DragRowPreview(title: node.name, systemImage: folderIcon, iconTint: folderTint)
+            }
+            .dropDestination(for: URL.self) { urls, _ in
+                workspace.handleSidebarDrop(urls: urls, into: node.url)
+            }
         } else {
             let rowTint = tintColor(for: node.url)
             let isSelected = selectedFileURL == node.url
+            let fileTitle = node.url.deletingPathExtension().lastPathComponent
             SidebarRowLabel(
-                title: node.url.deletingPathExtension().lastPathComponent,
+                title: fileTitle,
                 systemImage: "doc.text",
                 iconTint: rowTint,
                 isSelected: isSelected
             )
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
             .tag(node.url)
             .listRowBackground(SelectionPill(tint: rowTint, isSelected: isSelected))
             .contextMenu { fileContextMenu(url: node.url) }
+            .onDrag {
+                NSItemProvider(object: node.url as NSURL)
+            } preview: {
+                DragRowPreview(title: fileTitle, systemImage: "doc.text", iconTint: rowTint)
+            }
         }
     }
 
@@ -409,6 +431,31 @@ private struct SidebarRowLabel: View {
         return isSelected
             ? AnyShapeStyle(.tint)
             : AnyShapeStyle(.secondary)
+    }
+}
+
+/// Finder-like drag preview: icon + filename on a rounded, translucent chip.
+/// Used as the `.onDrag(preview:)` so the cursor carries the full row during
+/// a drag instead of just the SF Symbol that `.onDrag` otherwise captures.
+private struct DragRowPreview: View {
+    let title: String
+    let systemImage: String
+    let iconTint: Color?
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Image(systemName: systemImage)
+                .foregroundStyle(iconTint ?? Color.secondary)
+            Text(title)
+                .lineLimit(1)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 6))
+        .overlay(
+            RoundedRectangle(cornerRadius: 6)
+                .strokeBorder(Color.secondary.opacity(0.2), lineWidth: 0.5)
+        )
     }
 }
 
