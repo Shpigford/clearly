@@ -30,6 +30,7 @@ struct MacFolderSidebar: View {
         }
         .listStyle(.sidebar)
         .environment(\.sidebarRowSize, .small)
+        .tint(Color.primary.opacity(0.12))
         .transaction { $0.disablesAnimations = true }
         .toolbar { sidebarToolbar }
     }
