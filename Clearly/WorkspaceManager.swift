@@ -169,6 +169,70 @@ final class WorkspaceManager {
         return true
     }
 
+    /// Create an empty `untitled.md` (or `untitled-2.md`, …) inside `folder`
+    /// and open it in the active tab. Returns the new file URL on success.
+    /// The file auto-renames from its first heading/line on the next save.
+    /// If opening the file fails (e.g. the user cancels the save-dirty-doc
+    /// prompt), the just-created empty file is deleted so the vault doesn't
+    /// accumulate ghost notes.
+    @discardableResult
+    func createUntitledFileInFolder(_ folder: URL) -> URL? {
+        let url = UntitledRename.nextUntitledURL(in: folder)
+        do {
+            try CoordinatedFileIO.write(Data(), to: url)
+        } catch {
+            DiagnosticLog.log("Failed to create untitled file in \(folder.lastPathComponent): \(error.localizedDescription)")
+            return nil
+        }
+        revealFolderInSidebar(folder)
+        guard openFile(at: url) else {
+            try? CoordinatedFileIO.delete(at: url)
+            return nil
+        }
+        return url
+    }
+
+    /// Create a new folder inside `parent`. Name is kebab-sanitized for
+    /// filesystem consistency. Throws if the name is empty or a folder with
+    /// that name already exists. Returns the created folder URL.
+    @discardableResult
+    func createFolder(named name: String, in parent: URL) throws -> URL {
+        let cleanName = UntitledRename.sanitizeKebab(name)
+        guard !cleanName.isEmpty else {
+            throw NSError(domain: "ClearlyWorkspace", code: 1, userInfo: [NSLocalizedDescriptionKey: "Folder name is empty."])
+        }
+        let folderURL = parent.appendingPathComponent(cleanName)
+        if FileManager.default.fileExists(atPath: folderURL.path) {
+            throw NSError(domain: "ClearlyWorkspace", code: 2, userInfo: [NSLocalizedDescriptionKey: "A folder with that name already exists."])
+        }
+        try FileManager.default.createDirectory(at: folderURL, withIntermediateDirectories: false)
+        revealFolderInSidebar(parent)
+        return folderURL
+    }
+
+    /// Makes sure `folder` is visible in the sidebar: un-collapses its owning
+    /// location if `folder` is the vault root, expands the disclosure group
+    /// otherwise, and kicks a debounced tree refresh so the new child shows.
+    private func revealFolderInSidebar(_ folder: URL) {
+        let target = folder.standardizedFileURL.path
+        var matchedLocationID: UUID?
+        for loc in locations {
+            let root = loc.url.standardizedFileURL.path
+            guard target == root || target.hasPrefix(root + "/") else { continue }
+            matchedLocationID = loc.id
+            if target == root {
+                setLocationCollapsed(false, for: loc.id.uuidString)
+            }
+            break
+        }
+        if matchedLocationID != nil {
+            setFolderExpanded(true, for: folder)
+            if let id = matchedLocationID {
+                refreshTree(for: id)
+            }
+        }
+    }
+
     @discardableResult
     func createDocumentWithContent(_ content: String) -> Bool {
         guard saveFileBacked() else { return false }
@@ -534,14 +598,32 @@ final class WorkspaceManager {
             try doc.text.write(to: url, atomically: true, encoding: .utf8)
             openDocuments[index].lastSavedText = doc.text
 
+            let finalURL: URL
+            if let renamedURL = UntitledRename.proposedRenameURL(for: url, text: doc.text) {
+                do {
+                    try CoordinatedFileIO.move(from: url, to: renamedURL)
+                    rewriteMovedItemReferences(from: url, to: renamedURL)
+                    finalURL = renamedURL
+                    DiagnosticLog.log("Auto-renamed \(url.lastPathComponent) → \(renamedURL.lastPathComponent)")
+                } catch {
+                    DiagnosticLog.log("Auto-rename failed for \(url.lastPathComponent): \(error.localizedDescription)")
+                    finalURL = url
+                }
+            } else {
+                finalURL = url
+            }
+
             if activeDocumentIndex == index {
-                currentFileURL = url
+                currentFileURL = finalURL
                 currentFileText = doc.text
                 lastSavedText = doc.text
                 isDirty = false
+                if finalURL != url {
+                    persistLastOpenFile(finalURL)
+                }
             }
 
-            addToRecents(url)
+            addToRecents(finalURL)
             return true
         } catch {
             DiagnosticLog.log("Failed to save file: \(error.localizedDescription)")
@@ -872,18 +954,6 @@ final class WorkspaceManager {
             return fileURL
         } catch {
             DiagnosticLog.log("Failed to create file: \(error.localizedDescription)")
-            return nil
-        }
-    }
-
-    func createFolder(named name: String, in parentURL: URL) -> URL? {
-        let folderURL = parentURL.appendingPathComponent(name)
-        do {
-            try FileManager.default.createDirectory(at: folderURL, withIntermediateDirectories: false)
-            DiagnosticLog.log("Created folder: \(name)")
-            return folderURL
-        } catch {
-            DiagnosticLog.log("Failed to create folder: \(error.localizedDescription)")
             return nil
         }
     }

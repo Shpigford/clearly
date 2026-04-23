@@ -136,6 +136,13 @@ struct MacFolderSidebar: View {
                 isExpanded: locationExpandedBinding(location)
             )
             .contextMenu {
+                Button("New File", systemImage: "doc.badge.plus") {
+                    createNewFile(in: location.url)
+                }
+                Button("New Folder…", systemImage: "folder.badge.plus") {
+                    promptForNewFolder(in: location.url)
+                }
+                Divider()
                 Button("Reveal in Finder", systemImage: "folder") {
                     NSWorkspace.shared.activateFileViewerSelecting([location.url])
                 }
@@ -265,12 +272,51 @@ struct MacFolderSidebar: View {
 
     @ViewBuilder
     private func folderContextMenu(url: URL) -> some View {
+        Button("New File", systemImage: "doc.badge.plus") {
+            createNewFile(in: url)
+        }
+        Button("New Folder…", systemImage: "folder.badge.plus") {
+            promptForNewFolder(in: url)
+        }
+        Divider()
         Button("Customize…", systemImage: "paintpalette") {
             customizingFolderURL = url
         }
         Divider()
         Button("Reveal in Finder", systemImage: "folder") {
             NSWorkspace.shared.activateFileViewerSelecting([url])
+        }
+    }
+
+    private func createNewFile(in folder: URL) {
+        _ = workspace.createUntitledFileInFolder(folder)
+    }
+
+    private func promptForNewFolder(in parent: URL) {
+        let alert = NSAlert()
+        alert.messageText = "New Folder"
+        alert.informativeText = "Enter a name for the new folder."
+        alert.addButton(withTitle: "Create")
+        alert.addButton(withTitle: "Cancel")
+
+        let textField = NSTextField(frame: NSRect(x: 0, y: 0, width: 240, height: 24))
+        textField.placeholderString = "Folder name"
+        alert.accessoryView = textField
+        alert.window.initialFirstResponder = textField
+
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        let name = textField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty else { return }
+
+        do {
+            _ = try workspace.createFolder(named: name, in: parent)
+        } catch {
+            let failure = NSAlert()
+            failure.messageText = "Couldn't create folder"
+            failure.informativeText = error.localizedDescription
+            failure.alertStyle = .warning
+            failure.addButton(withTitle: "OK")
+            failure.runModal()
         }
     }
 

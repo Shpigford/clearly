@@ -20,6 +20,7 @@ struct FolderListView_iOS: View {
 
     @State private var isCreatingFolder: Bool = false
     @State private var newFolderDraft: String = ""
+    @State private var pendingFolderParent: URL?
     @State private var operationError: String?
 
     /// Matches `IPadRootView.allNotesSentinel` so the two layouts route folder
@@ -74,10 +75,13 @@ struct FolderListView_iOS: View {
             TextField("Name", text: $newFolderDraft)
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()
-            Button("Cancel", role: .cancel) { newFolderDraft = "" }
+            Button("Cancel", role: .cancel) {
+                newFolderDraft = ""
+                pendingFolderParent = nil
+            }
             Button("Create") { commitCreateFolder() }
         } message: {
-            Text("Name this folder. It will be created in \(session.currentVault?.displayName ?? "the vault").")
+            Text("Name this folder. It will be created in \(newFolderLocationDescription).")
         }
         .alert(
             "Something went wrong",
@@ -123,6 +127,18 @@ struct FolderListView_iOS: View {
                             NavigationLink(value: node.url) {
                                 Label(node.name, systemImage: "folder")
                                     .badge(fileCount(in: node.url))
+                            }
+                            .contextMenu {
+                                Button {
+                                    createFile(in: node.url)
+                                } label: {
+                                    Label("New File", systemImage: "doc.badge.plus")
+                                }
+                                Button {
+                                    beginCreateFolder(in: node.url)
+                                } label: {
+                                    Label("New Folder", systemImage: "folder.badge.plus")
+                                }
                             }
                         }
                     } header: {
@@ -211,19 +227,22 @@ struct FolderListView_iOS: View {
         }
     }
 
-    // MARK: - Create folder
+    // MARK: - Create folder / file
 
-    private func beginCreateFolder() {
+    private func beginCreateFolder(in parent: URL? = nil) {
         newFolderDraft = ""
+        pendingFolderParent = parent
         isCreatingFolder = true
     }
 
     private func commitCreateFolder() {
         let name = newFolderDraft
+        let parent = pendingFolderParent
         newFolderDraft = ""
+        pendingFolderParent = nil
         Task {
             do {
-                let url = try await session.createFolder(named: name, in: nil)
+                let url = try await session.createFolder(named: name, in: parent)
                 await MainActor.run {
                     rebuildFolderTree()
                     navPath.append(url)
@@ -234,6 +253,28 @@ struct FolderListView_iOS: View {
                 operationError = error.localizedDescription
             }
         }
+    }
+
+    private func createFile(in folder: URL) {
+        Task {
+            do {
+                let file = try await session.createUntitledNote(in: folder)
+                await MainActor.run {
+                    rebuildFolderTree()
+                    navPath.append(file)
+                    session.markRecent(file)
+                }
+            } catch {
+                operationError = error.localizedDescription
+            }
+        }
+    }
+
+    private var newFolderLocationDescription: String {
+        if let parent = pendingFolderParent {
+            return parent.lastPathComponent
+        }
+        return session.currentVault?.displayName ?? "the vault"
     }
 
     // MARK: - Welcome

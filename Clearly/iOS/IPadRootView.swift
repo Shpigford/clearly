@@ -39,6 +39,7 @@ struct IPadRootView: View {
 
     @State private var isCreatingFolder: Bool = false
     @State private var newFolderDraft: String = ""
+    @State private var explicitFolderParent: URL?
 
     var body: some View {
         @Bindable var session = session
@@ -106,7 +107,10 @@ struct IPadRootView: View {
             TextField("Name", text: $newFolderDraft)
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()
-            Button("Cancel", role: .cancel) { newFolderDraft = "" }
+            Button("Cancel", role: .cancel) {
+                newFolderDraft = ""
+                explicitFolderParent = nil
+            }
             Button("Create") { commitCreateFolder() }
         } message: {
             Text("Name this folder. It will be created inside \(newFolderParentName).")
@@ -174,6 +178,18 @@ struct IPadRootView: View {
                     Label(node.name, systemImage: "folder")
                         .badge(fileCount(in: node.url))
                         .tag(node.url)
+                        .contextMenu {
+                            Button {
+                                createFile(in: node.url)
+                            } label: {
+                                Label("New File", systemImage: "doc.badge.plus")
+                            }
+                            Button {
+                                beginCreateFolder(in: node.url)
+                            } label: {
+                                Label("New Folder", systemImage: "folder.badge.plus")
+                            }
+                        }
                 }
             } header: {
                 Text(vaultSectionTitle)
@@ -462,22 +478,28 @@ struct IPadRootView: View {
 
     // MARK: - Create folder
 
-    /// Where the new folder should be created. Same precedence as new-note
-    /// placement: a selected folder becomes the parent, "All Notes" means
-    /// the vault root.
+    /// Where the new folder should be created. Context-menu selection wins
+    /// over sidebar selection; toolbar fires with no explicit parent so it
+    /// falls back to the selection-based rule (selected folder, or vault
+    /// root when "All Notes" is selected).
     private var newFolderParent: URL? {
-        isAllNotesSelected ? nil : selectedFolderURL
+        if let explicit = explicitFolderParent { return explicit }
+        return isAllNotesSelected ? nil : selectedFolderURL
     }
 
     private var newFolderParentName: String {
+        if let explicit = explicitFolderParent {
+            return explicit.lastPathComponent
+        }
         if isAllNotesSelected {
             return session.currentVault?.displayName ?? "the vault"
         }
         return selectedFolderURL?.lastPathComponent ?? "the vault"
     }
 
-    private func beginCreateFolder() {
+    private func beginCreateFolder(in parent: URL? = nil) {
         newFolderDraft = ""
+        explicitFolderParent = parent
         isCreatingFolder = true
     }
 
@@ -485,6 +507,7 @@ struct IPadRootView: View {
         let name = newFolderDraft
         newFolderDraft = ""
         let parent = newFolderParent
+        explicitFolderParent = nil
         Task {
             do {
                 let url = try await session.createFolder(named: name, in: parent)
@@ -494,6 +517,21 @@ struct IPadRootView: View {
                 }
             } catch VaultSessionError.readFailed(let msg) {
                 operationError = msg
+            } catch {
+                operationError = error.localizedDescription
+            }
+        }
+    }
+
+    private func createFile(in folder: URL) {
+        Task {
+            do {
+                let file = try await session.createUntitledNote(in: folder)
+                await MainActor.run {
+                    rebuildFolderTree()
+                    selectedFolderURL = folder
+                    controller.openExclusive(file)
+                }
             } catch {
                 operationError = error.localizedDescription
             }

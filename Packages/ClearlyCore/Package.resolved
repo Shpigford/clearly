@@ -1,4 +1,5 @@
 {
+  "originHash" : "564c09efb10a7f03a559fa7e1c2130f8384ddf1aa72d3668daa80157dcdbc645",
   "pins" : [
     {
       "identity" : "cmark-gfm",
@@ -109,5 +110,5 @@
       }
     }
   ],
-  "version" : 2
+  "version" : 3
 }
