@@ -2,20 +2,128 @@ import SwiftUI
 import AppKit
 import ClearlyCore
 
-/// Detail column for the native shell — Apple-Notes-style unified toolbar,
-/// editor/preview ZStack with opacity crossfade, conflict banner +
-/// find/jump overlays at the top, and outline/backlinks mounted on a
-/// native `.inspector()` trailing pane.
+// MARK: - Toolbar (root-attached)
+
+/// Detail-column toolbar, attached by `MacRootView` to the outermost
+/// NavigationSplitView. Attaching it to the detail column itself wedges the
+/// items against the middle-column divider on macOS 26 — attaching here
+/// lets them occupy the window's trailing toolbar slot, which is what
+/// Apple Notes does.
+struct MacDetailToolbar: ToolbarContent {
+    @Bindable var workspace: WorkspaceManager
+    @ObservedObject var findState: FindState
+    @ObservedObject var outlineState: OutlineState
+    @ObservedObject var backlinksState: BacklinksState
+    @Binding var showFormatPopover: Bool
+
+    var body: some ToolbarContent {
+        // Centered: editor / preview mode picker — sits in the toolbar's
+        // principal slot so it visually anchors the middle of the bar.
+        ToolbarItem(placement: .principal) {
+            Picker("Mode", selection: $workspace.currentViewMode) {
+                Image(systemName: "pencil").tag(ViewMode.edit)
+                Image(systemName: "eye").tag(ViewMode.preview)
+            }
+            .pickerStyle(.segmented)
+            .help("Editor / Preview (⌘1 / ⌘2)")
+        }
+
+        // Trailing: everything else, clustered on the far right.
+        ToolbarItemGroup(placement: .primaryAction) {
+            Button {
+                workspace.createUntitledDocument()
+            } label: {
+                Label("New Note", systemImage: "square.and.pencil")
+            }
+            .keyboardShortcut("n", modifiers: .command)
+            .help("New Note (⌘N)")
+
+            Button {
+                showFormatPopover.toggle()
+            } label: {
+                Label("Format", systemImage: "textformat")
+            }
+            .help("Format")
+            .disabled(workspace.activeDocumentID == nil || workspace.currentViewMode != .edit)
+            .popover(isPresented: $showFormatPopover, arrowEdge: .bottom) {
+                MacFormatPopover()
+            }
+
+            Button {
+                NSApp.sendAction(#selector(ClearlyTextView.toggleTodoList(_:)), to: nil, from: nil)
+            } label: {
+                Label("Checklist", systemImage: "checklist")
+            }
+            .help("Insert checklist item")
+            .disabled(workspace.activeDocumentID == nil || workspace.currentViewMode != .edit)
+
+            Menu {
+                Button("Insert Link…") {
+                    NSApp.sendAction(#selector(ClearlyTextView.insertLink(_:)), to: nil, from: nil)
+                }
+                Button("Insert Image…") {
+                    NSApp.sendAction(#selector(ClearlyTextView.insertImage(_:)), to: nil, from: nil)
+                }
+                Button("Insert Table") {
+                    NSApp.sendAction(#selector(ClearlyTextView.insertMarkdownTable(_:)), to: nil, from: nil)
+                }
+                Button("Insert Code Block") {
+                    NSApp.sendAction(#selector(ClearlyTextView.insertCodeBlock(_:)), to: nil, from: nil)
+                }
+            } label: {
+                Label("Insert", systemImage: "paperclip")
+            }
+            .help("Insert link, image, table, or code")
+            .menuIndicator(.hidden)
+            .disabled(workspace.activeDocumentID == nil || workspace.currentViewMode != .edit)
+
+            Button {
+                withAnimation(Theme.Motion.smooth) { backlinksState.toggle() }
+            } label: {
+                Label("Backlinks", systemImage: "link")
+            }
+            .help("Backlinks (⇧⌘B)")
+            .disabled(workspace.activeDocumentID == nil)
+
+            Button {
+                outlineState.toggle()
+            } label: {
+                Label("Outline", systemImage: "list.bullet.indent")
+            }
+            .help("Outline (⇧⌘O)")
+            .disabled(workspace.activeDocumentID == nil)
+
+            Button {
+                findState.toggle()
+            } label: {
+                Label("Find", systemImage: "magnifyingglass")
+            }
+            .help("Find in note (⌘F)")
+            .disabled(workspace.activeDocumentID == nil)
+
+            if let url = workspace.currentFileURL {
+                ShareLink(item: url) {
+                    Label("Share", systemImage: "square.and.arrow.up")
+                }
+                .help("Share")
+            }
+        }
+    }
+}
+
+/// Detail column for the native shell — editor/preview ZStack with opacity
+/// crossfade, conflict banner + find/jump overlays at the top, and the
+/// outline panel mounted as an HStack sibling on the trailing edge.
 struct MacDetailColumn: View {
     @Bindable var workspace: WorkspaceManager
-    @StateObject private var findState = FindState()
-    @StateObject private var outlineState = OutlineState()
-    @StateObject private var backlinksState = BacklinksState()
-    @StateObject private var jumpToLineState = JumpToLineState()
-    @StateObject private var fileWatcher = FileWatcher()
+    @ObservedObject var findState: FindState
+    @ObservedObject var outlineState: OutlineState
+    @ObservedObject var backlinksState: BacklinksState
+    @ObservedObject var jumpToLineState: JumpToLineState
+    @Binding var positionSyncID: String
+    @Binding var showFormatPopover: Bool
 
-    @State private var positionSyncID: String = UUID().uuidString
-    @State private var showFormatPopover = false
+    @StateObject private var fileWatcher = FileWatcher()
     @State private var isFullscreen = false
 
     @AppStorage("editorFontSize") private var fontSize: Double = 16
@@ -24,28 +132,25 @@ struct MacDetailColumn: View {
     @AppStorage("showLineNumbers") private var showLineNumbers: Bool = false
 
     var body: some View {
-        Group {
-            if workspace.activeDocumentID == nil {
-                emptyState
-            } else {
-                editorPreviewStack
+        HStack(spacing: 0) {
+            Group {
+                if workspace.activeDocumentID == nil {
+                    emptyState
+                } else {
+                    editorPreviewStack
+                }
+            }
+            .frame(maxWidth: .infinity)
+
+            if outlineState.isVisible {
+                Divider()
+                OutlineView(outlineState: outlineState)
+                    .frame(width: 240)
+                    .transition(.move(edge: .trailing).combined(with: .opacity))
             }
         }
+        .animation(Theme.Motion.smooth, value: outlineState.isVisible)
         .navigationTitle(documentTitle)
-        .toolbar { detailToolbar }
-        .inspector(isPresented: outlineBinding) {
-            OutlineView(outlineState: outlineState)
-                .inspectorColumnWidth(min: 200, ideal: 240, max: 360)
-                .toolbar {
-                    ToolbarItem(placement: .primaryAction) {
-                        Button {
-                            outlineState.toggle()
-                        } label: {
-                            Label("Close Outline", systemImage: "sidebar.right")
-                        }
-                    }
-                }
-        }
         .onAppear {
             outlineState.parseHeadings(from: workspace.currentFileText)
             backlinksState.update(for: workspace.currentFileURL, using: workspace.activeVaultIndexes)
@@ -214,94 +319,6 @@ struct MacDetailColumn: View {
         )
     }
 
-    // MARK: - Toolbar
-
-    @ToolbarContentBuilder
-    private var detailToolbar: some ToolbarContent {
-        // Format cluster — left of the toolbar, next to the sidebar toggle
-        // SwiftUI contributes automatically.
-        ToolbarItemGroup(placement: .navigation) {
-            Picker("Mode", selection: $workspace.currentViewMode) {
-                Image(systemName: "pencil").tag(ViewMode.edit)
-                Image(systemName: "eye").tag(ViewMode.preview)
-            }
-            .pickerStyle(.segmented)
-            .help("Editor / Preview (⌘1 / ⌘2)")
-
-            Button {
-                showFormatPopover.toggle()
-            } label: {
-                Label("Format", systemImage: "textformat")
-            }
-            .help("Format")
-            .disabled(workspace.activeDocumentID == nil || workspace.currentViewMode != .edit)
-            .popover(isPresented: $showFormatPopover, arrowEdge: .bottom) {
-                MacFormatPopover()
-            }
-
-            Button {
-                NSApp.sendAction(#selector(ClearlyTextView.toggleTodoList(_:)), to: nil, from: nil)
-            } label: {
-                Label("Checklist", systemImage: "checklist")
-            }
-            .help("Insert checklist item")
-            .disabled(workspace.activeDocumentID == nil || workspace.currentViewMode != .edit)
-
-            Menu {
-                Button("Insert Link…") {
-                    NSApp.sendAction(#selector(ClearlyTextView.insertLink(_:)), to: nil, from: nil)
-                }
-                Button("Insert Image…") {
-                    NSApp.sendAction(#selector(ClearlyTextView.insertImage(_:)), to: nil, from: nil)
-                }
-                Button("Insert Table") {
-                    NSApp.sendAction(#selector(ClearlyTextView.insertMarkdownTable(_:)), to: nil, from: nil)
-                }
-                Button("Insert Code Block") {
-                    NSApp.sendAction(#selector(ClearlyTextView.insertCodeBlock(_:)), to: nil, from: nil)
-                }
-            } label: {
-                Label("Insert", systemImage: "paperclip")
-            }
-            .help("Insert link, image, table, or code")
-            .menuIndicator(.hidden)
-            .disabled(workspace.activeDocumentID == nil || workspace.currentViewMode != .edit)
-        }
-
-        // Panel + share cluster — right side of the toolbar
-        ToolbarItemGroup(placement: .primaryAction) {
-            Button {
-                withAnimation(Theme.Motion.smooth) { backlinksState.toggle() }
-            } label: {
-                Label("Backlinks", systemImage: "link")
-            }
-            .help("Backlinks (⇧⌘B)")
-            .disabled(workspace.activeDocumentID == nil)
-
-            Button {
-                outlineState.toggle()
-            } label: {
-                Label("Outline", systemImage: "list.bullet.indent")
-            }
-            .help("Outline (⇧⌘O)")
-            .disabled(workspace.activeDocumentID == nil)
-
-            Button {
-                findState.toggle()
-            } label: {
-                Label("Find", systemImage: "magnifyingglass")
-            }
-            .help("Find in note (⌘F)")
-            .disabled(workspace.activeDocumentID == nil)
-
-            if let url = workspace.currentFileURL {
-                ShareLink(item: url) {
-                    Label("Share", systemImage: "square.and.arrow.up")
-                }
-                .help("Share")
-            }
-        }
-    }
 
     // MARK: - Derivation
 
@@ -321,15 +338,6 @@ struct MacDetailColumn: View {
         case "wide":   return 60
         default:       return nil
         }
-    }
-
-    private var outlineBinding: Binding<Bool> {
-        Binding(
-            get: { outlineState.isVisible },
-            set: { newValue in
-                if newValue != outlineState.isVisible { outlineState.toggle() }
-            }
-        )
     }
 
     // MARK: - Helpers

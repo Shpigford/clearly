@@ -1,36 +1,22 @@
 import SwiftUI
 import ClearlyCore
 
-/// Sidebar selection payload for the native shell. Folder URL or the
-/// location-scoped "All Notes" sentinel. Pinned-file rows open directly
-/// via `workspace.openFile(at:)` and do not change folder selection.
-enum SidebarSelection: Hashable {
-    case allNotes(locationID: UUID)
-    case folder(URL)
-
-    var folderURL: URL? {
-        if case .folder(let url) = self { return url }
-        return nil
-    }
-}
-
-/// Native Apple-Notes-style left sidebar. Lists bookmarked vault locations
-/// with an "All Notes" sentinel per location, an `OutlineGroup` of folders
-/// beneath, and a Pinned section at the top when non-empty.
+/// Native Apple-Notes-style left sidebar. Two-column shell — folders and
+/// files are both rendered as rows in this outline. Folders use
+/// `DisclosureGroup` to expand/collapse; files use `doc.text` leaf rows
+/// whose selection opens them in the detail column.
 struct MacFolderSidebar: View {
     @Bindable var workspace: WorkspaceManager
-    @Binding var selection: SidebarSelection?
-
-    @State private var showWelcome = false
+    @Binding var selectedFileURL: URL?
 
     var body: some View {
-        List(selection: $selection) {
+        List(selection: $selectedFileURL) {
             if !workspace.pinnedFiles.isEmpty {
-                AnyView(pinnedSection)
+                pinnedSection
             }
 
             ForEach(workspace.locations) { location in
-                AnyView(locationSection(location))
+                locationSection(location)
             }
 
             if workspace.locations.isEmpty {
@@ -42,43 +28,37 @@ struct MacFolderSidebar: View {
                 .listRowBackground(Color.clear)
             }
         }
-        .listStyle(.sidebar)
-        .navigationTitle("Clearly")
+        .listStyle(.plain)
+        .transaction { $0.disablesAnimations = true }
         .toolbar { sidebarToolbar }
-        .sheet(isPresented: $showWelcome) {
-            WelcomeSheet(workspace: workspace, isPresented: $showWelcome)
-        }
     }
 
-    // MARK: - Pinned section
+    // MARK: - Pinned
 
     private var pinnedSection: some View {
         Section {
             ForEach(workspace.pinnedFiles, id: \.self) { url in
-                Button {
-                    workspace.openFile(at: url)
-                } label: {
-                    Label {
-                        Text(url.deletingPathExtension().lastPathComponent)
-                            .lineLimit(1)
-                            .truncationMode(.middle)
-                    } icon: {
-                        Image(systemName: "pin.fill")
-                            .foregroundStyle(.yellow)
+                Text(url.deletingPathExtension().lastPathComponent)
+                    .font(.system(size: 13))
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .listRowInsets(.init(top: 2, leading: 8, bottom: 2, trailing: 8))
+                    .tag(url)
+                    .contextMenu {
+                        Button("Unpin", systemImage: "pin.slash") {
+                            workspace.togglePin(url)
+                        }
+                        Button("Open in New Tab", systemImage: "plus.rectangle.on.rectangle") {
+                            workspace.openFileInNewTab(at: url)
+                        }
+                        Divider()
+                        Button("Reveal in Finder", systemImage: "folder") {
+                            NSWorkspace.shared.activateFileViewerSelecting([url])
+                        }
                     }
-                }
-                .buttonStyle(.plain)
-                .contextMenu {
-                    Button("Unpin", systemImage: "pin.slash") {
-                        workspace.togglePin(url)
-                    }
-                    Button("Reveal in Finder", systemImage: "folder") {
-                        NSWorkspace.shared.activateFileViewerSelecting([url])
-                    }
-                }
             }
         } header: {
-            Text("Pinned")
+            sectionHeader(title: "Pinned", systemImage: "pin")
         }
     }
 
@@ -86,44 +66,71 @@ struct MacFolderSidebar: View {
 
     private func locationSection(_ location: BookmarkedLocation) -> some View {
         Section {
-            Label("All Notes", systemImage: "tray.full")
-                .badge(totalFileCount(in: location.fileTree))
-                .tag(SidebarSelection.allNotes(locationID: location.id))
-
-            ForEach(topLevelFolders(in: location.fileTree)) { node in
-                folderRow(node: node)
+            OutlineGroup(topLevelNodes(in: location.fileTree), children: \.outlineChildren) { node in
+                outlineRow(node: node)
             }
         } header: {
-            Label(location.name, systemImage: "folder")
+            sectionHeader(title: location.name, systemImage: "folder")
         }
     }
 
-    private func folderRow(node: FileNode) -> AnyView {
-        let children = node.children ?? []
-        let subfolders = children.filter(\.isDirectory)
-        if subfolders.isEmpty {
-            return AnyView(folderLabel(node))
+    /// Custom section header — SwiftUI's default `Label` spaces icon and text
+    /// with a wide gap in sidebar sections. Swap in an `HStack` with a tight
+    /// spacing so the icon sits snug next to the label.
+    private func sectionHeader(title: String, systemImage: String) -> some View {
+        HStack(spacing: 4) {
+            Image(systemName: systemImage)
+            Text(title)
         }
-        return AnyView(
-            DisclosureGroup {
-                ForEach(subfolders) { child in
-                    folderRow(node: child)
-                }
-            } label: {
-                folderLabel(node)
-            }
-        )
     }
 
-    private func folderLabel(_ node: FileNode) -> some View {
-        Label(node.name, systemImage: "folder")
-            .badge(fileCount(in: node))
-            .tag(SidebarSelection.folder(node.url))
+    @ViewBuilder
+    private func outlineRow(node: FileNode) -> some View {
+        if node.isDirectory {
+            Label(node.name, systemImage: "folder")
+                .font(.system(size: 13))
+                .listRowInsets(.init(top: 2, leading: 8, bottom: 2, trailing: 8))
+                .contextMenu { folderContextMenu(url: node.url) }
+        } else {
+            fileRow(url: node.url, icon: "doc.text")
+                .font(.system(size: 13))
+                .listRowInsets(.init(top: 2, leading: 8, bottom: 2, trailing: 8))
+                .tag(node.url)
+        }
+    }
+
+    // MARK: - Rows
+
+    /// Pinned rows render `pin.fill` with the accent tint; file leaves render
+    /// `doc.text` in secondary. Both use `.tint` / `HierarchicalShapeStyle`
+    /// so the sidebar's built-in selection handling flips them to white on
+    /// the selected row instantly — no manual comparison to `selectedFileURL`
+    /// needed (that path adds a one-frame delay because the binding updates
+    /// through `onChange` rather than the row's view identity).
+    private func fileRow(url: URL, icon: String) -> some View {
+        Label(url.deletingPathExtension().lastPathComponent, systemImage: icon)
+            .lineLimit(1)
+            .truncationMode(.middle)
             .contextMenu {
+                Button(workspace.isPinned(url) ? "Unpin" : "Pin",
+                       systemImage: workspace.isPinned(url) ? "pin.slash" : "pin") {
+                    workspace.togglePin(url)
+                }
+                Button("Open in New Tab", systemImage: "plus.rectangle.on.rectangle") {
+                    workspace.openFileInNewTab(at: url)
+                }
+                Divider()
                 Button("Reveal in Finder", systemImage: "folder") {
-                    NSWorkspace.shared.activateFileViewerSelecting([node.url])
+                    NSWorkspace.shared.activateFileViewerSelecting([url])
                 }
             }
+    }
+
+    @ViewBuilder
+    private func folderContextMenu(url: URL) -> some View {
+        Button("Reveal in Finder", systemImage: "folder") {
+            NSWorkspace.shared.activateFileViewerSelecting([url])
+        }
     }
 
     // MARK: - Toolbar
@@ -138,73 +145,27 @@ struct MacFolderSidebar: View {
             }
             .help("Add a vault folder")
         }
-        ToolbarItem(placement: .primaryAction) {
-            Menu {
-                Button("Add Vault…", systemImage: "folder.badge.plus") {
-                    workspace.showOpenPanel()
-                }
-                Divider()
-                Button(workspace.showHiddenFiles ? "Hide Hidden Files" : "Show Hidden Files") {
-                    workspace.toggleShowHiddenFiles()
-                }
-                Divider()
-                Button("Open…", systemImage: "doc") {
-                    workspace.showOpenPanel()
-                }
-            } label: {
-                Label("More", systemImage: "ellipsis.circle")
-            }
-        }
     }
 
     // MARK: - Derivation
 
-    private func topLevelFolders(in tree: [FileNode]) -> [FileNode] {
-        tree.filter(\.isDirectory)
-    }
-
-    private func fileCount(in node: FileNode) -> Int {
-        guard let children = node.children else { return 0 }
-        return children.reduce(0) { count, child in
-            count + (child.isDirectory ? fileCount(in: child) : 1)
-        }
-    }
-
-    private func totalFileCount(in tree: [FileNode]) -> Int {
-        tree.reduce(0) { count, node in
-            count + (node.isDirectory ? fileCount(in: node) : 1)
+    /// Top-level nodes of a vault — folders plus loose markdown files in the root.
+    private func topLevelNodes(in tree: [FileNode]) -> [FileNode] {
+        tree.sorted { lhs, rhs in
+            if lhs.isDirectory != rhs.isDirectory {
+                return lhs.isDirectory // folders first
+            }
+            return lhs.name.localizedCaseInsensitiveCompare(rhs.name) == .orderedAscending
         }
     }
 }
 
-// MARK: - Welcome sheet
-
-private struct WelcomeSheet: View {
-    @Bindable var workspace: WorkspaceManager
-    @Binding var isPresented: Bool
-
-    var body: some View {
-        VStack(spacing: 24) {
-            Image(systemName: "folder.badge.plus")
-                .font(.system(size: 64))
-                .foregroundStyle(.tint)
-            Text("Add a Vault")
-                .font(.title)
-                .fontWeight(.semibold)
-            Text("Pick a folder of markdown files to get started.")
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
-            Button {
-                workspace.showOpenPanel()
-                isPresented = false
-            } label: {
-                Text("Choose Folder…")
-                    .frame(maxWidth: 200)
-            }
-            .controlSize(.large)
-            .buttonStyle(.borderedProminent)
-        }
-        .padding(40)
-        .frame(width: 420, height: 320)
+private extension FileNode {
+    /// Children accessor for `OutlineGroup`: returns `nil` for files AND for
+    /// empty directories so neither gets a disclosure chevron. Non-empty
+    /// folders return their children, preserving the tree's sort order.
+    var outlineChildren: [FileNode]? {
+        guard let children, !children.isEmpty else { return nil }
+        return children
     }
 }
