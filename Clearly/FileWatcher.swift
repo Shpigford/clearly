@@ -35,10 +35,14 @@ final class FileWatcher: ObservableObject {
         guard fd != -1 else { return }
         fileDescriptor = fd
 
+        // Main-queue so instance state (`source`, `debounceWork`,
+        // `monitoredURL`) is only ever touched from the main thread. Without
+        // this the save path's atomic-rename event and SwiftUI's follow-up
+        // `watch()` call race on the same ivars and crash on zombie release.
         let source = DispatchSource.makeFileSystemObjectSource(
             fileDescriptor: fd,
             eventMask: [.write, .delete, .rename, .link, .extend, .attrib],
-            queue: .global(qos: .utility)
+            queue: .main
         )
 
         source.setEventHandler { [weak self] in
@@ -47,7 +51,7 @@ final class FileWatcher: ObservableObject {
             if flags.contains(.delete) || flags.contains(.rename) {
                 // Atomic save: file was replaced. Tear down and re-establish.
                 self.stopMonitoring()
-                DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + 0.1) { [weak self] in
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
                     guard let self, let url = self.monitoredURL else { return }
                     self.startMonitoring(url)
                     self.readAndNotify()
@@ -79,7 +83,7 @@ final class FileWatcher: ObservableObject {
             self?.readAndNotify()
         }
         debounceWork = work
-        DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + 0.3, execute: work)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3, execute: work)
     }
 
     private func readAndNotify() {
@@ -87,23 +91,20 @@ final class FileWatcher: ObservableObject {
         guard let data = try? Data(contentsOf: url),
               let newText = String(data: data, encoding: .utf8) else { return }
 
-        DispatchQueue.main.async { [weak self] in
-            guard let self else { return }
-            guard newText != self.lastKnownDiskText else { return }
+        guard newText != lastKnownDiskText else { return }
 
-            if let liveCurrentText = self.liveCurrentText?() {
-                self.currentText = liveCurrentText
-            }
-            let hasUnsavedChanges = self.currentText != self.lastKnownDiskText
-            self.lastKnownDiskText = newText
-
-            guard !hasUnsavedChanges else {
-                DiagnosticLog.log("External file change ignored: unsaved local edits")
-                return
-            }
-
-            self.currentText = newText
-            self.onChange?(newText)
+        if let liveCurrentText = liveCurrentText?() {
+            currentText = liveCurrentText
         }
+        let hasUnsavedChanges = currentText != lastKnownDiskText
+        lastKnownDiskText = newText
+
+        guard !hasUnsavedChanges else {
+            DiagnosticLog.log("External file change ignored: unsaved local edits")
+            return
+        }
+
+        currentText = newText
+        onChange?(newText)
     }
 }
