@@ -1,11 +1,13 @@
 #if os(iOS)
 import SwiftUI
+import UIKit
 import ClearlyCore
 import Combine
 
 struct SettingsView_iOS: View {
     @Environment(VaultSession.self) private var session
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.openURL) private var openURL
 
     @State private var iCloudAvailable = FileManager.default.ubiquityIdentityToken != nil
     @State private var usage: VaultDiskUsage?
@@ -62,6 +64,14 @@ struct SettingsView_iOS: View {
                     Button("Refresh", action: recompute)
                         .disabled(computing || session.currentVault == nil)
                 }
+
+                Section("Help") {
+                    Button {
+                        openReportURL()
+                    } label: {
+                        Label("Report a Bug…", systemImage: "ladybug")
+                    }
+                }
             }
             .navigationTitle("Settings")
             .navigationBarTitleDisplayMode(.inline)
@@ -102,6 +112,24 @@ struct SettingsView_iOS: View {
 
     private func formattedBytes(_ bytes: Int64) -> String {
         ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file)
+    }
+
+    private func openReportURL() {
+        let version = (Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String) ?? "?"
+        let build = (Bundle.main.infoDictionary?["CFBundleVersion"] as? String) ?? "?"
+        let platform: BugReportURL.Platform = UIDevice.current.userInterfaceIdiom == .pad ? .iPadOS : .iOS
+        var size = 0
+        sysctlbyname("hw.machine", nil, &size, nil, 0)
+        var machine = [CChar](repeating: 0, count: size)
+        sysctlbyname("hw.machine", &machine, &size, nil, 0)
+        let hw = String(cString: machine)
+        let url = BugReportURL.build(
+            platform: platform,
+            appVersion: "\(version) (\(build))",
+            osVersion: "\(platform.rawValue) \(UIDevice.current.systemVersion)",
+            device: hw.isEmpty ? nil : hw
+        )
+        openURL(url)
     }
 }
 #endif
