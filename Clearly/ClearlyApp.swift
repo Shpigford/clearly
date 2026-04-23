@@ -59,6 +59,11 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValid
         NSApp.windows.first { WindowRouter.isUserFacingDocumentWindow($0) }
     }
 
+    /// When true, `bringMainWindowToFrontIfNeeded()` is a no-op. Set briefly
+    /// while opening Settings from the menu bar popover so activating the app
+    /// doesn't also raise a hidden workspace window over the Settings window.
+    var suppressMainWindowFocus: Bool = false
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         Self.shared = self
 
@@ -550,6 +555,7 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValid
     /// scene — we just need to bring whichever instance exists to the front on
     /// dock clicks and re-activation events.
     private func bringMainWindowToFrontIfNeeded() {
+        guard !suppressMainWindowFocus else { return }
         guard isForegroundActivation, !ScratchpadManager.shared.hasOpenWindows else { return }
         if let window = NSApp.windows.first(where: { WindowRouter.isUserFacingDocumentWindow($0) }) {
             window.makeKeyAndOrderFront(nil)

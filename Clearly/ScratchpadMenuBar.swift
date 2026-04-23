@@ -3,6 +3,7 @@ import KeyboardShortcuts
 
 struct ScratchpadMenuBar: View {
     var manager: ScratchpadManager
+    @Environment(\.openSettings) private var openSettings
 
     var body: some View {
         Button("New Scratchpad") {
@@ -48,8 +49,8 @@ struct ScratchpadMenuBar: View {
 
         Divider()
 
-        SettingsLink {
-            Text("Settings…")
+        Button("Settings…") {
+            performSettingsMenuBarAction()
         }
         .keyboardShortcut(",", modifiers: [.command])
 
@@ -64,6 +65,20 @@ struct ScratchpadMenuBar: View {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
                 WindowRouter.shared.showMainWindow()
                 action()
+            }
+        }
+    }
+
+    private func performSettingsMenuBarAction() {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+            let delegate = ClearlyAppDelegate.shared
+            delegate?.suppressMainWindowFocus = true
+            activateDocumentApp()
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+                openSettings()
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                    delegate?.suppressMainWindowFocus = false
+                }
             }
         }
     }
