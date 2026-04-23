@@ -95,7 +95,6 @@ targets:
           CODE_SIGN_STYLE: Automatic
         Release:
           CODE_SIGN_STYLE: Automatic
-          CODE_SIGN_IDENTITY: "Developer ID Application"
 
   Clearly-iOS:
     type: application
