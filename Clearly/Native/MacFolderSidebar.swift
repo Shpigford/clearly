@@ -43,7 +43,7 @@ struct MacFolderSidebar: View {
                     .lineLimit(1)
                     .truncationMode(.middle)
                     .tag(url)
-                    .listRowBackground(SubtleSelectionBackground())
+                    .listRowBackground(SelectionPill())
                     .contextMenu {
                         Button("Unpin", systemImage: "pin.slash") {
                             workspace.togglePin(url)
@@ -88,12 +88,12 @@ struct MacFolderSidebar: View {
     private func outlineRow(node: FileNode) -> some View {
         if node.isDirectory {
             Label(node.name, systemImage: "folder")
-                .listRowBackground(SubtleSelectionBackground())
+                .listRowBackground(SelectionPill())
                 .contextMenu { folderContextMenu(url: node.url) }
         } else {
             fileRow(url: node.url, icon: "doc.text")
                 .tag(node.url)
-                .listRowBackground(SubtleSelectionBackground())
+                .listRowBackground(SelectionPill())
         }
     }
 
@@ -168,21 +168,18 @@ private extension FileNode {
     }
 }
 
-/// Paints an opaque subtle gray fill ONLY on the selected sidebar row,
-/// overriding the default system-accent selection pill that `.listStyle(.sidebar)`
-/// renders. Detection is via the `backgroundProminence` environment — SwiftUI
-/// bumps it to `.increased` on the selected row (macOS 14+). The fill must be
-/// fully opaque or the default blue pill bleeds through underneath.
-private struct SubtleSelectionBackground: View {
+/// Row background that paints the platform-native `.selection` ShapeStyle
+/// when the row is selected (via `backgroundProminence == .increased`), and
+/// clear otherwise. `.selection` is Apple's ShapeStyle for selection fills —
+/// it resolves to the subtle gray-on-focus that Finder uses, and the system
+/// accent when focused, handled automatically.
+private struct SelectionPill: View {
     @Environment(\.backgroundProminence) private var prominence
-    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         if prominence == .increased {
             RoundedRectangle(cornerRadius: 6, style: .continuous)
-                .fill(colorScheme == .dark
-                      ? Color(white: 0.22)
-                      : Color(white: 0.88))
+                .fill(.selection)
                 .padding(.horizontal, 4)
                 .padding(.vertical, 1)
         } else {
@@ -190,4 +187,5 @@ private struct SubtleSelectionBackground: View {
         }
     }
 }
+
 
