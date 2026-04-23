@@ -37,15 +37,16 @@ struct WelcomeView: View {
                     }
 
                     WelcomePathCard(
-                        icon: "doc.text",
-                        title: "Quick Edit",
-                        description: "Start writing right away with a blank document, or open an existing file.",
+                        icon: "sparkles",
+                        title: "See It in Action",
+                        description: "Explore a sample document with markdown, links, and code — editable right away.",
                         isPrimary: false,
                         colorScheme: colorScheme
                     ) {
-                        workspace.createUntitledDocument()
+                        openSampleDocument()
                     }
                 }
+                .fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: 520)
 
                 Button("or open an existing file\u{2026}") {
@@ -59,6 +60,16 @@ struct WelcomeView: View {
             .position(x: geo.size.width / 2, y: geo.size.height * 0.42)
         }
         .background(Theme.backgroundColorSwiftUI)
+        .background(TitlebarSeparatorHider())
+    }
+
+    private func openSampleDocument() {
+        guard let bundledURL = Bundle.main.url(forResource: "getting-started", withExtension: "md"),
+              let content = try? String(contentsOf: bundledURL, encoding: .utf8) else {
+            workspace.createUntitledDocument()
+            return
+        }
+        workspace.createDocumentWithContent(content)
     }
 
     private func showFolderPicker() {
@@ -79,10 +90,8 @@ struct WelcomeView: View {
             workspace.handleFirstLocationIfNeeded(folderURL: url)
         }
 
-        // Show sidebar by finding the split view controller through the window hierarchy
-        if let splitVC = NSApp.mainWindow?.contentViewController as? ClearlySplitViewController {
-            splitVC.setSidebarVisible(true, animated: false)
-        }
+        // Native shell: sidebar is owned by NavigationSplitView. Toggle via the
+        // AppKit responder chain; the framework routes to the active split view.
         workspace.isSidebarVisible = true
         UserDefaults.standard.set(true, forKey: "sidebarVisible")
     }
@@ -119,7 +128,7 @@ private struct WelcomePathCard: View {
                     .multilineTextAlignment(.center)
                     .lineSpacing(2)
             }
-            .frame(maxWidth: .infinity)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
             .padding(.horizontal, 20)
             .padding(.vertical, 24)
             .background(
@@ -157,5 +166,37 @@ private struct WelcomePathCard: View {
         } else {
             return Color.primary.opacity(colorScheme == .dark ? 0.10 : 0.06)
         }
+    }
+}
+
+// MARK: - Titlebar separator hider
+
+/// Hides the host window's titlebar separator while the welcome view is on
+/// screen, restoring the system default when it disappears.
+private struct TitlebarSeparatorHider: NSViewRepresentable {
+    final class Holder { weak var window: NSWindow? }
+
+    func makeCoordinator() -> Holder { Holder() }
+
+    func makeNSView(context: Context) -> NSView {
+        let view = NSView()
+        DispatchQueue.main.async { [weak view] in
+            guard let window = view?.window else { return }
+            context.coordinator.window = window
+            window.titlebarSeparatorStyle = .none
+        }
+        return view
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {
+        DispatchQueue.main.async { [weak nsView] in
+            guard let window = nsView?.window else { return }
+            context.coordinator.window = window
+            window.titlebarSeparatorStyle = .none
+        }
+    }
+
+    static func dismantleNSView(_ nsView: NSView, coordinator: Holder) {
+        coordinator.window?.titlebarSeparatorStyle = .automatic
     }
 }

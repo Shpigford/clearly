@@ -65,6 +65,8 @@ final class WorkspaceManager {
     private static let launchBehaviorKey = "launchBehavior"
     private static let folderIconsKey = "folderIcons"
     private static let folderColorsKey = "folderColors"
+    private static let expandedFolderPathsKey = "expandedFolderPaths"
+    private static let collapsedLocationIDsKey = "collapsedLocationIDs"
     private static let showHiddenFilesKey = "showHiddenFiles"
     private static let hasEverAddedLocationKey = "hasEverAddedLocation"
     private static let hasDeliveredGettingStartedKey = "hasDeliveredGettingStarted"
@@ -75,6 +77,10 @@ final class WorkspaceManager {
     var folderIcons: [String: String] = [:]
     /// Custom folder colors keyed by folder path (URL.path → color name).
     var folderColors: [String: String] = [:]
+    /// Expanded folder paths (URL.path). Presence = expanded; absence = collapsed.
+    var expandedFolderPaths: Set<String> = []
+    /// Collapsed vault section IDs (BookmarkedLocation.id.uuidString). Presence = collapsed; absence = expanded (default).
+    var collapsedLocationIDs: Set<String> = []
 
     /// True when the user has never added a location (first-run state).
     var isFirstRun: Bool {
@@ -94,6 +100,8 @@ final class WorkspaceManager {
         showHiddenFiles = UserDefaults.standard.bool(forKey: Self.showHiddenFilesKey)
         folderIcons = UserDefaults.standard.dictionary(forKey: Self.folderIconsKey) as? [String: String] ?? [:]
         folderColors = UserDefaults.standard.dictionary(forKey: Self.folderColorsKey) as? [String: String] ?? [:]
+        expandedFolderPaths = Set(UserDefaults.standard.stringArray(forKey: Self.expandedFolderPathsKey) ?? [])
+        collapsedLocationIDs = Set(UserDefaults.standard.stringArray(forKey: Self.collapsedLocationIDsKey) ?? [])
         restoreLocations()
         restoreRecents()
         restorePinnedFiles()
@@ -533,6 +541,7 @@ final class WorkspaceManager {
                 isDirty = false
             }
 
+            addToRecents(url)
             return true
         } catch {
             DiagnosticLog.log("Failed to save file: \(error.localizedDescription)")
@@ -746,6 +755,23 @@ final class WorkspaceManager {
         persistLocations()
     }
 
+    /// Closes any open documents inside `location`, prompting save/discard for dirty
+    /// ones, then removes the location. Returns false if the user cancels a prompt.
+    @discardableResult
+    func removeLocationClosingOpenDocuments(_ location: BookmarkedLocation) -> Bool {
+        let locationPath = location.url.standardizedFileURL.path
+        let prefix = locationPath.hasSuffix("/") ? locationPath : locationPath + "/"
+        let affectedIDs = openDocuments.compactMap { doc -> UUID? in
+            guard let docURL = doc.fileURL?.standardizedFileURL else { return nil }
+            return docURL.path.hasPrefix(prefix) ? doc.id : nil
+        }
+        for id in affectedIDs {
+            guard closeDocument(id) else { return false }
+        }
+        removeLocation(location)
+        return true
+    }
+
     func refreshTree(for locationID: UUID) {
         refreshWork[locationID]?.cancel()
 
@@ -778,6 +804,11 @@ final class WorkspaceManager {
     func clearRecents() {
         recentFiles.removeAll()
         UserDefaults.standard.removeObject(forKey: Self.lastOpenFileKey)
+        persistRecents()
+    }
+
+    func removeFromRecents(_ url: URL) {
+        recentFiles.removeAll { $0 == url }
         persistRecents()
     }
 
@@ -1054,6 +1085,69 @@ final class WorkspaceManager {
     func removeFolderColor(for folderPath: String) {
         folderColors.removeValue(forKey: folderPath)
         UserDefaults.standard.set(folderColors, forKey: Self.folderColorsKey)
+    }
+
+    // MARK: - Folder Expansion
+
+    func isFolderExpanded(_ url: URL) -> Bool {
+        expandedFolderPaths.contains(url.path)
+    }
+
+    func setFolderExpanded(_ expanded: Bool, for url: URL) {
+        let changed: Bool
+        if expanded {
+            changed = expandedFolderPaths.insert(url.path).inserted
+        } else {
+            changed = expandedFolderPaths.remove(url.path) != nil
+        }
+        guard changed else { return }
+        UserDefaults.standard.set(Array(expandedFolderPaths), forKey: Self.expandedFolderPathsKey)
+    }
+
+    func isLocationCollapsed(_ id: String) -> Bool {
+        collapsedLocationIDs.contains(id)
+    }
+
+    func setLocationCollapsed(_ collapsed: Bool, for id: String) {
+        let changed: Bool
+        if collapsed {
+            changed = collapsedLocationIDs.insert(id).inserted
+        } else {
+            changed = collapsedLocationIDs.remove(id) != nil
+        }
+        guard changed else { return }
+        UserDefaults.standard.set(Array(collapsedLocationIDs), forKey: Self.collapsedLocationIDsKey)
+    }
+
+    // MARK: - Folder Metadata Lookup
+
+    /// Direct folder color lookup (no ancestor walk). Returns nil if unset.
+    func folderColor(for url: URL) -> NSColor? {
+        guard let name = folderColors[url.path] else { return nil }
+        return Theme.folderColor(named: name)
+    }
+
+    /// Direct folder icon lookup (no ancestor walk). Returns nil if unset.
+    func folderIcon(for url: URL) -> String? {
+        folderIcons[url.path]
+    }
+
+    /// Walks ancestors of `url` up to — and including — the containing vault
+    /// root, returning the closest ancestor's color. Used to inherit a folder
+    /// color onto files inside it (Apple Notes–style).
+    func effectiveFolderColor(for url: URL) -> NSColor? {
+        guard let vaultRoot = containingVaultRoot(for: url) else { return nil }
+        var current = url
+        while current.path.count >= vaultRoot.path.count {
+            if let color = folderColor(for: current) { return color }
+            if current.path == vaultRoot.path { return nil }
+            current = current.deletingLastPathComponent()
+        }
+        return nil
+    }
+
+    private func containingVaultRoot(for url: URL) -> URL? {
+        locations.first(where: { url.path == $0.url.path || url.path.hasPrefix($0.url.path + "/") })?.url
     }
 
     // MARK: - Persistence: Locations
@@ -1460,12 +1554,8 @@ final class WorkspaceManager {
 
     private func showSidebar() {
         Task { @MainActor in
-            if let appDelegate = NSApp.delegate as? ClearlyAppDelegate {
-                appDelegate.setSidebarVisible(true, animated: false)
-            } else {
-                isSidebarVisible = true
-                UserDefaults.standard.set(true, forKey: Self.sidebarVisibleKey)
-            }
+            isSidebarVisible = true
+            UserDefaults.standard.set(true, forKey: Self.sidebarVisibleKey)
         }
     }
 

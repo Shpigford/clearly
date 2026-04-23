@@ -1,6 +1,6 @@
 # Getting Started
 
-You just added your first location — nice. The sidebar on the left now shows every markdown file in that folder. Here's a quick tour of what you can do from here.
+Welcome to Clearly. This document is fully editable — play with it as much as you want. When you're ready, press `⌘N` to start a blank note, or click **Add Vault** in the sidebar toolbar to point Clearly at a folder of markdown files. Here's a quick tour of what else you can do.
 
 ## Connect your notes
 
