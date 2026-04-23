@@ -28,7 +28,8 @@ struct MacFolderSidebar: View {
                 .listRowBackground(Color.clear)
             }
         }
-        .listStyle(.plain)
+        .listStyle(.sidebar)
+        .environment(\.sidebarRowSize, .small)
         .transaction { $0.disablesAnimations = true }
         .toolbar { sidebarToolbar }
     }
@@ -39,10 +40,8 @@ struct MacFolderSidebar: View {
         Section {
             ForEach(workspace.pinnedFiles, id: \.self) { url in
                 Text(url.deletingPathExtension().lastPathComponent)
-                    .font(.system(size: 13))
                     .lineLimit(1)
                     .truncationMode(.middle)
-                    .listRowInsets(.init(top: 2, leading: 8, bottom: 2, trailing: 8))
                     .tag(url)
                     .contextMenu {
                         Button("Unpin", systemImage: "pin.slash") {
@@ -88,13 +87,9 @@ struct MacFolderSidebar: View {
     private func outlineRow(node: FileNode) -> some View {
         if node.isDirectory {
             Label(node.name, systemImage: "folder")
-                .font(.system(size: 13))
-                .listRowInsets(.init(top: 2, leading: 8, bottom: 2, trailing: 8))
                 .contextMenu { folderContextMenu(url: node.url) }
         } else {
             fileRow(url: node.url, icon: "doc.text")
-                .font(.system(size: 13))
-                .listRowInsets(.init(top: 2, leading: 8, bottom: 2, trailing: 8))
                 .tag(node.url)
         }
     }
