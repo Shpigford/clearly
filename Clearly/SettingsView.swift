@@ -372,11 +372,12 @@ private struct SyncSettingsTab: View {
     private func locationRow(_ location: BookmarkedLocation) -> some View {
         let usage = usageByLocation[location.id]
         let isComputing = computingLocationIDs.contains(location.id)
-        let iCloud = isICloudLocation(location.url)
+        let capability = syncCapability(for: location.url)
+        let isCloud = capability != .localOnly
         VStack(alignment: .leading, spacing: 6) {
             HStack {
-                Image(systemName: iCloud ? "icloud" : "folder")
-                    .foregroundStyle(iCloud ? AnyShapeStyle(.tint) : AnyShapeStyle(.secondary))
+                Image(systemName: isCloud ? "icloud" : "folder")
+                    .foregroundStyle(isCloud ? AnyShapeStyle(.tint) : AnyShapeStyle(.secondary))
                 VStack(alignment: .leading, spacing: 2) {
                     Text(location.name)
                         .font(.system(size: 13, weight: .medium))
@@ -385,6 +386,11 @@ private struct SyncSettingsTab: View {
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                         .truncationMode(.middle)
+                    if let caption = capability.caption {
+                        Text(caption)
+                            .font(.caption2)
+                            .foregroundStyle(capability == .localOnly ? AnyShapeStyle(.orange) : AnyShapeStyle(.secondary))
+                    }
                 }
                 Spacer()
                 Button {
@@ -400,7 +406,7 @@ private struct SyncSettingsTab: View {
                     Text("\(usage.totalCount) file\(usage.totalCount == 1 ? "" : "s") · \(formattedBytes(usage.totalBytes))")
                         .font(.caption)
                         .foregroundStyle(.secondary)
-                    if iCloud && usage.placeholderCount > 0 {
+                    if isCloud && usage.placeholderCount > 0 {
                         Text("\(usage.placeholderCount) not downloaded")
                             .font(.caption)
                             .foregroundStyle(.orange)
@@ -422,6 +428,16 @@ private struct SyncSettingsTab: View {
             }
         }
         .padding(.vertical, 2)
+        .contentShape(Rectangle())
+        .contextMenu {
+            Button("Remove from List", role: .destructive) { remove(location) }
+        }
+    }
+
+    private func remove(_ location: BookmarkedLocation) {
+        guard workspace.removeLocationClosingOpenDocuments(location) else { return }
+        usageByLocation.removeValue(forKey: location.id)
+        computingLocationIDs.remove(location.id)
     }
 
     private func refreshAll() {
@@ -445,8 +461,26 @@ private struct SyncSettingsTab: View {
         }
     }
 
-    private func isICloudLocation(_ url: URL) -> Bool {
-        url.path.contains("/Mobile Documents/") || (try? url.resourceValues(forKeys: [.isUbiquitousItemKey]))?.isUbiquitousItem == true
+    private enum SyncCapability {
+        case iCloudNative
+        case desktopAndDocuments
+        case localOnly
+
+        var caption: String? {
+            switch self {
+            case .iCloudNative: return nil
+            case .desktopAndDocuments: return "Syncs via iCloud Desktop & Documents"
+            case .localOnly: return "This folder won't sync across your devices."
+            }
+        }
+    }
+
+    private func syncCapability(for url: URL) -> SyncCapability {
+        if url.path.contains("/Mobile Documents/") { return .iCloudNative }
+        if (try? url.resourceValues(forKeys: [.isUbiquitousItemKey]))?.isUbiquitousItem == true {
+            return .desktopAndDocuments
+        }
+        return .localOnly
     }
 
     private func formattedBytes(_ bytes: Int64) -> String {

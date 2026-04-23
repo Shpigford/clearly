@@ -77,6 +77,23 @@ struct MacDetailToolbar: ToolbarContent {
             .menuIndicator(.hidden)
             .disabled(workspace.activeDocumentID == nil || workspace.currentViewMode != .edit)
 
+            Menu {
+                if let url = workspace.currentFileURL {
+                    Button("Copy File Path") { CopyActions.copyFilePath(url) }
+                    Button("Copy File Name") { CopyActions.copyFileName(url) }
+                    Divider()
+                }
+                Button("Copy Markdown") { CopyActions.copyMarkdown(workspace.currentFileText) }
+                Button("Copy HTML") { CopyActions.copyHTML(workspace.currentFileText) }
+                Button("Copy Rich Text") { CopyActions.copyRichText(workspace.currentFileText) }
+                Button("Copy Plain Text") { CopyActions.copyPlainText(workspace.currentFileText) }
+            } label: {
+                Label("Copy", systemImage: "doc.on.doc")
+            }
+            .help("Copy document content")
+            .menuIndicator(.hidden)
+            .disabled(workspace.activeDocumentID == nil)
+
             Button {
                 withAnimation(Theme.Motion.smooth) { backlinksState.toggle() }
             } label: {
@@ -143,7 +160,6 @@ struct MacDetailColumn: View {
             .frame(maxWidth: .infinity)
 
             if outlineState.isVisible {
-                Divider()
                 OutlineView(outlineState: outlineState)
                     .frame(width: 240)
                     .transition(.move(edge: .trailing).combined(with: .opacity))
@@ -162,6 +178,25 @@ struct MacDetailColumn: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: NSWindow.didExitFullScreenNotification)) { _ in
             isFullscreen = false
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .init("ClearlyToggleOutline"))) { _ in
+            withAnimation(Theme.Motion.smooth) {
+                outlineState.toggle()
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .init("ClearlyToggleBacklinks"))) { _ in
+            withAnimation(Theme.Motion.smooth) {
+                backlinksState.toggle()
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .init("ClearlyToggleLineNumbers"))) { _ in
+            showLineNumbers.toggle()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .init("ClearlyJumpToLine"))) { _ in
+            guard workspace.currentViewMode == .edit else { return }
+            withAnimation(Theme.Motion.smooth) {
+                jumpToLineState.toggle()
+            }
         }
         .onChange(of: workspace.activeDocumentID) { _, _ in
             positionSyncID = UUID().uuidString
@@ -294,13 +329,6 @@ struct MacDetailColumn: View {
             outlineState: outlineState,
             onTaskToggle: { [workspace] line, checked in
                 toggleTask(at: line, checked: checked, workspace: workspace)
-            },
-            onClickToSource: { [workspace] line in
-                workspace.currentViewMode = .edit
-                NotificationCenter.default.post(
-                    name: .scrollEditorToLine, object: nil,
-                    userInfo: ["line": line]
-                )
             },
             onWikiLinkClicked: { target, _ in
                 // Basic wiki-link navigation: try to open matching file by name.

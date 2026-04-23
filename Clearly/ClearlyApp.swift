@@ -701,6 +701,19 @@ struct ClearlyApp: App {
                     workspace.showOpenPanel()
                 }
                 .keyboardShortcut("o", modifiers: .command)
+
+                Menu("Open Recent") {
+                    ForEach(workspace.recentFiles, id: \.self) { url in
+                        Button(url.deletingPathExtension().lastPathComponent) {
+                            workspace.openFile(at: url)
+                        }
+                    }
+                    Divider()
+                    Button("Clear Menu") {
+                        workspace.clearRecents()
+                    }
+                }
+                .disabled(workspace.recentFiles.isEmpty)
             }
 
             // Save

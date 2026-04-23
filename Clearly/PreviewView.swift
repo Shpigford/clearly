@@ -30,7 +30,6 @@ struct PreviewView: NSViewRepresentable {
     var findState: FindState?
     var outlineState: OutlineState?
     var onTaskToggle: ((Int, Bool) -> Void)?
-    var onClickToSource: ((Int) -> Void)?
     var onWikiLinkClicked: ((String, String?) -> Void)?
     var onTagClicked: ((String) -> Void)?
     var wikiFileNames: Set<String>?
@@ -64,7 +63,6 @@ struct PreviewView: NSViewRepresentable {
         config.userContentController.add(context.coordinator, name: "scrollSync")
         config.userContentController.add(context.coordinator, name: "copyToClipboard")
         config.userContentController.add(context.coordinator, name: "taskToggle")
-        config.userContentController.add(context.coordinator, name: "clickToSource")
         config.userContentController.add(context.coordinator, name: "selectionCapture")
         config.userContentController.addUserScript(Self.copyButtonUserScript())
         let webView = DraggableWKWebView(frame: .zero, configuration: config)
@@ -76,7 +74,6 @@ struct PreviewView: NSViewRepresentable {
         context.coordinator.findState = findState
         context.coordinator.outlineState = outlineState
         context.coordinator.onTaskToggle = onTaskToggle
-        context.coordinator.onClickToSource = onClickToSource
         context.coordinator.onWikiLinkClicked = onWikiLinkClicked
         context.coordinator.onTagClicked = onTagClicked
         let coordinator = context.coordinator
@@ -150,7 +147,6 @@ struct PreviewView: NSViewRepresentable {
         webView.configuration.userContentController.removeScriptMessageHandler(forName: "scrollSync")
         webView.configuration.userContentController.removeScriptMessageHandler(forName: "copyToClipboard")
         webView.configuration.userContentController.removeScriptMessageHandler(forName: "taskToggle")
-        webView.configuration.userContentController.removeScriptMessageHandler(forName: "clickToSource")
     }
 
     private func loadHTML(in webView: WKWebView, context: Context) {
@@ -284,21 +280,6 @@ struct PreviewView: NSViewRepresentable {
                 }
             });
         });
-        // Click-to-source: double-click to jump to editor
-        document.addEventListener('dblclick', function(e) {
-            var el = e.target;
-            while (el && el !== document.body) {
-                var sp = el.getAttribute('data-sourcepos');
-                if (sp) {
-                    var m = /^(\\d+):/.exec(sp);
-                    if (m && window.webkit && window.webkit.messageHandlers.clickToSource) {
-                        window.webkit.messageHandlers.clickToSource.postMessage(parseInt(m[1], 10));
-                    }
-                    return;
-                }
-                el = el.parentElement;
-            }
-        });
         // Image lightbox
         document.querySelectorAll('img').forEach(function(img) {
             img.style.cursor = 'zoom-in';
@@ -373,7 +354,6 @@ struct PreviewView: NSViewRepresentable {
         var findState: FindState?
         var outlineState: OutlineState?
         var onTaskToggle: ((Int, Bool) -> Void)?
-        var onClickToSource: ((Int) -> Void)?
         var onWikiLinkClicked: ((String, String?) -> Void)?
         var onTagClicked: ((String) -> Void)?
         var skipNextReload = false
@@ -751,13 +731,6 @@ struct PreviewView: NSViewRepresentable {
                     DispatchQueue.main.async { [weak self] in
                         self?.onTaskToggle?(line, checked)
                     }
-                }
-                return
-            }
-
-            if message.name == "clickToSource", let line = message.body as? Int {
-                DispatchQueue.main.async { [weak self] in
-                    self?.onClickToSource?(line)
                 }
                 return
             }
