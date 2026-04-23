@@ -469,8 +469,19 @@ public final class MarkdownSyntaxHighlighter: NSObject {
         let text = textStorage.string
         let nsText = text as NSString
 
-        // Compute the post-edit affected range and expand to paragraph boundaries
-        let postEditRange = NSRange(location: editedRange.location, length: replacementLength)
+        // Compute the post-edit affected range and expand to paragraph boundaries.
+        // iOS predictive text / marked-text composition can fire textViewDidChange
+        // without a matching shouldChangeTextIn, so the cached editedRange may no
+        // longer fit the live string. Validate before calling paragraphRange, which
+        // throws NSRangeException on out-of-bounds input.
+        let textLength = nsText.length
+        let safeLocation = max(0, min(editedRange.location, textLength))
+        let safeLength = max(0, min(replacementLength, textLength - safeLocation))
+        if safeLocation != editedRange.location || safeLength != replacementLength {
+            highlightAll(textStorage, caller: "\(caller)-stale-range")
+            return
+        }
+        let postEditRange = NSRange(location: safeLocation, length: safeLength)
         let paragraphRange = nsText.paragraphRange(for: postEditRange)
 
         // If the edited paragraph contains a block delimiter, the change could affect
