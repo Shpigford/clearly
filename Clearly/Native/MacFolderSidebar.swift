@@ -30,7 +30,6 @@ struct MacFolderSidebar: View {
         }
         .listStyle(.sidebar)
         .environment(\.sidebarRowSize, .small)
-        .tint(Color.primary.opacity(0.12))
         .transaction { $0.disablesAnimations = true }
         .toolbar { sidebarToolbar }
     }
@@ -44,6 +43,7 @@ struct MacFolderSidebar: View {
                     .lineLimit(1)
                     .truncationMode(.middle)
                     .tag(url)
+                    .listRowBackground(SubtleSelectionBackground())
                     .contextMenu {
                         Button("Unpin", systemImage: "pin.slash") {
                             workspace.togglePin(url)
@@ -88,10 +88,12 @@ struct MacFolderSidebar: View {
     private func outlineRow(node: FileNode) -> some View {
         if node.isDirectory {
             Label(node.name, systemImage: "folder")
+                .listRowBackground(SubtleSelectionBackground())
                 .contextMenu { folderContextMenu(url: node.url) }
         } else {
             fileRow(url: node.url, icon: "doc.text")
                 .tag(node.url)
+                .listRowBackground(SubtleSelectionBackground())
         }
     }
 
@@ -165,3 +167,27 @@ private extension FileNode {
         return children
     }
 }
+
+/// Paints an opaque subtle gray fill ONLY on the selected sidebar row,
+/// overriding the default system-accent selection pill that `.listStyle(.sidebar)`
+/// renders. Detection is via the `backgroundProminence` environment — SwiftUI
+/// bumps it to `.increased` on the selected row (macOS 14+). The fill must be
+/// fully opaque or the default blue pill bleeds through underneath.
+private struct SubtleSelectionBackground: View {
+    @Environment(\.backgroundProminence) private var prominence
+    @Environment(\.colorScheme) private var colorScheme
+
+    var body: some View {
+        if prominence == .increased {
+            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                .fill(colorScheme == .dark
+                      ? Color(white: 0.22)
+                      : Color(white: 0.88))
+                .padding(.horizontal, 4)
+                .padding(.vertical, 1)
+        } else {
+            Color.clear
+        }
+    }
+}
+
