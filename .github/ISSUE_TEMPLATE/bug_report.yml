@@ -2,6 +2,16 @@ name: Bug Report
 description: Something isn't working right
 labels: ["bug"]
 body:
+  - type: checkboxes
+    id: platforms
+    attributes:
+      label: Platform(s) affected
+      description: Tick every platform where you can reproduce this bug.
+      options:
+        - label: macOS
+        - label: iOS
+        - label: iPadOS
+
   - type: textarea
     id: description
     attributes:
@@ -27,8 +37,8 @@ body:
     id: app-version
     attributes:
       label: App version
-      description: "Found in Clearly → Settings → About"
-      placeholder: "e.g. 1.7.4"
+      description: "macOS: Clearly → Settings → About. iOS/iPadOS: Settings screen."
+      placeholder: "e.g. 2.4.0 (240)"
     validations:
       required: true
 
@@ -38,20 +48,31 @@ body:
       label: Installation source
       description: How did you install Clearly?
       options:
-        - Direct download (from website or GitHub)
+        - Direct download (Sparkle / GitHub)
         - Mac App Store
+        - App Store (iPhone/iPad)
+        - TestFlight
         - Not sure
     validations:
       required: true
 
   - type: input
-    id: macos-version
+    id: os-version
     attributes:
-      label: macOS version
-      description: "Found in  → About This Mac"
-      placeholder: "e.g. 15.3"
+      label: OS version
+      description: "macOS:  → About This Mac. iOS/iPadOS: Settings → General → About → Software Version."
+      placeholder: "e.g. macOS 26.1, iOS 18.2, iPadOS 18.2"
     validations:
       required: true
+
+  - type: input
+    id: device
+    attributes:
+      label: Device (iOS / iPadOS only)
+      description: "Settings → General → About → Model Name, or the hardware identifier (e.g. iPhone16,1)."
+      placeholder: "e.g. iPhone 15 Pro, iPad Air M2"
+    validations:
+      required: false
 
   - type: textarea
     id: screenshots
