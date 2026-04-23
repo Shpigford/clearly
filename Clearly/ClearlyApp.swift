@@ -758,6 +758,16 @@ struct ClearlyApp: App {
                 Button("Clearly Help") {
                     NSWorkspace.shared.open(URL(string: "https://github.com/Shpigford/clearly/issues")!)
                 }
+                Button("Report a Bug…") {
+                    let version = (Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String) ?? "?"
+                    let build = (Bundle.main.infoDictionary?["CFBundleVersion"] as? String) ?? "?"
+                    let url = BugReportURL.build(
+                        platform: .macOS,
+                        appVersion: "\(version) (\(build))",
+                        osVersion: ProcessInfo.processInfo.operatingSystemVersionString
+                    )
+                    NSWorkspace.shared.open(url)
+                }
                 Divider()
                 Button("Sample Document") {
                     if let url = Bundle.main.url(forResource: "demo", withExtension: "md"),
