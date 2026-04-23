@@ -53,10 +53,18 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValid
     private var quickSwitcherMonitor: Any?
     private var themeObserver: Any?
     private var isProgrammaticallyClosingWindows = false
+    private weak var trackedSettingsWindow: NSWindow?
+    private var isOpeningSettingsFromMenuBar = false
 
     /// Returns the active main document window if SwiftUI has presented one.
     var mainWindow: NSWindow? {
         NSApp.windows.first { WindowRouter.isUserFacingDocumentWindow($0) }
+    }
+
+    /// Suppress document-window focus while menu-bar-driven Settings activation
+    /// is in flight or while the Settings window stays open.
+    var shouldSuppressMainWindowFocus: Bool {
+        isOpeningSettingsFromMenuBar || (trackedSettingsWindow != nil && trackedSettingsWindow?.isMiniaturized == false)
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -85,9 +93,12 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValid
 
         // Watch multiple signals — window close, app deactivate, main window change
         let nc = NotificationCenter.default
-        observers.append(nc.addObserver(forName: NSWindow.willCloseNotification, object: nil, queue: .main) { [weak self] _ in
+        observers.append(nc.addObserver(forName: NSWindow.willCloseNotification, object: nil, queue: .main) { [weak self] notification in
             Task { @MainActor [weak self] in
                 guard let self else { return }
+                if let window = notification.object as? NSWindow {
+                    self.clearTrackedSettingsWindow(window)
+                }
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in
                     self?.updateActivationPolicy()
                 }
@@ -550,10 +561,27 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValid
     /// scene — we just need to bring whichever instance exists to the front on
     /// dock clicks and re-activation events.
     private func bringMainWindowToFrontIfNeeded() {
+        guard !shouldSuppressMainWindowFocus else { return }
         guard isForegroundActivation, !ScratchpadManager.shared.hasOpenWindows else { return }
         if let window = NSApp.windows.first(where: { WindowRouter.isUserFacingDocumentWindow($0) }) {
             window.makeKeyAndOrderFront(nil)
         }
+    }
+
+    func prepareForMenuBarSettingsActivation() {
+        isOpeningSettingsFromMenuBar = true
+    }
+
+    func registerSettingsWindow(_ window: NSWindow) {
+        trackedSettingsWindow = window
+        isOpeningSettingsFromMenuBar = false
+    }
+
+    func clearTrackedSettingsWindow(_ window: NSWindow) {
+        if trackedSettingsWindow === window {
+            trackedSettingsWindow = nil
+        }
+        isOpeningSettingsFromMenuBar = false
     }
 
     func closeDocumentWindowsToMenuBar() {
@@ -898,6 +926,37 @@ struct ClearlyApp: App {
         }
     }
 
+}
+
+struct SettingsWindowObserver: NSViewRepresentable {
+    final class Holder {
+        weak var window: NSWindow?
+    }
+
+    func makeCoordinator() -> Holder { Holder() }
+
+    func makeNSView(context: Context) -> NSView {
+        let view = NSView()
+        registerWindow(from: view, context: context)
+        return view
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {
+        registerWindow(from: nsView, context: context)
+    }
+
+    static func dismantleNSView(_ nsView: NSView, coordinator: Holder) {
+        guard let window = coordinator.window else { return }
+        ClearlyAppDelegate.shared?.clearTrackedSettingsWindow(window)
+    }
+
+    private func registerWindow(from view: NSView, context: Context) {
+        DispatchQueue.main.async { [weak view] in
+            guard let window = view?.window else { return }
+            context.coordinator.window = window
+            ClearlyAppDelegate.shared?.registerSettingsWindow(window)
+        }
+    }
 }
 
 struct FindCommand: View {

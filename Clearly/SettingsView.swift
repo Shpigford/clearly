@@ -42,6 +42,7 @@ struct SettingsView: View {
         }
         .frame(width: 460)
         .fixedSize(horizontal: false, vertical: true)
+        .background(SettingsWindowObserver())
     }
 
     @State private var launchAtLogin = SMAppService.mainApp.status == .enabled
