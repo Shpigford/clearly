@@ -13,13 +13,14 @@ public enum UntitledRename {
 
     /// Destination URL for an auto-rename if `url` is currently named
     /// `untitled*`, `text` yields a non-empty sanitized first heading/line,
-    /// and a collision-free slot (`stem.ext` or `stem-N.ext`) exists in the
-    /// same parent directory. `nil` otherwise.
+    /// and a collision-free slot (`stem.ext` or `stem N.ext`) exists in the
+    /// same parent directory. `nil` otherwise. Casing and spaces from the
+    /// source text are preserved — only filesystem-invalid chars are stripped.
     public static func proposedRenameURL(for url: URL, text: String) -> URL? {
         let stem = (url.lastPathComponent as NSString).deletingPathExtension
         guard isUntitledStem(stem) else { return nil }
         guard let rawTitle = extractTitle(from: text) else { return nil }
-        let sanitized = sanitizeKebab(rawTitle)
+        let sanitized = sanitizeFilename(rawTitle)
         guard !sanitized.isEmpty, sanitized != stem else { return nil }
 
         let parent = url.deletingLastPathComponent()
@@ -29,46 +30,44 @@ public enum UntitledRename {
         var attempt = 1
         while FileManager.default.fileExists(atPath: parent.appendingPathComponent("\(candidate).\(ext)").path) {
             attempt += 1
-            candidate = "\(sanitized)-\(attempt)"
+            candidate = "\(sanitized) \(attempt)"
             if attempt > 50 { return nil }
         }
         return parent.appendingPathComponent("\(candidate).\(ext)")
     }
 
-    /// Next available `untitled.md` / `untitled-2.md` / … URL inside `parent`.
+    /// Next available `untitled.md` / `untitled 2.md` / … URL inside `parent`.
     public static func nextUntitledURL(in parent: URL, extension ext: String = "md") -> URL {
         var attempt = 0
         var url: URL
         repeat {
             attempt += 1
-            let name = attempt == 1 ? "untitled.\(ext)" : "untitled-\(attempt).\(ext)"
+            let name = attempt == 1 ? "untitled.\(ext)" : "untitled \(attempt).\(ext)"
             url = parent.appendingPathComponent(name)
         } while FileManager.default.fileExists(atPath: url.path)
         return url
     }
 
-    /// Sanitize into strict kebab-case: ASCII letters/digits only, dashes as
-    /// separators, accented chars transliterated, runs collapsed, 80-char cap.
-    /// Idempotent — safe to call on already-kebab input.
-    public static func sanitizeKebab(_ raw: String) -> String {
-        let mutable = NSMutableString(string: raw)
-        CFStringTransform(mutable, nil, "Any-Latin; Latin-ASCII" as CFString, false)
-        let lowered = String(mutable).lowercased()
-
+    /// Lightly sanitize a filename stem: strip `/`, `\`, `:`, `?`, `*`, `"`,
+    /// `<`, `>`, `|`, NUL, and control characters; trim surrounding
+    /// whitespace; drop any leading dot so the file isn't hidden; cap at
+    /// 240 characters so there's room for the extension and a collision
+    /// suffix under APFS's 255-byte filename limit. Casing and internal
+    /// spaces are preserved exactly as typed.
+    public static func sanitizeFilename(_ raw: String) -> String {
+        let forbidden: Set<Character> = ["/", "\\", ":", "?", "*", "\"", "<", ">", "|"]
         var result = ""
-        var inDashRun = true
-        for char in lowered {
-            if char.isASCII && (char.isLetter || char.isNumber) {
-                result.append(char)
-                inDashRun = false
-            } else if !inDashRun {
-                result.append("-")
-                inDashRun = true
+        for char in raw {
+            if forbidden.contains(char) { continue }
+            if char.unicodeScalars.contains(where: { $0.value == 0 || $0.properties.generalCategory == .control }) {
+                continue
             }
+            result.append(char)
         }
-        while result.hasSuffix("-") { result.removeLast() }
-        if result.count > 80 { result = String(result.prefix(80)) }
-        return result
+        var trimmed = result.trimmingCharacters(in: .whitespacesAndNewlines)
+        while trimmed.hasPrefix(".") { trimmed.removeFirst() }
+        if trimmed.count > 240 { trimmed = String(trimmed.prefix(240)) }
+        return trimmed
     }
 
     static func extractTitle(from text: String) -> String? {

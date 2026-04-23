@@ -431,7 +431,7 @@ public final class VaultSession {
         guard let vault = currentVault else {
             throw VaultSessionError.readFailed("no vault attached")
         }
-        let cleanName = UntitledRename.sanitizeKebab(name)
+        let cleanName = UntitledRename.sanitizeFilename(name)
         guard !cleanName.isEmpty else {
             throw VaultSessionError.readFailed("folder name is empty")
         }
@@ -513,7 +513,7 @@ public final class VaultSession {
             }
             return trimmed
         }()
-        let stem = UntitledRename.sanitizeKebab(preExt)
+        let stem = UntitledRename.sanitizeFilename(preExt)
         guard !stem.isEmpty else {
             throw VaultSessionError.readFailed("new name is empty")
         }

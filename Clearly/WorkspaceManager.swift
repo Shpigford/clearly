@@ -197,7 +197,7 @@ final class WorkspaceManager {
     /// that name already exists. Returns the created folder URL.
     @discardableResult
     func createFolder(named name: String, in parent: URL) throws -> URL {
-        let cleanName = UntitledRename.sanitizeKebab(name)
+        let cleanName = UntitledRename.sanitizeFilename(name)
         guard !cleanName.isEmpty else {
             throw NSError(domain: "ClearlyWorkspace", code: 1, userInfo: [NSLocalizedDescriptionKey: "Folder name is empty."])
         }

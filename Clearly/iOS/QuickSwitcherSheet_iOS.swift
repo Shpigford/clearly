@@ -291,7 +291,7 @@ struct QuickSwitcherSheet_iOS: View {
         if stem.lowercased().hasSuffix(".md") {
             stem = String(stem.dropLast(3))
         }
-        let sanitized = UntitledRename.sanitizeKebab(stem)
+        let sanitized = UntitledRename.sanitizeFilename(stem)
         guard !sanitized.isEmpty else { return "untitled.md" }
         return "\(sanitized).md"
     }
