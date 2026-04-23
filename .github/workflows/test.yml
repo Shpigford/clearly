@@ -136,11 +136,13 @@ jobs:
 
       - name: Build Clearly-iOS (iPhone simulator, Debug)
         # Skip the AppIcon.icon asset compile in CI — see Mac build job above.
+        # Use generic iOS Simulator destination so the build doesn't depend on
+        # a specific named device being pre-installed on the runner image.
         run: |
           xcodebuild \
             -scheme Clearly-iOS \
             -configuration Debug \
-            -destination 'platform=iOS Simulator,name=iPhone 17,OS=latest' \
+            -destination 'generic/platform=iOS Simulator' \
             CODE_SIGN_IDENTITY="" \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGNING_ALLOWED=NO \
