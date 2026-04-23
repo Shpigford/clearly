@@ -1,0 +1,521 @@
+<!DOCTYPE html>
+<html lang="en" style="color-scheme: dark">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="icon" type="image/png" href="/favicon-96x96.png" sizes="96x96">
+    <link rel="shortcut icon" href="/favicon.ico">
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
+    <meta name="apple-mobile-web-app-title" content="Clearly">
+    <link rel="manifest" href="/site.webmanifest">
+
+    <title>Changelog — Clearly</title>
+    <meta name="description" content="Release notes for Clearly — a native markdown editor and knowledge base for Mac and iPad.">
+    <meta property="og:title" content="Changelog — Clearly">
+    <meta property="og:description" content="Release notes for Clearly. Mac and iPad, newest first.">
+    <meta property="og:image" content="https://clearly.md/icon.png">
+    <meta property="og:url" content="https://clearly.md/changelog">
+    <meta name="twitter:card" content="summary_large_image">
+
+    <link rel="preconnect" href="https://rsms.me" crossorigin>
+    <link href="https://rsms.me/inter/inter.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/geist@1.3.1/dist/fonts/geist-mono/style.css" rel="stylesheet">
+
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['InterVariable', 'Inter', 'system-ui', 'sans-serif'],
+                        mono: ['"Geist Mono"', 'ui-monospace', 'monospace'],
+                    },
+                },
+            },
+        }
+    </script>
+    <style>
+        html { scroll-behavior: smooth; }
+        :root { font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11'; }
+    </style>
+</head>
+<body class="bg-[#0a0a0a] text-zinc-300 antialiased overflow-x-hidden">
+
+    <nav class="relative z-20">
+        <div class="max-w-3xl mx-auto px-6 py-4 flex items-center justify-between text-sm">
+            <a href="/" class="flex items-center gap-2 text-white font-medium hover:opacity-80 transition-opacity">
+                <img src="icon.png" alt="" class="size-6 rounded-md">
+                Clearly
+            </a>
+            <div class="flex items-center gap-5 text-zinc-400">
+                <a href="/changelog" class="text-white" aria-current="page">Changelog</a>
+                <a href="https://github.com/Shpigford/clearly" class="hover:text-white transition-colors">GitHub</a>
+            </div>
+        </div>
+    </nav>
+
+    <main class="relative z-10">
+        <section class="pt-10 pb-8 md:pt-16 md:pb-12">
+            <div class="max-w-3xl mx-auto px-6">
+                <h1 class="text-3xl sm:text-4xl font-medium tracking-tight text-white text-balance">
+                    Changelog
+                </h1>
+                <p class="mt-3 text-zinc-400 text-pretty max-w-[60ch]">
+                    Everything that's shipped in Clearly — Mac and iPad, newest first.
+                </p>
+            </div>
+        </section>
+
+        <section class="pb-24">
+            <div class="max-w-3xl mx-auto px-6 space-y-4">
+                <article id="mac-v2.4.0" class="rounded-xl outline-1 -outline-offset-1 outline-white/10 bg-white/[0.02] p-6 md:p-8">
+                    <header class="flex flex-wrap items-center gap-3 mb-4">
+                        <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-blue-500/10 text-blue-300 ring-1 ring-inset ring-blue-500/20">Mac</span>
+                        <h2 class="text-lg font-medium text-white font-mono tracking-tight">v2.4.0</h2>
+                        <span class="ml-auto text-sm text-zinc-500 font-mono">2026-04-23</span>
+                    </header>
+                    <ul class="space-y-2 text-sm text-zinc-400 list-none pl-0">
+                    <li class="relative pl-5 before:content-[''] before:absolute before:left-1 before:top-[0.55rem] before:size-1 before:rounded-full before:bg-zinc-600">Native macOS shell: two-column NavigationSplitView with folder tree + detail pane</li>
+                    <li class="relative pl-5 before:content-[''] before:absolute before:left-1 before:top-[0.55rem] before:size-1 before:rounded-full before:bg-zinc-600">Sidebar inherits your System Settings accent color (like Finder)</li>
+                    <li class="relative pl-5 before:content-[''] before:absolute before:left-1 before:top-[0.55rem] before:size-1 before:rounded-full before:bg-zinc-600">New Recents and Tags sections in the sidebar</li>
+                    <li class="relative pl-5 before:content-[''] before:absolute before:left-1 before:top-[0.55rem] before:size-1 before:rounded-full before:bg-zinc-600">Customize each folder's icon and color; nested files inherit the look</li>
+                    <li class="relative pl-5 before:content-[''] before:absolute before:left-1 before:top-[0.55rem] before:size-1 before:rounded-full before:bg-zinc-600">⌘-click a sidebar row to open the note in a new tab</li>
+                    <li class="relative pl-5 before:content-[''] before:absolute before:left-1 before:top-[0.55rem] before:size-1 before:rounded-full before:bg-zinc-600">New Copy menu in the toolbar: copy path, filename, markdown, HTML, RTF, or plain text</li>
+                    <li class="relative pl-5 before:content-[''] before:absolute before:left-1 before:top-[0.55rem] before:size-1 before:rounded-full before:bg-zinc-600">Sample Document now opens an editable copy of the demo instead of a blank file</li>
+                    <li class="relative pl-5 before:content-[''] before:absolute before:left-1 before:top-[0.55rem] before:size-1 before:rounded-full before:bg-zinc-600">File → Open Recent lists recently opened documents</li>
+                    <li class="relative pl-5 before:content-[''] before:absolute before:left-1 before:top-[0.55rem] before:size-1 before:rounded-full before:bg-zinc-600">Window title shows the active document name, with a dot when unsaved</li>
+                    <li class="relative pl-5 before:content-[''] before:absolute before:left-1 before:top-[0.55rem] before:size-1 before:rounded-full before:bg-zinc-600">Sync Settings labels vault locations by capability (iCloud, Desktop &amp; Documents, local-only)</li>
+                    <li class="relative pl-5 before:content-[''] before:absolute before:left-1 before:top-[0.55rem] before:size-1 before:rounded-full before:bg-zinc-600">Minimum macOS raised to Sequoia 15 so Clearly picks up Liquid Glass on macOS 26 automatically</li>
+                    </ul>
+                </article>
+                <article id="ios-v1.0.0" class="rounded-xl outline-1 -outline-offset-1 outline-white/10 bg-white/[0.02] p-6 md:p-8">
+                    <header class="flex flex-wrap items-center gap-3 mb-4">
+                        <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-purple-500/10 text-purple-300 ring-1 ring-inset ring-purple-500/20">iOS</span>
+                        <h2 class="text-lg font-medium text-white font-mono tracking-tight">v1.0.0</h2>
+                        <span class="ml-auto text-sm text-zinc-500 font-mono">2026-04-22</span>
+                    </header>
+                    <ul class="space-y-2 text-sm text-zinc-400 list-none pl-0">
+                    <li class="relative pl-5 before:content-[''] before:absolute before:left-1 before:top-[0.55rem] before:size-1 before:rounded-full before:bg-zinc-600">Initial iOS/iPadOS TestFlight release</li>
+                    <li class="relative pl-5 before:content-[''] before:absolute before:left-1 before:top-[0.55rem] before:size-1 before:rounded-full before:bg-zinc-600">Browse your iCloud vault with a folder-based sidebar, same vault as the Mac app</li>
+                    <li class="relative pl-5 before:content-[''] before:absolute before:left-1 before:top-[0.55rem] before:size-1 before:rounded-full before:bg-zinc-600">Syntax-highlighted markdown editor with coordinated writes and autosave</li>
+                    <li class="relative pl-5 before:content-[''] before:absolute before:left-1 before:top-[0.55rem] before:size-1 before:rounded-full before:bg-zinc-600">Preview mode with wiki-link navigation</li>
+                    <li class="relative pl-5 before:content-[''] before:absolute before:left-1 before:top-[0.55rem] before:size-1 before:rounded-full before:bg-zinc-600">FTS5-backed full-text search and Cmd+K quick switcher</li>
+                    <li class="relative pl-5 before:content-[''] before:absolute before:left-1 before:top-[0.55rem] before:size-1 before:rounded-full before:bg-zinc-600">Backlinks, outline, and tags surfaces for the current note</li>
+                    <li class="relative pl-5 before:content-[''] before:absolute before:left-1 before:top-[0.55rem] before:size-1 before:rounded-full before:bg-zinc-600">iCloud conflict detection with a sibling-file diff view</li>
+                    <li class="relative pl-5 before:content-[''] before:absolute before:left-1 before:top-[0.55rem] before:size-1 before:rounded-full before:bg-zinc-600">iPad 3-column split view with a multi-document tab bar</li>
+                    <li class="relative pl-5 before:content-[''] before:absolute before:left-1 before:top-[0.55rem] before:size-1 before:rounded-full before:bg-zinc-600">Sync settings surface for iCloud status and controls</li>
+                    </ul>
+                </article>
+                <article id="mac-v2.3.0" class="rounded-xl outline-1 -outline-offset-1 outline-white/10 bg-white/[0.02] p-6 md:p-8">
+                    <header class="flex flex-wrap items-center gap-3 mb-4">
+                        <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-blue-500/10 text-blue-300 ring-1 ring-inset ring-blue-500/20">Mac</span>
+                        <h2 class="text-lg font-medium text-white font-mono tracking-tight">v2.3.0</h2>
+                        <span class="ml-auto text-sm text-zinc-500 font-mono">2026-04-20</span>
+                    </header>
+                    <ul class="space-y-2 text-sm text-zinc-400 list-none pl-0">
+                    <li class="relative pl-5 before:content-[''] before:absolute before:left-1 before:top-[0.55rem] before:size-1 before:rounded-full before:bg-zinc-600">`clearly` command-line tool shipped — install from Settings → Command Line for terminal and MCP-client access to your vault</li>
+                    <li class="relative pl-5 before:content-[''] before:absolute before:left-1 before:top-[0.55rem] before:size-1 before:rounded-full before:bg-zinc-600">MCP server grows from 3 to 9 tools: `read_note`, `list_notes`, `get_headings`, `get_frontmatter` (reads) plus `create_note`, `update_note` (writes)</li>
+                    <li class="relative pl-5 before:content-[''] before:absolute before:left-1 before:top-[0.55rem] before:size-1 before:rounded-full before:bg-zinc-600">Structured JSON on every tool, input/output schemas published via MCP, stable error identifiers</li>
+                    <li class="relative pl-5 before:content-[''] before:absolute before:left-1 before:top-[0.55rem] before:size-1 before:rounded-full before:bg-zinc-600">Agent-friendly `--help` with examples on every CLI subcommand</li>
+                    <li class="relative pl-5 before:content-[''] before:absolute before:left-1 before:top-[0.55rem] before:size-1 before:rounded-full before:bg-zinc-600">XCTest integration suite drives every MCP tool end-to-end on every PR</li>
+                    <li class="relative pl-5 before:content-[''] before:absolute before:left-1 before:top-[0.55rem] before:size-1 before:rounded-full before:bg-zinc-600">`ClearlyMCP` target renamed to `ClearlyCLI` internally (same bundled binary, new subcommand tree)</li>
+                    <li class="relative pl-5 before:content-[''] before:absolute before:left-1 before:top-[0.55rem] before:size-1 before:rounded-full before:bg-zinc-600">New Command Line tab in Settings replaces the MCP Config tab</li>
+                    </ul>
+                </article>
+                <article id="mac-v2.2.0" class="rounded-xl outline-1 -outline-offset-1 outline-white/10 bg-white/[0.02] p-6 md:p-8">
+                    <header class="flex flex-wrap items-center gap-3 mb-4">
+                        <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-blue-500/10 text-blue-300 ring-1 ring-inset ring-blue-500/20">Mac</span>
+                        <h2 class="text-lg font-medium text-white font-mono tracking-tight">v2.2.0</h2>
+                        <span class="ml-auto text-sm text-zinc-500 font-mono">2026-04-16</span>
+                    </header>
+                    <ul class="space-y-2 text-sm text-zinc-400 list-none pl-0">
+                    <li class="relative pl-5 before:content-[''] before:absolute before:left-1 before:top-[0.55rem] before:size-1 before:rounded-full before:bg-zinc-600">Hide frontmatter in preview mode with a new toggle in Settings</li>
+                    <li class="relative pl-5 before:content-[''] before:absolute before:left-1 before:top-[0.55rem] before:size-1 before:rounded-full before:bg-zinc-600">Empty folders now appear in the sidebar file tree</li>
+                    <li class="relative pl-5 before:content-[''] before:absolute before:left-1 before:top-[0.55rem] before:size-1 before:rounded-full before:bg-zinc-600">Drag the window from the top of preview mode</li>
+                    <li class="relative pl-5 before:content-[''] before:absolute before:left-1 before:top-[0.55rem] before:size-1 before:rounded-full before:bg-zinc-600">Sidebar width persists correctly on macOS 15</li>
+                    <li class="relative pl-5 before:content-[''] before:absolute before:left-1 before:top-[0.55rem] before:size-1 before:rounded-full before:bg-zinc-600">MCP server config now points to the correct binary</li>
+                    <li class="relative pl-5 before:content-[''] before:absolute before:left-1 before:top-[0.55rem] before:size-1 before:rounded-full before:bg-zinc-600">Opening a scratchpad no longer brings the main workspace window forward</li>
+                    <li class="relative pl-5 before:content-[''] before:absolute before:left-1 before:top-[0.55rem] before:size-1 before:rounded-full before:bg-zinc-600">Sparkle update checks disabled in debug builds</li>
+                    </ul>
+                </article>
+                <article id="mac-v2.1.0" class="rounded-xl outline-1 -outline-offset-1 outline-white/10 bg-white/[0.02] p-6 md:p-8">
+                    <header class="flex flex-wrap items-center gap-3 mb-4">
+                        <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-blue-500/10 text-blue-300 ring-1 ring-inset ring-blue-500/20">Mac</span>
+                        <h2 class="text-lg font-medium text-white font-mono tracking-tight">v2.1.0</h2>
+                        <span class="ml-auto text-sm text-zinc-500 font-mono">2026-04-15</span>
+                    </header>
+                    <ul class="space-y-2 text-sm text-zinc-400 list-none pl-0">
+                    <li class="relative pl-5 before:content-[''] before:absolute before:left-1 before:top-[0.55rem] before:size-1 before:rounded-full before:bg-zinc-600">Pin favorite documents to the top of the sidebar for quick access</li>
+                    <li class="relative pl-5 before:content-[''] before:absolute before:left-1 before:top-[0.55rem] before:size-1 before:rounded-full before:bg-zinc-600">Set a preferred content width for comfortable reading on wide displays</li>
+                    <li class="relative pl-5 before:content-[''] before:absolute before:left-1 before:top-[0.55rem] before:size-1 before:rounded-full before:bg-zinc-600">Welcome view with a Getting Started guide greets new users on first launch</li>
+                    <li class="relative pl-5 before:content-[''] before:absolute before:left-1 before:top-[0.55rem] before:size-1 before:rounded-full before:bg-zinc-600">Middle-click a tab to close it</li>
+                    <li class="relative pl-5 before:content-[''] before:absolute before:left-1 before:top-[0.55rem] before:size-1 before:rounded-full before:bg-zinc-600">Toggle the Go to Line and Find bars open/closed with their keyboard shortcuts</li>
+                    <li class="relative pl-5 before:content-[''] before:absolute before:left-1 before:top-[0.55rem] before:size-1 before:rounded-full before:bg-zinc-600">Selected text stays highlighted when switching between editor and preview</li>
+                    <li class="relative pl-5 before:content-[''] before:absolute before:left-1 before:top-[0.55rem] before:size-1 before:rounded-full before:bg-zinc-600">Sidebar remembers its width between app restarts</li>
+                    <li class="relative pl-5 before:content-[''] before:absolute before:left-1 before:top-[0.55rem] before:size-1 before:rounded-full before:bg-zinc-600">Editor stays responsive on large markdown files</li>
+                    <li class="relative pl-5 before:content-[''] before:absolute before:left-1 before:top-[0.55rem] before:size-1 before:rounded-full before:bg-zinc-600">Sidebar and vault index skip heavy directories and respect .gitignore</li>
+                    <li class="relative pl-5 before:content-[''] before:absolute before:left-1 before:top-[0.55rem] before:size-1 before:rounded-full before:bg-zinc-600">Window controls stay accessible when the sidebar and tab bar are hidden</li>
+                    <li class="relative pl-5 before:content-[''] before:absolute before:left-1 before:top-[0.55rem] before:size-1 before:rounded-full before:bg-zinc-600">Location bookmarks validate directory access on restore</li>
+                    </ul>
+                </article>
+                <article id="mac-v2.0.0" class="rounded-xl outline-1 -outline-offset-1 outline-white/10 bg-white/[0.02] p-6 md:p-8">
+                    <header class="flex flex-wrap items-center gap-3 mb-4">
+                        <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-blue-500/10 text-blue-300 ring-1 ring-inset ring-blue-500/20">Mac</span>
+                        <h2 class="text-lg font-medium text-white font-mono tracking-tight">v2.0.0</h2>
+                        <span class="ml-auto text-sm text-zinc-500 font-mono">2026-04-14</span>
+                    </header>
+                    <ul class="space-y-2 text-sm text-zinc-400 list-none pl-0">
+                    <li class="relative pl-5 before:content-[''] before:absolute before:left-1 before:top-[0.55rem] before:size-1 before:rounded-full before:bg-zinc-600">Open multiple documents in tabs (Cmd+T, Cmd+W, Cmd+Shift+[/] to switch)</li>
+                    <li class="relative pl-5 before:content-[''] before:absolute before:left-1 before:top-[0.55rem] before:size-1 before:rounded-full before:bg-zinc-600">Link between notes with [[wiki-link]] syntax and auto-complete as you type</li>
+                    <li class="relative pl-5 before:content-[''] before:absolute before:left-1 before:top-[0.55rem] before:size-1 before:rounded-full before:bg-zinc-600">Find any note instantly with Quick Switcher (Cmd+P) and full-text content search</li>
+                    <li class="relative pl-5 before:content-[''] before:absolute before:left-1 before:top-[0.55rem] before:size-1 before:rounded-full before:bg-zinc-600">See which notes link to the current one in the Backlinks panel, with one-click Link for unlinked mentions</li>
+                    <li class="relative pl-5 before:content-[''] before:absolute before:left-1 before:top-[0.55rem] before:size-1 before:rounded-full before:bg-zinc-600">Browse your #tags from the sidebar, with highlighting in both editor and preview</li>
+                    <li class="relative pl-5 before:content-[''] before:absolute before:left-1 before:top-[0.55rem] before:size-1 before:rounded-full before:bg-zinc-600">Expose your vault to AI agents through the bundled MCP server</li>
+                    <li class="relative pl-5 before:content-[''] before:absolute before:left-1 before:top-[0.55rem] before:size-1 before:rounded-full before:bg-zinc-600">Line numbers in the editor with jump-to-line</li>
+                    <li class="relative pl-5 before:content-[''] before:absolute before:left-1 before:top-[0.55rem] before:size-1 before:rounded-full before:bg-zinc-600">Pick a preview font: San Francisco, New York, or SF Mono</li>
+                    <li class="relative pl-5 before:content-[''] before:absolute before:left-1 before:top-[0.55rem] before:size-1 before:rounded-full before:bg-zinc-600">Redesigned marketing site and overhauled demo document</li>
+                    <li class="relative pl-5 before:content-[''] before:absolute before:left-1 before:top-[0.55rem] before:size-1 before:rounded-full before:bg-zinc-600">Large vaults no longer freeze the app while loading</li>
+                    <li class="relative pl-5 before:content-[''] before:absolute before:left-1 before:top-[0.55rem] before:size-1 before:rounded-full before:bg-zinc-600">Fullscreen windows now have correct sidebar and content spacing</li>
+                    <li class="relative pl-5 before:content-[''] before:absolute before:left-1 before:top-[0.55rem] before:size-1 before:rounded-full before:bg-zinc-600">Export PDF and Print work again after the multi-file redesign</li>
+                    <li class="relative pl-5 before:content-[''] before:absolute before:left-1 before:top-[0.55rem] before:size-1 before:rounded-full before:bg-zinc-600">Typing is smooth again on long documents</li>
+                    <li class="relative pl-5 before:content-[''] before:absolute before:left-1 before:top-[0.55rem] before:size-1 before:rounded-full before:bg-zinc-600">Preview cursor no longer leaks into editor mode</li>
+                    <li class="relative pl-5 before:content-[''] before:absolute before:left-1 before:top-[0.55rem] before:size-1 before:rounded-full before:bg-zinc-600">Polished code blocks: copy button, rounded corners, proper gutter width</li>
+                    <li class="relative pl-5 before:content-[''] before:absolute before:left-1 before:top-[0.55rem] before:size-1 before:rounded-full before:bg-zinc-600">Frontmatter tags register correctly alongside inline #tags</li>
+                    </ul>
+                </article>
+                <article id="mac-v1.16.0" class="rounded-xl outline-1 -outline-offset-1 outline-white/10 bg-white/[0.02] p-6 md:p-8">
+                    <header class="flex flex-wrap items-center gap-3 mb-4">
+                        <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-blue-500/10 text-blue-300 ring-1 ring-inset ring-blue-500/20">Mac</span>
+                        <h2 class="text-lg font-medium text-white font-mono tracking-tight">v1.16.0</h2>
+                        <span class="ml-auto text-sm text-zinc-500 font-mono">2026-04-12</span>
+                    </header>
+                    <ul class="space-y-2 text-sm text-zinc-400 list-none pl-0">
+                    <li class="relative pl-5 before:content-[''] before:absolute before:left-1 before:top-[0.55rem] before:size-1 before:rounded-full before:bg-zinc-600">Redesigned UI with refined sidebar, toolbar, and file explorer styling</li>
+                    </ul>
+                </article>
+                <article id="mac-v1.15.0" class="rounded-xl outline-1 -outline-offset-1 outline-white/10 bg-white/[0.02] p-6 md:p-8">
+                    <header class="flex flex-wrap items-center gap-3 mb-4">
+                        <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-blue-500/10 text-blue-300 ring-1 ring-inset ring-blue-500/20">Mac</span>
+                        <h2 class="text-lg font-medium text-white font-mono tracking-tight">v1.15.0</h2>
+                        <span class="ml-auto text-sm text-zinc-500 font-mono">2026-04-11</span>
+                    </header>
+                    <ul class="space-y-2 text-sm text-zinc-400 list-none pl-0">
+                    <li class="relative pl-5 before:content-[''] before:absolute before:left-1 before:top-[0.55rem] before:size-1 before:rounded-full before:bg-zinc-600">Tables get captions, sortable columns, sticky headers, and a copy-as-TSV button</li>
+                    <li class="relative pl-5 before:content-[''] before:absolute before:left-1 before:top-[0.55rem] before:size-1 before:rounded-full before:bg-zinc-600">Code blocks get syntax highlighting for 27+ languages, line numbers, diff highlighting, and filename headers</li>
+                    <li class="relative pl-5 before:content-[''] before:absolute before:left-1 before:top-[0.55rem] before:size-1 before:rounded-full before:bg-zinc-600">Highlight text with ==marks==, write super^script^ and sub~script~, and use :emoji: shortcodes</li>
+                    <li class="relative pl-5 before:content-[''] before:absolute before:left-1 before:top-[0.55rem] before:size-1 before:rounded-full before:bg-zinc-600">15 types of callouts and admonitions, with foldable support</li>
+                    <li class="relative pl-5 before:content-[''] before:absolute before:left-1 before:top-[0.55rem] before:size-1 before:rounded-full before:bg-zinc-600">Auto-generated table of contents with [TOC]</li>
+                    <li class="relative pl-5 before:content-[''] before:absolute before:left-1 before:top-[0.55rem] before:size-1 before:rounded-full before:bg-zinc-600">Click any preview element to jump to its source, toggle task checkboxes inline, and view images in a lightbox</li>
+                    <li class="relative pl-5 before:content-[''] before:absolute before:left-1 before:top-[0.55rem] before:size-1 before:rounded-full before:bg-zinc-600">Heading anchor links and footnote popovers</li>
+                    <li class="relative pl-5 before:content-[''] before:absolute before:left-1 before:top-[0.55rem] before:size-1 before:rounded-full before:bg-zinc-600">Sample Document available under the Help menu</li>
+                    <li class="relative pl-5 before:content-[''] before:absolute before:left-1 before:top-[0.55rem] before:size-1 before:rounded-full before:bg-zinc-600">Now licensed under FSL-1.1-MIT (converts to MIT after two years)</li>
+                    </ul>
+                </article>
+                <article id="mac-v1.14.0" class="rounded-xl outline-1 -outline-offset-1 outline-white/10 bg-white/[0.02] p-6 md:p-8">
+                    <header class="flex flex-wrap items-center gap-3 mb-4">
+                        <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-blue-500/10 text-blue-300 ring-1 ring-inset ring-blue-500/20">Mac</span>
+                        <h2 class="text-lg font-medium text-white font-mono tracking-tight">v1.14.0</h2>
+                        <span class="ml-auto text-sm text-zinc-500 font-mono">2026-04-10</span>
+                    </header>
+                    <ul class="space-y-2 text-sm text-zinc-400 list-none pl-0">
+                    <li class="relative pl-5 before:content-[''] before:absolute before:left-1 before:top-[0.55rem] before:size-1 before:rounded-full before:bg-zinc-600">Clear your recent files list with one click from the sidebar</li>
+                    <li class="relative pl-5 before:content-[''] before:absolute before:left-1 before:top-[0.55rem] before:size-1 before:rounded-full before:bg-zinc-600">Show or hide hidden files in the file explorer</li>
+                    <li class="relative pl-5 before:content-[''] before:absolute before:left-1 before:top-[0.55rem] before:size-1 before:rounded-full before:bg-zinc-600">Copy files and folders from the toolbar or sidebar right-click menu</li>
+                    </ul>
+                </article>
+                <article id="mac-v1.13.1" class="rounded-xl outline-1 -outline-offset-1 outline-white/10 bg-white/[0.02] p-6 md:p-8">
+                    <header class="flex flex-wrap items-center gap-3 mb-4">
+                        <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-blue-500/10 text-blue-300 ring-1 ring-inset ring-blue-500/20">Mac</span>
+                        <h2 class="text-lg font-medium text-white font-mono tracking-tight">v1.13.1</h2>
+                        <span class="ml-auto text-sm text-zinc-500 font-mono">2026-04-09</span>
+                    </header>
+                    <ul class="space-y-2 text-sm text-zinc-400 list-none pl-0">
+                    <li class="relative pl-5 before:content-[''] before:absolute before:left-1 before:top-[0.55rem] before:size-1 before:rounded-full before:bg-zinc-600">Fresh app icon and menubar icon</li>
+                    </ul>
+                </article>
+                <article id="mac-v1.13.0" class="rounded-xl outline-1 -outline-offset-1 outline-white/10 bg-white/[0.02] p-6 md:p-8">
+                    <header class="flex flex-wrap items-center gap-3 mb-4">
+                        <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-blue-500/10 text-blue-300 ring-1 ring-inset ring-blue-500/20">Mac</span>
+                        <h2 class="text-lg font-medium text-white font-mono tracking-tight">v1.13.0</h2>
+                        <span class="ml-auto text-sm text-zinc-500 font-mono">2026-04-08</span>
+                    </header>
+                    <ul class="space-y-2 text-sm text-zinc-400 list-none pl-0">
+                    <li class="relative pl-5 before:content-[''] before:absolute before:left-1 before:top-[0.55rem] before:size-1 before:rounded-full before:bg-zinc-600">Create new untitled documents without saving them first</li>
+                    <li class="relative pl-5 before:content-[''] before:absolute before:left-1 before:top-[0.55rem] before:size-1 before:rounded-full before:bg-zinc-600">Bold and bold-italic text now renders visually in the editor instead of just showing markers</li>
+                    <li class="relative pl-5 before:content-[''] before:absolute before:left-1 before:top-[0.55rem] before:size-1 before:rounded-full before:bg-zinc-600">Pick custom icons for folders in the sidebar</li>
+                    <li class="relative pl-5 before:content-[''] before:absolute before:left-1 before:top-[0.55rem] before:size-1 before:rounded-full before:bg-zinc-600">Compact file explorer rows and refined sidebar layout for easier scanning</li>
+                    </ul>
+                </article>
+                <article id="mac-v1.12.0" class="rounded-xl outline-1 -outline-offset-1 outline-white/10 bg-white/[0.02] p-6 md:p-8">
+                    <header class="flex flex-wrap items-center gap-3 mb-4">
+                        <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-blue-500/10 text-blue-300 ring-1 ring-inset ring-blue-500/20">Mac</span>
+                        <h2 class="text-lg font-medium text-white font-mono tracking-tight">v1.12.0</h2>
+                        <span class="ml-auto text-sm text-zinc-500 font-mono">2026-04-08</span>
+                    </header>
+                    <ul class="space-y-2 text-sm text-zinc-400 list-none pl-0">
+                    <li class="relative pl-5 before:content-[''] before:absolute before:left-1 before:top-[0.55rem] before:size-1 before:rounded-full before:bg-zinc-600">File explorer sidebar shows favorite locations and recent files for quick navigation</li>
+                    </ul>
+                </article>
+                <article id="mac-v1.11.0" class="rounded-xl outline-1 -outline-offset-1 outline-white/10 bg-white/[0.02] p-6 md:p-8">
+                    <header class="flex flex-wrap items-center gap-3 mb-4">
+                        <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-blue-500/10 text-blue-300 ring-1 ring-inset ring-blue-500/20">Mac</span>
+                        <h2 class="text-lg font-medium text-white font-mono tracking-tight">v1.11.0</h2>
+                        <span class="ml-auto text-sm text-zinc-500 font-mono">2026-04-07</span>
+                    </header>
+                    <ul class="space-y-2 text-sm text-zinc-400 list-none pl-0">
+                    <li class="relative pl-5 before:content-[''] before:absolute before:left-1 before:top-[0.55rem] before:size-1 before:rounded-full before:bg-zinc-600">Editor and preview now toggle in place at the same scroll position, replacing side-by-side mode</li>
+                    <li class="relative pl-5 before:content-[''] before:absolute before:left-1 before:top-[0.55rem] before:size-1 before:rounded-full before:bg-zinc-600">Copy code blocks in preview with a one-click button</li>
+                    <li class="relative pl-5 before:content-[''] before:absolute before:left-1 before:top-[0.55rem] before:size-1 before:rounded-full before:bg-zinc-600">Cursor stays put when typing quickly in the editor</li>
+                    <li class="relative pl-5 before:content-[''] before:absolute before:left-1 before:top-[0.55rem] before:size-1 before:rounded-full before:bg-zinc-600">Save scratchpad notes to a file with Cmd+S</li>
+                    <li class="relative pl-5 before:content-[''] before:absolute before:left-1 before:top-[0.55rem] before:size-1 before:rounded-full before:bg-zinc-600">Cmd+Q no longer quits the app when only scratchpads are open</li>
+                    </ul>
+                </article>
+                <article id="mac-v1.10.1" class="rounded-xl outline-1 -outline-offset-1 outline-white/10 bg-white/[0.02] p-6 md:p-8">
+                    <header class="flex flex-wrap items-center gap-3 mb-4">
+                        <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-blue-500/10 text-blue-300 ring-1 ring-inset ring-blue-500/20">Mac</span>
+                        <h2 class="text-lg font-medium text-white font-mono tracking-tight">v1.10.1</h2>
+                        <span class="ml-auto text-sm text-zinc-500 font-mono">2026-04-03</span>
+                    </header>
+                    <ul class="space-y-2 text-sm text-zinc-400 list-none pl-0">
+                    <li class="relative pl-5 before:content-[''] before:absolute before:left-1 before:top-[0.55rem] before:size-1 before:rounded-full before:bg-zinc-600">New documents open in front instead of behind existing windows</li>
+                    <li class="relative pl-5 before:content-[''] before:absolute before:left-1 before:top-[0.55rem] before:size-1 before:rounded-full before:bg-zinc-600">Outline panel no longer overlaps the preview in side-by-side mode</li>
+                    </ul>
+                </article>
+                <article id="mac-v1.10.0" class="rounded-xl outline-1 -outline-offset-1 outline-white/10 bg-white/[0.02] p-6 md:p-8">
+                    <header class="flex flex-wrap items-center gap-3 mb-4">
+                        <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-blue-500/10 text-blue-300 ring-1 ring-inset ring-blue-500/20">Mac</span>
+                        <h2 class="text-lg font-medium text-white font-mono tracking-tight">v1.10.0</h2>
+                        <span class="ml-auto text-sm text-zinc-500 font-mono">2026-04-02</span>
+                    </header>
+                    <ul class="space-y-2 text-sm text-zinc-400 list-none pl-0">
+                    <li class="relative pl-5 before:content-[''] before:absolute before:left-1 before:top-[0.55rem] before:size-1 before:rounded-full before:bg-zinc-600">Document outline panel lets you jump to any heading with a click</li>
+                    <li class="relative pl-5 before:content-[''] before:absolute before:left-1 before:top-[0.55rem] before:size-1 before:rounded-full before:bg-zinc-600">Native spell checking with persistent preferences for each document</li>
+                    <li class="relative pl-5 before:content-[''] before:absolute before:left-1 before:top-[0.55rem] before:size-1 before:rounded-full before:bg-zinc-600">PDF export handles page breaks correctly instead of slicing content mid-line</li>
+                    <li class="relative pl-5 before:content-[''] before:absolute before:left-1 before:top-[0.55rem] before:size-1 before:rounded-full before:bg-zinc-600">Cmd+Q closes all windows instead of force-quitting, so unsaved work isn't lost</li>
+                    <li class="relative pl-5 before:content-[''] before:absolute before:left-1 before:top-[0.55rem] before:size-1 before:rounded-full before:bg-zinc-600">Editor no longer jumps when typing near the bottom of the window</li>
+                    </ul>
+                </article>
+                <article id="mac-v1.9.0" class="rounded-xl outline-1 -outline-offset-1 outline-white/10 bg-white/[0.02] p-6 md:p-8">
+                    <header class="flex flex-wrap items-center gap-3 mb-4">
+                        <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-blue-500/10 text-blue-300 ring-1 ring-inset ring-blue-500/20">Mac</span>
+                        <h2 class="text-lg font-medium text-white font-mono tracking-tight">v1.9.0</h2>
+                        <span class="ml-auto text-sm text-zinc-500 font-mono">2026-03-30</span>
+                    </header>
+                    <ul class="space-y-2 text-sm text-zinc-400 list-none pl-0">
+                    <li class="relative pl-5 before:content-[''] before:absolute before:left-1 before:top-[0.55rem] before:size-1 before:rounded-full before:bg-zinc-600">Scratchpad: a menubar app with a global hotkey for capturing quick notes without opening a full document</li>
+                    <li class="relative pl-5 before:content-[''] before:absolute before:left-1 before:top-[0.55rem] before:size-1 before:rounded-full before:bg-zinc-600">Inline Find bar replaces the broken system Find panel for searching within documents</li>
+                    <li class="relative pl-5 before:content-[''] before:absolute before:left-1 before:top-[0.55rem] before:size-1 before:rounded-full before:bg-zinc-600">Window size and position are remembered per document</li>
+                    <li class="relative pl-5 before:content-[''] before:absolute before:left-1 before:top-[0.55rem] before:size-1 before:rounded-full before:bg-zinc-600">Pasting rich text no longer mangles your markdown</li>
+                    <li class="relative pl-5 before:content-[''] before:absolute before:left-1 before:top-[0.55rem] before:size-1 before:rounded-full before:bg-zinc-600">Opening multiple documents no longer hangs when scroll sync is active</li>
+                    </ul>
+                </article>
+                <article id="mac-v1.8.0" class="rounded-xl outline-1 -outline-offset-1 outline-white/10 bg-white/[0.02] p-6 md:p-8">
+                    <header class="flex flex-wrap items-center gap-3 mb-4">
+                        <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-blue-500/10 text-blue-300 ring-1 ring-inset ring-blue-500/20">Mac</span>
+                        <h2 class="text-lg font-medium text-white font-mono tracking-tight">v1.8.0</h2>
+                        <span class="ml-auto text-sm text-zinc-500 font-mono">2026-03-29</span>
+                    </header>
+                    <ul class="space-y-2 text-sm text-zinc-400 list-none pl-0">
+                    <li class="relative pl-5 before:content-[''] before:absolute before:left-1 before:top-[0.55rem] before:size-1 before:rounded-full before:bg-zinc-600">Preview content uses the full window width for easier reading</li>
+                    <li class="relative pl-5 before:content-[''] before:absolute before:left-1 before:top-[0.55rem] before:size-1 before:rounded-full before:bg-zinc-600">Documents automatically refresh when modified by another app</li>
+                    </ul>
+                </article>
+                <article id="mac-v1.7.4" class="rounded-xl outline-1 -outline-offset-1 outline-white/10 bg-white/[0.02] p-6 md:p-8">
+                    <header class="flex flex-wrap items-center gap-3 mb-4">
+                        <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-blue-500/10 text-blue-300 ring-1 ring-inset ring-blue-500/20">Mac</span>
+                        <h2 class="text-lg font-medium text-white font-mono tracking-tight">v1.7.4</h2>
+                        <span class="ml-auto text-sm text-zinc-500 font-mono">2026-03-27</span>
+                    </header>
+                    <ul class="space-y-2 text-sm text-zinc-400 list-none pl-0">
+                    <li class="relative pl-5 before:content-[''] before:absolute before:left-1 before:top-[0.55rem] before:size-1 before:rounded-full before:bg-zinc-600">Opening multiple documents no longer freezes the editor when scroll sync is active</li>
+                    <li class="relative pl-5 before:content-[''] before:absolute before:left-1 before:top-[0.55rem] before:size-1 before:rounded-full before:bg-zinc-600">Faster syntax highlighting for documents with frontmatter</li>
+                    </ul>
+                </article>
+                <article id="mac-v1.7.3" class="rounded-xl outline-1 -outline-offset-1 outline-white/10 bg-white/[0.02] p-6 md:p-8">
+                    <header class="flex flex-wrap items-center gap-3 mb-4">
+                        <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-blue-500/10 text-blue-300 ring-1 ring-inset ring-blue-500/20">Mac</span>
+                        <h2 class="text-lg font-medium text-white font-mono tracking-tight">v1.7.3</h2>
+                        <span class="ml-auto text-sm text-zinc-500 font-mono">2026-03-26</span>
+                    </header>
+                    <ul class="space-y-2 text-sm text-zinc-400 list-none pl-0">
+                    <li class="relative pl-5 before:content-[''] before:absolute before:left-1 before:top-[0.55rem] before:size-1 before:rounded-full before:bg-zinc-600">Opening multiple documents at once no longer causes the app to hang</li>
+                    <li class="relative pl-5 before:content-[''] before:absolute before:left-1 before:top-[0.55rem] before:size-1 before:rounded-full before:bg-zinc-600">Appearance setting correctly applies your chosen light or dark mode</li>
+                    </ul>
+                </article>
+                <article id="mac-v1.7.2" class="rounded-xl outline-1 -outline-offset-1 outline-white/10 bg-white/[0.02] p-6 md:p-8">
+                    <header class="flex flex-wrap items-center gap-3 mb-4">
+                        <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-blue-500/10 text-blue-300 ring-1 ring-inset ring-blue-500/20">Mac</span>
+                        <h2 class="text-lg font-medium text-white font-mono tracking-tight">v1.7.2</h2>
+                        <span class="ml-auto text-sm text-zinc-500 font-mono">2026-03-26</span>
+                    </header>
+                    <ul class="space-y-2 text-sm text-zinc-400 list-none pl-0">
+                    <li class="relative pl-5 before:content-[''] before:absolute before:left-1 before:top-[0.55rem] before:size-1 before:rounded-full before:bg-zinc-600">Diagnostic logs now survive force-quit and include previous session entries</li>
+                    <li class="relative pl-5 before:content-[''] before:absolute before:left-1 before:top-[0.55rem] before:size-1 before:rounded-full before:bg-zinc-600">Faster document opening with fewer redundant highlighting passes</li>
+                    </ul>
+                </article>
+                <article id="mac-v1.7.1" class="rounded-xl outline-1 -outline-offset-1 outline-white/10 bg-white/[0.02] p-6 md:p-8">
+                    <header class="flex flex-wrap items-center gap-3 mb-4">
+                        <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-blue-500/10 text-blue-300 ring-1 ring-inset ring-blue-500/20">Mac</span>
+                        <h2 class="text-lg font-medium text-white font-mono tracking-tight">v1.7.1</h2>
+                        <span class="ml-auto text-sm text-zinc-500 font-mono">2026-03-25</span>
+                    </header>
+                    <ul class="space-y-2 text-sm text-zinc-400 list-none pl-0">
+                    <li class="relative pl-5 before:content-[''] before:absolute before:left-1 before:top-[0.55rem] before:size-1 before:rounded-full before:bg-zinc-600">Fixed a hang that could occur when opening multiple documents at once</li>
+                    <li class="relative pl-5 before:content-[''] before:absolute before:left-1 before:top-[0.55rem] before:size-1 before:rounded-full before:bg-zinc-600">Export diagnostic logs from the Help menu for easier troubleshooting</li>
+                    </ul>
+                </article>
+                <article id="mac-v1.7.0" class="rounded-xl outline-1 -outline-offset-1 outline-white/10 bg-white/[0.02] p-6 md:p-8">
+                    <header class="flex flex-wrap items-center gap-3 mb-4">
+                        <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-blue-500/10 text-blue-300 ring-1 ring-inset ring-blue-500/20">Mac</span>
+                        <h2 class="text-lg font-medium text-white font-mono tracking-tight">v1.7.0</h2>
+                        <span class="ml-auto text-sm text-zinc-500 font-mono">2026-03-24</span>
+                    </header>
+                    <ul class="space-y-2 text-sm text-zinc-400 list-none pl-0">
+                    <li class="relative pl-5 before:content-[''] before:absolute before:left-1 before:top-[0.55rem] before:size-1 before:rounded-full before:bg-zinc-600">Fixed a Gatekeeper warning when opening markdown files by double-clicking</li>
+                    <li class="relative pl-5 before:content-[''] before:absolute before:left-1 before:top-[0.55rem] before:size-1 before:rounded-full before:bg-zinc-600">Now available on the App Store in addition to direct download</li>
+                    </ul>
+                </article>
+                <article id="mac-v1.6.1" class="rounded-xl outline-1 -outline-offset-1 outline-white/10 bg-white/[0.02] p-6 md:p-8">
+                    <header class="flex flex-wrap items-center gap-3 mb-4">
+                        <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-blue-500/10 text-blue-300 ring-1 ring-inset ring-blue-500/20">Mac</span>
+                        <h2 class="text-lg font-medium text-white font-mono tracking-tight">v1.6.1</h2>
+                        <span class="ml-auto text-sm text-zinc-500 font-mono">2026-03-23</span>
+                    </header>
+                    <ul class="space-y-2 text-sm text-zinc-400 list-none pl-0">
+                    <li class="relative pl-5 before:content-[''] before:absolute before:left-1 before:top-[0.55rem] before:size-1 before:rounded-full before:bg-zinc-600">Markdown files are no longer greyed out in the Open panel on some systems</li>
+                    </ul>
+                </article>
+                <article id="mac-v1.6.0" class="rounded-xl outline-1 -outline-offset-1 outline-white/10 bg-white/[0.02] p-6 md:p-8">
+                    <header class="flex flex-wrap items-center gap-3 mb-4">
+                        <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-blue-500/10 text-blue-300 ring-1 ring-inset ring-blue-500/20">Mac</span>
+                        <h2 class="text-lg font-medium text-white font-mono tracking-tight">v1.6.0</h2>
+                        <span class="ml-auto text-sm text-zinc-500 font-mono">2026-03-23</span>
+                    </header>
+                    <ul class="space-y-2 text-sm text-zinc-400 list-none pl-0">
+                    <li class="relative pl-5 before:content-[''] before:absolute before:left-1 before:top-[0.55rem] before:size-1 before:rounded-full before:bg-zinc-600">Frontmatter blocks (title, date, tags) are formatted in the editor and rendered cleanly in preview</li>
+                    <li class="relative pl-5 before:content-[''] before:absolute before:left-1 before:top-[0.55rem] before:size-1 before:rounded-full before:bg-zinc-600">Markdown file links are clickable in preview mode — click to open linked documents</li>
+                    <li class="relative pl-5 before:content-[''] before:absolute before:left-1 before:top-[0.55rem] before:size-1 before:rounded-full before:bg-zinc-600">Math expressions now use bundled KaTeX for faster, offline rendering</li>
+                    <li class="relative pl-5 before:content-[''] before:absolute before:left-1 before:top-[0.55rem] before:size-1 before:rounded-full before:bg-zinc-600">The Open Recent menu shows full file paths so you can tell apart files with the same name</li>
+                    <li class="relative pl-5 before:content-[''] before:absolute before:left-1 before:top-[0.55rem] before:size-1 before:rounded-full before:bg-zinc-600">Text and cursor are vertically centered within editor lines for better readability</li>
+                    <li class="relative pl-5 before:content-[''] before:absolute before:left-1 before:top-[0.55rem] before:size-1 before:rounded-full before:bg-zinc-600">New styled DMG installer with drag-to-Applications support</li>
+                    </ul>
+                </article>
+                <article id="mac-v1.5.0" class="rounded-xl outline-1 -outline-offset-1 outline-white/10 bg-white/[0.02] p-6 md:p-8">
+                    <header class="flex flex-wrap items-center gap-3 mb-4">
+                        <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-blue-500/10 text-blue-300 ring-1 ring-inset ring-blue-500/20">Mac</span>
+                        <h2 class="text-lg font-medium text-white font-mono tracking-tight">v1.5.0</h2>
+                        <span class="ml-auto text-sm text-zinc-500 font-mono">2026-03-21</span>
+                    </header>
+                    <ul class="space-y-2 text-sm text-zinc-400 list-none pl-0">
+                    <li class="relative pl-5 before:content-[''] before:absolute before:left-1 before:top-[0.55rem] before:size-1 before:rounded-full before:bg-zinc-600">Paste images directly into the editor — they're saved alongside your document and render in preview</li>
+                    <li class="relative pl-5 before:content-[''] before:absolute before:left-1 before:top-[0.55rem] before:size-1 before:rounded-full before:bg-zinc-600">Fixed markdown files not opening correctly from some apps due to a non-standard file type declaration</li>
+                    </ul>
+                </article>
+                <article id="mac-v1.4.0" class="rounded-xl outline-1 -outline-offset-1 outline-white/10 bg-white/[0.02] p-6 md:p-8">
+                    <header class="flex flex-wrap items-center gap-3 mb-4">
+                        <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-blue-500/10 text-blue-300 ring-1 ring-inset ring-blue-500/20">Mac</span>
+                        <h2 class="text-lg font-medium text-white font-mono tracking-tight">v1.4.0</h2>
+                        <span class="ml-auto text-sm text-zinc-500 font-mono">2026-03-20</span>
+                    </header>
+                    <ul class="space-y-2 text-sm text-zinc-400 list-none pl-0">
+                    <li class="relative pl-5 before:content-[''] before:absolute before:left-1 before:top-[0.55rem] before:size-1 before:rounded-full before:bg-zinc-600">Right-click to bold, italic, or format selected text</li>
+                    <li class="relative pl-5 before:content-[''] before:absolute before:left-1 before:top-[0.55rem] before:size-1 before:rounded-full before:bg-zinc-600">Math expressions render in preview using LaTeX syntax</li>
+                    <li class="relative pl-5 before:content-[''] before:absolute before:left-1 before:top-[0.55rem] before:size-1 before:rounded-full before:bg-zinc-600">QuickLook previews in Finder's column view use a smaller, better-fitting font</li>
+                    </ul>
+                </article>
+                <article id="mac-v1.3.0" class="rounded-xl outline-1 -outline-offset-1 outline-white/10 bg-white/[0.02] p-6 md:p-8">
+                    <header class="flex flex-wrap items-center gap-3 mb-4">
+                        <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-blue-500/10 text-blue-300 ring-1 ring-inset ring-blue-500/20">Mac</span>
+                        <h2 class="text-lg font-medium text-white font-mono tracking-tight">v1.3.0</h2>
+                        <span class="ml-auto text-sm text-zinc-500 font-mono">2026-03-20</span>
+                    </header>
+                    <ul class="space-y-2 text-sm text-zinc-400 list-none pl-0">
+                    <li class="relative pl-5 before:content-[''] before:absolute before:left-1 before:top-[0.55rem] before:size-1 before:rounded-full before:bg-zinc-600">Export your documents as PDF or send them to a printer</li>
+                    <li class="relative pl-5 before:content-[''] before:absolute before:left-1 before:top-[0.55rem] before:size-1 before:rounded-full before:bg-zinc-600">Mermaid diagrams now render in preview mode</li>
+                    <li class="relative pl-5 before:content-[''] before:absolute before:left-1 before:top-[0.55rem] before:size-1 before:rounded-full before:bg-zinc-600">Markdown files open correctly from Finder and other apps</li>
+                    </ul>
+                </article>
+                <article id="mac-v1.2.1" class="rounded-xl outline-1 -outline-offset-1 outline-white/10 bg-white/[0.02] p-6 md:p-8">
+                    <header class="flex flex-wrap items-center gap-3 mb-4">
+                        <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-blue-500/10 text-blue-300 ring-1 ring-inset ring-blue-500/20">Mac</span>
+                        <h2 class="text-lg font-medium text-white font-mono tracking-tight">v1.2.1</h2>
+                        <span class="ml-auto text-sm text-zinc-500 font-mono">2026-03-19</span>
+                    </header>
+                    <ul class="space-y-2 text-sm text-zinc-400 list-none pl-0">
+                    <li class="relative pl-5 before:content-[''] before:absolute before:left-1 before:top-[0.55rem] before:size-1 before:rounded-full before:bg-zinc-600">Fixed auto-update failing with "error launching the installer"</li>
+                    </ul>
+                </article>
+                <article id="mac-v1.2.0" class="rounded-xl outline-1 -outline-offset-1 outline-white/10 bg-white/[0.02] p-6 md:p-8">
+                    <header class="flex flex-wrap items-center gap-3 mb-4">
+                        <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-blue-500/10 text-blue-300 ring-1 ring-inset ring-blue-500/20">Mac</span>
+                        <h2 class="text-lg font-medium text-white font-mono tracking-tight">v1.2.0</h2>
+                        <span class="ml-auto text-sm text-zinc-500 font-mono">2026-03-19</span>
+                    </header>
+                    <ul class="space-y-2 text-sm text-zinc-400 list-none pl-0">
+                    <li class="relative pl-5 before:content-[''] before:absolute before:left-1 before:top-[0.55rem] before:size-1 before:rounded-full before:bg-zinc-600">Your preferred view mode (editor, preview, or side-by-side) is now remembered across sessions</li>
+                    <li class="relative pl-5 before:content-[''] before:absolute before:left-1 before:top-[0.55rem] before:size-1 before:rounded-full before:bg-zinc-600">Editor and preview scroll together so you always see what you're editing</li>
+                    <li class="relative pl-5 before:content-[''] before:absolute before:left-1 before:top-[0.55rem] before:size-1 before:rounded-full before:bg-zinc-600">Dark mode app icon no longer shows white corners</li>
+                    <li class="relative pl-5 before:content-[''] before:absolute before:left-1 before:top-[0.55rem] before:size-1 before:rounded-full before:bg-zinc-600">Adjust font size with Cmd+ and Cmd- keyboard shortcuts</li>
+                    <li class="relative pl-5 before:content-[''] before:absolute before:left-1 before:top-[0.55rem] before:size-1 before:rounded-full before:bg-zinc-600">Automatic update support via Sparkle</li>
+                    </ul>
+                </article>
+                <article id="mac-v1.1.2" class="rounded-xl outline-1 -outline-offset-1 outline-white/10 bg-white/[0.02] p-6 md:p-8">
+                    <header class="flex flex-wrap items-center gap-3 mb-4">
+                        <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-blue-500/10 text-blue-300 ring-1 ring-inset ring-blue-500/20">Mac</span>
+                        <h2 class="text-lg font-medium text-white font-mono tracking-tight">v1.1.2</h2>
+                        <span class="ml-auto text-sm text-zinc-500 font-mono">2026-03-18</span>
+                    </header>
+                    <ul class="space-y-2 text-sm text-zinc-400 list-none pl-0">
+                    <li class="relative pl-5 before:content-[''] before:absolute before:left-1 before:top-[0.55rem] before:size-1 before:rounded-full before:bg-zinc-600">Fixed an issue that prevented auto-updates from installing correctly</li>
+                    </ul>
+                </article>
+                <article id="mac-v1.1.1" class="rounded-xl outline-1 -outline-offset-1 outline-white/10 bg-white/[0.02] p-6 md:p-8">
+                    <header class="flex flex-wrap items-center gap-3 mb-4">
+                        <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-blue-500/10 text-blue-300 ring-1 ring-inset ring-blue-500/20">Mac</span>
+                        <h2 class="text-lg font-medium text-white font-mono tracking-tight">v1.1.1</h2>
+                        <span class="ml-auto text-sm text-zinc-500 font-mono">2026-03-18</span>
+                    </header>
+                    <ul class="space-y-2 text-sm text-zinc-400 list-none pl-0">
+                    <li class="relative pl-5 before:content-[''] before:absolute before:left-1 before:top-[0.55rem] before:size-1 before:rounded-full before:bg-zinc-600">Fixed an issue that prevented auto-updates from installing correctly</li>
+                    </ul>
+                </article>
+                <article id="mac-v1.1.0" class="rounded-xl outline-1 -outline-offset-1 outline-white/10 bg-white/[0.02] p-6 md:p-8">
+                    <header class="flex flex-wrap items-center gap-3 mb-4">
+                        <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-blue-500/10 text-blue-300 ring-1 ring-inset ring-blue-500/20">Mac</span>
+                        <h2 class="text-lg font-medium text-white font-mono tracking-tight">v1.1.0</h2>
+                        <span class="ml-auto text-sm text-zinc-500 font-mono">2026-03-18</span>
+                    </header>
+                    <ul class="space-y-2 text-sm text-zinc-400 list-none pl-0">
+                    <li class="relative pl-5 before:content-[''] before:absolute before:left-1 before:top-[0.55rem] before:size-1 before:rounded-full before:bg-zinc-600">New side-by-side view mode lets you edit and preview simultaneously</li>
+                    <li class="relative pl-5 before:content-[''] before:absolute before:left-1 before:top-[0.55rem] before:size-1 before:rounded-full before:bg-zinc-600">Code blocks in dark mode preview are now readable</li>
+                    <li class="relative pl-5 before:content-[''] before:absolute before:left-1 before:top-[0.55rem] before:size-1 before:rounded-full before:bg-zinc-600">Broken or relative images show a placeholder instead of nothing</li>
+                    </ul>
+                </article>
+                <article id="mac-v1.0.0" class="rounded-xl outline-1 -outline-offset-1 outline-white/10 bg-white/[0.02] p-6 md:p-8">
+                    <header class="flex flex-wrap items-center gap-3 mb-4">
+                        <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-blue-500/10 text-blue-300 ring-1 ring-inset ring-blue-500/20">Mac</span>
+                        <h2 class="text-lg font-medium text-white font-mono tracking-tight">v1.0.0</h2>
+                        <span class="ml-auto text-sm text-zinc-500 font-mono">2026-03-18</span>
+                    </header>
+                    <ul class="space-y-2 text-sm text-zinc-400 list-none pl-0">
+                    <li class="relative pl-5 before:content-[''] before:absolute before:left-1 before:top-[0.55rem] before:size-1 before:rounded-full before:bg-zinc-600">Initial release</li>
+                    </ul>
+                </article>
+            </div>
+        </section>
+    </main>
+
+    <footer class="pb-12 pt-8 border-t border-zinc-900">
+        <div class="max-w-4xl mx-auto px-6 flex flex-col sm:flex-row items-center justify-between gap-4 text-sm text-zinc-600">
+            <span>&copy; 2026</span>
+            <div class="flex items-center gap-6">
+                <a href="https://github.com/Shpigford/clearly" class="hover:text-zinc-400 transition-colors">GitHub</a>
+                <a href="/changelog" class="hover:text-zinc-400 transition-colors">Changelog</a>
+                <a href="/privacy" class="hover:text-zinc-400 transition-colors">Privacy</a>
+                <a href="https://x.com/Shpigford" class="hover:text-zinc-400 transition-colors">@Shpigford</a>
+            </div>
+        </div>
+    </footer>
+
+</body>
+</html>

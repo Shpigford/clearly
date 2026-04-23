@@ -768,6 +768,9 @@ struct ClearlyApp: App {
                     )
                     NSWorkspace.shared.open(url)
                 }
+                Button("What’s New…") {
+                    NSWorkspace.shared.open(URL(string: "https://clearly.md/changelog")!)
+                }
                 Divider()
                 Button("Sample Document") {
                     if let url = Bundle.main.url(forResource: "demo", withExtension: "md"),

@@ -73,6 +73,16 @@ else
   git push origin "$TAG"
 fi
 
+# ── 5. Regenerate public changelog page ──────────────────────────────────────
+echo "📡 Regenerating changelog page..."
+source "$SCRIPT_DIR/lib/changelog-html.sh"
+generate_changelog_html
+if ! git diff --quiet website/changelog.html; then
+  git add website/changelog.html
+  git commit -m "chore: update changelog for ios-v$VERSION"
+  git push
+fi
+
 echo ""
 echo "Next steps (manual, in App Store Connect):"
 echo "  1. Open https://appstoreconnect.apple.com → your iOS app → TestFlight"

@@ -279,7 +279,9 @@ APPCAST
 
 echo "📡 Updating site appcast..."
 cp build/appcast.xml website/appcast.xml
-git add website/appcast.xml
+source "$SCRIPT_DIR/lib/changelog-html.sh"
+generate_changelog_html
+git add website/appcast.xml website/changelog.html
 git commit -m "chore: update appcast for v$VERSION" || true
 git push
 

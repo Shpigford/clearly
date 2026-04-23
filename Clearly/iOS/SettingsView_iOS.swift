@@ -71,6 +71,11 @@ struct SettingsView_iOS: View {
                     } label: {
                         Label("Report a Bug…", systemImage: "ladybug")
                     }
+                    Button {
+                        openURL(URL(string: "https://clearly.md/changelog")!)
+                    } label: {
+                        Label("What’s New", systemImage: "sparkles")
+                    }
                 }
             }
             .navigationTitle("Settings")

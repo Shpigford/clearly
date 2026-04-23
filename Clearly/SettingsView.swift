@@ -304,6 +304,11 @@ struct SettingsView: View {
                     NSWorkspace.shared.open(URL(string: "https://github.com/Shpigford/clearly")!)
                 }
                 .buttonStyle(.bordered)
+
+                Button("Changelog") {
+                    NSWorkspace.shared.open(URL(string: "https://clearly.md/changelog")!)
+                }
+                .buttonStyle(.bordered)
             }
 
             Text("Free and open source under the MIT License.")
