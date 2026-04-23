@@ -72,13 +72,10 @@ struct ScratchpadMenuBar: View {
     private func performSettingsMenuBarAction() {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
             let delegate = ClearlyAppDelegate.shared
-            delegate?.suppressMainWindowFocus = true
+            delegate?.prepareForMenuBarSettingsActivation()
             activateDocumentApp()
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
                 openSettings()
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                    delegate?.suppressMainWindowFocus = false
-                }
             }
         }
     }
