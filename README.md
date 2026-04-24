@@ -106,7 +106,7 @@ Clearly/
 ├── FileExplorerView.swift          # Sidebar file browser with bookmarks and recents
 ├── FileParser.swift                # Parses frontmatter, wiki-links, tags from documents
 ├── VaultIndex.swift                # SQLite + FTS5 index for search, backlinks, tags
-├── CLIInstaller.swift              # Installs /usr/local/bin/clearly symlink from Settings
+├── CLIInstaller.swift              # Installs ~/.local/bin/clearly symlink from Settings
 ├── Theme.swift                     # Centralized colors (light/dark) and font constants
 └── Info.plist
 
@@ -219,9 +219,17 @@ The `clearly` command-line binary is bundled with Clearly.app and operates on th
 
 ### Install
 
-Open Clearly → **Settings → Command Line → Install**. A one-time Terminal prompt for `sudo` creates a symlink at `/usr/local/bin/clearly` pointing to the bundled binary inside `Clearly.app/Contents/Resources/Helpers/ClearlyCLI`. Reinstalling Clearly (Sparkle or App Store) keeps the symlink valid.
+Open Clearly → **Settings → Command Line → Install**. Creates a symlink at `~/.local/bin/clearly` pointing to the bundled binary inside `Clearly.app/Contents/Resources/Helpers/ClearlyCLI`. No admin password needed — everything stays in your home folder.
 
-Uninstall from the same Settings pane.
+If `~/.local/bin` isn't already on your shell `PATH`, add this to `~/.zprofile` (or your shell's equivalent) and open a new terminal:
+
+```bash
+export PATH="$HOME/.local/bin:$PATH"
+```
+
+Upgrades (Sparkle or App Store) keep the symlink valid. Uninstall from the same Settings pane.
+
+**Legacy `/usr/local/bin/clearly` installs** from Clearly ≤ 2.4.x keep working and are detected automatically — no action needed.
 
 ### Subcommand reference
 
@@ -296,7 +304,7 @@ Same binary, different arg — `clearly mcp` starts a stdio MCP server exposing 
 {
   "mcpServers": {
     "clearly": {
-      "command": "/usr/local/bin/clearly",
+      "command": "/Users/you/.local/bin/clearly",
       "args": ["mcp"]
     }
   }
@@ -309,7 +317,7 @@ Same binary, different arg — `clearly mcp` starts a stdio MCP server exposing 
 {
   "mcpServers": {
     "clearly": {
-      "command": "/usr/local/bin/clearly",
+      "command": "/Users/you/.local/bin/clearly",
       "args": ["mcp"]
     }
   }
@@ -322,14 +330,14 @@ Same binary, different arg — `clearly mcp` starts a stdio MCP server exposing 
 {
   "mcpServers": {
     "clearly": {
-      "command": "/usr/local/bin/clearly",
+      "command": "/Users/you/.local/bin/clearly",
       "args": ["mcp"]
     }
   }
 }
 ```
 
-Settings → Command Line → **Copy MCP config** in the Clearly app copies a ready-to-paste snippet (auto-flips to `/usr/local/bin/clearly` once the symlink is installed).
+Settings → Command Line → **Copy MCP config** in the Clearly app copies a ready-to-paste snippet with the correct path for your machine (flips to `~/.local/bin/clearly` once the symlink is installed, or the legacy `/usr/local/bin/clearly` path if you're on an older install).
 
 ### Tool reference
 

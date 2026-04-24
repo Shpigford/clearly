@@ -111,8 +111,9 @@ struct SettingsView: View {
     @State private var cliInstallBusy = false
     @State private var cliInstallError: CLIInstaller.CLIInstallerError?
     @State private var cliCommandCopied = false
-    @State private var cliDetailsCopied = false
-    @State private var cliErrorDetailsExpanded = false
+    @State private var cliLegacyCommandCopied = false
+    @State private var cliPathExportCopied = false
+    @State private var cliLocalBinOnPath: Bool = CLIInstaller.localBinIsOnPath()
 
     private var bundledCLIBinaryPath: String? {
         CLIInstaller.bundledBinaryURL()?.path
@@ -166,10 +167,10 @@ struct SettingsView: View {
         }
         .formStyle(.grouped)
         .onAppear {
-            cliSymlinkState = CLIInstaller.symlinkState()
+            refreshCLIState()
         }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
-            cliSymlinkState = CLIInstaller.symlinkState()
+            refreshCLIState()
         }
     }
 
@@ -182,7 +183,13 @@ struct SettingsView: View {
             case .installed:
                 Image(systemName: "checkmark.circle.fill")
                     .foregroundStyle(.green)
-                Text("Installed at \(CLIInstaller.symlinkPath)")
+                Text("Installed at ~/.local/bin/clearly")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            case .installedLegacy(let path):
+                Image(systemName: "checkmark.circle.fill")
+                    .foregroundStyle(.green)
+                Text("Installed at \(path)")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             case .installedElsewhere:
@@ -205,19 +212,19 @@ struct SettingsView: View {
     private var cliInstallUI: some View {
         HStack {
             switch cliSymlinkState {
-            case .installed:
+            case .installed, .installedLegacy:
                 Button("Uninstall") {
                     Task { await runUninstall() }
                 }
                 .disabled(cliInstallBusy)
-            case .installedElsewhere:
-                Button("Install \u{2026}") {}
+            case .installedElsewhere(let url):
+                Button("Install") {}
                     .disabled(true)
-                Text("Remove the existing `clearly` from /usr/local/bin manually before installing.")
+                Text("Remove the existing `clearly` at \(url.path) manually before installing.")
                     .font(.caption)
                     .foregroundStyle(.tertiary)
             case .notInstalled:
-                Button("Install \u{2026}") {
+                Button("Install") {
                     Task { await runInstall() }
                 }
                 .disabled(cliInstallBusy || !cliBundledExecutable)
@@ -229,9 +236,51 @@ struct SettingsView: View {
             cliErrorPanel(error)
         }
 
-        Text("Opens Terminal and runs `sudo ln -sf` so `clearly` resolves on your shell PATH. Enter your admin password in Terminal when prompted, then switch back here — Clearly detects the install automatically.")
-            .font(.caption)
-            .foregroundStyle(.tertiary)
+        switch cliSymlinkState {
+        case .installed:
+            if !cliLocalBinOnPath {
+                cliPathHint
+            }
+            Text("`clearly` lives in your home folder, so no admin password is needed. Run `clearly --help` in a terminal to get started.")
+                .font(.caption)
+                .foregroundStyle(.tertiary)
+        case .installedLegacy:
+            Text("This copy was installed by an older version of Clearly. It will keep working — we'll leave it alone.")
+                .font(.caption)
+                .foregroundStyle(.tertiary)
+        case .installedElsewhere, .notInstalled:
+            Text("Installs `clearly` into `~/.local/bin` so it resolves on your shell PATH. No admin password needed — everything stays in your home folder.")
+                .font(.caption)
+                .foregroundStyle(.tertiary)
+        }
+    }
+
+    @ViewBuilder
+    private var cliPathHint: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("`~/.local/bin` isn't on your shell PATH yet. Add this line to your shell profile (e.g. `~/.zprofile`), then open a new terminal:")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            HStack(spacing: 8) {
+                Text(CLIInstaller.pathExportLine)
+                    .font(.system(.caption, design: .monospaced))
+                    .textSelection(.enabled)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 4))
+                Button(cliPathExportCopied ? "Copied!" : "Copy") {
+                    copyToPasteboard(CLIInstaller.pathExportLine)
+                    cliPathExportCopied = true
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+                        cliPathExportCopied = false
+                    }
+                }
+                .controlSize(.small)
+            }
+        }
+        .padding(10)
+        .background(Color.yellow.opacity(0.08), in: RoundedRectangle(cornerRadius: 6))
     }
 
     @ViewBuilder
@@ -243,13 +292,22 @@ struct SettingsView: View {
                 .fixedSize(horizontal: false, vertical: true)
 
             HStack(spacing: 8) {
-                if case .terminalAutomationDenied = error {
-                    Button("Open Privacy Settings") { openPrivacySettings() }
-                        .controlSize(.small)
-                }
-                if let command = CLIInstaller.shellCommand {
+                if case .legacyRequiresManualRemoval = error {
+                    Button(cliLegacyCommandCopied ? "Copied!" : "Copy uninstall command") {
+                        copyToPasteboard(CLIInstaller.legacyUninstallCommand)
+                        cliLegacyCommandCopied = true
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+                            cliLegacyCommandCopied = false
+                        }
+                    }
+                    .controlSize(.small)
+                } else if let command = CLIInstaller.shellCommand {
                     Button(cliCommandCopied ? "Copied!" : "Copy command") {
-                        copyCLIShellCommand(command)
+                        copyToPasteboard(command)
+                        cliCommandCopied = true
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+                            cliCommandCopied = false
+                        }
                     }
                     .controlSize(.small)
                 }
@@ -263,34 +321,32 @@ struct SettingsView: View {
                 Spacer()
             }
 
-            DisclosureGroup("Details", isExpanded: $cliErrorDetailsExpanded) {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text(cliErrorDetails(error))
-                        .font(.system(.caption, design: .monospaced))
-                        .textSelection(.enabled)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                    Button(cliDetailsCopied ? "Copied!" : "Copy details") {
-                        copyCLIErrorDetails(error)
-                    }
-                    .controlSize(.small)
-                }
-                .padding(.top, 4)
+            if case .legacyRequiresManualRemoval = error {
+                Text(CLIInstaller.legacyUninstallCommand)
+                    .font(.system(.caption, design: .monospaced))
+                    .textSelection(.enabled)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 4))
+                    .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .font(.caption)
         }
         .padding(10)
         .background(Color.red.opacity(0.06), in: RoundedRectangle(cornerRadius: 6))
     }
 
+    private func refreshCLIState() {
+        cliSymlinkState = CLIInstaller.symlinkState()
+        cliLocalBinOnPath = CLIInstaller.localBinIsOnPath()
+    }
+
     private func runInstall() async {
         cliInstallBusy = true
         cliInstallError = nil
-        cliErrorDetailsExpanded = false
         defer { cliInstallBusy = false }
         do {
             try await CLIInstaller.install()
-            cliSymlinkState = CLIInstaller.symlinkState()
+            refreshCLIState()
         } catch let error as CLIInstaller.CLIInstallerError {
             cliInstallError = error
         } catch {
@@ -301,11 +357,10 @@ struct SettingsView: View {
     private func runUninstall() async {
         cliInstallBusy = true
         cliInstallError = nil
-        cliErrorDetailsExpanded = false
         defer { cliInstallBusy = false }
         do {
             try await CLIInstaller.uninstall()
-            cliSymlinkState = CLIInstaller.symlinkState()
+            refreshCLIState()
         } catch let error as CLIInstaller.CLIInstallerError {
             cliInstallError = error
         } catch {
@@ -313,47 +368,21 @@ struct SettingsView: View {
         }
     }
 
-    private func openPrivacySettings() {
-        if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security") {
-            NSWorkspace.shared.open(url)
-        }
-    }
-
-    private func copyCLIShellCommand(_ command: String) {
+    private func copyToPasteboard(_ string: String) {
         NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(command, forType: .string)
-        cliCommandCopied = true
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
-            cliCommandCopied = false
-        }
-    }
-
-    private func cliErrorDetails(_ error: CLIInstaller.CLIInstallerError) -> String {
-        var lines: [String] = []
-        lines.append("error:         \(error.diagnosticPayload)")
-        for (key, value) in CLIInstaller.diagnosticContext {
-            lines.append("\(key.padding(toLength: 14, withPad: " ", startingAt: 0)) \(value)")
-        }
-        return lines.joined(separator: "\n")
-    }
-
-    private func copyCLIErrorDetails(_ error: CLIInstaller.CLIInstallerError) {
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(cliErrorDetails(error), forType: .string)
-        cliDetailsCopied = true
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
-            cliDetailsCopied = false
-        }
+        NSPasteboard.general.setString(string, forType: .string)
     }
 
     private func copyMCPConfig() {
         let command: String
-        if case .installed = cliSymlinkState {
-            command = CLIInstaller.symlinkPath
-        } else if let path = bundledCLIBinaryPath {
+        switch cliSymlinkState {
+        case .installed:
+            command = CLIInstaller.primarySymlinkPath
+        case .installedLegacy(let path):
             command = path
-        } else {
-            return
+        case .installedElsewhere, .notInstalled:
+            guard let path = bundledCLIBinaryPath else { return }
+            command = path
         }
         let config = """
         {
