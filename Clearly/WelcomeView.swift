@@ -107,31 +107,7 @@ struct WelcomeView: View {
     }
 
     private func showNewWikiPicker() {
-        let panel = NSOpenPanel()
-        panel.canChooseFiles = false
-        panel.canChooseDirectories = true
-        panel.allowsMultipleSelection = false
-        panel.canCreateDirectories = true
-        panel.message = "Choose a folder for your new LLM Wiki"
-        panel.prompt = "Create Wiki Here"
-
-        guard panel.runModal() == .OK, let url = panel.url else { return }
-        guard !workspace.locations.contains(where: { $0.url == url }) else { return }
-
-        do {
-            try WikiSeeder.seed(at: url)
-        } catch {
-            let alert = NSAlert()
-            alert.messageText = "Couldn't create LLM Wiki"
-            alert.informativeText = "Clearly failed to seed template files in \(url.lastPathComponent): \(error.localizedDescription)"
-            alert.alertStyle = .warning
-            alert.runModal()
-            return
-        }
-
-        _ = workspace.addLocation(url: url)
-        workspace.isSidebarVisible = true
-        UserDefaults.standard.set(true, forKey: "sidebarVisible")
+        WikiSeeder.createNewWiki(using: workspace)
     }
 }
 

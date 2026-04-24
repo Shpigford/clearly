@@ -753,6 +753,12 @@ struct ClearlyApp: App {
                 }
                 .keyboardShortcut("o", modifiers: .command)
 
+                Divider()
+
+                Button("New LLM Wiki…") {
+                    WikiSeeder.createNewWiki(using: workspace)
+                }
+
                 Menu("Open Recent") {
                     ForEach(workspace.recentFiles, id: \.self) { url in
                         Button(url.deletingPathExtension().lastPathComponent) {

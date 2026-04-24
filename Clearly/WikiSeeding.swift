@@ -93,4 +93,50 @@ enum WikiSeeder {
     static func isWikiFolder(_ folder: URL) -> Bool {
         VaultKind.detect(at: folder).isWiki
     }
+
+    /// Drive the full "New LLM Wiki" flow: prompt for a folder, seed the
+    /// template + recipes into it, register it as a Clearly vault. Safe to
+    /// call from any menu/button action — all UI is NSOpenPanel/NSAlert.
+    @MainActor
+    static func createNewWiki(using workspace: WorkspaceManager) {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.allowsMultipleSelection = false
+        panel.canCreateDirectories = true
+        panel.message = "Choose a folder for your new LLM Wiki"
+        panel.prompt = "Create Wiki Here"
+
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        if workspace.locations.contains(where: { $0.url == url }) {
+            // Already registered — just reseed (no-op on existing files) and
+            // refresh the tree so the [wiki] badge appears once markers land.
+            do { try seed(at: url) } catch { presentSeedError(error) }
+            if let location = workspace.locations.first(where: { $0.url == url }) {
+                workspace.refreshTree(for: location.id)
+            }
+            workspace.isSidebarVisible = true
+            UserDefaults.standard.set(true, forKey: "sidebarVisible")
+            return
+        }
+
+        do {
+            try seed(at: url)
+        } catch {
+            presentSeedError(error)
+            return
+        }
+
+        _ = workspace.addLocation(url: url)
+        workspace.isSidebarVisible = true
+        UserDefaults.standard.set(true, forKey: "sidebarVisible")
+    }
+
+    private static func presentSeedError(_ error: Swift.Error) {
+        let alert = NSAlert()
+        alert.messageText = "Couldn't create LLM Wiki"
+        alert.informativeText = "Clearly failed to seed template files: \(error.localizedDescription)"
+        alert.alertStyle = .warning
+        alert.runModal()
+    }
 }
