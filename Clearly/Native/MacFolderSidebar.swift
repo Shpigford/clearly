@@ -132,8 +132,9 @@ struct MacFolderSidebar: View {
         } header: {
             collapsibleHeader(
                 title: location.name,
-                systemImage: "folder",
-                isExpanded: locationExpandedBinding(location)
+                systemImage: location.isWiki ? "book.closed" : "folder",
+                isExpanded: locationExpandedBinding(location),
+                isWiki: location.isWiki
             )
             .contextMenu {
                 Button("New File", systemImage: "doc.badge.plus") {
@@ -201,8 +202,8 @@ struct MacFolderSidebar: View {
     /// hover so the sidebar reads as quiet chrome until the user reaches for
     /// it. The entire row is the hit target. 16pt trailing padding clears
     /// the sidebar's overlay scrollbar when present.
-    private func collapsibleHeader(title: String, systemImage: String, isExpanded: Binding<Bool>) -> some View {
-        CollapsibleSectionHeader(title: title, systemImage: systemImage, isExpanded: isExpanded)
+    private func collapsibleHeader(title: String, systemImage: String, isExpanded: Binding<Bool>, isWiki: Bool = false) -> some View {
+        CollapsibleSectionHeader(title: title, systemImage: systemImage, isExpanded: isExpanded, isWiki: isWiki)
     }
 
     // MARK: - Tags section
@@ -667,6 +668,7 @@ private struct CollapsibleSectionHeader: View {
     let title: String
     let systemImage: String
     @Binding var isExpanded: Bool
+    var isWiki: Bool = false
     @State private var isHovering = false
 
     var body: some View {
@@ -676,6 +678,17 @@ private struct CollapsibleSectionHeader: View {
             HStack(spacing: 4) {
                 Image(systemName: systemImage)
                 Text(title)
+                if isWiki {
+                    Text("WIKI")
+                        .font(.system(size: 9, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal, 4)
+                        .padding(.vertical, 1)
+                        .background(
+                            RoundedRectangle(cornerRadius: 3)
+                                .fill(Color.secondary.opacity(0.15))
+                        )
+                }
                 Spacer()
                 Image(systemName: "chevron.right")
                     .font(.system(size: 9, weight: .semibold))

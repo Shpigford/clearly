@@ -805,6 +805,9 @@ struct ClearlyApp: App {
             CommandGroup(after: .textEditing) {
                 FindCommand()
             }
+            CommandMenu("Wiki") {
+                WikiCommands()
+            }
             CommandGroup(replacing: .help) {
                 Button("Clearly Help") {
                     NSWorkspace.shared.open(URL(string: "https://github.com/Shpigford/clearly/issues")!)
@@ -1017,6 +1020,52 @@ struct ViewModeCommands: View {
             mode?.wrappedValue = .preview
         }
         .keyboardShortcut("2", modifiers: .command)
+    }
+}
+
+// MARK: - Wiki Commands
+//
+// The Wiki menu only activates when the active file lives inside a wiki
+// vault (one with the three marker files: AGENTS.md, index.md, log.md).
+// Each command posts a notification observed by the in-progress Wiki
+// subsystems — recipe engine, agent runner, diff sheet — added in later
+// phases. Until those land, the notifications are logged but no-op.
+struct WikiCommands: View {
+    @FocusedValue(\.activeVaultIsWiki) var isWiki
+
+    private var enabled: Bool { isWiki ?? false }
+
+    var body: some View {
+        Button("Ingest…") {
+            NotificationCenter.default.post(name: .wikiIngest, object: nil)
+        }
+        .keyboardShortcut("i", modifiers: [.command, .control])
+        .disabled(!enabled)
+
+        Button("Query…") {
+            NotificationCenter.default.post(name: .wikiQuery, object: nil)
+        }
+        .keyboardShortcut("q", modifiers: [.command, .control])
+        .disabled(!enabled)
+
+        Button("Lint") {
+            NotificationCenter.default.post(name: .wikiLint, object: nil)
+        }
+        .keyboardShortcut("l", modifiers: [.command, .control])
+        .disabled(!enabled)
+
+        Divider()
+
+        Button("Toggle Log Sidebar") {
+            NotificationCenter.default.post(name: .wikiToggleLogSidebar, object: nil)
+        }
+        .keyboardShortcut("t", modifiers: [.command, .control])
+        .disabled(!enabled)
+
+        Button("Toggle Lint Dashboard") {
+            NotificationCenter.default.post(name: .wikiToggleLintDashboard, object: nil)
+        }
+        .disabled(!enabled)
     }
 }
 
