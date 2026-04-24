@@ -1067,6 +1067,13 @@ struct WikiCommands: View {
         }
         .disabled(!enabled)
 
+        Divider()
+
+        Button("Set Anthropic API Key…") {
+            IngestCoordinator.promptForAPIKey()
+        }
+        .help("Optional fallback for machines without the Claude CLI installed.")
+
         #if DEBUG
         Divider()
         Button("Preview Diff Sheet (Debug)") {

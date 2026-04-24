@@ -25,17 +25,15 @@ enum IngestCoordinator {
             return
         }
 
-        let keychain = KeychainStore()
-        do {
-            if try keychain.get(WikiKeychainAccount.anthropicAPIKey)?.isEmpty ?? true {
-                guard let key = promptSecret(
-                    title: "Set Anthropic API key",
-                    message: "Paste a Claude API key so Ingest can call the model. Stored in Keychain."
-                ), !key.isEmpty else { return }
-                try keychain.set(key, forKey: WikiKeychainAccount.anthropicAPIKey)
-            }
-        } catch {
-            presentError("Couldn't access Keychain: \(error)")
+        // CLI is the default path — user's Claude Pro / Max sub drives the
+        // call, no API key needed. We only ever prompt for an API key if the
+        // CLI isn't installed AND the user has no saved key.
+        guard let runner = resolveRunner() else {
+            presentError("""
+            Install Claude Code to use Ingest: https://docs.claude.com/claude-code
+
+            If you'd rather use a direct Anthropic API key, choose Wiki → Set API Key…
+            """)
             return
         }
 
@@ -48,7 +46,43 @@ enum IngestCoordinator {
         }
 
         Task { @MainActor in
-            await runIngest(url: url, vaultURL: vaultURL, workspace: workspace, controller: controller)
+            await runIngest(url: url, vaultURL: vaultURL, workspace: workspace, controller: controller, runner: runner)
+        }
+    }
+
+    // MARK: - Runner resolution
+
+    private static func resolveRunner() -> AgentRunner? {
+        if let cli = AgentDiscovery.findClaude() {
+            return ClaudeCLIAgentRunner(binaryURL: cli.url)
+        }
+        if let cli = AgentDiscovery.findCodex() {
+            // Codex CLI parity comes in a later phase; for now, surfacing its
+            // presence helps users understand why Ingest might still work
+            // without Claude Code installed.
+            _ = cli
+        }
+        let keychain = KeychainStore()
+        let key = (try? keychain.get(WikiKeychainAccount.anthropicAPIKey)) ?? nil
+        if let key, !key.isEmpty {
+            return AnthropicAPIAgentRunner()
+        }
+        return nil
+    }
+
+    /// Public entry point for the "Wiki → Set API Key…" menu item — lets the
+    /// user opt into the BYOK fallback explicitly rather than having it
+    /// prompted automatically.
+    static func promptForAPIKey() {
+        let keychain = KeychainStore()
+        guard let key = promptSecret(
+            title: "Set Anthropic API Key",
+            message: "Stored in Keychain. Only used when the Claude CLI isn't installed."
+        ), !key.isEmpty else { return }
+        do {
+            try keychain.set(key, forKey: WikiKeychainAccount.anthropicAPIKey)
+        } catch {
+            presentError("Couldn't save to Keychain: \(error)")
         }
     }
 
@@ -58,7 +92,8 @@ enum IngestCoordinator {
         url: URL,
         vaultURL: URL,
         workspace: WorkspaceManager,
-        controller: WikiOperationController
+        controller: WikiOperationController,
+        runner: AgentRunner
     ) async {
         do {
             let sourceText = try await fetchURLContent(url)
@@ -72,7 +107,6 @@ enum IngestCoordinator {
             """
             let prompt = RecipeParser.interpolate(recipe, input: input, vaultState: vaultState)
 
-            let runner = AnthropicAPIAgentRunner()
             let model = UserDefaults.standard.string(forKey: "wikiAgentModel")
             let result = try await runner.run(prompt: prompt, model: model)
 
