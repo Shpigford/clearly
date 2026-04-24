@@ -73,7 +73,7 @@ enum WikiAgentCoordinator {
         // Code can Read/Grep/Glob on demand — dramatically better synthesis
         // than us dumping 300KB of context upfront. Falls through to the BYOK
         // API runner (no tools) if Claude CLI isn't installed.
-        guard let runner = resolveQueryRunner(vaultURL: vaultURL) else {
+        guard let runner = resolveToolEnabledRunner(vaultURL: vaultURL) else {
             presentError("""
             Install Claude Code to use Wiki Chat: https://docs.claude.com/claude-code
 
@@ -115,22 +115,6 @@ enum WikiAgentCoordinator {
                 chat.sendError = Self.describe(error)
             }
         }
-    }
-
-    private static func resolveQueryRunner(vaultURL: URL) -> AgentRunner? {
-        if let cli = AgentDiscovery.findClaude() {
-            return ClaudeCLIAgentRunner(
-                binaryURL: cli.url,
-                enabledTools: "Read,Grep,Glob",
-                workingDirectory: vaultURL
-            )
-        }
-        let keychain = KeychainStore()
-        let key = (try? keychain.get(WikiKeychainAccount.anthropicAPIKey)) ?? nil
-        if let key, !key.isEmpty {
-            return AnthropicAPIAgentRunner()
-        }
-        return nil
     }
 
     /// Short prompt-side pointer that tells the agent how the vault is laid
@@ -243,7 +227,7 @@ enum WikiAgentCoordinator {
             presentError("\(operationKind.rawValue.capitalized) is only available when the active note lives in a wiki vault.")
             return nil
         }
-        guard let runner = resolveRunner() else {
+        guard let runner = resolveToolEnabledRunner(vaultURL: vaultURL) else {
             presentError("""
             Install Claude Code to use this command: https://docs.claude.com/claude-code
 
@@ -329,9 +313,17 @@ enum WikiAgentCoordinator {
 
     // MARK: - Runner resolution
 
-    private static func resolveRunner() -> AgentRunner? {
+    /// Single CLI runner config for every wiki recipe (Ingest/Query/Lint):
+    /// cwd=vault, tools=Read/Grep/Glob. Same config means same cache key, so
+    /// warming one recipe's cache benefits all three. API fallback doesn't
+    /// have tool use — in that mode we rely on the old prompt-side inlining.
+    private static func resolveToolEnabledRunner(vaultURL: URL) -> AgentRunner? {
         if let cli = AgentDiscovery.findClaude() {
-            return ClaudeCLIAgentRunner(binaryURL: cli.url)
+            return ClaudeCLIAgentRunner(
+                binaryURL: cli.url,
+                enabledTools: "Read,Grep,Glob",
+                workingDirectory: vaultURL
+            )
         }
         let keychain = KeychainStore()
         let key = (try? keychain.get(WikiKeychainAccount.anthropicAPIKey)) ?? nil
@@ -363,26 +355,28 @@ enum WikiAgentCoordinator {
 
     // MARK: - Vault state + URL helpers
 
-    /// Snapshot for Ingest / Lint: the agent needs to *modify* index.md and
-    /// AGENTS.md, so the `before:` field has to match disk exactly. We inline
-    /// both verbatim and list other paths but NOT their contents — the agent
-    /// isn't expected to touch them.
+    /// Pointer used by Ingest / Lint: the agent now has Read / Grep / Glob
+    /// and cwd=vault, so it can read any note on demand. Critically, this
+    /// tells it it MUST Read the file before proposing a modify — that's
+    /// what previously caused modifyBaseMismatch errors (the agent was
+    /// guessing at contents). No more inlining index.md verbatim.
     private static func buildVaultState(vaultURL: URL) -> String {
         let paths = listVaultMarkdownPaths(under: vaultURL)
-        var lines = ["# Vault files"]
-        lines.append(contentsOf: paths)
-        lines.append("")
-
-        for filename in ["index.md", "AGENTS.md"] {
-            let fileURL = vaultURL.appendingPathComponent(filename)
-            if let contents = try? String(contentsOf: fileURL, encoding: .utf8) {
-                lines.append("# Current contents of \(filename) — copy verbatim into any `before:` field")
-                lines.append("```")
-                lines.append(contents)
-                lines.append("```")
-                lines.append("")
-            }
-        }
+        var lines = [
+            "# Wiki vault",
+            "",
+            "Your current working directory IS the user's wiki vault. Use your Read / Grep / Glob tools to discover structure and load any notes you need before proposing changes.",
+            "",
+            "- `Read index.md` — the wiki's current table of contents (load before modifying)",
+            "- `Read AGENTS.md` — this vault's conventions and schema",
+            "- `Grep <term>` — search every note for a phrase",
+            "- `Glob \"**/*.md\"` — list all notes",
+            "",
+            "**CRITICAL: before proposing any `modify` change, you MUST Read the target file first.** The `before:` field of a modify must be the file's exact current contents. Never guess or reconstruct from memory. If you didn't Read it, don't modify it.",
+            "",
+            "Quick inventory:",
+        ]
+        lines.append(contentsOf: paths.map { "- \($0)" })
         return lines.joined(separator: "\n")
     }
 

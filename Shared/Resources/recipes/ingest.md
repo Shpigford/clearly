@@ -3,9 +3,9 @@ name: Ingest
 description: Turn a URL or pasted text into a new summary page and update the index.
 kind: ingest
 tool_allowlist:
-  - search_notes
-  - get_backlinks
-  - propose_operation
+  - Read
+  - Grep
+  - Glob
 expected_output: wiki_operation
 ---
 
@@ -21,21 +21,19 @@ You are maintaining a personal LLM wiki. The user has given you a new source to 
 
 # Your task
 
-Read the source carefully. Then propose a single `WikiOperation` that:
+1. **Read `AGENTS.md`** first — it declares this vault's conventions (folder structure, naming, required frontmatter). Follow them.
+2. **Read `index.md`** — you'll need its exact current contents to propose a modify. Use Grep or Glob if you want to discover related notes that might need small updates.
+3. **Create a new note** in an appropriate folder (`sources/` if no better fit) summarising the source. The note MUST start with a `#` heading and include a `> Source: <URL or citation>` callout on the line after the heading.
+4. **Update `index.md`** so the new note appears under the most appropriate section. If no section fits, add one — but prefer reusing existing sections.
+5. Don't touch notes that aren't clearly improved by this source. No drive-by edits.
 
-1. Creates a new note in `sources/` (or, if the source is a paper/talk/book, a more specific folder) summarising the source. The note MUST start with a `#` heading that names the concept and MUST include a `> Source: <URL or citation>` callout as its second line.
-2. Updates `index.md` so the new note appears under the most appropriate section. If no section fits, add one — but prefer reusing existing sections.
-3. Only touches files that are clearly improved by this source. Don't edit notes that are merely adjacent.
+# Modify preconditions
 
-# Critical: `modify` preconditions
-
-For every `{"type": "modify", ...}` change, the `before` field MUST be the **exact, byte-for-byte current contents** of the target file — copy it verbatim from the "Current contents of ..." block above. Do not paraphrase, do not trim whitespace, do not omit trailing newlines. The apply step compares `before` against disk and rejects the whole operation on any mismatch.
-
-If you don't have the current contents of a file available, do NOT propose a `modify` for it — either skip the change or propose a `create` for a new file instead.
+For every `{"type": "modify", ...}` change, you MUST have Read the target file in this session. Copy its contents byte-for-byte into `before:` — paraphrasing or reconstructing from memory WILL fail the apply step. If you want to modify a file you haven't Read, Read it first.
 
 # Output contract
 
-Return ONLY a JSON object matching this shape:
+When you've gathered everything you need, return ONLY a JSON object matching this shape (no prose before or after):
 
 ```json
 {
@@ -48,4 +46,4 @@ Return ONLY a JSON object matching this shape:
 }
 ```
 
-Paths are vault-relative. Use forward slashes. Do not include any text outside the JSON object.
+Paths are vault-relative. Use forward slashes.
