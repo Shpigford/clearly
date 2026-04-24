@@ -231,6 +231,9 @@ struct MacDetailColumn: View {
                 onApplied: handleOperationApplied
             )
         }
+        .onReceive(NotificationCenter.default.publisher(for: .wikiIngest)) { _ in
+            IngestCoordinator.start(workspace: workspace, controller: wikiController)
+        }
         #if DEBUG
         .onReceive(NotificationCenter.default.publisher(for: .wikiDebugPreviewDiff)) { _ in
             stageDebugOperation()
