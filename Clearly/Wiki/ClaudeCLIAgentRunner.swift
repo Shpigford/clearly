@@ -17,14 +17,29 @@ import ClearlyCore
 struct ClaudeCLIAgentRunner: AgentRunner {
     let binaryURL: URL
     let environment: [String: String]
+    /// Comma-separated tool list passed to `--tools`. "" disables every tool
+    /// (useful for pure-completion runs like Ingest/Lint JSON output).
+    /// "Read,Grep,Glob" lets the agent explore the vault itself.
+    let enabledTools: String
+    /// Overrides the default stable caches-dir cwd. Used by Query so Claude
+    /// Code treats the vault as its workspace and its Read/Grep/Glob tools
+    /// operate on the user's notes.
+    let workingDirectoryOverride: URL?
 
-    init(binaryURL: URL, environment: [String: String] = ProcessInfo.processInfo.environment) {
+    init(
+        binaryURL: URL,
+        enabledTools: String = "",
+        workingDirectory: URL? = nil,
+        environment: [String: String] = ProcessInfo.processInfo.environment
+    ) {
         self.binaryURL = binaryURL
+        self.enabledTools = enabledTools
+        self.workingDirectoryOverride = workingDirectory
         self.environment = environment
     }
 
     func run(prompt: String, model: String?) async throws -> AgentResult {
-        let arguments = Self.buildArguments(model: model)
+        let arguments = Self.buildArguments(model: model, tools: enabledTools)
         let (stdoutData, stderrText, status) = try await spawn(prompt: prompt, arguments: arguments)
 
         guard status == 0 else {
@@ -35,11 +50,11 @@ struct ClaudeCLIAgentRunner: AgentRunner {
 
     // MARK: - Argument layout
 
-    static func buildArguments(model: String?) -> [String] {
+    static func buildArguments(model: String?, tools: String) -> [String] {
         var args: [String] = [
             "--print",
             "--output-format", "json",
-            "--tools", "",
+            "--tools", tools,
             "--no-session-persistence",
             // Critical for cache reuse: moves cwd / git / env sections out of
             // the system prompt into the first user message. Without this,
@@ -61,11 +76,11 @@ struct ClaudeCLIAgentRunner: AgentRunner {
             let process = Process()
             process.executableURL = binaryURL
             process.arguments = arguments
-            // Pin a stable cwd so Claude Code's `cwd` section (moved into the
-            // first user message by --exclude-dynamic-system-prompt-sections)
-            // is identical across invocations, which is what keeps the
-            // prompt cache valid between calls.
-            process.currentDirectoryURL = Self.stableWorkingDirectory()
+            // Per-operation override (Query wants cwd=vault so Read/Grep/Glob
+            // operate on notes) or the stable caches dir (Ingest/Lint — keeps
+            // the cache key identical across invocations, which is what makes
+            // subsequent calls fast).
+            process.currentDirectoryURL = workingDirectoryOverride ?? Self.stableWorkingDirectory()
             process.environment = environment
 
             let stdin = Pipe()

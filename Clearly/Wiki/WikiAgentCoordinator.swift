@@ -65,7 +65,24 @@ enum WikiAgentCoordinator {
         workspace: WorkspaceManager,
         chat: WikiChatState
     ) {
-        guard let session = beginSession(workspace: workspace, operationKind: .query) else { return }
+        guard let vaultURL = workspace.activeLocation?.url, workspace.activeVaultIsWiki else {
+            presentError("Chat is only available when the active note lives in a wiki vault.")
+            return
+        }
+        // Query uses a tool-enabled runner pointed at the vault cwd so Claude
+        // Code can Read/Grep/Glob on demand — dramatically better synthesis
+        // than us dumping 300KB of context upfront. Falls through to the BYOK
+        // API runner (no tools) if Claude CLI isn't installed.
+        guard let runner = resolveQueryRunner(vaultURL: vaultURL) else {
+            presentError("""
+            Install Claude Code to use Wiki Chat: https://docs.claude.com/claude-code
+
+            Or choose Wiki → Set Anthropic API Key… to fall back to BYOK (without file-exploration tools).
+            """)
+            return
+        }
+        AgentWarmer.warmIfNeeded(runner: runner)
+
         _ = chat.appendUser(text)
         chat.draft = ""
         chat.isSending = true
@@ -74,14 +91,16 @@ enum WikiAgentCoordinator {
         Task { @MainActor in
             defer { chat.isSending = false }
             do {
-                let recipe = try loadRecipe(kind: .query, vaultURL: session.vaultURL)
-                let vaultState = buildQueryVaultState(vaultURL: session.vaultURL)
+                let recipe = try loadRecipe(kind: .query, vaultURL: vaultURL)
+                // Minimal context pointer — the agent explores with tools
+                // instead of us inlining files.
+                let vaultState = buildQueryVaultPointer(vaultURL: vaultURL)
                 let transcript = Self.renderTranscript(chat.messages)
                 let prompt = RecipeParser.interpolate(recipe, input: transcript, vaultState: vaultState)
                 DiagnosticLog.log("Chat: sending (turns=\(chat.messages.count), prompt=\(prompt.count) chars)")
 
                 let model = UserDefaults.standard.string(forKey: "wikiAgentModel")
-                let result = try await session.runner.run(prompt: prompt, model: model)
+                let result = try await runner.run(prompt: prompt, model: model)
                 AgentWarmer.markExercised()
                 DiagnosticLog.log("Chat: reply \(result.text.count) chars, tokens in=\(result.inputTokens) out=\(result.outputTokens)")
 
@@ -96,6 +115,45 @@ enum WikiAgentCoordinator {
                 chat.sendError = Self.describe(error)
             }
         }
+    }
+
+    private static func resolveQueryRunner(vaultURL: URL) -> AgentRunner? {
+        if let cli = AgentDiscovery.findClaude() {
+            return ClaudeCLIAgentRunner(
+                binaryURL: cli.url,
+                enabledTools: "Read,Grep,Glob",
+                workingDirectory: vaultURL
+            )
+        }
+        let keychain = KeychainStore()
+        let key = (try? keychain.get(WikiKeychainAccount.anthropicAPIKey)) ?? nil
+        if let key, !key.isEmpty {
+            return AnthropicAPIAgentRunner()
+        }
+        return nil
+    }
+
+    /// Short prompt-side pointer that tells the agent how the vault is laid
+    /// out and that it should use its native tools. Replaces the 300KB
+    /// inline-everything approach — smaller prompt, smarter agent, better
+    /// answers because it reads only what's relevant.
+    private static func buildQueryVaultPointer(vaultURL: URL) -> String {
+        let paths = listVaultMarkdownPaths(under: vaultURL)
+        var lines = [
+            "# Wiki vault",
+            "",
+            "Your current working directory IS the user's wiki vault. Every markdown file in it is part of the knowledge base. Use your Read / Grep / Glob tools to explore it:",
+            "",
+            "- `Glob \"**/*.md\"` — list notes",
+            "- `Grep <term>` — search across all notes",
+            "- `Read <path>` — load a specific note's contents",
+            "",
+            "Prefer reading only the files that are actually relevant to the question. Cite what you read as `[[note-name]]` wiki-links.",
+            "",
+            "Quick inventory (you can also discover these yourself):",
+        ]
+        lines.append(contentsOf: paths.map { "- \($0)" })
+        return lines.joined(separator: "\n")
     }
 
     /// Serialise the conversation into the form the query recipe expects as
@@ -310,57 +368,6 @@ enum WikiAgentCoordinator {
         return lines.joined(separator: "\n")
     }
 
-    /// Soft cap on markdown bytes we inline for Query. Sonnet 4.6 has ~200K
-    /// tokens; Claude Code's system prompt eats ~95K, the recipe + transcript
-    /// add a few more, and we want headroom for the answer. 300KB of notes
-    /// is ~75K tokens — safe with room to spare. If the vault is larger, we
-    /// inline what fits and flag the truncation so the agent can say "I
-    /// didn't see everything" instead of confabulating.
-    private static let queryContextBudget = 300_000
-
-    /// Snapshot for Query: inline every markdown file up to the budget so
-    /// Claude can actually *read* notes to answer questions. Ingest-style
-    /// path-only listings force the agent to guess contents, which is what
-    /// "only the index summary is visible" was really telling us.
-    private static func buildQueryVaultState(vaultURL: URL) -> String {
-        let paths = listVaultMarkdownPaths(under: vaultURL)
-        var lines = ["# Wiki contents"]
-        lines.append("")
-        lines.append("Every markdown note in the vault is inlined below between `=== FILE ===` / `=== END ===` markers. Prefer citing these as `[[note-name]]` wiki-links.")
-        lines.append("")
-
-        var totalBytes = 0
-        var included = 0
-        var skipped: [String] = []
-
-        for relPath in paths {
-            let fileURL = vaultURL.appendingPathComponent(relPath)
-            guard let contents = try? String(contentsOf: fileURL, encoding: .utf8) else { continue }
-            let size = contents.utf8.count
-            if totalBytes + size > queryContextBudget {
-                skipped.append(relPath)
-                continue
-            }
-            totalBytes += size
-            included += 1
-            lines.append("=== FILE: \(relPath) ===")
-            lines.append(contents)
-            lines.append("=== END: \(relPath) ===")
-            lines.append("")
-        }
-
-        if !skipped.isEmpty {
-            lines.append("# Notes NOT loaded into this context (budget exceeded)")
-            lines.append("These paths exist in the vault but their contents aren't available here. If a question can only be answered from them, say so rather than guessing.")
-            for path in skipped {
-                lines.append("- \(path)")
-            }
-            lines.append("")
-        }
-
-        DiagnosticLog.log("Query: inlined \(included) of \(paths.count) notes (\(totalBytes) bytes)")
-        return lines.joined(separator: "\n")
-    }
 
     private static func listVaultMarkdownPaths(under vaultURL: URL) -> [String] {
         let fm = FileManager.default
