@@ -95,10 +95,13 @@ enum IngestCoordinator {
         controller: WikiOperationController,
         runner: AgentRunner
     ) async {
+        let fetchURL = rewriteForContent(url)
+        DiagnosticLog.log("Ingest: start url=\(url.absoluteString) fetchURL=\(fetchURL.absoluteString)")
         do {
-            let sourceText = try await fetchURLContent(url)
+            let sourceText = try await fetchURLContent(fetchURL)
+            DiagnosticLog.log("Ingest: fetched \(sourceText.count) chars")
             let recipe = try loadIngestRecipe(vaultURL: vaultURL)
-            let vaultState = listVaultMarkdownPaths(under: vaultURL).joined(separator: "\n")
+            let vaultState = buildVaultState(vaultURL: vaultURL)
             let input = """
             URL: \(url.absoluteString)
 
@@ -106,9 +109,11 @@ enum IngestCoordinator {
             \(sourceText.prefix(maxSourceCharacters))
             """
             let prompt = RecipeParser.interpolate(recipe, input: input, vaultState: vaultState)
+            DiagnosticLog.log("Ingest: calling agent (prompt=\(prompt.count) chars)")
 
             let model = UserDefaults.standard.string(forKey: "wikiAgentModel")
             let result = try await runner.run(prompt: prompt, model: model)
+            DiagnosticLog.log("Ingest: agent replied \(result.text.count) chars, tokens in=\(result.inputTokens) out=\(result.outputTokens)")
 
             let operation = try AgentResultParser.parseWikiOperation(from: result.text, kind: .ingest)
             let titled = WikiOperation(
@@ -119,11 +124,59 @@ enum IngestCoordinator {
                 changes: operation.changes,
                 createdAt: operation.createdAt
             )
+            DiagnosticLog.log("Ingest: staging operation with \(titled.changes.count) changes")
             controller.stage(titled)
         } catch {
             DiagnosticLog.log("Ingest failed: \(error)")
             presentError("Ingest failed: \(Self.describe(error))")
         }
+    }
+
+    // MARK: - URL rewrites
+
+    /// Rewrite URLs whose default HTML is a thin shell into a form that
+    /// actually contains the content. Currently: GitHub gists — the gist
+    /// page loads the body client-side, so `/<user>/<id>` needs to become
+    /// `/<user>/<id>/raw` (or first file) to get actual text. Extend per
+    /// host as needed.
+    static func rewriteForContent(_ url: URL) -> URL {
+        guard let host = url.host?.lowercased() else { return url }
+        if host == "gist.github.com" {
+            let path = url.path.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+            let parts = path.split(separator: "/").map(String.init)
+            // e.g. ["karpathy", "442a6bf555914893e9891c11519de94f"]
+            if parts.count == 2,
+               let rawURL = URL(string: "https://gist.githubusercontent.com/\(parts[0])/\(parts[1])/raw") {
+                return rawURL
+            }
+        }
+        return url
+    }
+
+    // MARK: - Vault state
+
+    /// Snapshot of the vault the agent needs to propose a valid `modify`.
+    /// Lists every markdown path AND inlines the current `index.md` and
+    /// `AGENTS.md` contents verbatim so the agent's `before:` matches disk
+    /// exactly. Without this, the agent has to guess and our strict
+    /// modifyBaseMismatch check rejects the apply.
+    private static func buildVaultState(vaultURL: URL) -> String {
+        let paths = listVaultMarkdownPaths(under: vaultURL)
+        var lines = ["# Vault files"]
+        lines.append(contentsOf: paths)
+        lines.append("")
+
+        for filename in ["index.md", "AGENTS.md"] {
+            let fileURL = vaultURL.appendingPathComponent(filename)
+            if let contents = try? String(contentsOf: fileURL, encoding: .utf8) {
+                lines.append("# Current contents of \(filename) — copy verbatim into any `before:` field")
+                lines.append("```")
+                lines.append(contents)
+                lines.append("```")
+                lines.append("")
+            }
+        }
+        return lines.joined(separator: "\n")
     }
 
     // MARK: - Recipe

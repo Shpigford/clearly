@@ -17,8 +17,6 @@ You are maintaining a personal LLM wiki. The user has given you a new source to 
 
 # Current vault
 
-The vault already contains the following notes (one per line, relative paths):
-
 {{vault_state}}
 
 # Your task
@@ -28,6 +26,12 @@ Read the source carefully. Then propose a single `WikiOperation` that:
 1. Creates a new note in `sources/` (or, if the source is a paper/talk/book, a more specific folder) summarising the source. The note MUST start with a `#` heading that names the concept and MUST include a `> Source: <URL or citation>` callout as its second line.
 2. Updates `index.md` so the new note appears under the most appropriate section. If no section fits, add one — but prefer reusing existing sections.
 3. Only touches files that are clearly improved by this source. Don't edit notes that are merely adjacent.
+
+# Critical: `modify` preconditions
+
+For every `{"type": "modify", ...}` change, the `before` field MUST be the **exact, byte-for-byte current contents** of the target file — copy it verbatim from the "Current contents of ..." block above. Do not paraphrase, do not trim whitespace, do not omit trailing newlines. The apply step compares `before` against disk and rejects the whole operation on any mismatch.
+
+If you don't have the current contents of a file available, do NOT propose a `modify` for it — either skip the change or propose a `create` for a new file instead.
 
 # Output contract
 
@@ -39,7 +43,7 @@ Return ONLY a JSON object matching this shape:
   "rationale": "one or two sentences explaining why these changes",
   "changes": [
     {"type": "create", "path": "sources/foo.md", "contents": "# Foo\n\n..."},
-    {"type": "modify", "path": "index.md", "before": "...current contents...", "after": "...new contents..."}
+    {"type": "modify", "path": "index.md", "before": "...exact current contents...", "after": "...new contents..."}
   ]
 }
 ```
