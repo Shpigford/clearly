@@ -601,6 +601,7 @@ struct EditorView: NSViewRepresentable {
                         sv.contentView.scroll(to: origin)
                         sv.reflectScrolledClipView(sv.contentView)
                     }
+                    self.invalidateVisibleRegion(of: textView)
                     self.restoreFindHighlightsIfNeeded()
                 }
                 pendingFullHighlightWork = work
@@ -612,6 +613,11 @@ struct EditorView: NSViewRepresentable {
                 scrollView.contentView.scroll(to: savedOrigin)
                 scrollView.reflectScrolledClipView(scrollView.contentView)
             }
+
+            // Attribute-only highlighting doesn't invalidate display, so mark
+            // the viewport dirty after restoring scroll. Limit invalidation to
+            // the visible rect so large documents don't repaint end-to-end.
+            invalidateVisibleRegion(of: textView)
 
             // Re-apply find highlights after syntax highlighting
             restoreFindHighlightsIfNeeded()
@@ -748,6 +754,11 @@ struct EditorView: NSViewRepresentable {
             ScrollBridge.setFraction(fraction, for: parent.positionSyncID)
 
             gutterView?.scrollOrFrameDidChange()
+        }
+
+        private func invalidateVisibleRegion(of textView: NSTextView) {
+            let visibleRect = textView.enclosingScrollView?.contentView.documentVisibleRect ?? textView.visibleRect
+            textView.setNeedsDisplay(visibleRect, avoidAdditionalLayout: true)
         }
 
         // MARK: - Find
