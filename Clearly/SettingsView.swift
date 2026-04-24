@@ -17,6 +17,7 @@ struct SettingsView: View {
     @AppStorage("launchBehavior") private var launchBehavior = "lastFile"
     @AppStorage("contentWidth") private var contentWidth = "off"
     @AppStorage("hideFrontmatterInPreview") private var hideFrontmatterInPreview = false
+    @AppStorage("showMenuBarIcon") private var showMenuBarIcon = true
 
     var body: some View {
         TabView {
@@ -78,6 +79,7 @@ struct SettingsView: View {
                 Text("Wide").tag("wide")
             }
             Toggle("Hide frontmatter in Preview", isOn: $hideFrontmatterInPreview)
+            Toggle("Show icon in menu bar", isOn: $showMenuBarIcon)
             KeyboardShortcuts.Recorder("New Scratchpad:", name: .newScratchpad)
             Toggle("Launch at Login", isOn: $launchAtLogin)
                 .onChange(of: launchAtLogin) { _, newValue in

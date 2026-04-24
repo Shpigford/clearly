@@ -2,6 +2,10 @@ import Foundation
 import cmark
 
 public enum MarkdownRenderer {
+    private static let escapedMathBackslashToken = "\u{E100}"
+    private static let escapedMathDollarToken = "\u{E101}"
+    private static let escapedMathPaddingToken = "\u{E102}"
+
     public static func renderHTML(_ markdown: String, appLinkURLs: Bool = false, includeFrontmatter: Bool = true) -> String {
         guard !markdown.isEmpty else { return "" }
 
@@ -9,14 +13,15 @@ public enum MarkdownRenderer {
 
         let rawBody = frontmatter?.body ?? markdown
         let (body, codeFilenames) = extractCodeFilenames(rawBody)
-        let len = body.utf8.count
+        let protectedBody = protectEscapedMathDelimiters(in: body)
+        let len = protectedBody.utf8.count
         let options = Int32(CMARK_OPT_UNSAFE | CMARK_OPT_FOOTNOTES | CMARK_OPT_STRIKETHROUGH_DOUBLE_TILDE | CMARK_OPT_SOURCEPOS | CMARK_OPT_TABLE_PREFER_STYLE_ATTRIBUTES)
         var html: String
         // Try GFM renderer first (tables, strikethrough, task lists, autolinks)
-        if let buf = cmark_gfm_markdown_to_html(body, len, options) {
+        if let buf = cmark_gfm_markdown_to_html(protectedBody, len, options) {
             html = String(cString: buf)
             free(buf)
-        } else if let buf = cmark_markdown_to_html(body, len, options) {
+        } else if let buf = cmark_markdown_to_html(protectedBody, len, options) {
             // Fallback to basic CommonMark
             html = String(cString: buf)
             free(buf)
@@ -24,6 +29,7 @@ public enum MarkdownRenderer {
             return ""
         }
         html = processMath(html)
+        html = restoreEscapedMathDelimiters(in: html)
         html = processHighlightMarks(html)
         html = processSuperSub(html)
         html = processEmoji(html)
@@ -88,6 +94,48 @@ public enum MarkdownRenderer {
         return result
     }
 
+    private static func protectEscapedMathDelimiters(in markdown: String) -> String {
+        var result = ""
+        var index = markdown.startIndex
+
+        while index < markdown.endIndex {
+            guard markdown[index] == "\\" else {
+                result.append(markdown[index])
+                index = markdown.index(after: index)
+                continue
+            }
+
+            var slashEnd = index
+            while slashEnd < markdown.endIndex, markdown[slashEnd] == "\\" {
+                slashEnd = markdown.index(after: slashEnd)
+            }
+
+            guard slashEnd < markdown.endIndex, markdown[slashEnd] == "$" else {
+                result += markdown[index..<slashEnd]
+                index = slashEnd
+                continue
+            }
+
+            let slashCount = markdown.distance(from: index, to: slashEnd)
+            let literalSlashCount = slashCount / 2
+            let paddingCount = slashCount - literalSlashCount
+
+            result += String(repeating: escapedMathBackslashToken, count: literalSlashCount)
+            result += escapedMathDollarToken
+            result += String(repeating: escapedMathPaddingToken, count: paddingCount)
+            index = markdown.index(after: slashEnd)
+        }
+
+        return result
+    }
+
+    private static func restoreEscapedMathDelimiters(in html: String) -> String {
+        html
+            .replacingOccurrences(of: escapedMathBackslashToken, with: "\\")
+            .replacingOccurrences(of: escapedMathDollarToken, with: "$")
+            .replacingOccurrences(of: escapedMathPaddingToken, with: "")
+    }
+
     /// Convert $...$ and $$...$$ in rendered HTML to KaTeX-compatible spans/divs.
     /// Only transforms text nodes outside protected <code>/<pre> regions.
     private static func processMath(_ html: String) -> String {
@@ -123,14 +171,14 @@ public enum MarkdownRenderer {
 
     private static func processMathText(_ text: String) -> String {
         var result = text
-        if let blockRegex = try? NSRegularExpression(pattern: #"\$\$(.+?)\$\$"#, options: .dotMatchesLineSeparators) {
+        if let blockRegex = try? NSRegularExpression(pattern: MathSupport.displayMathPattern, options: .dotMatchesLineSeparators) {
             result = blockRegex.stringByReplacingMatches(
                 in: result,
                 range: NSRange(result.startIndex..., in: result),
                 withTemplate: #"<div class="math-block">$1</div>"#
             )
         }
-        if let inlineRegex = try? NSRegularExpression(pattern: #"(?<![\\$])\$(?!\$)(.+?)(?<![\\$])\$"#) {
+        if let inlineRegex = try? NSRegularExpression(pattern: MathSupport.inlineMathPattern) {
             result = inlineRegex.stringByReplacingMatches(
                 in: result,
                 range: NSRange(result.startIndex..., in: result),

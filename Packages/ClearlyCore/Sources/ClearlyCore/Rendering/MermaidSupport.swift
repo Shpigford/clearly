@@ -49,6 +49,12 @@ public enum MermaidSupport {
 }
 
 public enum MathSupport {
+    // MathJax/Obsidian whitespace rule + markdown-it-katex "no digit after close" — blocks currency like `$5.12 on soda and $4.42`.
+    public static let inlineMathPattern =
+        #"(?<![\\$])\$(?![\s$])([^\n$]+?)(?<![\s\\$])\$(?![\d$])"#
+
+    public static let displayMathPattern = #"\$\$(.+?)\$\$"#
+
     public static func scriptHTML(for htmlBody: String) -> String {
         guard htmlBody.contains("math-inline") || htmlBody.contains("math-block") else {
             return ""
