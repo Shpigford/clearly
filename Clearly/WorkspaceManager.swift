@@ -61,6 +61,7 @@ final class WorkspaceManager {
     private static let locationBookmarksKey = "locationBookmarks"
     private static let recentBookmarksKey = "recentBookmarks"
     private static let lastOpenFileKey = "lastOpenFileURL"
+    private static let documentSessionKey = "documentSession"
     private static let sidebarVisibleKey = "sidebarVisible"
     private static let launchBehaviorKey = "launchBehavior"
     private static let folderIconsKey = "folderIcons"
@@ -93,6 +94,20 @@ final class WorkspaceManager {
         case cancel
     }
 
+    private struct PersistedDocumentSession: Codable {
+        let documents: [PersistedDocumentState]
+        let activeDocumentID: UUID?
+    }
+
+    private struct PersistedDocumentState: Codable {
+        let id: UUID
+        let bookmarkData: Data?
+        let text: String?
+        let lastSavedText: String?
+        let untitledNumber: Int?
+        let viewModeRawValue: String
+    }
+
     // MARK: - Init
 
     init() {
@@ -111,11 +126,13 @@ final class WorkspaceManager {
             UserDefaults.standard.set(true, forKey: Self.hasEverAddedLocationKey)
         }
 
-        let launchBehavior = UserDefaults.standard.string(forKey: Self.launchBehaviorKey) ?? "lastFile"
-        if launchBehavior == "newDocument" {
-            createUntitledDocument()
-        } else {
-            restoreLastFile()
+        if !restoreDocumentSession() {
+            let launchBehavior = UserDefaults.standard.string(forKey: Self.launchBehaviorKey) ?? "lastFile"
+            if launchBehavior == "newDocument" {
+                createUntitledDocument()
+            } else {
+                restoreLastFile()
+            }
         }
     }
 
@@ -269,7 +286,7 @@ final class WorkspaceManager {
             case .save:
                 guard saveDocument(at: idx, treatCancelAsFailure: true) else { return false }
             case .discard:
-                break
+                discardChanges(to: id)
             case .cancel:
                 return false
             }
@@ -309,7 +326,7 @@ final class WorkspaceManager {
             case .save:
                 guard saveDocument(at: idx, treatCancelAsFailure: true) else { return false }
             case .discard:
-                break
+                discardChanges(to: docID)
             case .cancel:
                 return false
             }
@@ -1639,6 +1656,37 @@ final class WorkspaceManager {
         openFile(at: url)
     }
 
+    private func restoreDocumentSession() -> Bool {
+        guard let data = UserDefaults.standard.data(forKey: Self.documentSessionKey) else { return false }
+        clearPersistedDocumentSession()
+
+        guard let session = try? JSONDecoder().decode(PersistedDocumentSession.self, from: data) else {
+            DiagnosticLog.log("Failed to decode persisted document session")
+            return false
+        }
+
+        let restoredDocuments = session.documents.compactMap(restoreDocument(from:))
+        guard !restoredDocuments.isEmpty else { return false }
+
+        openDocuments = restoredDocuments
+        nextUntitledNumber = (restoredDocuments.compactMap(\.untitledNumber).max() ?? 0) + 1
+
+        if let activeDocumentID = session.activeDocumentID,
+           restoredDocuments.contains(where: { $0.id == activeDocumentID }) {
+            self.activeDocumentID = activeDocumentID
+        } else {
+            self.activeDocumentID = restoredDocuments.first?.id
+        }
+
+        restoreActiveDocument()
+        if let currentFileURL {
+            persistLastOpenFile(currentFileURL)
+        }
+
+        DiagnosticLog.log("Restored document session: \(restoredDocuments.count) tabs")
+        return true
+    }
+
     // MARK: - Vault Index
 
     private func openVaultIndex(for location: BookmarkedLocation) {
@@ -1820,10 +1868,109 @@ final class WorkspaceManager {
         }
     }
 
+    func persistDocumentSession() {
+        snapshotActiveDocument()
+
+        let documents = openDocuments.compactMap(persistedDocumentState(for:))
+        guard !documents.isEmpty else {
+            clearPersistedDocumentSession()
+            return
+        }
+
+        let session = PersistedDocumentSession(documents: documents, activeDocumentID: activeDocumentID)
+
+        do {
+            let data = try JSONEncoder().encode(session)
+            UserDefaults.standard.set(data, forKey: Self.documentSessionKey)
+            DiagnosticLog.log("Persisted document session: \(documents.count) tabs")
+        } catch {
+            DiagnosticLog.log("Failed to persist document session: \(error.localizedDescription)")
+        }
+    }
+
+    func clearPersistedDocumentSession() {
+        UserDefaults.standard.removeObject(forKey: Self.documentSessionKey)
+    }
+
     private func persistLastOpenFile(_ url: URL) {
         if let bookmarkData = try? url.bookmarkData(options: .withSecurityScope, includingResourceValuesForKeys: nil, relativeTo: nil) {
             UserDefaults.standard.set(bookmarkData, forKey: Self.lastOpenFileKey)
         }
+    }
+
+    private func persistedDocumentState(for document: OpenDocument) -> PersistedDocumentState? {
+        if let fileURL = document.fileURL {
+            guard let bookmarkData = try? fileURL.bookmarkData(options: .withSecurityScope, includingResourceValuesForKeys: nil, relativeTo: nil) else {
+                DiagnosticLog.log("Failed to bookmark open document: \(fileURL.lastPathComponent)")
+                return nil
+            }
+
+            return PersistedDocumentState(
+                id: document.id,
+                bookmarkData: bookmarkData,
+                text: nil,
+                lastSavedText: nil,
+                untitledNumber: nil,
+                viewModeRawValue: document.viewMode.rawValue
+            )
+        }
+
+        return PersistedDocumentState(
+            id: document.id,
+            bookmarkData: nil,
+            text: document.text,
+            lastSavedText: document.lastSavedText,
+            untitledNumber: document.untitledNumber,
+            viewModeRawValue: document.viewMode.rawValue
+        )
+    }
+
+    private func restoreDocument(from state: PersistedDocumentState) -> OpenDocument? {
+        let viewMode = ViewMode(rawValue: state.viewModeRawValue) ?? .edit
+
+        if let bookmarkData = state.bookmarkData {
+            var isStale = false
+            guard let resolvedURL = try? URL(
+                resolvingBookmarkData: bookmarkData,
+                options: .withSecurityScope,
+                relativeTo: nil,
+                bookmarkDataIsStale: &isStale
+            ) else {
+                return nil
+            }
+
+            let normalizedURL = resolvedURL.standardizedFileURL
+            if !hasActiveAccess(to: normalizedURL) {
+                guard normalizedURL.startAccessingSecurityScopedResource() else { return nil }
+                accessedURLs.insert(normalizedURL)
+            }
+
+            guard FileManager.default.fileExists(atPath: normalizedURL.path),
+                  let data = try? Data(contentsOf: normalizedURL),
+                  let text = String(data: data, encoding: .utf8) else {
+                return nil
+            }
+
+            return OpenDocument(
+                id: state.id,
+                fileURL: normalizedURL,
+                text: text,
+                lastSavedText: text,
+                untitledNumber: nil,
+                viewMode: viewMode,
+                conflictOutcome: nil
+            )
+        }
+
+        return OpenDocument(
+            id: state.id,
+            fileURL: nil,
+            text: state.text ?? "",
+            lastSavedText: state.lastSavedText ?? "",
+            untitledNumber: state.untitledNumber,
+            viewMode: viewMode,
+            conflictOutcome: nil
+        )
     }
 
     private func promptToSaveChanges(for doc: OpenDocument) -> DirtyDocumentDisposition {
