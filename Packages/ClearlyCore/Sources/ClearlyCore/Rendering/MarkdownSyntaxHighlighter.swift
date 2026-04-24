@@ -63,7 +63,7 @@ public final class MarkdownSyntaxHighlighter: NSObject {
         }
 
         // Inline math: $...$
-        add("(?<!\\$)\\$(?!\\$)([^\n$]+?)(?<!\\$)\\$(?!\\$)", .mathInline)
+        add(MathSupport.inlineMathPattern, .mathInline)
 
         // Headings: # Heading
         add("^(#{1,6}\\s+)(.+)$", .heading, options: .anchorsMatchLines)
