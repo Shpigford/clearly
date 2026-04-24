@@ -18,6 +18,7 @@ struct SettingsView: View {
     @AppStorage("contentWidth") private var contentWidth = "off"
     @AppStorage("hideFrontmatterInPreview") private var hideFrontmatterInPreview = false
     @AppStorage("showMenuBarIcon") private var showMenuBarIcon = true
+    @AppStorage("sidebarSize") private var sidebarSize: String = "medium"
 
     var body: some View {
         TabView {
@@ -66,6 +67,12 @@ struct SettingsView: View {
                     .font(.system(size: 13, weight: .medium))
                     .monospacedDigit()
                     .frame(width: 30, alignment: .trailing)
+            }
+            Picker("Sidebar Size", selection: $sidebarSize) {
+                Text("Small").tag("small")
+                Text("Medium").tag("medium")
+                Text("Large").tag("large")
+                Text("X-Large").tag("xlarge")
             }
             Picker("Preview Font", selection: $previewFontFamily) {
                 Text("San Francisco").tag("sanFrancisco")

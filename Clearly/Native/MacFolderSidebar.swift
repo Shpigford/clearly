@@ -2,6 +2,38 @@ import SwiftUI
 import AppKit
 import ClearlyCore
 
+/// Four-step font/icon scaling for sidebar rows. Backs the Preferences
+/// "Sidebar Size" picker; stored as a raw string in `@AppStorage("sidebarSize")`.
+/// Range stays tight (11/12/13/14pt font) because SwiftUI's `.listStyle(.sidebar)`
+/// row chrome stops scaling cleanly above ~14pt — and rows have a hardcoded
+/// minimum height that the smaller fonts fit under, so Small and Medium look
+/// similar in row height while differing in font weight.
+enum SidebarSize: String {
+    case small, medium, large, xlarge
+
+    static func resolve(_ raw: String) -> SidebarSize {
+        SidebarSize(rawValue: raw) ?? .medium
+    }
+
+    var primaryFontSize: CGFloat {
+        switch self {
+        case .small: 11
+        case .medium: 12
+        case .large: 13
+        case .xlarge: 14
+        }
+    }
+
+    var secondaryFontSize: CGFloat {
+        switch self {
+        case .small: 8
+        case .medium: 9
+        case .large: 10
+        case .xlarge: 11
+        }
+    }
+}
+
 /// Native Apple-Notes-style left sidebar. Two-column shell — folders and
 /// files are both rendered as rows in this outline. Folders use
 /// `DisclosureGroup` to expand/collapse; files use `doc.text` leaf rows
@@ -411,6 +443,8 @@ private struct SidebarRowLabel: View {
     let iconTint: Color?
     let isSelected: Bool
 
+    @AppStorage("sidebarSize") private var sidebarSizeRaw: String = "medium"
+
     var body: some View {
         Label {
             Text(title)
@@ -420,6 +454,7 @@ private struct SidebarRowLabel: View {
             Image(systemName: systemImage)
                 .foregroundStyle(iconStyle)
         }
+        .font(.system(size: SidebarSize.resolve(sidebarSizeRaw).primaryFontSize))
     }
 
     private var iconStyle: AnyShapeStyle {
@@ -515,14 +550,17 @@ private struct RecentRowLabel: View {
     let url: URL
     let isSelected: Bool
 
+    @AppStorage("sidebarSize") private var sidebarSizeRaw: String = "medium"
+
     var body: some View {
+        let size = SidebarSize.resolve(sidebarSizeRaw)
         Label {
             HStack(spacing: 6) {
                 Text(url.deletingPathExtension().lastPathComponent)
                     .lineLimit(1)
                     .truncationMode(.middle)
                 Text(url.deletingLastPathComponent().lastPathComponent)
-                    .font(.system(size: 10))
+                    .font(.system(size: size.secondaryFontSize))
                     .foregroundStyle(.tertiary)
                     .lineLimit(1)
                     .truncationMode(.tail)
@@ -531,6 +569,7 @@ private struct RecentRowLabel: View {
             Image(systemName: "doc.text")
                 .foregroundStyle(isSelected ? AnyShapeStyle(.tint) : AnyShapeStyle(.secondary))
         }
+        .font(.system(size: size.primaryFontSize))
     }
 }
 
