@@ -1066,6 +1066,14 @@ struct WikiCommands: View {
             NotificationCenter.default.post(name: .wikiToggleLintDashboard, object: nil)
         }
         .disabled(!enabled)
+
+        #if DEBUG
+        Divider()
+        Button("Preview Diff Sheet (Debug)") {
+            NotificationCenter.default.post(name: .wikiDebugPreviewDiff, object: nil)
+        }
+        .disabled(!enabled)
+        #endif
     }
 }
 

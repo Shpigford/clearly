@@ -22,6 +22,13 @@ extension Notification.Name {
     static let wikiLint = Notification.Name("wikiLint")
     static let wikiToggleLogSidebar = Notification.Name("wikiToggleLogSidebar")
     static let wikiToggleLintDashboard = Notification.Name("wikiToggleLintDashboard")
+
+    #if DEBUG
+    /// DEBUG-only: stage a canned WikiOperation so the diff sheet can be
+    /// exercised before the real agent runner lands. Removed once Phase C2 is
+    /// in place.
+    static let wikiDebugPreviewDiff = Notification.Name("wikiDebugPreviewDiff")
+    #endif
 }
 
 // MARK: - Focused values

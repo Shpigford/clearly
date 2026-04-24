@@ -138,6 +138,7 @@ struct MacDetailColumn: View {
     @ObservedObject var outlineState: OutlineState
     @ObservedObject var backlinksState: BacklinksState
     @ObservedObject var jumpToLineState: JumpToLineState
+    @Bindable var wikiController: WikiOperationController
     @Binding var positionSyncID: String
     @Binding var showFormatPopover: Bool
 
@@ -220,7 +221,56 @@ struct MacDetailColumn: View {
             backlinksState: backlinksState,
             jumpToLineState: jumpToLineState
         ))
+        .sheet(isPresented: Binding(
+            get: { wikiController.isPresenting },
+            set: { if !$0 { wikiController.dismiss() } }
+        )) {
+            WikiDiffSheet(
+                controller: wikiController,
+                vaultRoot: workspace.activeLocation?.url,
+                onApplied: handleOperationApplied
+            )
+        }
+        #if DEBUG
+        .onReceive(NotificationCenter.default.publisher(for: .wikiDebugPreviewDiff)) { _ in
+            stageDebugOperation()
+        }
+        #endif
     }
+
+    private func handleOperationApplied(_ operation: WikiOperation) {
+        // FSEvents on the vault root will refresh the tree; FileWatcher on the
+        // active document will pick up any change to the open file. No manual
+        // reload here. Future phases (B3: log.md append, C2: agent runner
+        // lifecycle) will hook additional post-apply behavior into this
+        // callback.
+        DiagnosticLog.log("Applied WikiOperation: \(operation.kind.rawValue) — \(operation.title), \(operation.changes.count) changes")
+    }
+
+    #if DEBUG
+    private func stageDebugOperation() {
+        guard let root = workspace.activeLocation?.url else { return }
+        let indexURL = root.appendingPathComponent("index.md")
+        let currentIndex = (try? String(contentsOf: indexURL, encoding: .utf8)) ?? "# Index\n"
+        let sample = WikiOperation(
+            kind: .ingest,
+            title: "Debug: sample ingest of example.com",
+            rationale: "Canned operation for exercising the diff-review UI before the real agent runner lands.",
+            changes: [
+                .create(
+                    path: "sources/debug-sample.md",
+                    contents: "# Debug Sample\n\nThis note was staged by the Wiki debug menu.\n"
+                ),
+                .modify(
+                    path: "index.md",
+                    before: currentIndex,
+                    after: currentIndex + "\n- [[debug-sample]]\n"
+                ),
+            ]
+        )
+        wikiController.stage(sample)
+    }
+    #endif
 
     // MARK: - Empty state
 
