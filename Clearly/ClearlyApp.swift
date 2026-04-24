@@ -67,6 +67,14 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValid
         isOpeningSettingsFromMenuBar || (trackedSettingsWindow != nil && trackedSettingsWindow?.isMiniaturized == false)
     }
 
+    /// Mirrors the `@AppStorage("showMenuBarIcon")` value the SwiftUI side reads.
+    /// Reads via `object(forKey:)` so the unset state resolves to the same `true`
+    /// default the App/SettingsView declare; `bool(forKey:)` would return `false`
+    /// for an unset key and silently flip the app into "no menu bar" mode on first launch.
+    private var showMenuBarIcon: Bool {
+        (UserDefaults.standard.object(forKey: "showMenuBarIcon") as? Bool) ?? true
+    }
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         Self.shared = self
 
@@ -75,7 +83,7 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValid
         // menubar-only only in that state instead of guessing from parent PID.
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
             guard let self else { return }
-            if !NSApp.isActive && !self.hasDocumentWindows() {
+            if !NSApp.isActive && !self.hasDocumentWindows() && self.showMenuBarIcon {
                 NSApp.setActivationPolicy(.accessory)
             }
         }
@@ -265,7 +273,15 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValid
     }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
-        WorkspaceManager.shared.prepareForAppTermination() ? .terminateNow : .terminateCancel
+        guard WorkspaceManager.shared.prepareForAppTermination() else { return .terminateCancel }
+        if !showMenuBarIcon {
+            WorkspaceManager.shared.persistDocumentSession()
+        }
+        return .terminateNow
+    }
+
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
+        !showMenuBarIcon
     }
 
     // MARK: - Save on termination
@@ -602,7 +618,7 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValid
     }
 
     private func updateActivationPolicy() {
-        if hasDocumentWindows() {
+        if hasDocumentWindows() || !showMenuBarIcon {
             if NSApp.activationPolicy() != .regular {
                 NSApp.setActivationPolicy(.regular)
             }
@@ -643,6 +659,7 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValid
     }
 
     func shouldCloseToMenuBar(for event: NSEvent) -> Bool {
+        guard showMenuBarIcon else { return false }
         guard event.type == .keyDown else { return false }
         guard event.charactersIgnoringModifiers?.lowercased() == "q" else { return false }
 
@@ -671,6 +688,7 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValid
 struct ClearlyApp: App {
     @NSApplicationDelegateAdaptor(ClearlyAppDelegate.self) var appDelegate
     @AppStorage("themePreference") private var themePreference = "system"
+    @AppStorage("showMenuBarIcon") private var showMenuBarIcon = true
     @State private var scratchpadManager = ScratchpadManager.shared
     private let workspace = WorkspaceManager.shared
     #if canImport(Sparkle)
@@ -921,7 +939,7 @@ struct ClearlyApp: App {
             #endif
         }
 
-        MenuBarExtra("Scratchpads", image: "ScratchpadMenuBarIcon") {
+        MenuBarExtra("Scratchpads", image: "ScratchpadMenuBarIcon", isInserted: $showMenuBarIcon) {
             ScratchpadMenuBar(manager: scratchpadManager)
         }
     }
