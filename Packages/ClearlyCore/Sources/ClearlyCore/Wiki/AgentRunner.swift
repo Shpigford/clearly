@@ -33,13 +33,31 @@ public enum AgentError: Error, Equatable, Sendable {
 
 // MARK: - WikiOperation parsing
 
+/// Raw proposal as decoded from the agent's JSON response, before we decide
+/// whether to promote it to a full `WikiOperation`. An empty `changes` array
+/// is a legitimate outcome for Query/Lint ("nothing to file" / "no issues
+/// found"); callers handle the empty case specially instead of throwing.
+public struct AgentProposal: Sendable, Equatable {
+    public let title: String
+    public let rationale: String
+    public let changes: [FileChange]
+
+    public init(title: String, rationale: String, changes: [FileChange]) {
+        self.title = title
+        self.rationale = rationale
+        self.changes = changes
+    }
+
+    public var hasChanges: Bool { !changes.isEmpty }
+}
+
 public enum AgentResultParser {
 
-    /// Extract the first `{...}` JSON object from `text` and decode it as a
-    /// `WikiOperation`. The agent is instructed to return JSON only, but
-    /// models occasionally slip in a prose prefix — pulling the first
-    /// balanced object makes us resilient to that drift.
-    public static func parseWikiOperation(from text: String, kind: OperationKind) throws -> WikiOperation {
+    /// Extract the first `{...}` JSON object from `text` and decode it into
+    /// an `AgentProposal`. Does NOT call `WikiOperation.validate()` — callers
+    /// that want a staged operation call `toOperation(kind:)` on the
+    /// proposal and handle validation / emptiness themselves.
+    public static func parseProposal(from text: String) throws -> AgentProposal {
         guard let jsonString = extractFirstJSONObject(in: text) else {
             throw AgentError.invalidWikiOperation("no JSON object found in response")
         }
@@ -48,19 +66,33 @@ public enum AgentResultParser {
         }
         do {
             let partial = try JSONDecoder().decode(PartialOperation.self, from: data)
-            let op = WikiOperation(
-                kind: kind,
+            return AgentProposal(
                 title: partial.title,
                 rationale: partial.rationale,
                 changes: partial.changes
             )
-            try op.validate()
-            return op
-        } catch let error as WikiOperationError {
-            throw AgentError.invalidWikiOperation(String(describing: error))
         } catch {
             throw AgentError.invalidWikiOperation(String(describing: error))
         }
+    }
+
+    /// Legacy shape — keep for existing callers that want a validated
+    /// operation directly. New code should call `parseProposal` and decide
+    /// how to handle empty / no-op outcomes.
+    public static func parseWikiOperation(from text: String, kind: OperationKind) throws -> WikiOperation {
+        let proposal = try parseProposal(from: text)
+        let op = WikiOperation(
+            kind: kind,
+            title: proposal.title,
+            rationale: proposal.rationale,
+            changes: proposal.changes
+        )
+        do {
+            try op.validate()
+        } catch let error as WikiOperationError {
+            throw AgentError.invalidWikiOperation(String(describing: error))
+        }
+        return op
     }
 
     private struct PartialOperation: Decodable {
