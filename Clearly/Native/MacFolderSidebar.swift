@@ -259,9 +259,7 @@ struct MacFolderSidebar: View {
             .popover(isPresented: popoverBinding(for: node.url), arrowEdge: .trailing) {
                 FolderCustomizerView(url: node.url, workspace: workspace)
             }
-            .onDrag {
-                NSItemProvider(object: node.url as NSURL)
-            } preview: {
+            .draggable(node.url) {
                 DragRowPreview(title: node.name, systemImage: folderIcon, iconTint: folderTint)
             }
             .dropDestination(for: URL.self) { urls, _ in
@@ -282,9 +280,7 @@ struct MacFolderSidebar: View {
             .tag(node.url)
             .listRowBackground(SelectionPill(tint: rowTint, isSelected: isSelected))
             .contextMenu { fileContextMenu(url: node.url) }
-            .onDrag {
-                NSItemProvider(object: node.url as NSURL)
-            } preview: {
+            .draggable(node.url) {
                 DragRowPreview(title: fileTitle, systemImage: "doc.text", iconTint: rowTint)
             }
         }
@@ -435,8 +431,8 @@ private struct SidebarRowLabel: View {
 }
 
 /// Finder-like drag preview: icon + filename on a rounded, translucent chip.
-/// Used as the `.onDrag(preview:)` so the cursor carries the full row during
-/// a drag instead of just the SF Symbol that `.onDrag` otherwise captures.
+/// Used as `.draggable(preview:)` so the cursor carries the full row during a
+/// drag instead of just the SF Symbol that the default preview captures.
 private struct DragRowPreview: View {
     let title: String
     let systemImage: String
