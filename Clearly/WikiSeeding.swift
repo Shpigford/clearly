@@ -53,6 +53,40 @@ enum WikiSeeder {
                 throw Error.writeFailed(underlying: error)
             }
         }
+
+        try seedRecipes(at: folder)
+    }
+
+    /// Copy bundled default recipes into `.clearly/recipes/`. Existing files
+    /// are left alone so user edits are never stomped on re-seed.
+    private static func seedRecipes(at folder: URL) throws {
+        guard let recipesBundleURL = Bundle.main.url(forResource: "recipes", withExtension: nil) else {
+            // No bundled recipes — likely running in a test / tooling context.
+            // Silent skip is fine here since the engine falls back gracefully.
+            return
+        }
+        let fm = FileManager.default
+        let dstDir = folder.appendingPathComponent(".clearly/recipes", isDirectory: true)
+        if !fm.fileExists(atPath: dstDir.path) {
+            do {
+                try fm.createDirectory(at: dstDir, withIntermediateDirectories: true)
+            } catch {
+                throw Error.writeFailed(underlying: error)
+            }
+        }
+
+        let names = ["ingest.md", "query.md", "lint.md"]
+        for name in names {
+            let src = recipesBundleURL.appendingPathComponent(name)
+            let dst = dstDir.appendingPathComponent(name)
+            guard fm.fileExists(atPath: src.path) else { continue }
+            if fm.fileExists(atPath: dst.path) { continue }
+            do {
+                try fm.copyItem(at: src, to: dst)
+            } catch {
+                throw Error.writeFailed(underlying: error)
+            }
+        }
     }
 
     /// Convenience: returns true if the folder already looks like a wiki.

@@ -60,6 +60,9 @@ targets:
       - path: Shared/Resources/wiki-template
         buildPhase: resources
         type: folder
+      - path: Shared/Resources/recipes
+        buildPhase: resources
+        type: folder
     dependencies:
       - package: ClearlyCore
       - package: cmark-gfm
