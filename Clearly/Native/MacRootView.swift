@@ -20,6 +20,7 @@ struct MacRootView: View {
     @StateObject private var jumpToLineState = JumpToLineState()
     @State private var wikiController = WikiOperationController()
     @State private var wikiChat = WikiChatState()
+    @State private var wikiLog = WikiLogState()
 
     var body: some View {
         if workspace.isFirstRun && workspace.locations.isEmpty && workspace.activeDocumentID == nil {
@@ -52,6 +53,7 @@ struct MacRootView: View {
                     jumpToLineState: jumpToLineState,
                     wikiController: wikiController,
                     wikiChat: wikiChat,
+                    wikiLog: wikiLog,
                     positionSyncID: $positionSyncID,
                     showFormatPopover: $showFormatPopover
                 )

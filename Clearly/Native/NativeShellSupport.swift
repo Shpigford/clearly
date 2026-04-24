@@ -21,7 +21,6 @@ extension Notification.Name {
     static let wikiQuery = Notification.Name("wikiQuery")
     static let wikiLint = Notification.Name("wikiLint")
     static let wikiToggleLogSidebar = Notification.Name("wikiToggleLogSidebar")
-    static let wikiToggleLintDashboard = Notification.Name("wikiToggleLintDashboard")
 
     #if DEBUG
     /// DEBUG-only: stage a canned WikiOperation so the diff sheet can be

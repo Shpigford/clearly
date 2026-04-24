@@ -1068,11 +1068,6 @@ struct WikiCommands: View {
         .keyboardShortcut("t", modifiers: [.command, .control])
         .disabled(!enabled)
 
-        Button("Toggle Lint Dashboard") {
-            NotificationCenter.default.post(name: .wikiToggleLintDashboard, object: nil)
-        }
-        .disabled(!enabled)
-
         Divider()
 
         Button("Set Anthropic API Key…") {

@@ -140,6 +140,7 @@ struct MacDetailColumn: View {
     @ObservedObject var jumpToLineState: JumpToLineState
     @Bindable var wikiController: WikiOperationController
     @Bindable var wikiChat: WikiChatState
+    @Bindable var wikiLog: WikiLogState
     @Binding var positionSyncID: String
     @Binding var showFormatPopover: Bool
 
@@ -185,9 +186,30 @@ struct MacDetailColumn: View {
                 )
                 .transition(.move(edge: .trailing).combined(with: .opacity))
             }
+
+            if wikiLog.isVisible {
+                Divider()
+                WikiLogSidebar(
+                    state: wikiLog,
+                    vaultRoot: workspace.activeLocation?.url,
+                    openPath: { relativePath in
+                        guard let vaultURL = workspace.activeLocation?.url else { return }
+                        let fileURL = vaultURL.appendingPathComponent(relativePath)
+                        if FileManager.default.fileExists(atPath: fileURL.path) {
+                            workspace.openFile(at: fileURL)
+                        }
+                    },
+                    openLog: {
+                        guard let vaultURL = workspace.activeLocation?.url else { return }
+                        workspace.openFile(at: vaultURL.appendingPathComponent(WikiLogWriter.filename))
+                    }
+                )
+                .transition(.move(edge: .trailing).combined(with: .opacity))
+            }
         }
         .animation(Theme.Motion.smooth, value: outlineState.isVisible)
         .animation(Theme.Motion.smooth, value: wikiChat.isVisible)
+        .animation(Theme.Motion.smooth, value: wikiLog.isVisible)
         .navigationTitle(documentTitle)
         .onAppear {
             outlineState.parseHeadings(from: workspace.currentFileText)
@@ -259,15 +281,12 @@ struct MacDetailColumn: View {
             WikiRecipeProgressOverlay(controller: wikiController)
                 .animation(Theme.Motion.smooth, value: wikiController.isRunningRecipe)
         }
-        .onReceive(NotificationCenter.default.publisher(for: .wikiIngest)) { _ in
-            WikiAgentCoordinator.startIngest(workspace: workspace, controller: wikiController)
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .wikiQuery)) { _ in
-            WikiAgentCoordinator.startQuery(workspace: workspace, chat: wikiChat)
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .wikiLint)) { _ in
-            WikiAgentCoordinator.startLint(workspace: workspace, controller: wikiController)
-        }
+        .modifier(WikiNotificationObserversModifier(
+            workspace: workspace,
+            wikiController: wikiController,
+            wikiChat: wikiChat,
+            wikiLog: wikiLog
+        ))
         #if DEBUG
         .onReceive(NotificationCenter.default.publisher(for: .wikiDebugPreviewDiff)) { _ in
             stageDebugOperation()
@@ -285,6 +304,9 @@ struct MacDetailColumn: View {
             try WikiLogWriter.appendOperation(operation, to: vaultURL)
         } catch {
             DiagnosticLog.log("WikiLogWriter: append failed — \(error)")
+        }
+        if wikiLog.isVisible {
+            wikiLog.reload(vaultRoot: vaultURL)
         }
     }
 
@@ -537,6 +559,34 @@ struct MacDetailColumn: View {
             }
         }
         return nil
+    }
+}
+
+/// Extracted modifier so MacDetailColumn.body stays inside SwiftUI's
+/// type-checker budget. Handles every NotificationCenter-driven Wiki action
+/// (Ingest / Query / Lint / Toggle Log Sidebar).
+private struct WikiNotificationObserversModifier: ViewModifier {
+    @Bindable var workspace: WorkspaceManager
+    @Bindable var wikiController: WikiOperationController
+    @Bindable var wikiChat: WikiChatState
+    @Bindable var wikiLog: WikiLogState
+
+    func body(content: Content) -> some View {
+        content
+            .onReceive(NotificationCenter.default.publisher(for: .wikiIngest)) { _ in
+                WikiAgentCoordinator.startIngest(workspace: workspace, controller: wikiController)
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .wikiQuery)) { _ in
+                WikiAgentCoordinator.startQuery(workspace: workspace, chat: wikiChat)
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .wikiLint)) { _ in
+                WikiAgentCoordinator.startLint(workspace: workspace, controller: wikiController)
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .wikiToggleLogSidebar)) { _ in
+                withAnimation(Theme.Motion.smooth) {
+                    wikiLog.toggle(vaultRoot: workspace.activeLocation?.url)
+                }
+            }
     }
 }
 
