@@ -1076,7 +1076,7 @@ struct WikiCommands: View {
         Divider()
 
         Button("Set Anthropic API Key…") {
-            IngestCoordinator.promptForAPIKey()
+            WikiAgentCoordinator.promptForAPIKey()
         }
         .help("Optional fallback for machines without the Claude CLI installed.")
 

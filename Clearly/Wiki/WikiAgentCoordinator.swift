@@ -1,0 +1,368 @@
+import Foundation
+import AppKit
+import ClearlyCore
+
+/// Runs `Wiki → Ingest / Query / Lint` end-to-end. Each entry point prompts
+/// for the right user input, loads the matching recipe, invokes the agent,
+/// parses the response into a WikiOperation, and stages it on the shared
+/// controller so the diff sheet appears.
+///
+/// All UI is modal NSAlert for V1 — a proper SwiftUI sheet for input can
+/// replace the prompts later without changing the coordinator contract.
+@MainActor
+enum WikiAgentCoordinator {
+
+    /// Conservative cap on HTML we ship to the agent. Leaves room for the
+    /// recipe + vault_state + output budget inside Claude's context window.
+    static let maxSourceCharacters = 60_000
+
+    // MARK: - Entry points
+
+    static func startIngest(workspace: WorkspaceManager, controller: WikiOperationController) {
+        guard let session = beginSession(workspace: workspace, operationKind: .ingest) else { return }
+        guard let raw = promptText(
+            title: "Ingest",
+            message: "Paste a URL to summarise into a new note.",
+            placeholder: "https://..."
+        ), let url = URL(string: raw.trimmingCharacters(in: .whitespacesAndNewlines)) else { return }
+
+        Task { @MainActor in
+            await runRecipe(
+                kind: .ingest,
+                session: session,
+                controller: controller,
+                startStatus: "Ingesting from \(url.host ?? url.absoluteString) — fetching source…",
+                titleFor: { _ in "Ingest: \(url.host ?? url.absoluteString)" }
+            ) {
+                let fetchURL = rewriteForContent(url)
+                let body = try await fetchURLContent(fetchURL)
+                return """
+                URL: \(url.absoluteString)
+
+                Content (truncated if >\(maxSourceCharacters) chars):
+                \(body.prefix(maxSourceCharacters))
+                """
+            }
+        }
+    }
+
+    static func startQuery(workspace: WorkspaceManager, controller: WikiOperationController) {
+        guard let session = beginSession(workspace: workspace, operationKind: .query) else { return }
+        guard let question = promptText(
+            title: "Query",
+            message: "Ask a question of your wiki. The agent can propose filing the answer back as a new note.",
+            placeholder: "e.g. What do I know about prompt caching?"
+        )?.trimmingCharacters(in: .whitespacesAndNewlines), !question.isEmpty else { return }
+
+        Task { @MainActor in
+            await runRecipe(
+                kind: .query,
+                session: session,
+                controller: controller,
+                startStatus: "Querying the wiki…",
+                titleFor: { _ in "Query: \(Self.shortSummary(of: question))" }
+            ) { question }
+        }
+    }
+
+    static func startLint(workspace: WorkspaceManager, controller: WikiOperationController) {
+        guard let session = beginSession(workspace: workspace, operationKind: .lint) else { return }
+        // Focus is optional — empty input means "general pass".
+        let focus = promptText(
+            title: "Lint",
+            message: "Optional: scope the audit to a topic or folder. Leave blank for a general pass.",
+            placeholder: "e.g. llm-training / projects/"
+        )?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+
+        Task { @MainActor in
+            await runRecipe(
+                kind: .lint,
+                session: session,
+                controller: controller,
+                startStatus: focus.isEmpty ? "Linting the wiki…" : "Linting — focus: \(focus)",
+                titleFor: { proposal in
+                    let count = proposal.changes.count
+                    return count == 0
+                        ? "Lint: no issues"
+                        : "Lint: \(count) fix\(count == 1 ? "" : "es")"
+                }
+            ) { focus }
+        }
+    }
+
+    /// Explicit opt-in to the BYOK API fallback. Exposed for the
+    /// Wiki → Set Anthropic API Key… menu item.
+    static func promptForAPIKey() {
+        let keychain = KeychainStore()
+        guard let key = promptSecret(
+            title: "Set Anthropic API Key",
+            message: "Stored in Keychain. Only used when the Claude CLI isn't installed."
+        ), !key.isEmpty else { return }
+        do {
+            try keychain.set(key, forKey: WikiKeychainAccount.anthropicAPIKey)
+        } catch {
+            presentError("Couldn't save to Keychain: \(error)")
+        }
+    }
+
+    // MARK: - Session
+
+    private struct Session {
+        let vaultURL: URL
+        let runner: AgentRunner
+    }
+
+    private static func beginSession(
+        workspace: WorkspaceManager,
+        operationKind: OperationKind
+    ) -> Session? {
+        guard let vaultURL = workspace.activeLocation?.url, workspace.activeVaultIsWiki else {
+            presentError("\(operationKind.rawValue.capitalized) is only available when the active note lives in a wiki vault.")
+            return nil
+        }
+        guard let runner = resolveRunner() else {
+            presentError("""
+            Install Claude Code to use this command: https://docs.claude.com/claude-code
+
+            Or choose Wiki → Set Anthropic API Key… to fall back to BYOK.
+            """)
+            return nil
+        }
+        AgentWarmer.warmIfNeeded(runner: runner)
+        return Session(vaultURL: vaultURL, runner: runner)
+    }
+
+    // MARK: - Shared pipeline
+
+    private static func runRecipe(
+        kind: OperationKind,
+        session: Session,
+        controller: WikiOperationController,
+        startStatus: String,
+        titleFor: (AgentProposal) -> String,
+        buildInput: () async throws -> String
+    ) async {
+        let label = kind.rawValue.capitalized
+        DiagnosticLog.log("\(label): start")
+        controller.startRecipe(startStatus)
+        defer { controller.finishRecipe() }
+
+        do {
+            let input = try await buildInput()
+            let recipe = try loadRecipe(kind: kind, vaultURL: session.vaultURL)
+            let vaultState = buildVaultState(vaultURL: session.vaultURL)
+            let prompt = RecipeParser.interpolate(recipe, input: input, vaultState: vaultState)
+            DiagnosticLog.log("\(label): calling agent (prompt=\(prompt.count) chars)")
+
+            controller.updateRecipeStatus(
+                AgentWarmer.isWarm
+                    ? "Asking Claude…"
+                    : "Asking Claude (warming cache, first call ~30s)…"
+            )
+
+            let model = UserDefaults.standard.string(forKey: "wikiAgentModel")
+            let result = try await session.runner.run(prompt: prompt, model: model)
+            AgentWarmer.markExercised()
+            DiagnosticLog.log("\(label): agent replied \(result.text.count) chars, tokens in=\(result.inputTokens) out=\(result.outputTokens)")
+
+            controller.updateRecipeStatus("Parsing response…")
+            let proposal = try AgentResultParser.parseProposal(from: result.text)
+
+            if !proposal.hasChanges {
+                DiagnosticLog.log("\(label): noop — \(proposal.rationale)")
+                let verdictTitle: String = {
+                    switch kind {
+                    case .ingest: return "Nothing staged"
+                    case .query: return "Answer"
+                    case .lint: return "No issues found"
+                    case .other: return "No action"
+                    }
+                }()
+                let body = proposal.rationale.isEmpty
+                    ? "The agent didn't propose any changes."
+                    : proposal.rationale
+                presentInfo(title: verdictTitle, body: body)
+                return
+            }
+
+            let op = WikiOperation(
+                kind: kind,
+                title: titleFor(proposal),
+                rationale: proposal.rationale,
+                changes: proposal.changes
+            )
+            do {
+                try op.validate()
+            } catch let error as WikiOperationError {
+                throw AgentError.invalidWikiOperation(String(describing: error))
+            }
+            DiagnosticLog.log("\(label): staging operation with \(op.changes.count) changes")
+            controller.stage(op)
+        } catch {
+            DiagnosticLog.log("\(label) failed: \(error)")
+            presentError("\(label) failed: \(Self.describe(error))")
+        }
+    }
+
+    // MARK: - Runner resolution
+
+    private static func resolveRunner() -> AgentRunner? {
+        if let cli = AgentDiscovery.findClaude() {
+            return ClaudeCLIAgentRunner(binaryURL: cli.url)
+        }
+        let keychain = KeychainStore()
+        let key = (try? keychain.get(WikiKeychainAccount.anthropicAPIKey)) ?? nil
+        if let key, !key.isEmpty {
+            return AnthropicAPIAgentRunner()
+        }
+        return nil
+    }
+
+    // MARK: - Recipe loading
+
+    private static func loadRecipe(kind: OperationKind, vaultURL: URL) throws -> Recipe {
+        if let vaultRecipe = try RecipeEngine.loadFromVault(kind, vaultRoot: vaultURL) {
+            return vaultRecipe
+        }
+        let filename = "\(kind.rawValue).md"
+        guard let bundleURL = Bundle.main.url(forResource: "recipes", withExtension: nil)?
+            .appendingPathComponent(filename) else {
+            throw RecipeError.fileNotFound(path: filename)
+        }
+        let markdown = try String(contentsOf: bundleURL, encoding: .utf8)
+        return try RecipeEngine.loadDefault(markdown)
+    }
+
+    // MARK: - Vault state + URL helpers
+
+    private static func buildVaultState(vaultURL: URL) -> String {
+        let paths = listVaultMarkdownPaths(under: vaultURL)
+        var lines = ["# Vault files"]
+        lines.append(contentsOf: paths)
+        lines.append("")
+
+        for filename in ["index.md", "AGENTS.md"] {
+            let fileURL = vaultURL.appendingPathComponent(filename)
+            if let contents = try? String(contentsOf: fileURL, encoding: .utf8) {
+                lines.append("# Current contents of \(filename) — copy verbatim into any `before:` field")
+                lines.append("```")
+                lines.append(contents)
+                lines.append("```")
+                lines.append("")
+            }
+        }
+        return lines.joined(separator: "\n")
+    }
+
+    private static func listVaultMarkdownPaths(under vaultURL: URL) -> [String] {
+        let fm = FileManager.default
+        guard let enumerator = fm.enumerator(
+            at: vaultURL,
+            includingPropertiesForKeys: [.isRegularFileKey],
+            options: [.skipsHiddenFiles]
+        ) else { return [] }
+        var results: [String] = []
+        for case let url as URL in enumerator {
+            guard url.pathExtension.lowercased() == "md" else { continue }
+            let full = url.resolvingSymlinksInPath().path
+            let root = vaultURL.resolvingSymlinksInPath().path
+            guard full.hasPrefix(root) else { continue }
+            var relative = String(full.dropFirst(root.count))
+            if relative.hasPrefix("/") { relative = String(relative.dropFirst()) }
+            results.append(relative)
+        }
+        return results.sorted()
+    }
+
+    static func rewriteForContent(_ url: URL) -> URL {
+        guard let host = url.host?.lowercased() else { return url }
+        if host == "gist.github.com" {
+            let parts = url.path
+                .trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+                .split(separator: "/").map(String.init)
+            if parts.count == 2,
+               let rawURL = URL(string: "https://gist.githubusercontent.com/\(parts[0])/\(parts[1])/raw") {
+                return rawURL
+            }
+        }
+        return url
+    }
+
+    private static func fetchURLContent(_ url: URL) async throws -> String {
+        let (data, response) = try await URLSession.shared.data(from: url)
+        guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
+            let status = (response as? HTTPURLResponse)?.statusCode ?? -1
+            throw AgentError.httpError(status: status, body: "fetch failed")
+        }
+        if let text = String(data: data, encoding: .utf8) { return text }
+        if let text = String(data: data, encoding: .isoLatin1) { return text }
+        throw AgentError.invalidResponse("non-text response body")
+    }
+
+    // MARK: - NSAlert + diagnostics
+
+    private static func shortSummary(of text: String) -> String {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.count <= 60 { return trimmed }
+        let idx = trimmed.index(trimmed.startIndex, offsetBy: 60)
+        return String(trimmed[..<idx]) + "…"
+    }
+
+    private static func promptText(title: String, message: String, placeholder: String) -> String? {
+        let alert = NSAlert()
+        alert.messageText = title
+        alert.informativeText = message
+        alert.addButton(withTitle: "Run")
+        alert.addButton(withTitle: "Cancel")
+        let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 340, height: 24))
+        field.placeholderString = placeholder
+        alert.accessoryView = field
+        alert.window.initialFirstResponder = field
+        let response = alert.runModal()
+        guard response == .alertFirstButtonReturn else { return nil }
+        return field.stringValue
+    }
+
+    private static func promptSecret(title: String, message: String) -> String? {
+        let alert = NSAlert()
+        alert.messageText = title
+        alert.informativeText = message
+        alert.addButton(withTitle: "Save")
+        alert.addButton(withTitle: "Cancel")
+        let field = NSSecureTextField(frame: NSRect(x: 0, y: 0, width: 340, height: 24))
+        alert.accessoryView = field
+        alert.window.initialFirstResponder = field
+        let response = alert.runModal()
+        guard response == .alertFirstButtonReturn else { return nil }
+        return field.stringValue
+    }
+
+    private static func presentError(_ message: String) {
+        let alert = NSAlert()
+        alert.messageText = "Wiki"
+        alert.informativeText = message
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "OK")
+        alert.runModal()
+    }
+
+    private static func presentInfo(title: String, body: String) {
+        let alert = NSAlert()
+        alert.messageText = title
+        alert.informativeText = body
+        alert.alertStyle = .informational
+        alert.addButton(withTitle: "OK")
+        alert.runModal()
+    }
+
+    private static func describe(_ error: Error) -> String {
+        switch error {
+        case AgentError.missingAPIKey: return "Anthropic API key is missing."
+        case AgentError.invalidResponse(let m): return "Invalid response: \(m)"
+        case AgentError.httpError(let status, _): return "HTTP \(status) from the API."
+        case AgentError.transport(let m): return "Network error: \(m)"
+        case AgentError.invalidWikiOperation(let m): return "Agent returned invalid operation: \(m)"
+        default: return String(describing: error)
+        }
+    }
+}

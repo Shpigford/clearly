@@ -236,7 +236,13 @@ struct MacDetailColumn: View {
                 .animation(Theme.Motion.smooth, value: wikiController.isRunningRecipe)
         }
         .onReceive(NotificationCenter.default.publisher(for: .wikiIngest)) { _ in
-            IngestCoordinator.start(workspace: workspace, controller: wikiController)
+            WikiAgentCoordinator.startIngest(workspace: workspace, controller: wikiController)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .wikiQuery)) { _ in
+            WikiAgentCoordinator.startQuery(workspace: workspace, controller: wikiController)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .wikiLint)) { _ in
+            WikiAgentCoordinator.startLint(workspace: workspace, controller: wikiController)
         }
         #if DEBUG
         .onReceive(NotificationCenter.default.publisher(for: .wikiDebugPreviewDiff)) { _ in
@@ -246,12 +252,16 @@ struct MacDetailColumn: View {
     }
 
     private func handleOperationApplied(_ operation: WikiOperation) {
-        // FSEvents on the vault root will refresh the tree; FileWatcher on the
-        // active document will pick up any change to the open file. No manual
-        // reload here. Future phases (B3: log.md append, C2: agent runner
-        // lifecycle) will hook additional post-apply behavior into this
-        // callback.
         DiagnosticLog.log("Applied WikiOperation: \(operation.kind.rawValue) — \(operation.title), \(operation.changes.count) changes")
+        // Append to log.md so the vault's own history tracks this operation.
+        // Not part of the atomic apply — a log-write failure is surfaced but
+        // doesn't roll back the already-committed changes.
+        guard let vaultURL = workspace.activeLocation?.url else { return }
+        do {
+            try WikiLogWriter.appendOperation(operation, to: vaultURL)
+        } catch {
+            DiagnosticLog.log("WikiLogWriter: append failed — \(error)")
+        }
     }
 
     #if DEBUG
