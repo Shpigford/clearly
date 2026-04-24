@@ -41,6 +41,12 @@ struct ClaudeCLIAgentRunner: AgentRunner {
             "--output-format", "json",
             "--tools", "",
             "--no-session-persistence",
+            // Critical for cache reuse: moves cwd / git / env sections out of
+            // the system prompt into the first user message. Without this,
+            // every invocation gets a slightly different system prompt (e.g.
+            // a file touched by FSEvents changes `git status` output) and
+            // the ~95K prompt-cache entry gets invalidated on every call.
+            "--exclude-dynamic-system-prompt-sections",
         ]
         if let model, !model.isEmpty {
             args.append(contentsOf: ["--model", model])
@@ -55,6 +61,11 @@ struct ClaudeCLIAgentRunner: AgentRunner {
             let process = Process()
             process.executableURL = binaryURL
             process.arguments = arguments
+            // Pin a stable cwd so Claude Code's `cwd` section (moved into the
+            // first user message by --exclude-dynamic-system-prompt-sections)
+            // is identical across invocations, which is what keeps the
+            // prompt cache valid between calls.
+            process.currentDirectoryURL = Self.stableWorkingDirectory()
             process.environment = environment
 
             let stdin = Pipe()
@@ -88,6 +99,21 @@ struct ClaudeCLIAgentRunner: AgentRunner {
                 try? writer.close()
             }
         }
+    }
+
+    /// A stable per-user working directory the subprocess always runs from.
+    /// Using the app's caches directory keeps it inside the sandbox container,
+    /// writable if Claude ever needs scratch space, and identical across
+    /// invocations so prompt-cache keys line up.
+    private static func stableWorkingDirectory() -> URL? {
+        guard let caches = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first else {
+            return nil
+        }
+        let dir = caches.appendingPathComponent("wiki-agent", isDirectory: true)
+        if !FileManager.default.fileExists(atPath: dir.path) {
+            try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        }
+        return dir
     }
 
     // MARK: - Response decoding
