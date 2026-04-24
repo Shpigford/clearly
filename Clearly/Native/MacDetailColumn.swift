@@ -176,6 +176,11 @@ struct MacDetailColumn: View {
                     vaultRoot: workspace.activeLocation?.url,
                     send: { text in
                         WikiAgentCoordinator.sendChatMessage(text, workspace: workspace, chat: wikiChat)
+                    },
+                    openWikiLink: { target in
+                        if let url = resolveWikiLink(target) {
+                            workspace.openFile(at: url)
+                        }
                     }
                 )
                 .transition(.move(edge: .trailing).combined(with: .opacity))
@@ -493,7 +498,23 @@ struct MacDetailColumn: View {
     }
 
     private func resolveWikiLink(_ target: String) -> URL? {
-        let needle = target.lowercased()
+        let cleaned = target.trimmingCharacters(in: .whitespaces)
+
+        // Path-qualified link (contains "/"): try every registered vault's
+        // root as the base. Matches how Claude's `[[people/josh-pigford]]`
+        // answers map onto real vault-relative paths.
+        if cleaned.contains("/") {
+            let candidatePath = cleaned.hasSuffix(".md") ? cleaned : "\(cleaned).md"
+            for location in workspace.locations {
+                let candidate = location.url.appendingPathComponent(candidatePath)
+                if FileManager.default.fileExists(atPath: candidate.path) {
+                    return candidate
+                }
+            }
+        }
+
+        // Bare stem: walk the file tree and stem-match (existing behavior).
+        let needle = cleaned.lowercased()
         for location in workspace.locations {
             if let hit = Self.findMatchingFile(in: location.fileTree, needle: needle) {
                 return hit

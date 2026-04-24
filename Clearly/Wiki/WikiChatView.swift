@@ -11,6 +11,7 @@ struct WikiChatView: View {
     @Bindable var controller: WikiOperationController
     let vaultRoot: URL?
     let send: (String) -> Void
+    let openWikiLink: (String) -> Void
 
     @FocusState private var inputFocused: Bool
 
@@ -24,6 +25,17 @@ struct WikiChatView: View {
         }
         .frame(minWidth: 320, idealWidth: 380, maxWidth: 480)
         .background(Theme.backgroundColorSwiftUI)
+        .environment(\.openURL, OpenURLAction { url in
+            // `clearly-wiki://<target>` is our synthesized scheme for
+            // [[wiki-links]]. Anything else (http, mailto…) falls through
+            // to the system handler.
+            if url.scheme == WikiLinkURL.scheme,
+               let target = WikiLinkURL.target(from: url) {
+                openWikiLink(target)
+                return .handled
+            }
+            return .systemAction
+        })
     }
 
     // MARK: - Header
@@ -283,6 +295,54 @@ private struct WikiChatBubble: View {
     }
 }
 
+// MARK: - Wiki-link URL scheme
+
+enum WikiLinkURL {
+    static let scheme = "clearly-wiki"
+
+    /// Convert `[[target]]` and `[[target|display]]` patterns into standard
+    /// markdown links with our synthesized `clearly-wiki://` scheme so
+    /// AttributedString(markdown:) renders them as tappable links. The view's
+    /// environment `openURL` handler intercepts the scheme and routes to
+    /// `openWikiLink`.
+    static func preprocess(_ markdown: String) -> String {
+        guard let regex = try? NSRegularExpression(
+            pattern: #"\[\[([^\]|\n]+?)(?:\|([^\]\n]+?))?\]\]"#
+        ) else { return markdown }
+
+        let ns = markdown as NSString
+        var result = ""
+        var cursor = 0
+        let range = NSRange(location: 0, length: ns.length)
+        for match in regex.matches(in: markdown, range: range) {
+            let prefixRange = NSRange(location: cursor, length: match.range.location - cursor)
+            result.append(ns.substring(with: prefixRange))
+
+            let target = ns.substring(with: match.range(at: 1))
+            let displayRange = match.range(at: 2)
+            let display = displayRange.location != NSNotFound
+                ? ns.substring(with: displayRange)
+                : target
+
+            let escapedTarget = target.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? target
+            result.append("[\(display)](\(scheme)://\(escapedTarget))")
+            cursor = match.range.location + match.range.length
+        }
+        result.append(ns.substring(from: cursor))
+        return result
+    }
+
+    static func target(from url: URL) -> String? {
+        guard url.scheme == scheme else { return nil }
+        // URL parses `clearly-wiki://people/josh-pigford` as host=people,
+        // path=/josh-pigford. Reassemble them.
+        let host = url.host ?? ""
+        let path = url.path
+        let combined = path.isEmpty ? host : "\(host)\(path)"
+        return combined.removingPercentEncoding ?? combined
+    }
+}
+
 // MARK: - Markdown renderer
 
 /// Lightweight markdown block renderer used for assistant messages. Handles
@@ -310,9 +370,10 @@ struct MarkdownBlockView: View {
             guard !paragraph.isEmpty else { return }
             let joined = paragraph.joined(separator: " ")
             paragraph.removeAll(keepingCapacity: true)
+            let prepared = WikiLinkURL.preprocess(joined)
             let attributed = (try? AttributedString(
-                markdown: joined,
-                options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)
+                markdown: prepared,
+                options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace, failurePolicy: .returnPartiallyParsedIfPossible)
             )) ?? AttributedString(joined)
             result.append(.paragraph(attributed))
         }
@@ -346,9 +407,10 @@ struct MarkdownBlockView: View {
             if trimmed.hasPrefix("- ") || trimmed.hasPrefix("* ") {
                 flushParagraph()
                 let body = String(trimmed.dropFirst(2))
+                let prepared = WikiLinkURL.preprocess(body)
                 let attributed = (try? AttributedString(
-                    markdown: body,
-                    options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)
+                    markdown: prepared,
+                    options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace, failurePolicy: .returnPartiallyParsedIfPossible)
                 )) ?? AttributedString(body)
                 result.append(.bullet(attributed))
                 continue
@@ -368,9 +430,10 @@ struct MarkdownBlockView: View {
         while rest.first == "#" { level += 1; rest = rest.dropFirst() }
         guard level > 0, level <= 6, rest.first?.isWhitespace == true else { return nil }
         let text = String(rest.trimmingCharacters(in: .whitespaces))
+        let prepared = WikiLinkURL.preprocess(text)
         let attributed = (try? AttributedString(
-            markdown: text,
-            options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)
+            markdown: prepared,
+            options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace, failurePolicy: .returnPartiallyParsedIfPossible)
         )) ?? AttributedString(text)
         return .heading(level: level, text: attributed)
     }
