@@ -479,10 +479,10 @@ private struct SyncSettingsTab: View {
         let usage = usageByLocation[location.id]
         let isComputing = computingLocationIDs.contains(location.id)
         let capability = syncCapability(for: location.url)
-        let isCloud = capability != .localOnly
+        let isCloud = capability != .local
         VStack(alignment: .leading, spacing: 6) {
             HStack {
-                Image(systemName: isCloud ? "icloud" : "folder")
+                Image(systemName: capability.iconName)
                     .foregroundStyle(isCloud ? AnyShapeStyle(.tint) : AnyShapeStyle(.secondary))
                 VStack(alignment: .leading, spacing: 2) {
                     Text(location.name)
@@ -495,7 +495,7 @@ private struct SyncSettingsTab: View {
                     if let caption = capability.caption {
                         Text(caption)
                             .font(.caption2)
-                            .foregroundStyle(capability == .localOnly ? AnyShapeStyle(.orange) : AnyShapeStyle(.secondary))
+                            .foregroundStyle(capability == .local ? AnyShapeStyle(.orange) : AnyShapeStyle(.secondary))
                     }
                 }
                 Spacer()
@@ -568,25 +568,40 @@ private struct SyncSettingsTab: View {
     }
 
     private enum SyncCapability {
-        case iCloudNative
-        case desktopAndDocuments
-        case localOnly
+        case iCloud
+        case thirdPartyCloud
+        case local
 
         var caption: String? {
             switch self {
-            case .iCloudNative: return nil
-            case .desktopAndDocuments: return "Syncs via iCloud Desktop & Documents"
-            case .localOnly: return "This folder won't sync across your devices."
+            case .iCloud: return nil
+            case .thirdPartyCloud: return "Synced by a third-party cloud provider."
+            case .local: return "This folder won't sync across your devices."
+            }
+        }
+
+        var iconName: String {
+            switch self {
+            case .iCloud: return "icloud"
+            case .thirdPartyCloud: return "cloud"
+            case .local: return "folder"
             }
         }
     }
 
     private func syncCapability(for url: URL) -> SyncCapability {
-        if url.path.contains("/Mobile Documents/") { return .iCloudNative }
+        let path = url.path
+        if path.contains("/Mobile Documents/") { return .iCloud }
+        // Third-party File Provider mounts (Google Drive, Dropbox, OneDrive, Box)
+        // must be caught before the isUbiquitousItem fallback — that API returns
+        // true for third-party providers too, not just iCloud.
+        if path.contains("/Library/CloudStorage/") { return .thirdPartyCloud }
+        // Catches iCloud Desktop & Documents sync, where the selected URL may
+        // resolve to ~/Documents/... (firmlinked to Mobile Documents).
         if (try? url.resourceValues(forKeys: [.isUbiquitousItemKey]))?.isUbiquitousItem == true {
-            return .desktopAndDocuments
+            return .iCloud
         }
-        return .localOnly
+        return .local
     }
 
     private func formattedBytes(_ bytes: Int64) -> String {
