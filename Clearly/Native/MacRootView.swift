@@ -1,6 +1,5 @@
 import SwiftUI
 import AppKit
-import UniformTypeIdentifiers
 import ClearlyCore
 
 /// Root view for the native macOS shell — two-column `NavigationSplitView`:
@@ -25,14 +24,6 @@ struct MacRootView: View {
             WelcomeView(workspace: workspace)
         } else {
             splitView
-                .background(AppKitDropCatcher { urls in
-                    DiagnosticLog.log("AppKitDropCatcher handling \(urls.count) URL(s)")
-                    NotificationCenter.default.post(
-                        name: ClearlyTextView.insertDroppedImagesNotification,
-                        object: nil, userInfo: ["urls": urls]
-                    )
-                })
-                .onDrop(of: ["public.file-url"], delegate: ImageFileDropDelegate())
         }
     }
 
@@ -101,121 +92,5 @@ struct MacRootView: View {
             return "Clearly"
         }
         return workspace.isDirty ? "\u{2022} \(doc.displayName)" : doc.displayName
-    }
-}
-
-/// Routes Finder file drops anywhere in the main window to the currently
-/// focused `ClearlyTextView`. SwiftUI's `.onDrop(of:delegate:)` is the
-/// canonical macOS pattern; `.dropDestination(for:URL.self)` and `.onDrop`
-/// on NSViewRepresentable both proved unreliable under `NavigationSplitView`.
-struct ImageFileDropDelegate: DropDelegate {
-
-    func validateDrop(info: DropInfo) -> Bool {
-        let ok = info.hasItemsConforming(to: ["public.file-url"])
-        DiagnosticLog.log("DROP validateDrop ok=\(ok) loc=\(info.location)")
-        return ok
-    }
-
-    func dropEntered(info: DropInfo) {
-        DiagnosticLog.log("DROP dropEntered loc=\(info.location)")
-    }
-
-    func dropUpdated(info: DropInfo) -> DropProposal? {
-        DiagnosticLog.log("DROP dropUpdated loc=\(info.location)")
-        return DropProposal(operation: .copy)
-    }
-
-    func dropExited(info: DropInfo) {
-        DiagnosticLog.log("DROP dropExited loc=\(info.location)")
-    }
-
-    func performDrop(info: DropInfo) -> Bool {
-        DiagnosticLog.log("DROP performDrop ENTERED loc=\(info.location)")
-        let providers = info.itemProviders(for: ["public.file-url"])
-        DiagnosticLog.log("DROP performDrop providers=\(providers.count)")
-        guard !providers.isEmpty else { return false }
-
-        Task { @MainActor in
-            var urls: [URL] = []
-            for provider in providers {
-                if let url = await Self.loadFileURL(from: provider) { urls.append(url) }
-            }
-            DiagnosticLog.log("DROP resolved \(urls.count) URLs: \(urls.map(\.lastPathComponent).joined(separator: ","))")
-            guard !urls.isEmpty else { return }
-            NotificationCenter.default.post(
-                name: ClearlyTextView.insertDroppedImagesNotification,
-                object: nil, userInfo: ["urls": urls]
-            )
-        }
-        return true
-    }
-
-    private static func loadFileURL(from provider: NSItemProvider) async -> URL? {
-        await withCheckedContinuation { cont in
-            provider.loadItem(forTypeIdentifier: "public.file-url", options: nil) { item, _ in
-                if let data = item as? Data, let url = URL(dataRepresentation: data, relativeTo: nil) {
-                    cont.resume(returning: url)
-                } else if let url = item as? URL {
-                    cont.resume(returning: url)
-                } else {
-                    cont.resume(returning: nil)
-                }
-            }
-        }
-    }
-}
-
-/// Fallback AppKit drop catcher placed as a SwiftUI `.background`. Registers
-/// directly with `NSView`'s drag machinery so we get definitive diagnostics
-/// even when SwiftUI's drop chain misbehaves inside a `NavigationSplitView`.
-struct AppKitDropCatcher: NSViewRepresentable {
-    let onDrop: ([URL]) -> Void
-
-    func makeNSView(context: Context) -> DropCatcherView {
-        let v = DropCatcherView()
-        v.onDrop = onDrop
-        v.registerForDraggedTypes([.fileURL, .tiff, .png, .URL])
-        DiagnosticLog.log("AppKitDropCatcher makeNSView registered=\(v.registeredDraggedTypes.map(\.rawValue).joined(separator: ","))")
-        return v
-    }
-
-    func updateNSView(_ nsView: DropCatcherView, context: Context) {
-        nsView.onDrop = onDrop
-    }
-
-    final class DropCatcherView: NSView {
-        var onDrop: (([URL]) -> Void)?
-
-        override func hitTest(_ point: NSPoint) -> NSView? {
-            // Don't intercept mouse events — only drag events.
-            return nil
-        }
-
-        override func draggingEntered(_ sender: any NSDraggingInfo) -> NSDragOperation {
-            DiagnosticLog.log("DropCatcherView draggingEntered")
-            return .copy
-        }
-
-        override func draggingUpdated(_ sender: any NSDraggingInfo) -> NSDragOperation {
-            return .copy
-        }
-
-        override func prepareForDragOperation(_ sender: any NSDraggingInfo) -> Bool {
-            DiagnosticLog.log("DropCatcherView prepareForDragOperation")
-            return true
-        }
-
-        override func performDragOperation(_ sender: any NSDraggingInfo) -> Bool {
-            DiagnosticLog.log("DropCatcherView performDragOperation")
-            let pb = sender.draggingPasteboard
-            guard let urls = pb.readObjects(forClasses: [NSURL.self], options: [
-                .urlReadingFileURLsOnly: true
-            ]) as? [URL], !urls.isEmpty else {
-                DiagnosticLog.log("DropCatcherView no file URLs on pasteboard")
-                return false
-            }
-            onDrop?(urls)
-            return true
-        }
     }
 }

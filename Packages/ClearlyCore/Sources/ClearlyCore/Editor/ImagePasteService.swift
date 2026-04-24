@@ -77,12 +77,23 @@ public enum ImagePasteService {
     /// Writes PNG bytes to a sibling file next to `docURL` via coordinated
     /// I/O, returning the resulting URL and the relative-path markdown
     /// token (`![](slug-N.png)`) to insert into the editor.
+    public static func writeImageData(_ data: Data,
+                                      ext: String,
+                                      besidesDocumentAt docURL: URL,
+                                      presenter: NSFilePresenter?) throws -> WriteResult {
+        let normalizedExt = ext.lowercased().isEmpty ? "png" : ext.lowercased()
+        let url = nextImageURL(besidesDocumentAt: docURL, ext: normalizedExt)
+        try CoordinatedFileIO.write(data, to: url, presenter: presenter)
+        let encoded = url.lastPathComponent.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? url.lastPathComponent
+        return WriteResult(url: url, markdown: "![](\(encoded))")
+    }
+
+    /// Writes PNG bytes to a sibling file next to `docURL` via coordinated
+    /// I/O, returning the resulting URL and the relative-path markdown
+    /// token (`![](slug-N.png)`) to insert into the editor.
     public static func writePNG(_ pngData: Data,
                                 besidesDocumentAt docURL: URL,
                                 presenter: NSFilePresenter?) throws -> WriteResult {
-        let url = nextImageURL(besidesDocumentAt: docURL, ext: "png")
-        try CoordinatedFileIO.write(pngData, to: url, presenter: presenter)
-        let encoded = url.lastPathComponent.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? url.lastPathComponent
-        return WriteResult(url: url, markdown: "![](\(encoded))")
+        try writeImageData(pngData, ext: "png", besidesDocumentAt: docURL, presenter: presenter)
     }
 }
