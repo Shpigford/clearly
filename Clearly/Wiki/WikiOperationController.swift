@@ -17,7 +17,27 @@ final class WikiOperationController {
     var isApplying: Bool = false
     var applyError: String?
 
+    /// Set while a recipe (Ingest/Query/Lint) is running in the background —
+    /// drives the progress overlay so a 30-second cache warmup doesn't look
+    /// like silent failure.
+    var isRunningRecipe: Bool = false
+    var recipeStatus: String?
+
     var isPresenting: Bool { stagedOperation != nil }
+
+    func startRecipe(_ status: String) {
+        isRunningRecipe = true
+        recipeStatus = status
+    }
+
+    func updateRecipeStatus(_ status: String) {
+        recipeStatus = status
+    }
+
+    func finishRecipe() {
+        isRunningRecipe = false
+        recipeStatus = nil
+    }
 
     /// Changes the user has kept for apply — staged minus rejected.
     var effectiveChanges: [FileChange] {

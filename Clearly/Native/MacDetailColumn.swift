@@ -231,6 +231,10 @@ struct MacDetailColumn: View {
                 onApplied: handleOperationApplied
             )
         }
+        .overlay(alignment: .bottom) {
+            WikiRecipeProgressOverlay(controller: wikiController)
+                .animation(Theme.Motion.smooth, value: wikiController.isRunningRecipe)
+        }
         .onReceive(NotificationCenter.default.publisher(for: .wikiIngest)) { _ in
             IngestCoordinator.start(workspace: workspace, controller: wikiController)
         }

@@ -37,6 +37,12 @@ enum IngestCoordinator {
             return
         }
 
+        // Kick off a background cache warmup while we wait on the user to
+        // paste a URL. The first real call after launch otherwise pays a 30s
+        // cache-creation tax; overlapping it with the NSAlert prompt typing
+        // time hides most of that.
+        AgentWarmer.warmIfNeeded(runner: runner)
+
         guard let rawURL = promptText(
             title: "Ingest",
             message: "Paste a URL to summarise into a new note.",
@@ -97,6 +103,10 @@ enum IngestCoordinator {
     ) async {
         let fetchURL = rewriteForContent(url)
         DiagnosticLog.log("Ingest: start url=\(url.absoluteString) fetchURL=\(fetchURL.absoluteString)")
+
+        controller.startRecipe("Ingesting from \(url.host ?? url.absoluteString) — fetching source…")
+        defer { controller.finishRecipe() }
+
         do {
             let sourceText = try await fetchURLContent(fetchURL)
             DiagnosticLog.log("Ingest: fetched \(sourceText.count) chars")
@@ -111,10 +121,15 @@ enum IngestCoordinator {
             let prompt = RecipeParser.interpolate(recipe, input: input, vaultState: vaultState)
             DiagnosticLog.log("Ingest: calling agent (prompt=\(prompt.count) chars)")
 
+            let warmLabel = AgentWarmer.isWarm ? "Asking Claude…" : "Asking Claude (warming cache, first call ~30s)…"
+            controller.updateRecipeStatus(warmLabel)
+
             let model = UserDefaults.standard.string(forKey: "wikiAgentModel")
             let result = try await runner.run(prompt: prompt, model: model)
+            AgentWarmer.markExercised()
             DiagnosticLog.log("Ingest: agent replied \(result.text.count) chars, tokens in=\(result.inputTokens) out=\(result.outputTokens)")
 
+            controller.updateRecipeStatus("Parsing response…")
             let operation = try AgentResultParser.parseWikiOperation(from: result.text, kind: .ingest)
             let titled = WikiOperation(
                 id: operation.id,
