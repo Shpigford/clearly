@@ -51,8 +51,6 @@
 	<false/>
 	<key>LSApplicationCategoryType</key>
 	<string>public.app-category.productivity</string>
-	<key>NSAppleEventsUsageDescription</key>
-	<string>Clearly uses Terminal to install the clearly command-line tool on your PATH.</string>
 	<key>NSUbiquitousContainers</key>
 	<dict>
 		<key>iCloud.com.sabotage.clearly</key>

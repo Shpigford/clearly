@@ -1,34 +1,54 @@
 import Foundation
+import Darwin
 import ClearlyCore
 
 enum CLIInstaller {
-    static let symlinkPath = "/usr/local/bin/clearly"
+    static let legacySymlinkPath = "/usr/local/bin/clearly"
+
+    /// The user's *real* home directory. Inside a sandboxed app, both `FileManager.homeDirectoryForCurrentUser`
+    /// and `NSHomeDirectory()` return the container path (`~/Library/Containers/<bundle-id>/Data`).
+    /// Only `getpwuid(getuid())->pw_dir` bypasses the sandbox remap and returns the real home (`/Users/...`),
+    /// which is what the `home-relative-path` entitlement is scoped to.
+    static var realHomeDirectoryURL: URL {
+        if let pw = getpwuid(getuid()), let dir = pw.pointee.pw_dir {
+            return URL(fileURLWithPath: String(cString: dir), isDirectory: true)
+        }
+        return URL(fileURLWithPath: NSHomeDirectory(), isDirectory: true)
+    }
+
+    static var primarySymlinkURL: URL {
+        realHomeDirectoryURL.appendingPathComponent(".local/bin/clearly", isDirectory: false)
+    }
+
+    static var primarySymlinkPath: String { primarySymlinkURL.path }
+
+    static var primaryBinDirectoryURL: URL {
+        primarySymlinkURL.deletingLastPathComponent()
+    }
 
     enum State: Equatable {
         case notInstalled
-        case installed
-        case installedElsewhere(URL)
+        case installed                          // symlink at ~/.local/bin/clearly points to bundled binary
+        case installedLegacy(path: String)      // /usr/local/bin/clearly points to bundled binary (pre-2.5 install)
+        case installedElsewhere(URL)            // something named `clearly` exists but points elsewhere
     }
 
     enum CLIInstallerError: LocalizedError {
         case notBundled
         case wrongOwner(existingTarget: URL?)
-        case appleScriptCompileFailed
-        case terminalAutomationDenied(code: Int, message: String)
-        case scriptFailed(code: Int, message: String)
+        case legacyRequiresManualRemoval(path: String)
+        case filesystemError(underlying: Error)
 
         var errorDescription: String? {
             switch self {
             case .notBundled:
                 return "The clearly binary isn't bundled with this build."
             case .wrongOwner:
-                return "/usr/local/bin/clearly points at a different tool — remove it manually first."
-            case .appleScriptCompileFailed:
-                return "Couldn't build the install command — please report this."
-            case .terminalAutomationDenied:
-                return "Clearly doesn't have permission to control Terminal. Open Privacy & Security → Automation and allow Clearly, or copy the command and run it yourself."
-            case .scriptFailed(let code, let message):
-                return "Terminal returned an error (code \(code)): \(message)"
+                return "A different `clearly` is already on your PATH — remove it manually before installing."
+            case .legacyRequiresManualRemoval:
+                return "This install lives in /usr/local/bin and needs sudo to remove. Copy the command below and run it in Terminal."
+            case .filesystemError(let underlying):
+                return "Couldn't write the symlink: \(underlying.localizedDescription)"
             }
         }
 
@@ -38,12 +58,10 @@ enum CLIInstaller {
                 return "notBundled"
             case .wrongOwner(let existingTarget):
                 return "wrongOwner existingTarget=\(existingTarget?.path ?? "<unreadable>")"
-            case .appleScriptCompileFailed:
-                return "appleScriptCompileFailed"
-            case .terminalAutomationDenied(let code, let message):
-                return "terminalAutomationDenied code=\(code) message=\(message)"
-            case .scriptFailed(let code, let message):
-                return "scriptFailed code=\(code) message=\(message)"
+            case .legacyRequiresManualRemoval(let path):
+                return "legacyRequiresManualRemoval path=\(path)"
+            case .filesystemError(let underlying):
+                return "filesystemError underlying=\(underlying)"
             }
         }
     }
@@ -55,43 +73,76 @@ enum CLIInstaller {
     static func symlinkState() -> State {
         let fm = FileManager.default
         guard let bundled = bundledBinaryURL() else {
-            if fm.fileExists(atPath: symlinkPath) {
-                return .installedElsewhere(URL(fileURLWithPath: symlinkPath))
+            if fm.fileExists(atPath: primarySymlinkPath) {
+                return .installedElsewhere(primarySymlinkURL)
+            }
+            if fm.fileExists(atPath: legacySymlinkPath) {
+                return .installedElsewhere(URL(fileURLWithPath: legacySymlinkPath))
             }
             return .notInstalled
         }
         let bundledResolved = bundled.resolvingSymlinksInPath().path
 
-        do {
-            let target = try fm.destinationOfSymbolicLink(atPath: symlinkPath)
-            let targetURL: URL
-            if target.hasPrefix("/") {
-                targetURL = URL(fileURLWithPath: target, isDirectory: false)
-            } else {
-                let parent = (symlinkPath as NSString).deletingLastPathComponent
-                targetURL = URL(fileURLWithPath: parent).appendingPathComponent(target)
-            }
-            let targetResolved = targetURL.resolvingSymlinksInPath().path
-            if targetResolved == bundledResolved {
+        if let primary = resolvedSymlinkTarget(at: primarySymlinkPath) {
+            if primary.path == bundledResolved {
                 return .installed
             }
-            return .installedElsewhere(URL(fileURLWithPath: symlinkPath))
-        } catch {
-            if fm.fileExists(atPath: symlinkPath) {
-                return .installedElsewhere(URL(fileURLWithPath: symlinkPath))
+            if fm.fileExists(atPath: primary.path) {
+                return .installedElsewhere(primarySymlinkURL)
             }
-            return .notInstalled
+            // Dangling symlink from a previous Clearly install (e.g. stale DerivedData path).
+            // Treat as not installed so the user can reinstall over it.
+        } else if fm.fileExists(atPath: primarySymlinkPath) {
+            // A non-symlink file is squatting on our target path — treat as foreign.
+            return .installedElsewhere(primarySymlinkURL)
         }
+
+        if let legacy = resolvedSymlinkTarget(at: legacySymlinkPath) {
+            if legacy.path == bundledResolved {
+                return .installedLegacy(path: legacySymlinkPath)
+            }
+            if fm.fileExists(atPath: legacy.path) {
+                return .installedElsewhere(URL(fileURLWithPath: legacySymlinkPath))
+            }
+            // Dangling legacy symlink — pretend it isn't there.
+        } else if fm.fileExists(atPath: legacySymlinkPath) {
+            return .installedElsewhere(URL(fileURLWithPath: legacySymlinkPath))
+        }
+
+        return .notInstalled
     }
 
-    /// The exact one-liner a user can copy and run in Terminal themselves.
+    private static func resolvedSymlinkTarget(at path: String) -> URL? {
+        let fm = FileManager.default
+        guard let destination = try? fm.destinationOfSymbolicLink(atPath: path) else {
+            return nil
+        }
+        let targetURL: URL
+        if destination.hasPrefix("/") {
+            targetURL = URL(fileURLWithPath: destination, isDirectory: false)
+        } else {
+            let parent = (path as NSString).deletingLastPathComponent
+            targetURL = URL(fileURLWithPath: parent).appendingPathComponent(destination)
+        }
+        return targetURL.resolvingSymlinksInPath()
+    }
+
+    /// One-liner a user can copy and run themselves. No sudo — writes into `$HOME/.local/bin`.
     /// Returns nil when the helper binary isn't bundled with this build.
     static var shellCommand: String? {
         guard let source = bundledBinaryURL() else { return nil }
         return
-            "sudo mkdir -p /usr/local/bin && " +
-            "sudo ln -sf '\(shellEscape(source.path))' '\(symlinkPath)'"
+            "mkdir -p \"$HOME/.local/bin\" && " +
+            "ln -sf '\(shellEscape(source.path))' \"$HOME/.local/bin/clearly\""
     }
+
+    /// Copy-paste command shown when uninstalling a legacy `/usr/local/bin/clearly` symlink.
+    static var legacyUninstallCommand: String {
+        "sudo rm '\(legacySymlinkPath)'"
+    }
+
+    /// The export line users add to their shell profile when `~/.local/bin` isn't on `PATH`.
+    static let pathExportLine = #"export PATH="$HOME/.local/bin:$PATH""#
 
     /// Ordered key/value pairs describing the current install environment.
     /// Surfaced in the Settings "Details" disclosure and copied into bug reports.
@@ -106,7 +157,8 @@ enum CLIInstaller {
             ("app", "\(version) (\(build))"),
             ("bundleId", bundleId),
             ("macOS", osString),
-            ("symlinkTarget", symlinkPath),
+            ("primaryTarget", primarySymlinkPath),
+            ("legacyTarget", legacySymlinkPath),
             ("bundledBinary", bundledBinaryURL()?.path ?? "<missing>"),
         ]
     }
@@ -121,64 +173,67 @@ enum CLIInstaller {
             DiagnosticLog.log("[cli-install] install aborted: wrongOwner existingTarget=\(url.path)")
             throw CLIInstallerError.wrongOwner(existingTarget: url)
         }
-        let scriptCommand =
-            "sudo mkdir -p /usr/local/bin && " +
-            "sudo ln -sf '\(shellEscape(source.path))' '\(symlinkPath)' && " +
-            "echo '' && " +
-            "echo '✓ Installed. You can close this window — clearly is on your PATH.'"
+
+        let fm = FileManager.default
         do {
-            try await runInTerminal(scriptCommand)
-            DiagnosticLog.log("[cli-install] install dispatched to Terminal")
-        } catch let error as CLIInstallerError {
-            DiagnosticLog.log("[cli-install] install failed: \(error.diagnosticPayload)")
-            throw error
+            try fm.createDirectory(at: primaryBinDirectoryURL, withIntermediateDirectories: true)
+            // Remove an existing matching symlink so createSymbolicLink doesn't error.
+            if (try? fm.destinationOfSymbolicLink(atPath: primarySymlinkPath)) != nil {
+                try fm.removeItem(at: primarySymlinkURL)
+            }
+            try fm.createSymbolicLink(at: primarySymlinkURL, withDestinationURL: source)
+            DiagnosticLog.log("[cli-install] install succeeded: \(primarySymlinkPath) -> \(source.path)")
+        } catch {
+            DiagnosticLog.log("[cli-install] install failed: filesystemError underlying=\(error)")
+            throw CLIInstallerError.filesystemError(underlying: error)
         }
     }
 
     static func uninstall() async throws {
         DiagnosticLog.log("[cli-install] uninstall requested")
-        guard symlinkState() == .installed else {
-            DiagnosticLog.log("[cli-install] uninstall aborted: wrongOwner")
-            throw CLIInstallerError.wrongOwner(existingTarget: URL(fileURLWithPath: symlinkPath))
-        }
-        let scriptCommand =
-            "sudo rm -f '\(symlinkPath)' && " +
-            "echo '' && " +
-            "echo '✓ Uninstalled. You can close this window.'"
-        do {
-            try await runInTerminal(scriptCommand)
-            DiagnosticLog.log("[cli-install] uninstall dispatched to Terminal")
-        } catch let error as CLIInstallerError {
-            DiagnosticLog.log("[cli-install] uninstall failed: \(error.diagnosticPayload)")
-            throw error
+        let state = symlinkState()
+        switch state {
+        case .installed:
+            do {
+                try FileManager.default.removeItem(at: primarySymlinkURL)
+                DiagnosticLog.log("[cli-install] uninstall succeeded: removed \(primarySymlinkPath)")
+            } catch {
+                DiagnosticLog.log("[cli-install] uninstall failed: filesystemError underlying=\(error)")
+                throw CLIInstallerError.filesystemError(underlying: error)
+            }
+        case .installedLegacy(let path):
+            DiagnosticLog.log("[cli-install] uninstall requires manual sudo: \(path)")
+            throw CLIInstallerError.legacyRequiresManualRemoval(path: path)
+        case .notInstalled, .installedElsewhere:
+            DiagnosticLog.log("[cli-install] uninstall aborted: not our symlink")
+            throw CLIInstallerError.wrongOwner(existingTarget: nil)
         }
     }
 
-    private static func runInTerminal(_ shellCommand: String) async throws {
-        let escapedForAS = shellCommand
-            .replacingOccurrences(of: "\\", with: "\\\\")
-            .replacingOccurrences(of: "\"", with: "\\\"")
-        let script = """
-        tell application "Terminal"
-            activate
-            do script "\(escapedForAS)"
-        end tell
-        """
-        try await Task.detached(priority: .userInitiated) {
-            var errorDict: NSDictionary?
-            guard let apple = NSAppleScript(source: script) else {
-                throw CLIInstallerError.appleScriptCompileFailed
+    /// Best-effort check for whether `~/.local/bin` is on the shell PATH. Scans common rc files
+    /// plus the current process environment. False negatives are harmless — they just surface an
+    /// extra (safe) "Add to PATH" instruction.
+    static func localBinIsOnPath() -> Bool {
+        let home = realHomeDirectoryURL.path
+        let envPath = ProcessInfo.processInfo.environment["PATH"] ?? ""
+        for component in envPath.split(separator: ":") {
+            if component == "\(home)/.local/bin" { return true }
+        }
+        let needleVariants = [
+            "\(home)/.local/bin",
+            "$HOME/.local/bin",
+            "~/.local/bin",
+            "${HOME}/.local/bin",
+        ]
+        let rcFiles = [".zprofile", ".zshrc", ".bash_profile", ".bashrc", ".profile"]
+        for name in rcFiles {
+            let url = realHomeDirectoryURL.appendingPathComponent(name)
+            guard let contents = try? String(contentsOf: url, encoding: .utf8) else { continue }
+            for needle in needleVariants where contents.contains(needle) {
+                return true
             }
-            _ = apple.executeAndReturnError(&errorDict)
-            if let err = errorDict {
-                let code = (err["NSAppleScriptErrorNumber"] as? Int) ?? 0
-                let msg = (err["NSAppleScriptErrorMessage"] as? String) ?? "Unknown error"
-                if code == -1743 || code == -600 {
-                    throw CLIInstallerError.terminalAutomationDenied(code: code, message: msg)
-                }
-                throw CLIInstallerError.scriptFailed(code: code, message: msg)
-            }
-        }.value
+        }
+        return false
     }
 
     private static func shellEscape(_ path: String) -> String {

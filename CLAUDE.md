@@ -106,17 +106,19 @@ The app ships through two channels from the same codebase:
 
 When adding new Sparkle-dependent code, always wrap it in `#if canImport(Sparkle)`. The App Store build must compile cleanly without the Sparkle module.
 
-### Privileged ops from the sandboxed app
+### CLI install: user-local, no privileged ops
 
-Clearly is sandboxed, so any operation that needs root (`/usr/local/bin/` writes, privileged installs) can't route through `NSAppleScript … with administrator privileges` — that path is silently blocked and surfaces as a misleading **"The administrator user name or password was incorrect"** error with no SecurityAgent dialog ever appearing. Don't use it.
+Clearly is sandboxed. Historically, the CLI installer drove Terminal via AppleScript to run `sudo ln -sf … /usr/local/bin/clearly`. That path was fragile (required two separate AppleEvents entitlements on hardened runtime, broke silently on macOS 26 — see issue #241) and is no longer used.
 
-The working pattern (see `Clearly/CLIInstaller.swift`) is `tell application "Terminal" to do script "sudo …"`. Terminal's own inline sudo prompt handles authentication. Required pieces:
+The current installer (`Clearly/CLIInstaller.swift`) writes a symlink directly at `~/.local/bin/clearly` using `FileManager.createSymbolicLink`, requiring no sudo, no Terminal, no Apple Events. Required pieces:
 
-- `com.apple.security.temporary-exception.apple-events` with `com.apple.Terminal` as the only target in `Clearly.entitlements`.
-- `NSAppleEventsUsageDescription` in `Info.plist` with a user-visible reason. **Without it, TCC silently auto-denies — the consent prompt never appears.** This was the single most time-consuming debug step during Phase 5 of `local-mcp-cli`.
-- For ad-hoc-signed Debug builds iterating on AppleEvents, TCC can cache stale denials across rebuilds. Reset with `tccutil reset AppleEvents com.sabotage.clearly.dev`.
+- `com.apple.security.temporary-exception.files.home-relative-path.read-write = ["/.local/bin/"]` in `Clearly.entitlements`. Narrow-scope (only `~/.local/bin/`), mirroring the read-only variant already used for local-image previews.
+- **No** `NSAppleEventsUsageDescription`, **no** `temporary-exception.apple-events`. Do not reintroduce either unless a new feature actually sends Apple Events.
+- Legacy `/usr/local/bin/clearly` installs from Clearly ≤ 2.4.x are detected via `CLIInstaller.symlinkState()` and left alone. Removing a legacy symlink still requires sudo; the UI surfaces a copy-paste `sudo rm` command instead of attempting it.
 
-**Cross-channel warning:** the apple-events exception lives in `Clearly.entitlements` (direct/Sparkle) but **not** in `Clearly-AppStore.entitlements`, which strips temporary-exceptions to pass MAS review. That means the CLI install flow (and anything else that drives Terminal) won't work in the App Store build as-is. Either mirror the entitlement into the MAS file (review-risk) or gate the Install UI behind `#if canImport(Sparkle)` and ship a copy-paste fallback for MAS.
+**Cross-channel status:** the home-relative-path read-write exception is only in `Clearly.entitlements` (Sparkle). `Clearly-AppStore.entitlements` intentionally omits it — MAS review strips temporary-exceptions. MAS users get the `CLIInstaller.shellCommand` copy-paste fallback (no sudo either — still writes to `~/.local/bin`). Don't add the temporary-exception to the MAS entitlements file without weighing review risk.
+
+**Never reintroduce** `NSAppleScript … with administrator privileges` (silently blocked in sandbox, surfaces as a misleading "The administrator user name or password was incorrect" error) or `tell Terminal to do script sudo …` (the exact path #241 broke).
 
 ### iCloud (and any profile-requiring entitlement) breaks ad-hoc Debug signing
 
