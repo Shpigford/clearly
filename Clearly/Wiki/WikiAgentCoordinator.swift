@@ -50,18 +50,50 @@ enum WikiAgentCoordinator {
         guard let session = beginSession(workspace: workspace, operationKind: .query) else { return }
         guard let question = promptText(
             title: "Query",
-            message: "Ask a question of your wiki. The agent can propose filing the answer back as a new note.",
+            message: "Ask a question. The agent answers with a grounded prose summary — you decide whether to file it.",
             placeholder: "e.g. What do I know about prompt caching?"
         )?.trimmingCharacters(in: .whitespacesAndNewlines), !question.isEmpty else { return }
 
         Task { @MainActor in
-            await runRecipe(
-                kind: .query,
-                session: session,
-                controller: controller,
-                startStatus: "Querying the wiki…",
-                titleFor: { _ in "Query: \(Self.shortSummary(of: question))" }
-            ) { question }
+            await runQuery(question: question, session: session, controller: controller)
+        }
+    }
+
+    private static func runQuery(
+        question: String,
+        session: Session,
+        controller: WikiOperationController
+    ) async {
+        DiagnosticLog.log("Query: start")
+        controller.startRecipe("Querying the wiki…")
+        defer { controller.finishRecipe() }
+
+        do {
+            let recipe = try loadRecipe(kind: .query, vaultURL: session.vaultURL)
+            let vaultState = buildVaultState(vaultURL: session.vaultURL)
+            let prompt = RecipeParser.interpolate(recipe, input: question, vaultState: vaultState)
+            DiagnosticLog.log("Query: calling agent (prompt=\(prompt.count) chars)")
+
+            controller.updateRecipeStatus(
+                AgentWarmer.isWarm
+                    ? "Asking Claude…"
+                    : "Asking Claude (warming cache, first call ~30s)…"
+            )
+
+            let model = UserDefaults.standard.string(forKey: "wikiAgentModel")
+            let result = try await session.runner.run(prompt: prompt, model: model)
+            AgentWarmer.markExercised()
+            DiagnosticLog.log("Query: agent replied \(result.text.count) chars")
+
+            let trimmed = result.text.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty else {
+                presentError("Query returned an empty answer.")
+                return
+            }
+            controller.stageAnswer(WikiAnswer(question: question, markdown: trimmed))
+        } catch {
+            DiagnosticLog.log("Query failed: \(error)")
+            presentError("Query failed: \(Self.describe(error))")
         }
     }
 

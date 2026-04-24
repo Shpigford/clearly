@@ -231,6 +231,15 @@ struct MacDetailColumn: View {
                 onApplied: handleOperationApplied
             )
         }
+        .sheet(isPresented: Binding(
+            get: { wikiController.isPresentingAnswer },
+            set: { if !$0 { wikiController.dismissAnswer() } }
+        )) {
+            WikiAnswerSheet(
+                controller: wikiController,
+                vaultRoot: workspace.activeLocation?.url
+            )
+        }
         .overlay(alignment: .bottom) {
             WikiRecipeProgressOverlay(controller: wikiController)
                 .animation(Theme.Motion.smooth, value: wikiController.isRunningRecipe)
