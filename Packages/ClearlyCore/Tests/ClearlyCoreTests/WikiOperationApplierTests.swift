@@ -111,6 +111,40 @@ final class WikiOperationApplierTests: XCTestCase {
         XCTAssertEqual(try readFile("a.md"), "actual")
     }
 
+    // MARK: - Loose-equal tolerance
+
+    func testAppliesModifyWhenDiskHasTrailingNewlineDrift() throws {
+        try writeFile("a.md", "hello\nworld\n")
+        let op = WikiOperation(
+            kind: .ingest, title: "t", rationale: "r",
+            // Agent dropped the trailing newline — common LLM drift.
+            changes: [.modify(path: "a.md", before: "hello\nworld", after: "hello\nchanged")]
+        )
+        XCTAssertNoThrow(try WikiOperationApplier.apply(op, at: vault))
+        XCTAssertEqual(try readFile("a.md"), "hello\nchanged")
+    }
+
+    func testAppliesModifyWhenLineTrailingWhitespaceDiffers() throws {
+        try writeFile("a.md", "first line   \nsecond\n")
+        let op = WikiOperation(
+            kind: .ingest, title: "t", rationale: "r",
+            // Agent trimmed trailing whitespace on each line.
+            changes: [.modify(path: "a.md", before: "first line\nsecond", after: "first line\ndone")]
+        )
+        XCTAssertNoThrow(try WikiOperationApplier.apply(op, at: vault))
+    }
+
+    func testStillRejectsRealContentDivergence() throws {
+        try writeFile("a.md", "the user wrote different content")
+        let op = WikiOperation(
+            kind: .ingest, title: "t", rationale: "r",
+            changes: [.modify(path: "a.md", before: "original content", after: "new")]
+        )
+        XCTAssertThrowsError(try WikiOperationApplier.apply(op, at: vault)) { error in
+            XCTAssertEqual(error as? WikiOperationApplier.ApplyError, .modifyBaseMismatch("a.md"))
+        }
+    }
+
     // MARK: - Rollback
 
     func testRollsBackWhenMidApplyFails() throws {

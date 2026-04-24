@@ -93,7 +93,7 @@ public enum WikiOperationApplier {
                     throw ApplyError.pathNotFound(change.path)
                 }
                 let current = try readUTF8(at: target, changePath: change.path)
-                if current != before {
+                if !looseEqual(current, before) {
                     throw ApplyError.modifyBaseMismatch(change.path)
                 }
             case .delete(_, let contents):
@@ -101,11 +101,38 @@ public enum WikiOperationApplier {
                     throw ApplyError.pathNotFound(change.path)
                 }
                 let current = try readUTF8(at: target, changePath: change.path)
-                if current != contents {
+                if !looseEqual(current, contents) {
                     throw ApplyError.deleteContentMismatch(change.path)
                 }
             }
         }
+    }
+
+    // MARK: - Tolerant comparison
+
+    /// LLMs frequently drop the final trailing newline or trim line-end
+    /// whitespace when they echo a file's contents into a JSON string.
+    /// Reject those trivial differences as "same enough" — they don't
+    /// represent any real user edit we could lose.
+    static func looseEqual(_ a: String, _ b: String) -> Bool {
+        if a == b { return true }
+        return normalize(a) == normalize(b)
+    }
+
+    private static func normalize(_ s: String) -> String {
+        s.split(separator: "\n", omittingEmptySubsequences: false)
+            .map { line in
+                // Trim trailing whitespace on each line — most common LLM
+                // drift. Keep leading whitespace (indentation is meaningful).
+                var end = line.endIndex
+                while end > line.startIndex {
+                    let prev = line.index(before: end)
+                    if line[prev].isWhitespace { end = prev } else { break }
+                }
+                return String(line[line.startIndex..<end])
+            }
+            .joined(separator: "\n")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     // MARK: - File helpers
