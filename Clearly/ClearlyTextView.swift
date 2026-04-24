@@ -41,6 +41,39 @@ final class ClearlyTextView: PersistentTextCheckingTextView {
     var onShowFind: (() -> Void)?
     var onWikiLinkClicked: ((String, String?) -> Void)?
 
+    /// Invoked when the user pastes/drops an image into an unsaved document.
+    /// Implementer shows the NSSavePanel, returning the saved URL on success
+    /// or `nil` on cancel. Called synchronously from `paste(_:)` /
+    /// `performDragOperation(_:)`, so the panel's modal run is fine.
+    var onPasteRequiresSave: (() -> URL?)?
+
+    /// SwiftUI's `.dropDestination` routes Finder file drops to the focused
+    /// editor via this notification. Carries `[URL]` in `userInfo["urls"]`.
+    static let insertDroppedImagesNotification = Notification.Name("ClearlyTextView.insertDroppedImages")
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        guard window != nil else { return }
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(handleDroppedImagesNotification(_:)),
+            name: Self.insertDroppedImagesNotification, object: nil
+        )
+    }
+
+    override func viewWillMove(toWindow newWindow: NSWindow?) {
+        super.viewWillMove(toWindow: newWindow)
+        if newWindow == nil {
+            NotificationCenter.default.removeObserver(self, name: Self.insertDroppedImagesNotification, object: nil)
+        }
+    }
+
+    @objc private func handleDroppedImagesNotification(_ note: Notification) {
+        guard window?.isKeyWindow == true else { return }
+        guard let urls = note.userInfo?["urls"] as? [URL] else { return }
+        DiagnosticLog.log("ClearlyTextView received drop notification for \(urls.count) URL(s)")
+        handleDroppedImageFileURLs(urls)
+    }
+
     // MARK: - Wiki-Link Cmd+Click
 
     private static let wikiLinkRegex = try! NSRegularExpression(
@@ -129,33 +162,35 @@ final class ClearlyTextView: PersistentTextCheckingTextView {
 
     // MARK: - Paste
 
-    private static let imageExtensions: Set<String> = ["png", "jpg", "jpeg", "gif", "webp", "svg", "tiff", "tif", "bmp", "heic"]
-
-    private static func encodeImagePath(_ path: String) -> String {
-        path.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? path
-    }
-
     override func paste(_ sender: Any?) {
         let pasteboard = NSPasteboard.general
 
-        // Check for file URLs on the pasteboard
+        // 1. File URLs — if any are images, copy each to a sibling PNG.
         if let urls = pasteboard.readObjects(forClasses: [NSURL.self], options: [
             .urlReadingFileURLsOnly: true
-        ]) as? [URL], !urls.isEmpty {
-            let imageURLs = urls.filter { Self.imageExtensions.contains($0.pathExtension.lowercased()) }
+        ]) as? [URL] {
+            let imageURLs = urls.filter {
+                ImagePasteService.imageFileExtensions.contains($0.pathExtension.lowercased())
+            }
             if !imageURLs.isEmpty {
-                let markdown = imageURLs.map { "![](\(Self.encodeImagePath($0.path)))" }.joined(separator: "\n")
-                insertText(markdown, replacementRange: selectedRange())
+                handleImageFileURLs(imageURLs)
                 return
             }
         }
 
-        // Fallback: check if pasted string looks like an image file path
+        // 2. Raw image on the pasteboard (screenshot, copied from Preview, etc.).
+        if pasteboard.canReadObject(forClasses: [NSImage.self], options: nil) {
+            if let image = NSImage(pasteboard: pasteboard), let png = Self.pngData(from: image) {
+                insertPastedPNG(png)
+                return
+            }
+        }
+
+        // 3. HTTP(S) URL string that looks like an image — async download.
         if let text = pasteboard.string(forType: .string)?.trimmingCharacters(in: .whitespacesAndNewlines),
-           text.hasPrefix("/"),
-           !text.contains("\n"),
-           Self.imageExtensions.contains((text as NSString).pathExtension.lowercased()) {
-            insertText("![](\(Self.encodeImagePath(text)))", replacementRange: selectedRange())
+           !text.contains("\n"), !text.contains(" "),
+           let url = URL(string: text), ImagePasteService.isLikelyImageURL(url) {
+            beginImageDownload(from: url)
             return
         }
 
@@ -164,6 +199,178 @@ final class ClearlyTextView: PersistentTextCheckingTextView {
         } else {
             super.paste(sender)
         }
+    }
+
+    // MARK: - Drag-and-drop
+
+    override func draggingEntered(_ sender: any NSDraggingInfo) -> NSDragOperation {
+        let typeNames = sender.draggingPasteboard.types?.map(\.rawValue).joined(separator: ",") ?? "nil"
+        let op = Self.imageDragOperation(for: sender) ?? super.draggingEntered(sender)
+        DiagnosticLog.log("draggingEntered types=\(typeNames) op=\(op.rawValue)")
+        return op
+    }
+
+    override func draggingUpdated(_ sender: any NSDraggingInfo) -> NSDragOperation {
+        if let op = Self.imageDragOperation(for: sender) {
+            moveCaret(toDropPoint: sender.draggingLocation)
+            return op
+        }
+        return super.draggingUpdated(sender)
+    }
+
+    override func performDragOperation(_ sender: any NSDraggingInfo) -> Bool {
+        moveCaret(toDropPoint: sender.draggingLocation)
+        let pb = sender.draggingPasteboard
+        let pbTypeNames = pb.types?.map(\.rawValue).joined(separator: ",") ?? "nil"
+        DiagnosticLog.log("performDragOperation types=\(pbTypeNames)")
+
+        // Prefer file URLs — drops from Finder, Photos.
+        if let urls = pb.readObjects(forClasses: [NSURL.self], options: [
+            .urlReadingFileURLsOnly: true
+        ]) as? [URL], !urls.isEmpty {
+            let urlNames = urls.map(\.lastPathComponent).joined(separator: ",")
+            DiagnosticLog.log("performDragOperation file URLs: \(urlNames)")
+            let imageURLs = urls.filter {
+                ImagePasteService.imageFileExtensions.contains($0.pathExtension.lowercased())
+            }
+            if !imageURLs.isEmpty {
+                return handleImageFileURLs(imageURLs)
+            }
+        }
+
+        // Fallback: raw image bytes on the pasteboard (drag from Preview, Safari image).
+        if let image = NSImage(pasteboard: pb), let png = Self.pngData(from: image) {
+            return insertPastedPNG(png)
+        }
+
+        DiagnosticLog.log("performDragOperation: falling through to super")
+        return super.performDragOperation(sender)
+    }
+
+    private static func imageDragOperation(for info: any NSDraggingInfo) -> NSDragOperation? {
+        let pb = info.draggingPasteboard
+        if let urls = pb.readObjects(forClasses: [NSURL.self], options: [
+            .urlReadingFileURLsOnly: true
+        ]) as? [URL], urls.contains(where: {
+            ImagePasteService.imageFileExtensions.contains($0.pathExtension.lowercased())
+        }) {
+            return .copy
+        }
+        if pb.canReadObject(forClasses: [NSImage.self], options: nil) {
+            return .copy
+        }
+        return nil
+    }
+
+    private func moveCaret(toDropPoint windowPoint: NSPoint) {
+        let viewPoint = convert(windowPoint, from: nil)
+        let charIndex = characterIndexForInsertion(at: viewPoint)
+        setSelectedRange(NSRange(location: charIndex, length: 0))
+    }
+
+    // MARK: - Image-paste helpers
+
+    /// Public entry for SwiftUI's `.dropDestination` to route Finder file
+    /// drops into the editor. Writes each image as a sibling PNG and
+    /// inserts markdown at the current cursor.
+    @discardableResult
+    func handleDroppedImageFileURLs(_ urls: [URL]) -> Bool {
+        let imageURLs = urls.filter {
+            ImagePasteService.imageFileExtensions.contains($0.pathExtension.lowercased())
+        }
+        guard !imageURLs.isEmpty else { return false }
+        return handleImageFileURLs(imageURLs)
+    }
+
+    @discardableResult
+    private func handleImageFileURLs(_ urls: [URL]) -> Bool {
+        guard let docURL = resolveDocumentURLForPaste() else {
+            DiagnosticLog.log("handleImageFileURLs: no document URL, aborting")
+            return false
+        }
+        var tokens: [String] = []
+        for url in urls {
+            let accessed = url.startAccessingSecurityScopedResource()
+            defer { if accessed { url.stopAccessingSecurityScopedResource() } }
+
+            do {
+                let data = try Data(contentsOf: url)
+                guard let png = Self.pngData(from: data) else {
+                    DiagnosticLog.log("handleImageFileURLs: decode failed for \(url.lastPathComponent)")
+                    continue
+                }
+                let result = try ImagePasteService.writePNG(png, besidesDocumentAt: docURL, presenter: nil)
+                tokens.append(result.markdown)
+            } catch {
+                DiagnosticLog.log("handleImageFileURLs: \(url.lastPathComponent) error: \(error.localizedDescription)")
+            }
+        }
+        guard !tokens.isEmpty else { return false }
+        insertText(tokens.joined(separator: "\n"), replacementRange: selectedRange())
+        return true
+    }
+
+    @discardableResult
+    private func insertPastedPNG(_ png: Data) -> Bool {
+        guard let docURL = resolveDocumentURLForPaste() else { return false }
+        do {
+            let result = try ImagePasteService.writePNG(png, besidesDocumentAt: docURL, presenter: nil)
+            insertText(result.markdown, replacementRange: selectedRange())
+            return true
+        } catch {
+            DiagnosticLog.log("Paste: failed to write sibling PNG: \(error.localizedDescription)")
+            return false
+        }
+    }
+
+    @discardableResult
+    private func beginImageDownload(from url: URL) -> Bool {
+        guard let docURL = resolveDocumentURLForPaste() else { return false }
+        let token = UUID().uuidString
+        let placeholder = "![](downloading…)<!--clearly-paste:\(token)-->"
+        insertText(placeholder, replacementRange: selectedRange())
+        Task { @MainActor [weak self] in
+            do {
+                let png = try await ImageDownloader.fetchImagePNG(from: url)
+                guard let self else { return }
+                let result = try ImagePasteService.writePNG(png, besidesDocumentAt: docURL, presenter: nil)
+                self.replacePlaceholder(placeholder, with: result.markdown)
+            } catch {
+                DiagnosticLog.log("Paste: image download failed for \(url): \(error.localizedDescription)")
+                self?.replacePlaceholder(placeholder, with: "![](failed-download)")
+            }
+        }
+        return true
+    }
+
+    private func replacePlaceholder(_ placeholder: String, with replacement: String) {
+        let ns = string as NSString
+        let range = ns.range(of: placeholder)
+        guard range.location != NSNotFound else { return }
+        insertText(replacement, replacementRange: range)
+    }
+
+    private func resolveDocumentURLForPaste() -> URL? {
+        if let documentURL { return documentURL }
+        if let saved = onPasteRequiresSave?() {
+            documentURL = saved
+            return saved
+        }
+        NSSound.beep()
+        return nil
+    }
+
+    private static func pngData(from image: NSImage) -> Data? {
+        guard let tiff = image.tiffRepresentation,
+              let rep = NSBitmapImageRep(data: tiff) else { return nil }
+        return rep.representation(using: .png, properties: [:])
+    }
+
+    private static func pngData(from data: Data) -> Data? {
+        // Route through NSImage so ImageIO handles HEIC, WebP, GIF, etc. —
+        // NSBitmapImageRep's direct decode has narrower format support.
+        guard let image = NSImage(data: data) else { return nil }
+        return pngData(from: image)
     }
 
     // MARK: - Find

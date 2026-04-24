@@ -148,6 +148,7 @@ struct DocumentDetailBody: View {
                         get: { session.text },
                         set: { session.text = $0 }
                     ),
+                    documentURL: file.url,
                     outlineState: outlineState,
                     findState: findState
                 )

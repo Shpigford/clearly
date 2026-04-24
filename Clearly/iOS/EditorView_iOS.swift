@@ -1,5 +1,6 @@
 import SwiftUI
 import UIKit
+import UniformTypeIdentifiers
 import ClearlyCore
 
 /// Writable iOS markdown editor. Binding writes back inside
@@ -10,6 +11,7 @@ import ClearlyCore
 struct EditorView_iOS: UIViewRepresentable {
 
     @Binding var text: String
+    var documentURL: URL? = nil
     var outlineState: OutlineState? = nil
     var findState: FindState? = nil
 
@@ -18,6 +20,8 @@ struct EditorView_iOS: UIViewRepresentable {
     func makeUIView(context: Context) -> ClearlyUITextView {
         let textView = ClearlyUITextView()
         textView.delegate = context.coordinator
+        textView.documentURL = documentURL
+        textView.addInteraction(UIDropInteraction(delegate: context.coordinator))
         context.coordinator.textView = textView
         context.coordinator.applyExternalText(text)
         context.coordinator.attachOutlineState(outlineState)
@@ -37,6 +41,7 @@ struct EditorView_iOS: UIViewRepresentable {
 
     func updateUIView(_ textView: ClearlyUITextView, context: Context) {
         context.coordinator.parent = self
+        textView.documentURL = documentURL
         context.coordinator.attachOutlineState(outlineState)
         context.coordinator.attachFindState(findState)
         guard context.coordinator.pendingBindingUpdates == 0 else { return }
@@ -275,6 +280,60 @@ struct EditorView_iOS: UIViewRepresentable {
                 guard let self, self.pendingBindingUpdateToken == token else { return }
                 self.pendingBindingUpdateToken = nil
                 self.pendingBindingUpdates = 0
+            }
+        }
+    }
+}
+
+// MARK: - UIDropInteractionDelegate
+
+extension EditorView_iOS.Coordinator: UIDropInteractionDelegate {
+
+    func dropInteraction(_ interaction: UIDropInteraction,
+                         canHandle session: any UIDropSession) -> Bool {
+        return session.hasItemsConforming(toTypeIdentifiers: [UTType.image.identifier])
+    }
+
+    func dropInteraction(_ interaction: UIDropInteraction,
+                         sessionDidUpdate session: any UIDropSession) -> UIDropProposal {
+        if let textView, let pos = textView.closestPosition(to: session.location(in: textView)) {
+            let caret = textView.offset(from: textView.beginningOfDocument, to: pos)
+            textView.selectedRange = NSRange(location: caret, length: 0)
+        }
+        return UIDropProposal(operation: .copy)
+    }
+
+    func dropInteraction(_ interaction: UIDropInteraction,
+                         performDrop session: any UIDropSession) {
+        guard let textView else { return }
+        let providers: [NSItemProvider] = session.items
+            .map { $0.itemProvider }
+            .filter { $0.hasItemConformingToTypeIdentifier(UTType.image.identifier) }
+        guard !providers.isEmpty else { return }
+
+        // Load all items in parallel, then apply inserts on the main actor in
+        // the order items appeared so drop order is preserved.
+        Task { @MainActor [weak textView] in
+            var datas: [Data?] = Array(repeating: nil, count: providers.count)
+            await withTaskGroup(of: (Int, Data?).self) { group in
+                for (idx, provider) in providers.enumerated() {
+                    group.addTask {
+                        let data: Data? = await withCheckedContinuation { cont in
+                            provider.loadDataRepresentation(
+                                forTypeIdentifier: UTType.image.identifier
+                            ) { data, _ in
+                                cont.resume(returning: data)
+                            }
+                        }
+                        return (idx, data)
+                    }
+                }
+                for await (idx, data) in group { datas[idx] = data }
+            }
+            guard let textView else { return }
+            for data in datas {
+                guard let data else { continue }
+                textView.handleDroppedImageData(data)
             }
         }
     }

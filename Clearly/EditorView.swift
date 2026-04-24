@@ -35,7 +35,7 @@ struct EditorView: NSViewRepresentable {
 
     func makeNSView(context: Context) -> NSView {
         DiagnosticLog.log("makeNSView: creating EditorView (\(text.count) chars)")
-        let scrollView = NSScrollView()
+        let scrollView = DragForwardingScrollView()
         scrollView.hasVerticalScroller = true
         scrollView.hasHorizontalScroller = false
         scrollView.drawsBackground = false
@@ -103,6 +103,19 @@ struct EditorView: NSViewRepresentable {
                 userInfo: ["target": target, "heading": heading as Any]
             )
         }
+        textView.onPasteRequiresSave = {
+            let ws = WorkspaceManager.shared
+            _ = ws.saveCurrentFile()
+            return ws.currentFileURL
+        }
+        // NSTextView's `registeredDraggedTypes` is empty until it moves to a
+        // window, so append-based registration loses `.fileURL`. Register the
+        // union explicitly so Finder drags route to our override.
+        let existing = Set(textView.registeredDraggedTypes)
+        let required: Set<NSPasteboard.PasteboardType> = [.fileURL, .tiff, .png, .string, .rtf, .rtfd, .html]
+        textView.registerForDraggedTypes(Array(existing.union(required)))
+        let dragTypeNames = textView.registeredDraggedTypes.map(\.rawValue).joined(separator: ",")
+        DiagnosticLog.log("EditorView drag types registered: \(dragTypeNames)")
 
         scrollView.documentView = textView
 
@@ -842,5 +855,43 @@ struct EditorView: NSViewRepresentable {
             matchRanges = []
             currentMatchIdx = 0
         }
+    }
+}
+
+/// Forwards drag events from the scroll view onto its `ClearlyTextView`
+/// document view so drops on scroll-padding/empty-area also insert images.
+/// NSTextView only receives drag events when the drop lands directly on it;
+/// short documents leave a large background region that would otherwise
+/// reject drops even though the editor is the visible target.
+final class DragForwardingScrollView: NSScrollView {
+
+    private var imageTypes: [NSPasteboard.PasteboardType] {
+        [.fileURL, .tiff, .png]
+    }
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        registerForDraggedTypes(imageTypes)
+    }
+
+    required init?(coder: NSCoder) {
+        super.init(coder: coder)
+        registerForDraggedTypes(imageTypes)
+    }
+
+    private var imageTextView: ClearlyTextView? { documentView as? ClearlyTextView }
+
+    override func draggingEntered(_ sender: any NSDraggingInfo) -> NSDragOperation {
+        DiagnosticLog.log("DragForwardingScrollView draggingEntered")
+        return imageTextView?.draggingEntered(sender) ?? []
+    }
+
+    override func draggingUpdated(_ sender: any NSDraggingInfo) -> NSDragOperation {
+        imageTextView?.draggingUpdated(sender) ?? []
+    }
+
+    override func performDragOperation(_ sender: any NSDraggingInfo) -> Bool {
+        DiagnosticLog.log("DragForwardingScrollView performDragOperation")
+        return imageTextView?.performDragOperation(sender) ?? false
     }
 }

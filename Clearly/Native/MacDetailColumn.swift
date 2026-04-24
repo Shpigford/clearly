@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import UniformTypeIdentifiers
 import ClearlyCore
 
 // MARK: - Toolbar (root-attached)
