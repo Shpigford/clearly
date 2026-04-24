@@ -46,55 +46,70 @@ enum WikiAgentCoordinator {
         }
     }
 
-    static func startQuery(workspace: WorkspaceManager, controller: WikiOperationController) {
+    /// Entry point for ⌃⌘Q and the Wiki menu. Shows the chat panel and
+    /// focuses the input; the user types from there.
+    static func startQuery(workspace: WorkspaceManager, chat: WikiChatState) {
+        guard let _ = workspace.activeLocation?.url, workspace.activeVaultIsWiki else {
+            presentError("Query is only available when the active note lives in a wiki vault.")
+            return
+        }
+        chat.show()
+    }
+
+    /// Called by WikiChatView when the user submits a message. Runs the
+    /// query recipe with the full conversation history inlined as `{{input}}`,
+    /// appends the assistant's reply, and opportunistically warms the cache
+    /// so follow-up turns are fast.
+    static func sendChatMessage(
+        _ text: String,
+        workspace: WorkspaceManager,
+        chat: WikiChatState
+    ) {
         guard let session = beginSession(workspace: workspace, operationKind: .query) else { return }
-        guard let question = promptText(
-            title: "Query",
-            message: "Ask a question. The agent answers with a grounded prose summary — you decide whether to file it.",
-            placeholder: "e.g. What do I know about prompt caching?"
-        )?.trimmingCharacters(in: .whitespacesAndNewlines), !question.isEmpty else { return }
+        _ = chat.appendUser(text)
+        chat.draft = ""
+        chat.isSending = true
+        chat.sendError = nil
 
         Task { @MainActor in
-            await runQuery(question: question, session: session, controller: controller)
+            defer { chat.isSending = false }
+            do {
+                let recipe = try loadRecipe(kind: .query, vaultURL: session.vaultURL)
+                let vaultState = buildVaultState(vaultURL: session.vaultURL)
+                let transcript = Self.renderTranscript(chat.messages)
+                let prompt = RecipeParser.interpolate(recipe, input: transcript, vaultState: vaultState)
+                DiagnosticLog.log("Chat: sending (turns=\(chat.messages.count), prompt=\(prompt.count) chars)")
+
+                let model = UserDefaults.standard.string(forKey: "wikiAgentModel")
+                let result = try await session.runner.run(prompt: prompt, model: model)
+                AgentWarmer.markExercised()
+                DiagnosticLog.log("Chat: reply \(result.text.count) chars, tokens in=\(result.inputTokens) out=\(result.outputTokens)")
+
+                let trimmed = result.text.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !trimmed.isEmpty else {
+                    chat.sendError = "Empty response from the agent."
+                    return
+                }
+                _ = chat.appendAssistant(trimmed)
+            } catch {
+                DiagnosticLog.log("Chat failed: \(error)")
+                chat.sendError = Self.describe(error)
+            }
         }
     }
 
-    private static func runQuery(
-        question: String,
-        session: Session,
-        controller: WikiOperationController
-    ) async {
-        DiagnosticLog.log("Query: start")
-        controller.startRecipe("Querying the wiki…")
-        defer { controller.finishRecipe() }
-
-        do {
-            let recipe = try loadRecipe(kind: .query, vaultURL: session.vaultURL)
-            let vaultState = buildVaultState(vaultURL: session.vaultURL)
-            let prompt = RecipeParser.interpolate(recipe, input: question, vaultState: vaultState)
-            DiagnosticLog.log("Query: calling agent (prompt=\(prompt.count) chars)")
-
-            controller.updateRecipeStatus(
-                AgentWarmer.isWarm
-                    ? "Asking Claude…"
-                    : "Asking Claude (warming cache, first call ~30s)…"
-            )
-
-            let model = UserDefaults.standard.string(forKey: "wikiAgentModel")
-            let result = try await session.runner.run(prompt: prompt, model: model)
-            AgentWarmer.markExercised()
-            DiagnosticLog.log("Query: agent replied \(result.text.count) chars")
-
-            let trimmed = result.text.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !trimmed.isEmpty else {
-                presentError("Query returned an empty answer.")
-                return
-            }
-            controller.stageAnswer(WikiAnswer(question: question, markdown: trimmed))
-        } catch {
-            DiagnosticLog.log("Query failed: \(error)")
-            presentError("Query failed: \(Self.describe(error))")
+    /// Serialise the conversation into the form the query recipe expects as
+    /// `{{input}}`. We flag the latest message so the model knows which turn
+    /// to answer rather than re-summarising the whole history.
+    private static func renderTranscript(_ messages: [WikiChatMessage]) -> String {
+        var lines: [String] = ["Conversation so far:"]
+        for message in messages {
+            let role = message.role == .user ? "User" : "Assistant"
+            lines.append("\(role): \(message.text)")
         }
+        lines.append("")
+        lines.append("Answer the most recent User message as Assistant, in plain markdown.")
+        return lines.joined(separator: "\n")
     }
 
     static func startLint(workspace: WorkspaceManager, controller: WikiOperationController) {
@@ -332,13 +347,6 @@ enum WikiAgentCoordinator {
     }
 
     // MARK: - NSAlert + diagnostics
-
-    private static func shortSummary(of text: String) -> String {
-        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        if trimmed.count <= 60 { return trimmed }
-        let idx = trimmed.index(trimmed.startIndex, offsetBy: 60)
-        return String(trimmed[..<idx]) + "…"
-    }
 
     private static func promptText(title: String, message: String, placeholder: String) -> String? {
         let alert = NSAlert()

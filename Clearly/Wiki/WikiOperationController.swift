@@ -8,12 +8,6 @@ import ClearlyCore
 ///
 /// Per-file rejection is tracked in `rejectedPaths` — the user can drop
 /// individual files from the batch without cancelling the whole operation.
-/// A Query's returned answer, staged for the answer sheet.
-struct WikiAnswer: Equatable {
-    let question: String
-    let markdown: String
-}
-
 @Observable
 @MainActor
 final class WikiOperationController {
@@ -29,19 +23,7 @@ final class WikiOperationController {
     var isRunningRecipe: Bool = false
     var recipeStatus: String?
 
-    /// A Query's raw prose answer, pending display in the answer sheet.
-    var stagedAnswer: WikiAnswer?
-
     var isPresenting: Bool { stagedOperation != nil }
-    var isPresentingAnswer: Bool { stagedAnswer != nil }
-
-    func stageAnswer(_ answer: WikiAnswer) {
-        stagedAnswer = answer
-    }
-
-    func dismissAnswer() {
-        stagedAnswer = nil
-    }
 
     func startRecipe(_ status: String) {
         isRunningRecipe = true

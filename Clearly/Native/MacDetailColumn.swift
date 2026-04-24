@@ -139,6 +139,7 @@ struct MacDetailColumn: View {
     @ObservedObject var backlinksState: BacklinksState
     @ObservedObject var jumpToLineState: JumpToLineState
     @Bindable var wikiController: WikiOperationController
+    @Bindable var wikiChat: WikiChatState
     @Binding var positionSyncID: String
     @Binding var showFormatPopover: Bool
 
@@ -166,8 +167,22 @@ struct MacDetailColumn: View {
                     .frame(width: 240)
                     .transition(.move(edge: .trailing).combined(with: .opacity))
             }
+
+            if wikiChat.isVisible {
+                Divider()
+                WikiChatView(
+                    chat: wikiChat,
+                    controller: wikiController,
+                    vaultRoot: workspace.activeLocation?.url,
+                    send: { text in
+                        WikiAgentCoordinator.sendChatMessage(text, workspace: workspace, chat: wikiChat)
+                    }
+                )
+                .transition(.move(edge: .trailing).combined(with: .opacity))
+            }
         }
         .animation(Theme.Motion.smooth, value: outlineState.isVisible)
+        .animation(Theme.Motion.smooth, value: wikiChat.isVisible)
         .navigationTitle(documentTitle)
         .onAppear {
             outlineState.parseHeadings(from: workspace.currentFileText)
@@ -231,15 +246,6 @@ struct MacDetailColumn: View {
                 onApplied: handleOperationApplied
             )
         }
-        .sheet(isPresented: Binding(
-            get: { wikiController.isPresentingAnswer },
-            set: { if !$0 { wikiController.dismissAnswer() } }
-        )) {
-            WikiAnswerSheet(
-                controller: wikiController,
-                vaultRoot: workspace.activeLocation?.url
-            )
-        }
         .overlay(alignment: .bottom) {
             WikiRecipeProgressOverlay(controller: wikiController)
                 .animation(Theme.Motion.smooth, value: wikiController.isRunningRecipe)
@@ -248,7 +254,7 @@ struct MacDetailColumn: View {
             WikiAgentCoordinator.startIngest(workspace: workspace, controller: wikiController)
         }
         .onReceive(NotificationCenter.default.publisher(for: .wikiQuery)) { _ in
-            WikiAgentCoordinator.startQuery(workspace: workspace, controller: wikiController)
+            WikiAgentCoordinator.startQuery(workspace: workspace, chat: wikiChat)
         }
         .onReceive(NotificationCenter.default.publisher(for: .wikiLint)) { _ in
             WikiAgentCoordinator.startLint(workspace: workspace, controller: wikiController)
