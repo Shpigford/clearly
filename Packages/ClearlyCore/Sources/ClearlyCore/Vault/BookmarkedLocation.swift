@@ -7,16 +7,20 @@ public struct BookmarkedLocation: Identifiable {
     public var bookmarkData: Data
     public var fileTree: [FileNode]
     public var isAccessible: Bool
+    public var kind: VaultKind
 
-    public init(id: UUID = UUID(), url: URL, bookmarkData: Data, fileTree: [FileNode] = [], isAccessible: Bool = false) {
+    public init(id: UUID = UUID(), url: URL, bookmarkData: Data, fileTree: [FileNode] = [], isAccessible: Bool = false, kind: VaultKind = .regular) {
         self.id = id
         self.url = url
         self.bookmarkData = bookmarkData
         self.fileTree = fileTree
         self.isAccessible = isAccessible
+        self.kind = kind
     }
 
     public var name: String { url.lastPathComponent }
+
+    public var isWiki: Bool { kind.isWiki }
 }
 
 // MARK: - Persistence (Codable wrapper for UserDefaults)

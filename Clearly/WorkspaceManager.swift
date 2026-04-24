@@ -30,6 +30,19 @@ final class WorkspaceManager {
     var currentViewMode: ViewMode = .edit
     var currentConflictOutcome: ConflictResolver.Outcome?
 
+    /// The vault that contains the active file, if any. Drives wiki-chrome
+    /// visibility (log sidebar, lint dashboard, Wiki menu) — these only appear
+    /// when the user is viewing a file from a wiki vault. Returns nil when no
+    /// file is open, or the open file lives outside any registered vault.
+    var activeLocation: BookmarkedLocation? {
+        guard let url = currentFileURL else { return nil }
+        return location(containing: url)
+    }
+
+    var activeVaultIsWiki: Bool {
+        activeLocation?.isWiki ?? false
+    }
+
     // MARK: - Open Documents
 
     var openDocuments: [OpenDocument] = []
@@ -745,11 +758,13 @@ final class WorkspaceManager {
 
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             let tree = FileNode.buildTree(at: url, showHiddenFiles: showHidden)
+            let kind = VaultKind.detect(at: url)
             DispatchQueue.main.async {
                 guard let self,
                       self.treeBuildGeneration[locationID] == generation,
                       let idx = self.locations.firstIndex(where: { $0.id == locationID }) else { return }
                 self.locations[idx].fileTree = tree
+                self.locations[idx].kind = kind
                 self.treeRevision += 1
                 if let index {
                     self.reindexVault(index)
