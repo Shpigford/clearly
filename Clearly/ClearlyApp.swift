@@ -618,6 +618,11 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValid
     }
 
     private func updateActivationPolicy() {
+        // ⌘+H sets isVisible = false on every window. Treating that as
+        // "no documents open" would demote us to .accessory and strip the
+        // Dock icon + ⌘+Tab entry. Bug #204.
+        if NSApp.isHidden { return }
+
         if hasDocumentWindows() || !showMenuBarIcon {
             if NSApp.activationPolicy() != .regular {
                 NSApp.setActivationPolicy(.regular)
