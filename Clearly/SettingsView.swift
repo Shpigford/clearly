@@ -100,7 +100,10 @@ struct SettingsView: View {
     @State private var mcpCopied = false
     @State private var cliSymlinkState: CLIInstaller.State = CLIInstaller.symlinkState()
     @State private var cliInstallBusy = false
-    @State private var cliInstallError: String?
+    @State private var cliInstallError: CLIInstaller.CLIInstallerError?
+    @State private var cliCommandCopied = false
+    @State private var cliDetailsCopied = false
+    @State private var cliErrorDetailsExpanded = false
 
     private var bundledCLIBinaryPath: String? {
         CLIInstaller.bundledBinaryURL()?.path
@@ -134,64 +137,10 @@ struct SettingsView: View {
                 }
             }
 
-            // Row 2 — terminal install
+            // Row 2 — install
             VStack(alignment: .leading, spacing: 8) {
-                HStack {
-                    Text("Terminal command")
-                    Spacer()
-                    switch cliSymlinkState {
-                    case .installed:
-                        Image(systemName: "checkmark.circle.fill")
-                            .foregroundStyle(.green)
-                        Text("Installed at \(CLIInstaller.symlinkPath)")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    case .installedElsewhere:
-                        Image(systemName: "exclamationmark.triangle.fill")
-                            .foregroundStyle(.orange)
-                        Text("Different `clearly` on PATH")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    case .notInstalled:
-                        Image(systemName: "circle")
-                            .foregroundStyle(.secondary)
-                        Text("Not installed")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-
-                HStack {
-                    switch cliSymlinkState {
-                    case .installed:
-                        Button("Uninstall") {
-                            Task { await runUninstall() }
-                        }
-                        .disabled(cliInstallBusy)
-                    case .installedElsewhere:
-                        Button("Install \u{2026}") {}
-                            .disabled(true)
-                        Text("Remove the existing `clearly` from /usr/local/bin manually before installing.")
-                            .font(.caption)
-                            .foregroundStyle(.tertiary)
-                    case .notInstalled:
-                        Button("Install \u{2026}") {
-                            Task { await runInstall() }
-                        }
-                        .disabled(cliInstallBusy || !cliBundledExecutable)
-                    }
-                    Spacer()
-                }
-
-                if let errorText = cliInstallError {
-                    Text(errorText)
-                        .font(.caption)
-                        .foregroundStyle(.red)
-                }
-
-                Text("Opens Terminal and runs `sudo ln -sf` so `clearly` resolves on your shell PATH. Enter your admin password in Terminal when prompted, then switch back here — Clearly detects the install automatically.")
-                    .font(.caption)
-                    .foregroundStyle(.tertiary)
+                cliStatusHeader
+                cliInstallUI
             }
 
             // Row 3 — MCP config copy
@@ -215,27 +164,176 @@ struct SettingsView: View {
         }
     }
 
+    @ViewBuilder
+    private var cliStatusHeader: some View {
+        HStack {
+            Text("Terminal command")
+            Spacer()
+            switch cliSymlinkState {
+            case .installed:
+                Image(systemName: "checkmark.circle.fill")
+                    .foregroundStyle(.green)
+                Text("Installed at \(CLIInstaller.symlinkPath)")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            case .installedElsewhere:
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .foregroundStyle(.orange)
+                Text("Different `clearly` on PATH")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            case .notInstalled:
+                Image(systemName: "circle")
+                    .foregroundStyle(.secondary)
+                Text("Not installed")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var cliInstallUI: some View {
+        HStack {
+            switch cliSymlinkState {
+            case .installed:
+                Button("Uninstall") {
+                    Task { await runUninstall() }
+                }
+                .disabled(cliInstallBusy)
+            case .installedElsewhere:
+                Button("Install \u{2026}") {}
+                    .disabled(true)
+                Text("Remove the existing `clearly` from /usr/local/bin manually before installing.")
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
+            case .notInstalled:
+                Button("Install \u{2026}") {
+                    Task { await runInstall() }
+                }
+                .disabled(cliInstallBusy || !cliBundledExecutable)
+            }
+            Spacer()
+        }
+
+        if let error = cliInstallError {
+            cliErrorPanel(error)
+        }
+
+        Text("Opens Terminal and runs `sudo ln -sf` so `clearly` resolves on your shell PATH. Enter your admin password in Terminal when prompted, then switch back here — Clearly detects the install automatically.")
+            .font(.caption)
+            .foregroundStyle(.tertiary)
+    }
+
+    @ViewBuilder
+    private func cliErrorPanel(_ error: CLIInstaller.CLIInstallerError) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(error.errorDescription ?? "Install failed.")
+                .font(.caption)
+                .foregroundStyle(.red)
+                .fixedSize(horizontal: false, vertical: true)
+
+            HStack(spacing: 8) {
+                if case .terminalAutomationDenied = error {
+                    Button("Open Privacy Settings") { openPrivacySettings() }
+                        .controlSize(.small)
+                }
+                if let command = CLIInstaller.shellCommand {
+                    Button(cliCommandCopied ? "Copied!" : "Copy command") {
+                        copyCLIShellCommand(command)
+                    }
+                    .controlSize(.small)
+                }
+                if case .notInstalled = cliSymlinkState {
+                    Button("Try again") {
+                        Task { await runInstall() }
+                    }
+                    .controlSize(.small)
+                    .disabled(cliInstallBusy)
+                }
+                Spacer()
+            }
+
+            DisclosureGroup("Details", isExpanded: $cliErrorDetailsExpanded) {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(cliErrorDetails(error))
+                        .font(.system(.caption, design: .monospaced))
+                        .textSelection(.enabled)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    Button(cliDetailsCopied ? "Copied!" : "Copy details") {
+                        copyCLIErrorDetails(error)
+                    }
+                    .controlSize(.small)
+                }
+                .padding(.top, 4)
+            }
+            .font(.caption)
+        }
+        .padding(10)
+        .background(Color.red.opacity(0.06), in: RoundedRectangle(cornerRadius: 6))
+    }
+
     private func runInstall() async {
         cliInstallBusy = true
         cliInstallError = nil
+        cliErrorDetailsExpanded = false
         defer { cliInstallBusy = false }
         do {
             try await CLIInstaller.install()
             cliSymlinkState = CLIInstaller.symlinkState()
+        } catch let error as CLIInstaller.CLIInstallerError {
+            cliInstallError = error
         } catch {
-            cliInstallError = error.localizedDescription
+            DiagnosticLog.log("[cli-install] unexpected error type: \(error)")
         }
     }
 
     private func runUninstall() async {
         cliInstallBusy = true
         cliInstallError = nil
+        cliErrorDetailsExpanded = false
         defer { cliInstallBusy = false }
         do {
             try await CLIInstaller.uninstall()
             cliSymlinkState = CLIInstaller.symlinkState()
+        } catch let error as CLIInstaller.CLIInstallerError {
+            cliInstallError = error
         } catch {
-            cliInstallError = error.localizedDescription
+            DiagnosticLog.log("[cli-install] unexpected error type: \(error)")
+        }
+    }
+
+    private func openPrivacySettings() {
+        if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security") {
+            NSWorkspace.shared.open(url)
+        }
+    }
+
+    private func copyCLIShellCommand(_ command: String) {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(command, forType: .string)
+        cliCommandCopied = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+            cliCommandCopied = false
+        }
+    }
+
+    private func cliErrorDetails(_ error: CLIInstaller.CLIInstallerError) -> String {
+        var lines: [String] = []
+        lines.append("error:         \(error.diagnosticPayload)")
+        for (key, value) in CLIInstaller.diagnosticContext {
+            lines.append("\(key.padding(toLength: 14, withPad: " ", startingAt: 0)) \(value)")
+        }
+        return lines.joined(separator: "\n")
+    }
+
+    private func copyCLIErrorDetails(_ error: CLIInstaller.CLIInstallerError) {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(cliErrorDetails(error), forType: .string)
+        cliDetailsCopied = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+            cliDetailsCopied = false
         }
     }
 
