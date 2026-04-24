@@ -75,7 +75,7 @@ enum WikiAgentCoordinator {
             defer { chat.isSending = false }
             do {
                 let recipe = try loadRecipe(kind: .query, vaultURL: session.vaultURL)
-                let vaultState = buildVaultState(vaultURL: session.vaultURL)
+                let vaultState = buildQueryVaultState(vaultURL: session.vaultURL)
                 let transcript = Self.renderTranscript(chat.messages)
                 let prompt = RecipeParser.interpolate(recipe, input: transcript, vaultState: vaultState)
                 DiagnosticLog.log("Chat: sending (turns=\(chat.messages.count), prompt=\(prompt.count) chars)")
@@ -287,6 +287,10 @@ enum WikiAgentCoordinator {
 
     // MARK: - Vault state + URL helpers
 
+    /// Snapshot for Ingest / Lint: the agent needs to *modify* index.md and
+    /// AGENTS.md, so the `before:` field has to match disk exactly. We inline
+    /// both verbatim and list other paths but NOT their contents — the agent
+    /// isn't expected to touch them.
     private static func buildVaultState(vaultURL: URL) -> String {
         let paths = listVaultMarkdownPaths(under: vaultURL)
         var lines = ["# Vault files"]
@@ -303,6 +307,58 @@ enum WikiAgentCoordinator {
                 lines.append("")
             }
         }
+        return lines.joined(separator: "\n")
+    }
+
+    /// Soft cap on markdown bytes we inline for Query. Sonnet 4.6 has ~200K
+    /// tokens; Claude Code's system prompt eats ~95K, the recipe + transcript
+    /// add a few more, and we want headroom for the answer. 300KB of notes
+    /// is ~75K tokens — safe with room to spare. If the vault is larger, we
+    /// inline what fits and flag the truncation so the agent can say "I
+    /// didn't see everything" instead of confabulating.
+    private static let queryContextBudget = 300_000
+
+    /// Snapshot for Query: inline every markdown file up to the budget so
+    /// Claude can actually *read* notes to answer questions. Ingest-style
+    /// path-only listings force the agent to guess contents, which is what
+    /// "only the index summary is visible" was really telling us.
+    private static func buildQueryVaultState(vaultURL: URL) -> String {
+        let paths = listVaultMarkdownPaths(under: vaultURL)
+        var lines = ["# Wiki contents"]
+        lines.append("")
+        lines.append("Every markdown note in the vault is inlined below between `=== FILE ===` / `=== END ===` markers. Prefer citing these as `[[note-name]]` wiki-links.")
+        lines.append("")
+
+        var totalBytes = 0
+        var included = 0
+        var skipped: [String] = []
+
+        for relPath in paths {
+            let fileURL = vaultURL.appendingPathComponent(relPath)
+            guard let contents = try? String(contentsOf: fileURL, encoding: .utf8) else { continue }
+            let size = contents.utf8.count
+            if totalBytes + size > queryContextBudget {
+                skipped.append(relPath)
+                continue
+            }
+            totalBytes += size
+            included += 1
+            lines.append("=== FILE: \(relPath) ===")
+            lines.append(contents)
+            lines.append("=== END: \(relPath) ===")
+            lines.append("")
+        }
+
+        if !skipped.isEmpty {
+            lines.append("# Notes NOT loaded into this context (budget exceeded)")
+            lines.append("These paths exist in the vault but their contents aren't available here. If a question can only be answered from them, say so rather than guessing.")
+            for path in skipped {
+                lines.append("- \(path)")
+            }
+            lines.append("")
+        }
+
+        DiagnosticLog.log("Query: inlined \(included) of \(paths.count) notes (\(totalBytes) bytes)")
         return lines.joined(separator: "\n")
     }
 
