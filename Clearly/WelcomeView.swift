@@ -37,6 +37,16 @@ struct WelcomeView: View {
                     }
 
                     WelcomePathCard(
+                        icon: "book.closed",
+                        title: "New LLM Wiki",
+                        description: "A knowledge base maintained by an LLM. Feed it sources; it writes and cross-references pages.",
+                        isPrimary: false,
+                        colorScheme: colorScheme
+                    ) {
+                        showNewWikiPicker()
+                    }
+
+                    WelcomePathCard(
                         icon: "sparkles",
                         title: "See It in Action",
                         description: "Explore a sample document with markdown, links, and code — editable right away.",
@@ -47,7 +57,7 @@ struct WelcomeView: View {
                     }
                 }
                 .fixedSize(horizontal: false, vertical: true)
-                .frame(maxWidth: 520)
+                .frame(maxWidth: 760)
 
                 Button("or open an existing file\u{2026}") {
                     workspace.showOpenPanel()
@@ -92,6 +102,34 @@ struct WelcomeView: View {
 
         // Native shell: sidebar is owned by NavigationSplitView. Toggle via the
         // AppKit responder chain; the framework routes to the active split view.
+        workspace.isSidebarVisible = true
+        UserDefaults.standard.set(true, forKey: "sidebarVisible")
+    }
+
+    private func showNewWikiPicker() {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.allowsMultipleSelection = false
+        panel.canCreateDirectories = true
+        panel.message = "Choose a folder for your new LLM Wiki"
+        panel.prompt = "Create Wiki Here"
+
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        guard !workspace.locations.contains(where: { $0.url == url }) else { return }
+
+        do {
+            try WikiSeeder.seed(at: url)
+        } catch {
+            let alert = NSAlert()
+            alert.messageText = "Couldn't create LLM Wiki"
+            alert.informativeText = "Clearly failed to seed template files in \(url.lastPathComponent): \(error.localizedDescription)"
+            alert.alertStyle = .warning
+            alert.runModal()
+            return
+        }
+
+        _ = workspace.addLocation(url: url)
         workspace.isSidebarVisible = true
         UserDefaults.standard.set(true, forKey: "sidebarVisible")
     }
