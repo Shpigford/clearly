@@ -189,6 +189,10 @@ struct MacDetailColumn: View {
             backlinksState.update(for: workspace.currentFileURL, using: workspace.activeVaultIndexes)
             isFullscreen = NSApp.mainWindow?.styleMask.contains(.fullScreen) ?? false
             setupFileWatcher()
+            WikiAgentCoordinator.warmForActiveVaultIfPossible(workspace: workspace)
+        }
+        .onChange(of: workspace.activeLocation?.id) { _, _ in
+            WikiAgentCoordinator.warmForActiveVaultIfPossible(workspace: workspace)
         }
         .onReceive(NotificationCenter.default.publisher(for: NSWindow.didEnterFullScreenNotification)) { _ in
             isFullscreen = true

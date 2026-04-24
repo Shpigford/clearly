@@ -195,6 +195,24 @@ enum WikiAgentCoordinator {
         }
     }
 
+    /// Fire a silent cache warmup for the chat/query path as soon as a wiki
+    /// vault becomes active. CLI-only (Pro/Max sub = free) — we skip API-key
+    /// users since each warmup is a real billable call. Safe to call
+    /// repeatedly; AgentWarmer short-circuits while the cache is still warm.
+    static func warmForActiveVaultIfPossible(workspace: WorkspaceManager) {
+        guard workspace.activeVaultIsWiki,
+              let vaultURL = workspace.activeLocation?.url,
+              let cli = AgentDiscovery.findClaude() else {
+            return
+        }
+        let runner = ClaudeCLIAgentRunner(
+            binaryURL: cli.url,
+            enabledTools: "Read,Grep,Glob",
+            workingDirectory: vaultURL
+        )
+        AgentWarmer.warmIfNeeded(runner: runner)
+    }
+
     /// Explicit opt-in to the BYOK API fallback. Exposed for the
     /// Wiki → Set Anthropic API Key… menu item.
     static func promptForAPIKey() {
