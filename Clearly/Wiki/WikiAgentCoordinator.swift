@@ -268,9 +268,14 @@ enum WikiAgentCoordinator {
     // MARK: - Recipe loading
 
     private static func loadRecipe(kind: OperationKind, vaultURL: URL) throws -> Recipe {
-        if let vaultRecipe = try RecipeEngine.loadFromVault(kind, vaultRoot: vaultURL) {
-            return vaultRecipe
-        }
+        // Bundle always wins for now. Vault-local recipe customization is a
+        // future feature — it needs a version field + migration story so
+        // shipped recipe updates don't get silently masked by stale copies
+        // seeded on older builds. Until that lands we ignore any
+        // `.clearly/recipes/*.md` the user has. The files are left in the
+        // vault as readable reference; re-enabling vault-first is a one-line
+        // flip here.
+        _ = vaultURL
         let filename = "\(kind.rawValue).md"
         guard let bundleURL = Bundle.main.url(forResource: "recipes", withExtension: nil)?
             .appendingPathComponent(filename) else {
