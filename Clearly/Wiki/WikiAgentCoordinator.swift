@@ -54,7 +54,7 @@ enum WikiAgentCoordinator {
         }
     }
 
-    /// Entry point for ⌃⌘Q and the Wiki menu. Shows the chat panel and
+    /// Entry point for ⌃⌘A and the Wiki menu. Shows the chat panel and
     /// focuses the input; the user types from there.
     static func startChat(workspace: WorkspaceManager, chat: WikiChatState) {
         guard let _ = workspace.activeLocation?.url, workspace.activeVaultIsWiki else {

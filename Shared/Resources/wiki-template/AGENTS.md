@@ -27,7 +27,7 @@ Three named actions, available from Clearly's **Wiki** menu and `⌘K`:
   cross-references related notes, and appends to `log.md`. Expect a single
   ingest to touch 10–15 pages.
 
-- **Query** (⌃⌘Q). Ask a question. The agent searches the wiki, reads relevant
+- **Query** (⌃⌘A). Ask a question. The agent searches the wiki, reads relevant
   pages, and synthesizes an answer with inline citations. Good answers can
   be filed back as new pages so the wiki compounds.
 
