@@ -1,6 +1,6 @@
 # Wiki feature progress
 
-## Status: Phase 1 — Completed (pending manual verification); Phase 2 — Completed (pending manual verification)
+## Status: Phase 1 — Completed; Phase 2 — Completed (pending manual verification)
 
 ## Quick Reference
 - Research: `docs/wiki/RESEARCH.md`
@@ -13,7 +13,7 @@
 ## Phase Progress
 
 ### Phase 1: Drop the Anthropic API-key path
-**Status:** Completed (pending manual verification)
+**Status:** Completed
 **Commit scope:** `[mac]`
 
 #### Tasks
@@ -31,7 +31,7 @@
 - [x] Verify: `xcodebuild Debug build` clean
 - [x] Verify: `swift test` clean (88 tests, was 95 — minus 7 KeychainStoreTests + 2 Anthropic decode tests)
 - [x] Verify: grep returns no hits for `anthropicAPIKey|AnthropicAPIAgentRunner|KeychainStore|WikiKeychainAccount|promptForAPIKey|promptSecret|missingAPIKey|"Set Anthropic API Key"`
-- [ ] Manual: with `claude` installed → Chat works. Without → install message, no key prompt. **(awaits Josh)**
+- [x] Manual: with `claude` installed → Chat works. Without → install message, no key prompt.
 
 #### Decisions Made
 - Bundled `Packages/ClearlyCore/Package.resolved` cleanup into the `[mac]` commit. The `eventsource` pin removal is directly caused by deleting `AnthropicAPIAgentRunner` (its SSE transitive dep). Other pin removals (sparkle, keyboardshortcuts, swift-sdk, etc.) were stale entries that don't belong in the `ClearlyCore` package's resolve file — `swift test` rewrote the file to match the package's actual deps (`cmark-gfm`, `grdb.swift`).
