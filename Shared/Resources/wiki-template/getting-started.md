@@ -19,6 +19,19 @@ to each other with `[[wiki-links]]` — click one to jump.
   cites them with `[[wiki-links]]`.
 - ⌃⌘T — **Toggle Log Sidebar**: scrubbable timeline of what changed and when.
 
+## Drop in your own notes
+
+Capture is for when you want the agent to synthesize a note from a
+source. If you already know what you want to write, just drop a `.md`
+file into this folder — drag from Finder, drop onto a folder in the
+sidebar, or press ⌘N and save here. Clearly indexes everything, and
+Chat finds hand-written notes the same way it finds agent-written ones.
+The next Review pass will spot them and suggest cross-references.
+
+For raw source material (articles, PDFs, transcripts) you want the agent
+to read later, drop the file into `raw/`. The agent reads from there but
+never edits it.
+
 ## How it works
 
 - Every change is reviewed in a diff sheet. Nothing lands without your approval.
