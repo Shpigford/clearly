@@ -55,15 +55,19 @@ struct WikiCaptureSheet: View {
             TextEditor(text: $state.draft)
                 .scrollContentBackground(.hidden)
                 .font(.body)
-                .padding(8)
+                .padding(.horizontal, 3)
+                .padding(.vertical, 8)
                 .focused($inputFocused)
 
             if state.draft.isEmpty {
+                // Same x = TextEditor.padding(3) + NSTextView lineFragmentPadding (~5) = 8.
+                // Same y = TextEditor.padding(8) + NSTextView baseline offset (~0) = 8.
+                // Anything else makes the placeholder and the cursor disagree.
                 Text("https://… or paste text here")
                     .font(.body)
-                    .foregroundStyle(.secondary.opacity(0.6))
-                    .padding(.horizontal, 13)
-                    .padding(.vertical, 16)
+                    .foregroundStyle(.secondary.opacity(0.55))
+                    .padding(.leading, 8)
+                    .padding(.top, 8)
                     .allowsHitTesting(false)
             }
         }
