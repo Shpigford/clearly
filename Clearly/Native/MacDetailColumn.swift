@@ -141,6 +141,7 @@ struct MacDetailColumn: View {
     @Bindable var wikiController: WikiOperationController
     @Bindable var wikiChat: WikiChatState
     @Bindable var wikiLog: WikiLogState
+    @Bindable var wikiCapture: WikiCaptureState
     @Binding var positionSyncID: String
     @Binding var showFormatPopover: Bool
 
@@ -277,6 +278,18 @@ struct MacDetailColumn: View {
                 onApplied: handleOperationApplied
             )
         }
+        .sheet(isPresented: Binding(
+            get: { wikiCapture.isVisible },
+            set: { if !$0 { wikiCapture.dismiss() } }
+        )) {
+            WikiCaptureSheet(state: wikiCapture) { text in
+                WikiAgentCoordinator.submitCapture(
+                    text,
+                    workspace: workspace,
+                    controller: wikiController
+                )
+            }
+        }
         .overlay(alignment: .bottom) {
             WikiRecipeProgressOverlay(controller: wikiController)
                 .animation(Theme.Motion.smooth, value: wikiController.isRunningRecipe)
@@ -285,7 +298,8 @@ struct MacDetailColumn: View {
             workspace: workspace,
             wikiController: wikiController,
             wikiChat: wikiChat,
-            wikiLog: wikiLog
+            wikiLog: wikiLog,
+            wikiCapture: wikiCapture
         ))
         #if DEBUG
         .onReceive(NotificationCenter.default.publisher(for: .wikiDebugPreviewDiff)) { _ in
@@ -570,11 +584,12 @@ private struct WikiNotificationObserversModifier: ViewModifier {
     @Bindable var wikiController: WikiOperationController
     @Bindable var wikiChat: WikiChatState
     @Bindable var wikiLog: WikiLogState
+    @Bindable var wikiCapture: WikiCaptureState
 
     func body(content: Content) -> some View {
         content
             .onReceive(NotificationCenter.default.publisher(for: .wikiCapture)) { _ in
-                WikiAgentCoordinator.startCapture(workspace: workspace, controller: wikiController)
+                WikiAgentCoordinator.startCapture(workspace: workspace, capture: wikiCapture)
             }
             .onReceive(NotificationCenter.default.publisher(for: .wikiChat)) { _ in
                 WikiAgentCoordinator.startChat(workspace: workspace, chat: wikiChat)

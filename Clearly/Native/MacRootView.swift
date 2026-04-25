@@ -21,6 +21,7 @@ struct MacRootView: View {
     @State private var wikiController = WikiOperationController()
     @State private var wikiChat = WikiChatState()
     @State private var wikiLog = WikiLogState()
+    @State private var wikiCapture = WikiCaptureState()
 
     var body: some View {
         if workspace.isFirstRun && workspace.locations.isEmpty && workspace.activeDocumentID == nil {
@@ -54,6 +55,7 @@ struct MacRootView: View {
                     wikiController: wikiController,
                     wikiChat: wikiChat,
                     wikiLog: wikiLog,
+                    wikiCapture: wikiCapture,
                     positionSyncID: $positionSyncID,
                     showFormatPopover: $showFormatPopover
                 )

@@ -18,15 +18,27 @@ enum WikiAgentCoordinator {
 
     // MARK: - Entry points
 
-    static func startCapture(workspace: WorkspaceManager, controller: WikiOperationController) {
-        guard let session = beginSession(workspace: workspace, operationKind: .capture) else { return }
-        guard let raw = promptLongText(
-            title: "Capture",
-            message: "Paste a URL or any text you want the agent to summarise and file.",
-            initialValue: Self.clipboardStringIfLikelySource()
-        ) else { return }
+    /// Open the Capture sheet, pre-filling the clipboard if it holds a URL.
+    /// The actual run happens in `submitCapture(_:)` once the user clicks
+    /// the sheet's Capture button.
+    static func startCapture(workspace: WorkspaceManager, capture: WikiCaptureState) {
+        guard workspace.activeVaultIsWiki, workspace.activeLocation?.url != nil else {
+            presentError("Capture is only available when the active note lives in a wiki vault.")
+            return
+        }
+        capture.show(prefill: clipboardStringIfLikelySource())
+    }
 
-        let source = Self.classifySource(raw)
+    /// Called by the Capture sheet when the user submits. Classifies the
+    /// raw input, kicks off the agent run, and stages the resulting
+    /// WikiOperation on `controller` for diff review.
+    static func submitCapture(
+        _ raw: String,
+        workspace: WorkspaceManager,
+        controller: WikiOperationController
+    ) {
+        guard let session = beginSession(workspace: workspace, operationKind: .capture) else { return }
+        let source = classifySource(raw)
         guard source != .empty else { return }
 
         Task { @MainActor in
@@ -571,39 +583,4 @@ enum WikiAgentCoordinator {
         return trimmed
     }
 
-    /// NSAlert with a resizable NSTextView accessory — works for long
-    /// pastes where promptText's single-line NSTextField won't.
-    private static func promptLongText(
-        title: String,
-        message: String,
-        initialValue: String?
-    ) -> String? {
-        let alert = NSAlert()
-        alert.messageText = title
-        alert.informativeText = message
-        alert.addButton(withTitle: "Run")
-        alert.addButton(withTitle: "Cancel")
-
-        let scroll = NSScrollView(frame: NSRect(x: 0, y: 0, width: 420, height: 140))
-        scroll.hasVerticalScroller = true
-        scroll.borderType = .bezelBorder
-        scroll.autohidesScrollers = true
-
-        let textView = NSTextView(frame: scroll.bounds)
-        textView.isEditable = true
-        textView.isRichText = false
-        textView.font = NSFont.systemFont(ofSize: NSFont.systemFontSize)
-        textView.allowsUndo = true
-        textView.string = initialValue ?? ""
-        textView.textContainerInset = NSSize(width: 4, height: 4)
-        textView.autoresizingMask = [.width]
-        scroll.documentView = textView
-
-        alert.accessoryView = scroll
-        alert.window.initialFirstResponder = textView
-
-        let response = alert.runModal()
-        guard response == .alertFirstButtonReturn else { return nil }
-        return textView.string
-    }
 }
