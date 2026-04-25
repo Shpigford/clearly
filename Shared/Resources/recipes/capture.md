@@ -1,7 +1,7 @@
 ---
-name: Ingest
+name: Capture
 description: Turn a URL or pasted text into a new summary page and update the index.
-kind: ingest
+kind: capture
 tool_allowlist:
   - Read
   - Grep

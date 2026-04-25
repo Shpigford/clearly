@@ -17,7 +17,7 @@ final class WikiLogWriterTests: XCTestCase {
 
     func testFormatsEntryWithGrepableHeader() {
         let op = WikiOperation(
-            kind: .ingest,
+            kind: .capture,
             title: "Ingest: example.com",
             rationale: "Summarized one source.",
             changes: [
@@ -29,7 +29,7 @@ final class WikiLogWriterTests: XCTestCase {
         let entry = WikiLogWriter.formatEntry(op)
         // grep -E '^## \[' should match this line
         XCTAssertTrue(entry.split(separator: "\n").contains(where: { $0.hasPrefix("## [") }))
-        XCTAssertTrue(entry.contains("ingest — Ingest: example.com"))
+        XCTAssertTrue(entry.contains("capture — Ingest: example.com"))
         XCTAssertTrue(entry.contains("Summarized one source."))
         XCTAssertTrue(entry.contains("- create `sources/example-com.md`"))
         XCTAssertTrue(entry.contains("- modify `index.md`"))
@@ -40,13 +40,13 @@ final class WikiLogWriterTests: XCTestCase {
         try "# Log\n\n## [2020-01-01 00:00] ingest — First\n\n".write(to: logURL, atomically: true, encoding: .utf8)
 
         let op = WikiOperation(
-            kind: .lint, title: "Lint pass",
+            kind: .review, title: "Lint pass",
             rationale: "", changes: [.create(path: "a.md", contents: "x")]
         )
         try WikiLogWriter.appendOperation(op, to: vault)
         let content = try String(contentsOf: logURL, encoding: .utf8)
         XCTAssertTrue(content.contains("ingest — First"))
-        XCTAssertTrue(content.contains("lint — Lint pass"))
+        XCTAssertTrue(content.contains("review — Lint pass"))
         // Karpathy's canonical sanity check
         let headerLines = content.split(separator: "\n").filter { $0.hasPrefix("## [") }
         XCTAssertEqual(headerLines.count, 2)
@@ -54,12 +54,12 @@ final class WikiLogWriterTests: XCTestCase {
 
     func testCreatesLogIfMissing() throws {
         let op = WikiOperation(
-            kind: .query, title: "q?", rationale: "r",
+            kind: .chat, title: "q?", rationale: "r",
             changes: [.create(path: "answers/a.md", contents: "x")]
         )
         try WikiLogWriter.appendOperation(op, to: vault)
         let content = try String(contentsOf: vault.appendingPathComponent("log.md"), encoding: .utf8)
         XCTAssertTrue(content.hasPrefix("# Log\n"))
-        XCTAssertTrue(content.contains("query — q?"))
+        XCTAssertTrue(content.contains("chat — q?"))
     }
 }

@@ -1,7 +1,7 @@
 ---
-name: Query
+name: Chat
 description: Answer a question using the vault, with citations. The user decides whether to file the answer.
-kind: query
+kind: chat
 tool_allowlist:
   - search_notes
   - get_backlinks

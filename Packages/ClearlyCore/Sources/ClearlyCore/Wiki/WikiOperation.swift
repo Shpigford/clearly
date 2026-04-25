@@ -35,9 +35,9 @@ public struct WikiOperation: Codable, Sendable, Identifiable, Equatable {
 }
 
 public enum OperationKind: String, Codable, Sendable, CaseIterable {
-    case ingest
-    case query
-    case lint
+    case capture
+    case chat
+    case review
     case other
 }
 

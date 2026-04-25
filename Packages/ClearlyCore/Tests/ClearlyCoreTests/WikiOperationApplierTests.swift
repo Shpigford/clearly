@@ -19,7 +19,7 @@ final class WikiOperationApplierTests: XCTestCase {
 
     func testAppliesCreate() throws {
         let op = WikiOperation(
-            kind: .ingest, title: "t", rationale: "r",
+            kind: .capture, title: "t", rationale: "r",
             changes: [.create(path: "notes/a.md", contents: "hello")]
         )
         try WikiOperationApplier.apply(op, at: vault)
@@ -29,7 +29,7 @@ final class WikiOperationApplierTests: XCTestCase {
     func testAppliesModify() throws {
         try writeFile("a.md", "before")
         let op = WikiOperation(
-            kind: .ingest, title: "t", rationale: "r",
+            kind: .capture, title: "t", rationale: "r",
             changes: [.modify(path: "a.md", before: "before", after: "after")]
         )
         try WikiOperationApplier.apply(op, at: vault)
@@ -39,7 +39,7 @@ final class WikiOperationApplierTests: XCTestCase {
     func testAppliesDelete() throws {
         try writeFile("a.md", "bye")
         let op = WikiOperation(
-            kind: .lint, title: "t", rationale: "r",
+            kind: .review, title: "t", rationale: "r",
             changes: [.delete(path: "a.md", contents: "bye")]
         )
         try WikiOperationApplier.apply(op, at: vault)
@@ -50,7 +50,7 @@ final class WikiOperationApplierTests: XCTestCase {
         try writeFile("keep.md", "old keep")
         try writeFile("gone.md", "gone")
         let op = WikiOperation(
-            kind: .ingest, title: "t", rationale: "r",
+            kind: .capture, title: "t", rationale: "r",
             changes: [
                 .create(path: "new.md", contents: "fresh"),
                 .modify(path: "keep.md", before: "old keep", after: "new keep"),
@@ -68,7 +68,7 @@ final class WikiOperationApplierTests: XCTestCase {
     func testRejectsCreateOverExistingFile() throws {
         try writeFile("a.md", "existing")
         let op = WikiOperation(
-            kind: .ingest, title: "t", rationale: "r",
+            kind: .capture, title: "t", rationale: "r",
             changes: [.create(path: "a.md", contents: "new")]
         )
         XCTAssertThrowsError(try WikiOperationApplier.apply(op, at: vault)) { error in
@@ -79,7 +79,7 @@ final class WikiOperationApplierTests: XCTestCase {
 
     func testRejectsModifyWhenFileMissing() throws {
         let op = WikiOperation(
-            kind: .ingest, title: "t", rationale: "r",
+            kind: .capture, title: "t", rationale: "r",
             changes: [.modify(path: "missing.md", before: "x", after: "y")]
         )
         XCTAssertThrowsError(try WikiOperationApplier.apply(op, at: vault)) { error in
@@ -90,7 +90,7 @@ final class WikiOperationApplierTests: XCTestCase {
     func testRejectsModifyWhenBaseMismatches() throws {
         try writeFile("a.md", "actual")
         let op = WikiOperation(
-            kind: .ingest, title: "t", rationale: "r",
+            kind: .capture, title: "t", rationale: "r",
             changes: [.modify(path: "a.md", before: "stale", after: "new")]
         )
         XCTAssertThrowsError(try WikiOperationApplier.apply(op, at: vault)) { error in
@@ -102,7 +102,7 @@ final class WikiOperationApplierTests: XCTestCase {
     func testRejectsDeleteWhenContentMismatches() throws {
         try writeFile("a.md", "actual")
         let op = WikiOperation(
-            kind: .lint, title: "t", rationale: "r",
+            kind: .review, title: "t", rationale: "r",
             changes: [.delete(path: "a.md", contents: "stale")]
         )
         XCTAssertThrowsError(try WikiOperationApplier.apply(op, at: vault)) { error in
@@ -116,7 +116,7 @@ final class WikiOperationApplierTests: XCTestCase {
     func testAppliesModifyWhenDiskHasTrailingNewlineDrift() throws {
         try writeFile("a.md", "hello\nworld\n")
         let op = WikiOperation(
-            kind: .ingest, title: "t", rationale: "r",
+            kind: .capture, title: "t", rationale: "r",
             // Agent dropped the trailing newline — common LLM drift.
             changes: [.modify(path: "a.md", before: "hello\nworld", after: "hello\nchanged")]
         )
@@ -127,7 +127,7 @@ final class WikiOperationApplierTests: XCTestCase {
     func testAppliesModifyWhenLineTrailingWhitespaceDiffers() throws {
         try writeFile("a.md", "first line   \nsecond\n")
         let op = WikiOperation(
-            kind: .ingest, title: "t", rationale: "r",
+            kind: .capture, title: "t", rationale: "r",
             // Agent trimmed trailing whitespace on each line.
             changes: [.modify(path: "a.md", before: "first line\nsecond", after: "first line\ndone")]
         )
@@ -137,7 +137,7 @@ final class WikiOperationApplierTests: XCTestCase {
     func testStillRejectsRealContentDivergence() throws {
         try writeFile("a.md", "the user wrote different content")
         let op = WikiOperation(
-            kind: .ingest, title: "t", rationale: "r",
+            kind: .capture, title: "t", rationale: "r",
             changes: [.modify(path: "a.md", before: "original content", after: "new")]
         )
         XCTAssertThrowsError(try WikiOperationApplier.apply(op, at: vault)) { error in
@@ -150,7 +150,7 @@ final class WikiOperationApplierTests: XCTestCase {
     func testRollsBackWhenMidApplyFails() throws {
         try writeFile("first.md", "first-before")
         let op = WikiOperation(
-            kind: .ingest, title: "t", rationale: "r",
+            kind: .capture, title: "t", rationale: "r",
             changes: [
                 .modify(path: "first.md", before: "first-before", after: "first-after"),
                 // Second change precheck passes (no "a.md" yet), but we'll

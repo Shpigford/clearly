@@ -121,9 +121,9 @@ struct WikiDiffSheet: View {
 private extension OperationKind {
     var displayName: String {
         switch self {
-        case .ingest: return "Ingest"
-        case .query: return "Query"
-        case .lint: return "Lint"
+        case .capture: return "Capture"
+        case .chat: return "Chat"
+        case .review: return "Review"
         case .other: return "Operation"
         }
     }

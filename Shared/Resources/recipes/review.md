@@ -1,7 +1,7 @@
 ---
-name: Lint
+name: Review
 description: Scan the vault for orphans, stale claims, and internal contradictions.
-kind: lint
+kind: review
 tool_allowlist:
   - Read
   - Grep

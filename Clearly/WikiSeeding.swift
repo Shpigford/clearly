@@ -75,7 +75,7 @@ enum WikiSeeder {
             }
         }
 
-        let names = ["ingest.md", "query.md", "lint.md"]
+        let names = ["capture.md", "chat.md", "review.md"]
         for name in names {
             let src = recipesBundleURL.appendingPathComponent(name)
             let dst = dstDir.appendingPathComponent(name)

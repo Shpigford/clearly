@@ -2,7 +2,7 @@ import Foundation
 import AppKit
 import ClearlyCore
 
-/// Runs `Wiki → Ingest / Query / Lint` end-to-end. Each entry point prompts
+/// Runs `Wiki → Capture / Chat / Review` end-to-end. Each entry point prompts
 /// for the right user input, loads the matching recipe, invokes the agent,
 /// parses the response into a WikiOperation, and stages it on the shared
 /// controller so the diff sheet appears.
@@ -18,39 +18,35 @@ enum WikiAgentCoordinator {
 
     // MARK: - Entry points
 
-    static func startIngest(workspace: WorkspaceManager, controller: WikiOperationController) {
-        guard let session = beginSession(workspace: workspace, operationKind: .ingest) else { return }
-        guard let raw = promptText(
-            title: "Ingest",
-            message: "Paste a URL to summarise into a new note.",
-            placeholder: "https://..."
-        ), let url = URL(string: raw.trimmingCharacters(in: .whitespacesAndNewlines)) else { return }
+    static func startCapture(workspace: WorkspaceManager, controller: WikiOperationController) {
+        guard let session = beginSession(workspace: workspace, operationKind: .capture) else { return }
+        guard let raw = promptLongText(
+            title: "Capture",
+            message: "Paste a URL or any text you want the agent to summarise and file.",
+            initialValue: Self.clipboardStringIfLikelySource()
+        ) else { return }
+
+        let source = Self.classifySource(raw)
+        guard source != .empty else { return }
 
         Task { @MainActor in
             await runRecipe(
-                kind: .ingest,
+                kind: .capture,
                 session: session,
                 controller: controller,
-                startStatus: "Ingesting from \(url.host ?? url.absoluteString) — fetching source…",
-                titleFor: { _ in "Ingest: \(url.host ?? url.absoluteString)" }
+                startStatus: source.startStatus,
+                titleFor: { _ in source.title }
             ) {
-                let fetchURL = rewriteForContent(url)
-                let body = try await fetchURLContent(fetchURL)
-                return """
-                URL: \(url.absoluteString)
-
-                Content (truncated if >\(maxSourceCharacters) chars):
-                \(body.prefix(maxSourceCharacters))
-                """
+                try await source.buildInputBody(maxSourceCharacters: maxSourceCharacters)
             }
         }
     }
 
     /// Entry point for ⌃⌘Q and the Wiki menu. Shows the chat panel and
     /// focuses the input; the user types from there.
-    static func startQuery(workspace: WorkspaceManager, chat: WikiChatState) {
+    static func startChat(workspace: WorkspaceManager, chat: WikiChatState) {
         guard let _ = workspace.activeLocation?.url, workspace.activeVaultIsWiki else {
-            presentError("Query is only available when the active note lives in a wiki vault.")
+            presentError("Chat is only available when the active note lives in a wiki vault.")
             return
         }
         chat.show()
@@ -69,7 +65,7 @@ enum WikiAgentCoordinator {
             presentError("Chat is only available when the active note lives in a wiki vault.")
             return
         }
-        // Query uses a tool-enabled runner pointed at the vault cwd so Claude
+        // Chat uses a tool-enabled runner pointed at the vault cwd so Claude
         // Code can Read/Grep/Glob on demand — dramatically better synthesis
         // than us dumping 300KB of context upfront. Falls through to the BYOK
         // API runner (no tools) if Claude CLI isn't installed.
@@ -91,7 +87,7 @@ enum WikiAgentCoordinator {
         Task { @MainActor in
             defer { chat.isSending = false }
             do {
-                let recipe = try loadRecipe(kind: .query, vaultURL: vaultURL)
+                let recipe = try loadRecipe(kind: .chat, vaultURL: vaultURL)
                 // Minimal context pointer — the agent explores with tools
                 // instead of us inlining files.
                 let vaultState = buildQueryVaultPointer(vaultURL: vaultURL)
@@ -154,26 +150,26 @@ enum WikiAgentCoordinator {
         return lines.joined(separator: "\n")
     }
 
-    static func startLint(workspace: WorkspaceManager, controller: WikiOperationController) {
-        guard let session = beginSession(workspace: workspace, operationKind: .lint) else { return }
+    static func startReview(workspace: WorkspaceManager, controller: WikiOperationController) {
+        guard let session = beginSession(workspace: workspace, operationKind: .review) else { return }
         // Focus is optional — empty input means "general pass".
         let focus = promptText(
-            title: "Lint",
+            title: "Review",
             message: "Optional: scope the audit to a topic or folder. Leave blank for a general pass.",
             placeholder: "e.g. llm-training / projects/"
         )?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
 
         Task { @MainActor in
             await runRecipe(
-                kind: .lint,
+                kind: .review,
                 session: session,
                 controller: controller,
-                startStatus: focus.isEmpty ? "Linting the wiki…" : "Linting — focus: \(focus)",
+                startStatus: focus.isEmpty ? "Reviewing the wiki…" : "Reviewing — focus: \(focus)",
                 titleFor: { proposal in
                     let count = proposal.changes.count
                     return count == 0
-                        ? "Lint: no issues"
-                        : "Lint: \(count) fix\(count == 1 ? "" : "es")"
+                        ? "Review: no issues"
+                        : "Review: \(count) fix\(count == 1 ? "" : "es")"
                 }
             ) { focus }
         }
@@ -279,9 +275,9 @@ enum WikiAgentCoordinator {
                 DiagnosticLog.log("\(label): noop — \(proposal.rationale)")
                 let verdictTitle: String = {
                     switch kind {
-                    case .ingest: return "Nothing staged"
-                    case .query: return "Answer"
-                    case .lint: return "No issues found"
+                    case .capture: return "Nothing staged"
+                    case .chat: return "Answer"
+                    case .review: return "No issues found"
                     case .other: return "No action"
                     }
                 }()
@@ -313,7 +309,7 @@ enum WikiAgentCoordinator {
 
     // MARK: - Runner resolution
 
-    /// Single CLI runner config for every wiki recipe (Ingest/Query/Lint):
+    /// Single CLI runner config for every wiki recipe (Capture/Chat/Review):
     /// cwd=vault, tools=Read/Grep/Glob. Same config means same cache key, so
     /// warming one recipe's cache benefits all three. API fallback doesn't
     /// have tool use — in that mode we rely on the old prompt-side inlining.
@@ -355,7 +351,7 @@ enum WikiAgentCoordinator {
 
     // MARK: - Vault state + URL helpers
 
-    /// Pointer used by Ingest / Lint: the agent now has Read / Grep / Glob
+    /// Pointer used by Capture / Review: the agent now has Read / Grep / Glob
     /// and cwd=vault, so it can read any note on demand. Critically, this
     /// tells it it MUST Read the file before proposing a modify — that's
     /// what previously caused modifyBaseMismatch errors (the agent was
@@ -401,7 +397,7 @@ enum WikiAgentCoordinator {
         return results.sorted()
     }
 
-    static func rewriteForContent(_ url: URL) -> URL {
+    nonisolated static func rewriteForContent(_ url: URL) -> URL {
         guard let host = url.host?.lowercased() else { return url }
         if host == "gist.github.com" {
             let parts = url.path
@@ -415,7 +411,7 @@ enum WikiAgentCoordinator {
         return url
     }
 
-    private static func fetchURLContent(_ url: URL) async throws -> String {
+    nonisolated private static func fetchURLContent(_ url: URL) async throws -> String {
         let (data, response) = try await URLSession.shared.data(from: url)
         guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
             let status = (response as? HTTPURLResponse)?.statusCode ?? -1
@@ -484,5 +480,130 @@ enum WikiAgentCoordinator {
         case AgentError.invalidWikiOperation(let m): return "Agent returned invalid operation: \(m)"
         default: return String(describing: error)
         }
+    }
+
+    // MARK: - Capture source classification
+
+    /// What the user pasted into the Capture prompt. Auto-detected — URLs
+    /// are fetched before being handed to the agent; everything else is
+    /// passed through as the source body directly.
+    enum CaptureSource: Equatable {
+        case empty
+        case url(URL)
+        case text(String)
+
+        var startStatus: String {
+            switch self {
+            case .empty: return ""
+            case .url(let url): return "Capturing from \(url.host ?? url.absoluteString) — fetching source…"
+            case .text: return "Capturing pasted text…"
+            }
+        }
+
+        var title: String {
+            switch self {
+            case .empty: return "Capture"
+            case .url(let url): return "Capture: \(url.host ?? url.absoluteString)"
+            case .text(let body):
+                let preview = body
+                    .replacingOccurrences(of: "\n", with: " ")
+                    .trimmingCharacters(in: .whitespaces)
+                let truncated = preview.count > 60
+                    ? String(preview.prefix(60)) + "…"
+                    : preview
+                return "Capture: \(truncated)"
+            }
+        }
+
+        func buildInputBody(maxSourceCharacters: Int) async throws -> String {
+            switch self {
+            case .empty:
+                return ""
+            case .url(let url):
+                let fetchURL = rewriteForContent(url)
+                let body = try await fetchURLContent(fetchURL)
+                return """
+                URL: \(url.absoluteString)
+
+                Content (truncated if >\(maxSourceCharacters) chars):
+                \(body.prefix(maxSourceCharacters))
+                """
+            case .text(let body):
+                let trimmed = body.prefix(maxSourceCharacters)
+                return """
+                Pasted text (truncated if >\(maxSourceCharacters) chars):
+                \(trimmed)
+                """
+            }
+        }
+    }
+
+    static func classifySource(_ raw: String) -> CaptureSource {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty { return .empty }
+        // Treat as URL only when the input is a single line and starts with
+        // http:// or https://. Everything else is pasted text.
+        let isSingleLine = !trimmed.contains("\n")
+        if isSingleLine,
+           let url = URL(string: trimmed),
+           let scheme = url.scheme?.lowercased(),
+           scheme == "http" || scheme == "https",
+           url.host != nil {
+            return .url(url)
+        }
+        return .text(trimmed)
+    }
+
+    /// If the clipboard currently holds a plausible URL, return it so the
+    /// Capture dialog can pre-fill. Text clipboards are left alone — auto-
+    /// pasting a huge chunk of random text into a modal is presumptuous.
+    private static func clipboardStringIfLikelySource() -> String? {
+        guard let text = NSPasteboard.general.string(forType: .string) else { return nil }
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, trimmed.count < 2000 else { return nil }
+        if trimmed.contains("\n") { return nil }
+        guard let url = URL(string: trimmed),
+              let scheme = url.scheme?.lowercased(),
+              scheme == "http" || scheme == "https",
+              url.host != nil else {
+            return nil
+        }
+        return trimmed
+    }
+
+    /// NSAlert with a resizable NSTextView accessory — works for long
+    /// pastes where promptText's single-line NSTextField won't.
+    private static func promptLongText(
+        title: String,
+        message: String,
+        initialValue: String?
+    ) -> String? {
+        let alert = NSAlert()
+        alert.messageText = title
+        alert.informativeText = message
+        alert.addButton(withTitle: "Run")
+        alert.addButton(withTitle: "Cancel")
+
+        let scroll = NSScrollView(frame: NSRect(x: 0, y: 0, width: 420, height: 140))
+        scroll.hasVerticalScroller = true
+        scroll.borderType = .bezelBorder
+        scroll.autohidesScrollers = true
+
+        let textView = NSTextView(frame: scroll.bounds)
+        textView.isEditable = true
+        textView.isRichText = false
+        textView.font = NSFont.systemFont(ofSize: NSFont.systemFontSize)
+        textView.allowsUndo = true
+        textView.string = initialValue ?? ""
+        textView.textContainerInset = NSSize(width: 4, height: 4)
+        textView.autoresizingMask = [.width]
+        scroll.documentView = textView
+
+        alert.accessoryView = scroll
+        alert.window.initialFirstResponder = textView
+
+        let response = alert.runModal()
+        guard response == .alertFirstButtonReturn else { return nil }
+        return textView.string
     }
 }

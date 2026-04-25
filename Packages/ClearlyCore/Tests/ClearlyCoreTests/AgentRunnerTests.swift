@@ -42,19 +42,19 @@ final class AgentRunnerTests: XCTestCase {
           ]
         }
         """
-        let op = try AgentResultParser.parseWikiOperation(from: text, kind: .ingest)
-        XCTAssertEqual(op.kind, .ingest)
+        let op = try AgentResultParser.parseWikiOperation(from: text, kind: .capture)
+        XCTAssertEqual(op.kind, .capture)
         XCTAssertEqual(op.title, "Ingest: alpha")
         XCTAssertEqual(op.changes.count, 1)
     }
 
     func testRejectsEmptyChanges() {
         let text = #"{"title":"t","rationale":"r","changes":[]}"#
-        XCTAssertThrowsError(try AgentResultParser.parseWikiOperation(from: text, kind: .ingest))
+        XCTAssertThrowsError(try AgentResultParser.parseWikiOperation(from: text, kind: .capture))
     }
 
     func testRejectsResponseWithNoJSON() {
-        XCTAssertThrowsError(try AgentResultParser.parseWikiOperation(from: "No JSON here.", kind: .ingest))
+        XCTAssertThrowsError(try AgentResultParser.parseWikiOperation(from: "No JSON here.", kind: .capture))
     }
 
     // MARK: - Anthropic response decoding

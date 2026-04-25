@@ -10,7 +10,7 @@ final class RecipeTests: XCTestCase {
         ---
         name: Ingest
         description: Summarise a source
-        kind: ingest
+        kind: capture
         tool_allowlist: [search_notes, propose_operation]
         expected_output: wiki_operation
         ---
@@ -20,7 +20,7 @@ final class RecipeTests: XCTestCase {
         let recipe = try RecipeParser.parse(source)
         XCTAssertEqual(recipe.name, "Ingest")
         XCTAssertEqual(recipe.description, "Summarise a source")
-        XCTAssertEqual(recipe.kind, .ingest)
+        XCTAssertEqual(recipe.kind, .capture)
         XCTAssertEqual(recipe.toolAllowlist, ["search_notes", "propose_operation"])
         XCTAssertEqual(recipe.expectedOutput, "wiki_operation")
         XCTAssertTrue(recipe.prompt.contains("{{input}}"))
@@ -30,7 +30,7 @@ final class RecipeTests: XCTestCase {
         let source = """
         ---
         name: Lint
-        kind: lint
+        kind: review
         tool_allowlist:
           - search_notes
           - list_orphans
@@ -51,7 +51,7 @@ final class RecipeTests: XCTestCase {
     func testRejectsMissingName() {
         let source = """
         ---
-        kind: ingest
+        kind: capture
         ---
         {{input}}
         """
@@ -79,7 +79,7 @@ final class RecipeTests: XCTestCase {
         let source = """
         ---
         name: X
-        kind: ingest
+        kind: capture
         ---
         My key is {{api_key}}
         """
@@ -92,7 +92,7 @@ final class RecipeTests: XCTestCase {
         let source = """
         ---
         name: X
-        kind: ingest
+        kind: capture
         ---
         Here is {{some_other_token}}
         """
@@ -105,7 +105,7 @@ final class RecipeTests: XCTestCase {
         let source = """
         ---
         name: X
-        kind: query
+        kind: chat
         ---
         q={{input}} state={{vault_state}}
         """
@@ -118,7 +118,7 @@ final class RecipeTests: XCTestCase {
         let recipe = try RecipeParser.parse("""
         ---
         name: X
-        kind: ingest
+        kind: capture
         ---
         q={{input}} s={{vault_state}}
         """)
@@ -131,7 +131,7 @@ final class RecipeTests: XCTestCase {
     func testEngineReturnsNilWhenRecipeMissing() throws {
         let vault = try makeTempDir()
         defer { try? FileManager.default.removeItem(at: vault) }
-        XCTAssertNil(try RecipeEngine.loadFromVault(.ingest, vaultRoot: vault))
+        XCTAssertNil(try RecipeEngine.loadFromVault(.capture, vaultRoot: vault))
     }
 
     func testEngineLoadsVaultRecipe() throws {
@@ -142,14 +142,14 @@ final class RecipeTests: XCTestCase {
         try """
         ---
         name: Custom
-        kind: ingest
+        kind: capture
         ---
         Body {{input}}
         """.write(
-            to: recipesDir.appendingPathComponent("ingest.md"),
+            to: recipesDir.appendingPathComponent("capture.md"),
             atomically: true, encoding: .utf8
         )
-        let recipe = try RecipeEngine.loadFromVault(.ingest, vaultRoot: vault)
+        let recipe = try RecipeEngine.loadFromVault(.capture, vaultRoot: vault)
         XCTAssertEqual(recipe?.name, "Custom")
     }
 

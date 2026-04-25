@@ -316,8 +316,8 @@ struct MacDetailColumn: View {
         let indexURL = root.appendingPathComponent("index.md")
         let currentIndex = (try? String(contentsOf: indexURL, encoding: .utf8)) ?? "# Index\n"
         let sample = WikiOperation(
-            kind: .ingest,
-            title: "Debug: sample ingest of example.com",
+            kind: .capture,
+            title: "Debug: sample capture of example.com",
             rationale: "Canned operation for exercising the diff-review UI before the real agent runner lands.",
             changes: [
                 .create(
@@ -573,14 +573,14 @@ private struct WikiNotificationObserversModifier: ViewModifier {
 
     func body(content: Content) -> some View {
         content
-            .onReceive(NotificationCenter.default.publisher(for: .wikiIngest)) { _ in
-                WikiAgentCoordinator.startIngest(workspace: workspace, controller: wikiController)
+            .onReceive(NotificationCenter.default.publisher(for: .wikiCapture)) { _ in
+                WikiAgentCoordinator.startCapture(workspace: workspace, controller: wikiController)
             }
-            .onReceive(NotificationCenter.default.publisher(for: .wikiQuery)) { _ in
-                WikiAgentCoordinator.startQuery(workspace: workspace, chat: wikiChat)
+            .onReceive(NotificationCenter.default.publisher(for: .wikiChat)) { _ in
+                WikiAgentCoordinator.startChat(workspace: workspace, chat: wikiChat)
             }
-            .onReceive(NotificationCenter.default.publisher(for: .wikiLint)) { _ in
-                WikiAgentCoordinator.startLint(workspace: workspace, controller: wikiController)
+            .onReceive(NotificationCenter.default.publisher(for: .wikiReview)) { _ in
+                WikiAgentCoordinator.startReview(workspace: workspace, controller: wikiController)
             }
             .onReceive(NotificationCenter.default.publisher(for: .wikiToggleLogSidebar)) { _ in
                 withAnimation(Theme.Motion.smooth) {

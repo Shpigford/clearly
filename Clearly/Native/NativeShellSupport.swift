@@ -15,11 +15,10 @@ extension Notification.Name {
     static let highlightTextInPreview = Notification.Name("highlightTextInPreview")
 
     // Wiki (LLM) commands — published by Wiki menu items and observed by the
-    // WikiModeController. Action handlers live in Wiki/ (added as subsequent
-    // phases come online).
-    static let wikiIngest = Notification.Name("wikiIngest")
-    static let wikiQuery = Notification.Name("wikiQuery")
-    static let wikiLint = Notification.Name("wikiLint")
+    // WikiAgentCoordinator.
+    static let wikiCapture = Notification.Name("wikiCapture")
+    static let wikiChat = Notification.Name("wikiChat")
+    static let wikiReview = Notification.Name("wikiReview")
     static let wikiToggleLogSidebar = Notification.Name("wikiToggleLogSidebar")
 
     #if DEBUG

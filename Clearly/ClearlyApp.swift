@@ -1042,20 +1042,20 @@ struct WikiCommands: View {
     private var enabled: Bool { isWiki ?? false }
 
     var body: some View {
-        Button("Ingest…") {
-            NotificationCenter.default.post(name: .wikiIngest, object: nil)
+        Button("Capture") {
+            NotificationCenter.default.post(name: .wikiCapture, object: nil)
         }
         .keyboardShortcut("i", modifiers: [.command, .control])
         .disabled(!enabled)
 
-        Button("Query…") {
-            NotificationCenter.default.post(name: .wikiQuery, object: nil)
+        Button("Chat") {
+            NotificationCenter.default.post(name: .wikiChat, object: nil)
         }
         .keyboardShortcut("q", modifiers: [.command, .control])
         .disabled(!enabled)
 
-        Button("Lint") {
-            NotificationCenter.default.post(name: .wikiLint, object: nil)
+        Button("Review") {
+            NotificationCenter.default.post(name: .wikiReview, object: nil)
         }
         .keyboardShortcut("l", modifiers: [.command, .control])
         .disabled(!enabled)

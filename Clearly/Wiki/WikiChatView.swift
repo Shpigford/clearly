@@ -190,7 +190,7 @@ struct WikiChatView: View {
         \(message.text)
         """
         let op = WikiOperation(
-            kind: .query,
+            kind: .chat,
             title: "File answer: \(precedingUser)",
             rationale: "Filed from Wiki Chat.",
             changes: [.create(path: "answers/\(slug).md", contents: contents)]

@@ -51,7 +51,7 @@ final class WikiOperationTests: XCTestCase {
     func testOperationRoundTrip() throws {
         let op = WikiOperation(
             id: UUID(uuidString: "11111111-1111-1111-1111-111111111111")!,
-            kind: .ingest,
+            kind: .capture,
             title: "Ingest: example.com",
             rationale: "Summarized source into a new note and updated index.",
             changes: [
@@ -68,7 +68,7 @@ final class WikiOperationTests: XCTestCase {
     // MARK: - Validation
 
     func testValidateRejectsEmptyChanges() {
-        let op = WikiOperation(kind: .ingest, title: "t", rationale: "r", changes: [])
+        let op = WikiOperation(kind: .capture, title: "t", rationale: "r", changes: [])
         XCTAssertThrowsError(try op.validate()) { error in
             XCTAssertEqual(error as? WikiOperationError, .noChanges)
         }
@@ -76,7 +76,7 @@ final class WikiOperationTests: XCTestCase {
 
     func testValidateRejectsDuplicatePaths() {
         let op = WikiOperation(
-            kind: .ingest, title: "t", rationale: "r",
+            kind: .capture, title: "t", rationale: "r",
             changes: [
                 .create(path: "dup.md", contents: "a"),
                 .modify(path: "dup.md", before: "a", after: "b"),
@@ -89,7 +89,7 @@ final class WikiOperationTests: XCTestCase {
 
     func testValidateRejectsAbsolutePath() {
         let op = WikiOperation(
-            kind: .ingest, title: "t", rationale: "r",
+            kind: .capture, title: "t", rationale: "r",
             changes: [.create(path: "/etc/passwd", contents: "x")]
         )
         XCTAssertThrowsError(try op.validate()) { error in
@@ -99,7 +99,7 @@ final class WikiOperationTests: XCTestCase {
 
     func testValidateRejectsEscapingPath() {
         let op = WikiOperation(
-            kind: .ingest, title: "t", rationale: "r",
+            kind: .capture, title: "t", rationale: "r",
             changes: [.create(path: "../outside.md", contents: "x")]
         )
         XCTAssertThrowsError(try op.validate()) { error in
@@ -109,7 +109,7 @@ final class WikiOperationTests: XCTestCase {
 
     func testValidateRejectsEmptyPath() {
         let op = WikiOperation(
-            kind: .ingest, title: "t", rationale: "r",
+            kind: .capture, title: "t", rationale: "r",
             changes: [.create(path: "", contents: "x")]
         )
         XCTAssertThrowsError(try op.validate()) { error in
@@ -119,7 +119,7 @@ final class WikiOperationTests: XCTestCase {
 
     func testValidateRejectsNoOpModify() {
         let op = WikiOperation(
-            kind: .lint, title: "t", rationale: "r",
+            kind: .review, title: "t", rationale: "r",
             changes: [.modify(path: "same.md", before: "hello", after: "hello")]
         )
         XCTAssertThrowsError(try op.validate()) { error in
@@ -129,7 +129,7 @@ final class WikiOperationTests: XCTestCase {
 
     func testValidateAcceptsValidOperation() throws {
         let op = WikiOperation(
-            kind: .ingest, title: "t", rationale: "r",
+            kind: .capture, title: "t", rationale: "r",
             changes: [
                 .create(path: "a.md", contents: "x"),
                 .modify(path: "b.md", before: "x", after: "y"),
