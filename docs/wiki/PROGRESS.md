@@ -1,6 +1,6 @@
 # Wiki feature progress
 
-## Status: Phase 1 — Completed; Phase 2 — Completed (pending manual verification)
+## Status: Phase 1 — Completed; Phase 2 — Completed
 
 ## Quick Reference
 - Research: `docs/wiki/RESEARCH.md`
@@ -43,7 +43,7 @@
 ---
 
 ### Phase 2: Seed `getting-started.md` on wiki creation
-**Status:** Completed (pending manual verification)
+**Status:** Completed
 **Commit scope:** `[mac]`
 
 #### Tasks
@@ -52,13 +52,15 @@
 - [x] Rebind Wiki → Chat shortcut from ⌃⌘Q (macOS lock-screen) to ⌃⌘A in `ClearlyApp.swift:1054`
 - [x] After File → New LLM Wiki seeds the vault, auto-open `getting-started.md` so the welcome doc is the active document (`WikiSeeder.createNewWiki`, new-location branch only)
 - [x] Expand welcome content: framing paragraph linking Karpathy's gist + "you stay in charge" stance, before the three-command list
+- [x] Add "Drop in your own notes" section to welcome doc explaining the manual-drop / `raw/` workflow alongside Capture
+- [x] Catch stale ⌃⌘Q references in `Shared/Resources/wiki-template/AGENTS.md` and the `WikiAgentCoordinator.startChat` doc-comment
 - [x] Run `xcodegen generate`
 - [x] Verify: `xcodebuild Debug build` clean
 - [x] Verify: `swift test` clean (90/90 — was 88; 2 new tests in unrelated working-tree work)
 - [x] Verify: bundled `Clearly Dev.app/Contents/Resources/wiki-template/` contains all 5 files
-- [ ] Manual: File → New LLM Wiki → folder gets 5 top-level files including `getting-started.md`, and `getting-started.md` is the active document with sidebar selection on it **(awaits Josh)**
-- [ ] Manual: Convert-to-LLM-Wiki on existing folder with a hand-written `getting-started.md` doesn't overwrite it; user's current document is NOT yanked away **(awaits Josh)**
-- [ ] Manual: Wiki → Chat fires on ⌃⌘A; ⌃⌘Q now hits the OS lock-screen prompt instead **(awaits Josh)**
+- [x] Manual: File → New LLM Wiki → folder gets 5 top-level files including `getting-started.md`, and `getting-started.md` is the active document with sidebar selection on it
+- [x] Manual: Convert-to-LLM-Wiki on existing folder with a hand-written `getting-started.md` doesn't overwrite it; user's current document is NOT yanked away
+- [x] Manual: Wiki → Chat fires on ⌃⌘A; ⌃⌘Q now hits the OS lock-screen prompt instead
 
 #### Decisions Made
 - Path correction: source plan and IMPLEMENTATION.md said `Clearly/Resources/wiki-template/` — actual directory is `Shared/Resources/wiki-template/` (per `project.yml:60` and `WikiSeeding.swift:22`). Used the real path.
@@ -219,7 +221,17 @@
 - Caught & fixed pre-existing bug: Wiki → Chat was bound to ⌃⌘Q which is the macOS Lock Screen shortcut on Ventura+. Rebound to ⌃⌘A. Welcome content updated to match.
 - `xcodegen generate` ran clean; `xcodebuild Debug build` clean; `swift test` 90/90 pass
 - Verified `Clearly Dev.app/Contents/Resources/wiki-template/` ships all 5 files (AGENTS.md, getting-started.md, index.md, log.md, raw/)
-- Committed as a single `[mac]` change. Awaiting Josh's manual verification before merging or starting Phase 3.
+- Initial commit: `bd2451ca [mac] Wiki: seed getting-started.md, rebind Chat ⌃⌘Q→⌃⌘A`
+
+### 2026-04-25 — Phase 2 follow-ups (skeptical pass + Josh feedback)
+- Skeptical review caught two stale `⌃⌘Q` references that survived the initial commit: `AGENTS.md:30` (user-facing template) and `WikiAgentCoordinator.startChat` doc-comment. Fixed in `3a261a71`.
+- Per Josh: after `WikiSeeder.createNewWiki` registers a new vault, route `getting-started.md` through `WorkspaceManager.openFile` so it lands as the active document with the sidebar selection on it (new-location branch only — convert-in-place and re-pick-existing leave the user alone). `17577878`.
+- Per Josh: expanded welcome content with two opening paragraphs framing the LLM-wiki concept and crediting Andrej Karpathy's gist, before the three-command list. `17577878`.
+- Per Josh: added "Drop in your own notes" section between the three-command list and "How it works" — explains the drag-from-Finder / `⌘N` / `raw/` paths and what trade-offs you make by skipping Capture. `3f667905`.
+- Phase 2 manual verification complete. Ready for Phase 3.
+
+### Pre-existing follow-ups surfaced during Phase 2
+- `Shared/Resources/wiki-template/AGENTS.md` still uses `Ingest` / `Query` / `Lint` as operation names (the codebase uses `capture` / `chat` / `review` everywhere). Pre-existing drift, not introduced by Phase 2. Worth a separate cleanup pass to align AGENTS.md with the actual menu and recipe naming.
 
 ---
 
