@@ -56,32 +56,4 @@ final class AgentRunnerTests: XCTestCase {
     func testRejectsResponseWithNoJSON() {
         XCTAssertThrowsError(try AgentResultParser.parseWikiOperation(from: "No JSON here.", kind: .capture))
     }
-
-    // MARK: - Anthropic response decoding
-
-    func testDecodesAnthropicEnvelope() throws {
-        let raw = """
-        {
-          "content": [
-            {"type": "text", "text": "hello"},
-            {"type": "text", "text": " world"}
-          ],
-          "usage": {"input_tokens": 12, "output_tokens": 5}
-        }
-        """
-        let data = raw.data(using: .utf8)!
-        let result = try AnthropicAPIAgentRunner.decode(data: data, model: "claude-sonnet-4-6")
-        XCTAssertEqual(result.text, "hello world")
-        XCTAssertEqual(result.inputTokens, 12)
-        XCTAssertEqual(result.outputTokens, 5)
-        XCTAssertEqual(result.model, "claude-sonnet-4-6")
-    }
-
-    func testDecodeRejectsEmptyText() {
-        let raw = """
-        { "content": [], "usage": {"input_tokens": 1, "output_tokens": 1} }
-        """
-        let data = raw.data(using: .utf8)!
-        XCTAssertThrowsError(try AnthropicAPIAgentRunner.decode(data: data, model: "m"))
-    }
 }

@@ -79,14 +79,9 @@ enum WikiAgentCoordinator {
         }
         // Chat uses a tool-enabled runner pointed at the vault cwd so Claude
         // Code can Read/Grep/Glob on demand — dramatically better synthesis
-        // than us dumping 300KB of context upfront. Falls through to the BYOK
-        // API runner (no tools) if Claude CLI isn't installed.
+        // than us dumping 300KB of context upfront.
         guard let runner = resolveToolEnabledRunner(vaultURL: vaultURL) else {
-            presentError("""
-            Install Claude Code to use Wiki Chat: https://docs.claude.com/claude-code
-
-            Or choose Wiki → Set Anthropic API Key… to fall back to BYOK (without file-exploration tools).
-            """)
+            presentError("Install Claude Code to use Wiki Chat: https://docs.claude.com/claude-code")
             return
         }
         AgentWarmer.warmIfNeeded(runner: runner)
@@ -205,21 +200,6 @@ enum WikiAgentCoordinator {
         AgentWarmer.warmIfNeeded(runner: runner)
     }
 
-    /// Explicit opt-in to the BYOK API fallback. Exposed for the
-    /// Wiki → Set Anthropic API Key… menu item.
-    static func promptForAPIKey() {
-        let keychain = KeychainStore()
-        guard let key = promptSecret(
-            title: "Set Anthropic API Key",
-            message: "Stored in Keychain. Only used when the Claude CLI isn't installed."
-        ), !key.isEmpty else { return }
-        do {
-            try keychain.set(key, forKey: WikiKeychainAccount.anthropicAPIKey)
-        } catch {
-            presentError("Couldn't save to Keychain: \(error)")
-        }
-    }
-
     // MARK: - Session
 
     private struct Session {
@@ -236,11 +216,7 @@ enum WikiAgentCoordinator {
             return nil
         }
         guard let runner = resolveToolEnabledRunner(vaultURL: vaultURL) else {
-            presentError("""
-            Install Claude Code to use this command: https://docs.claude.com/claude-code
-
-            Or choose Wiki → Set Anthropic API Key… to fall back to BYOK.
-            """)
+            presentError("Install Claude Code to use this command: https://docs.claude.com/claude-code")
             return nil
         }
         AgentWarmer.warmIfNeeded(runner: runner)
@@ -323,22 +299,14 @@ enum WikiAgentCoordinator {
 
     /// Single CLI runner config for every wiki recipe (Capture/Chat/Review):
     /// cwd=vault, tools=Read/Grep/Glob. Same config means same cache key, so
-    /// warming one recipe's cache benefits all three. API fallback doesn't
-    /// have tool use — in that mode we rely on the old prompt-side inlining.
+    /// warming one recipe's cache benefits all three.
     private static func resolveToolEnabledRunner(vaultURL: URL) -> AgentRunner? {
-        if let cli = AgentDiscovery.findClaude() {
-            return ClaudeCLIAgentRunner(
-                binaryURL: cli.url,
-                enabledTools: "Read,Grep,Glob",
-                workingDirectory: vaultURL
-            )
-        }
-        let keychain = KeychainStore()
-        let key = (try? keychain.get(WikiKeychainAccount.anthropicAPIKey)) ?? nil
-        if let key, !key.isEmpty {
-            return AnthropicAPIAgentRunner()
-        }
-        return nil
+        guard let cli = AgentDiscovery.findClaude() else { return nil }
+        return ClaudeCLIAgentRunner(
+            binaryURL: cli.url,
+            enabledTools: "Read,Grep,Glob",
+            workingDirectory: vaultURL
+        )
     }
 
     // MARK: - Recipe loading
@@ -451,20 +419,6 @@ enum WikiAgentCoordinator {
         return field.stringValue
     }
 
-    private static func promptSecret(title: String, message: String) -> String? {
-        let alert = NSAlert()
-        alert.messageText = title
-        alert.informativeText = message
-        alert.addButton(withTitle: "Save")
-        alert.addButton(withTitle: "Cancel")
-        let field = NSSecureTextField(frame: NSRect(x: 0, y: 0, width: 340, height: 24))
-        alert.accessoryView = field
-        alert.window.initialFirstResponder = field
-        let response = alert.runModal()
-        guard response == .alertFirstButtonReturn else { return nil }
-        return field.stringValue
-    }
-
     private static func presentError(_ message: String) {
         let alert = NSAlert()
         alert.messageText = "Wiki"
@@ -485,7 +439,6 @@ enum WikiAgentCoordinator {
 
     private static func describe(_ error: Error) -> String {
         switch error {
-        case AgentError.missingAPIKey: return "Anthropic API key is missing."
         case AgentError.invalidResponse(let m): return "Invalid response: \(m)"
         case AgentError.httpError(let status, _): return "HTTP \(status) from the API."
         case AgentError.transport(let m): return "Network error: \(m)"

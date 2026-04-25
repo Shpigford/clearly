@@ -1,9 +1,8 @@
 import Foundation
 
-/// The single entry point to an LLM agent. Every tier (local Claude CLI,
-/// BYOK Anthropic API, OpenAI-compatible) implements this. V1 is request /
-/// response; streaming + multi-turn tool use come later when the recipes need
-/// them.
+/// The single entry point to an LLM agent. Implemented by the local CLI
+/// runners (Claude Code today, Codex tomorrow). V1 is request / response;
+/// streaming + multi-turn tool use come later when the recipes need them.
 public protocol AgentRunner: Sendable {
     /// Run a prompt and return the assistant's raw text plus token accounting.
     func run(prompt: String, model: String?) async throws -> AgentResult
@@ -24,7 +23,6 @@ public struct AgentResult: Sendable, Equatable {
 }
 
 public enum AgentError: Error, Equatable, Sendable {
-    case missingAPIKey
     case invalidResponse(String)
     case httpError(status: Int, body: String)
     case transport(String)

@@ -1068,13 +1068,6 @@ struct WikiCommands: View {
         .keyboardShortcut("t", modifiers: [.command, .control])
         .disabled(!enabled)
 
-        Divider()
-
-        Button("Set Anthropic API Key…") {
-            WikiAgentCoordinator.promptForAPIKey()
-        }
-        .help("Optional fallback for machines without the Claude CLI installed.")
-
         #if DEBUG
         Divider()
         Button("Preview Diff Sheet (Debug)") {
