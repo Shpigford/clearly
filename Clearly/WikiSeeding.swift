@@ -31,6 +31,8 @@ enum WikiSeeder {
              folder.appendingPathComponent("index.md")),
             (templateURL.appendingPathComponent("log.md"),
              folder.appendingPathComponent("log.md")),
+            (templateURL.appendingPathComponent("getting-started.md"),
+             folder.appendingPathComponent("getting-started.md")),
             (templateURL.appendingPathComponent("raw/README.md"),
              folder.appendingPathComponent("raw/README.md")),
         ]

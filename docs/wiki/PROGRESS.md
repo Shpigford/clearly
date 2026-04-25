@@ -1,6 +1,6 @@
 # Wiki feature progress
 
-## Status: Phase 1 — Completed (pending manual verification); Phase 2 — Not Started
+## Status: Phase 1 — Completed (pending manual verification); Phase 2 — Completed (pending manual verification)
 
 ## Quick Reference
 - Research: `docs/wiki/RESEARCH.md`
@@ -43,20 +43,24 @@
 ---
 
 ### Phase 2: Seed `getting-started.md` on wiki creation
-**Status:** Not Started
+**Status:** Completed (pending manual verification)
 **Commit scope:** `[mac]`
 
 #### Tasks
-- [ ] Create `Clearly/Resources/wiki-template/getting-started.md` with welcome content (sparse, three-command focused)
-- [ ] `WikiSeeding.swift` lines 27–36: add fifth `(src, dst)` entry for `getting-started.md`
-- [ ] Run `xcodegen generate`
-- [ ] Verify: `xcodebuild Debug build` clean
-- [ ] Verify: `swift test` clean
-- [ ] Manual: File → New LLM Wiki → folder gets 5 files including `getting-started.md`
-- [ ] Manual: Convert-to-LLM-Wiki on existing folder doesn't overwrite an existing welcome note
+- [x] Create `Shared/Resources/wiki-template/getting-started.md` with welcome content (sparse, three-command focused)
+- [x] `WikiSeeding.swift` lines 27–36: add fifth `(src, dst)` entry for `getting-started.md`
+- [x] Rebind Wiki → Chat shortcut from ⌃⌘Q (macOS lock-screen) to ⌃⌘A in `ClearlyApp.swift:1054`
+- [x] Run `xcodegen generate`
+- [x] Verify: `xcodebuild Debug build` clean
+- [x] Verify: `swift test` clean (90/90 — was 88; 2 new tests in unrelated working-tree work)
+- [x] Verify: bundled `Clearly Dev.app/Contents/Resources/wiki-template/` contains all 5 files
+- [ ] Manual: File → New LLM Wiki → folder gets 5 top-level files including `getting-started.md` **(awaits Josh)**
+- [ ] Manual: Convert-to-LLM-Wiki on existing folder with a hand-written `getting-started.md` doesn't overwrite it **(awaits Josh)**
+- [ ] Manual: Wiki → Chat fires on ⌃⌘A; ⌃⌘Q now hits the OS lock-screen prompt instead **(awaits Josh)**
 
 #### Decisions Made
-- (none yet)
+- Path correction: source plan and IMPLEMENTATION.md said `Clearly/Resources/wiki-template/` — actual directory is `Shared/Resources/wiki-template/` (per `project.yml:60` and `WikiSeeding.swift:22`). Used the real path.
+- Bundled the Chat shortcut rebind (⌃⌘Q → ⌃⌘A) into Phase 2 because the welcome content documents the shortcut. Shipping `getting-started.md` with `⌃⌘Q` would have taught users a binding that locks the screen on macOS Ventura+. ⌃⌘A is the 'A for Ask' mnemonic, free both system-wide and in Clearly (verified via `grep keyboardShortcut Clearly/`).
 
 #### Blockers
 - (none)
@@ -206,6 +210,14 @@
 - `xcodebuild Debug` clean; `swift test` 88/88 pass (was 95)
 - Final grep sweep clean across `Clearly/` and `Packages/`
 - Committed as a single `[mac]` change. Awaiting Josh's manual verification before merging or starting Phase 2.
+
+### 2026-04-25 — Phase 2 implementation
+- Added `Shared/Resources/wiki-template/getting-started.md` with the approved sparse welcome content
+- Inserted fifth `(src, dst)` tuple in `Clearly/WikiSeeding.swift` between `log.md` and `raw/README.md` so all top-level marker files group together before the nested `raw/` entry
+- Caught & fixed pre-existing bug: Wiki → Chat was bound to ⌃⌘Q which is the macOS Lock Screen shortcut on Ventura+. Rebound to ⌃⌘A. Welcome content updated to match.
+- `xcodegen generate` ran clean; `xcodebuild Debug build` clean; `swift test` 90/90 pass
+- Verified `Clearly Dev.app/Contents/Resources/wiki-template/` ships all 5 files (AGENTS.md, getting-started.md, index.md, log.md, raw/)
+- Committed as a single `[mac]` change. Awaiting Josh's manual verification before merging or starting Phase 3.
 
 ---
 

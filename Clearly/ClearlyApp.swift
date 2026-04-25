@@ -1051,7 +1051,7 @@ struct WikiCommands: View {
         Button("Chat") {
             NotificationCenter.default.post(name: .wikiChat, object: nil)
         }
-        .keyboardShortcut("q", modifiers: [.command, .control])
+        .keyboardShortcut("a", modifiers: [.command, .control])
         .disabled(!enabled)
 
         Button("Review") {
