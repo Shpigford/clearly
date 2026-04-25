@@ -132,6 +132,7 @@ enum WikiSeeder {
         _ = workspace.addLocation(url: url)
         workspace.isSidebarVisible = true
         UserDefaults.standard.set(true, forKey: "sidebarVisible")
+        workspace.openFile(at: url.appendingPathComponent("getting-started.md"))
     }
 
     private static func presentSeedError(_ error: Swift.Error) {

@@ -1,7 +1,15 @@
 # Welcome to your wiki
 
-This is your knowledge base. Notes link to each other with [[wiki-links]] —
-click one to jump.
+This is an **LLM wiki** — a personal knowledge base you grow by reading.
+The idea is borrowed from [Andrej Karpathy's gist](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f):
+when you come across something worth keeping (an article, a conversation,
+an idea), you hand it to the agent. The agent reads it, extracts what
+matters, writes notes, links related ones, and keeps `index.md` tidy.
+You review every change. Over time the wiki compounds into something
+genuinely useful and personal — yours.
+
+You stay in charge. The agent proposes; you accept or reject. Notes link
+to each other with `[[wiki-links]]` — click one to jump.
 
 ## Three commands
 

@@ -50,12 +50,14 @@
 - [x] Create `Shared/Resources/wiki-template/getting-started.md` with welcome content (sparse, three-command focused)
 - [x] `WikiSeeding.swift` lines 27–36: add fifth `(src, dst)` entry for `getting-started.md`
 - [x] Rebind Wiki → Chat shortcut from ⌃⌘Q (macOS lock-screen) to ⌃⌘A in `ClearlyApp.swift:1054`
+- [x] After File → New LLM Wiki seeds the vault, auto-open `getting-started.md` so the welcome doc is the active document (`WikiSeeder.createNewWiki`, new-location branch only)
+- [x] Expand welcome content: framing paragraph linking Karpathy's gist + "you stay in charge" stance, before the three-command list
 - [x] Run `xcodegen generate`
 - [x] Verify: `xcodebuild Debug build` clean
 - [x] Verify: `swift test` clean (90/90 — was 88; 2 new tests in unrelated working-tree work)
 - [x] Verify: bundled `Clearly Dev.app/Contents/Resources/wiki-template/` contains all 5 files
-- [ ] Manual: File → New LLM Wiki → folder gets 5 top-level files including `getting-started.md` **(awaits Josh)**
-- [ ] Manual: Convert-to-LLM-Wiki on existing folder with a hand-written `getting-started.md` doesn't overwrite it **(awaits Josh)**
+- [ ] Manual: File → New LLM Wiki → folder gets 5 top-level files including `getting-started.md`, and `getting-started.md` is the active document with sidebar selection on it **(awaits Josh)**
+- [ ] Manual: Convert-to-LLM-Wiki on existing folder with a hand-written `getting-started.md` doesn't overwrite it; user's current document is NOT yanked away **(awaits Josh)**
 - [ ] Manual: Wiki → Chat fires on ⌃⌘A; ⌃⌘Q now hits the OS lock-screen prompt instead **(awaits Josh)**
 
 #### Decisions Made
