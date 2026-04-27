@@ -32,6 +32,9 @@ struct MacDetailToolbar: ToolbarContent {
                 }
                 .font(.system(size: 12, weight: .medium))
                 .foregroundStyle(.secondary)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 4)
+                .fixedSize()
                 .help("Live Preview")
             } else {
                 Picker("Mode", selection: $workspace.currentViewMode) {

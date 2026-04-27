@@ -32136,6 +32136,9 @@ $$`);
   function isTableSeparator(text2) {
     return /^\s*\|?(?:\s*:?-+:?\s*\|)+\s*:?-+:?\s*\|?\s*$/.test(text2);
   }
+  function isQuoteLine(text2) {
+    return /^(\s*)>\s?/.test(text2);
+  }
   function buildDecorations(state) {
     const builder = new RangeSetBuilder();
     const applyInlineDecorations = (text2, offset, usedRanges) => {
@@ -32345,9 +32348,12 @@ $$`);
           const indent = quoteMatch[1]?.length ?? 0;
           const markerFrom = line.from + indent;
           const markerTo = markerFrom + quoteMatch[0].length - indent;
-          builder.add(line.from, line.from, lineDecoration("cm-live-quote-line"));
+          const prevIsQuote = lineNumber > 1 && isQuoteLine(state.doc.line(lineNumber - 1).text);
+          const nextIsQuote = lineNumber < state.doc.lines && isQuoteLine(state.doc.line(lineNumber + 1).text);
+          const quoteLineClass = prevIsQuote ? nextIsQuote ? "cm-live-quote-line cm-live-quote-middle" : "cm-live-quote-line cm-live-quote-bottom" : nextIsQuote ? "cm-live-quote-line cm-live-quote-top" : "cm-live-quote-line cm-live-quote-single";
+          builder.add(line.from, line.from, lineDecoration(quoteLineClass));
           if (!rangeHasSelection(state, markerFrom, markerTo)) {
-            builder.add(markerFrom, markerTo, widgetDecoration(new LivePrefixWidget(markerFrom, "\u258E", "cm-live-quote-prefix")));
+            builder.add(markerFrom, markerTo, hiddenDecoration);
           }
           usedRanges.push({ from: markerFrom, to: markerTo });
         } else {
@@ -32556,14 +32562,30 @@ $$`);
         marginRight: "0.15rem",
         color: muted
       },
-      ".cm-live-quote-line": {
+      ".cm-line.cm-live-quote-line": {
         backgroundColor: quoteBackground,
-        borderRadius: "8px",
-        color: subtleText
-      },
-      ".cm-live-quote-prefix": {
         color: subtleText,
-        fontWeight: "700"
+        boxSizing: "border-box",
+        paddingLeft: "1.25em",
+        paddingRight: "1.25em"
+      },
+      ".cm-line.cm-live-quote-single": {
+        borderRadius: "8px",
+        paddingTop: "0.75em",
+        paddingBottom: "0.75em"
+      },
+      ".cm-line.cm-live-quote-top": {
+        borderTopLeftRadius: "8px",
+        borderTopRightRadius: "8px",
+        paddingTop: "0.75em"
+      },
+      ".cm-line.cm-live-quote-middle": {
+        borderRadius: "0"
+      },
+      ".cm-line.cm-live-quote-bottom": {
+        borderBottomLeftRadius: "8px",
+        borderBottomRightRadius: "8px",
+        paddingBottom: "0.75em"
       },
       ".cm-live-task-checkbox": {
         transform: "translateY(1px)",
