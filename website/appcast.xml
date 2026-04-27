@@ -3,20 +3,6 @@
   <channel>
     <title>Clearly</title>
     <item>
-      <title>Version 2.6.0</title>
-      <sparkle:version>2.6.0</sparkle:version>
-      <sparkle:shortVersionString>2.6.0</sparkle:shortVersionString>
-      <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
-      <pubDate>Mon, 27 Apr 2026 13:30:20 +0000</pubDate>
-      <description><![CDATA[<ul><li>LLM Wiki vaults — turn any folder into an AI-curated knowledge base with AGENTS.md, index.md, and log.md</li><li>Capture (⌃⌘I): paste a URL or text and the agent files it as new notes</li><li>Chat (⌃⌘A): ask questions about your vault with semantic retrieval and cited sources; "File as Note" for keepers</li><li>Review: runs once a day to propose tidy-ups; "Review ready" badge above the log sidebar</li><li>Diff-review sheet on every agent-proposed change — accept or reject per file before anything lands</li><li>Log timeline sidebar (⌃⌘T) shows every accepted operation with timestamp, kind, and changed files</li><li>Powered by your local Claude Code or Codex CLI subscription — no API key, no extra billing</li><li>Settings → Wiki tab to pick a runner and see install status</li><li>File → New LLM Wiki seeds a fresh vault; right-click any vault for Convert to LLM Wiki…</li><li>Sidebar marks wiki vaults with a book icon and WIKI badge</li><li>Clickable [[wiki-links]] in chat answers</li><li>New `semantic_search` MCP tool for embedding-based retrieval from any agent</li><li>Marketing site links now show a preview image when shared</li></ul>]]></description>
-      <enclosure
-        url="https://github.com/Shpigford/clearly/releases/download/v2.6.0/Clearly.dmg"
-        sparkle:edSignature="sYOw1UCCgEUypPehDblOiDQTxmTQ/Q8hr39lK6uC1FMvq61zWxtQPlNf3E55WtZfcy42oZyzD4eoer43mhDbCw=="
-        length="21255850"
-        type="application/octet-stream"
-      />
-    </item>
-    <item>
       <title>Version 2.5.0</title>
       <sparkle:version>2.5.0</sparkle:version>
       <sparkle:shortVersionString>2.5.0</sparkle:shortVersionString>
