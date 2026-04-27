@@ -349,7 +349,7 @@ struct IPadRootView: View {
 
     private var shouldShowWelcomeBinding: Binding<Bool> {
         Binding(
-            get: { session.currentVault == nil || showWelcome },
+            get: { session.shouldPresentWelcome || showWelcome },
             set: { newValue in
                 if !newValue { showWelcome = false }
             }

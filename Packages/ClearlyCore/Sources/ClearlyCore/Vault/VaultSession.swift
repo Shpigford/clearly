@@ -26,6 +26,15 @@ public final class VaultSession {
     public private(set) var isLoading: Bool = false
     public private(set) var error: VaultSessionError?
 
+    /// UserDefaults presence at launch — lets views gate the welcome picker before async restoration runs.
+    public let hadPersistedVaultOnLaunch: Bool
+
+    public private(set) var hasAttemptedRestore: Bool = false
+
+    public var shouldPresentWelcome: Bool {
+        currentVault == nil && !(hadPersistedVaultOnLaunch && !hasAttemptedRestore)
+    }
+
     /// 0.0…1.0 while a full vault re-index is running. `nil` when idle. Drives the
     /// sidebar progress bar.
     public private(set) var indexProgress: Double?
@@ -66,6 +75,7 @@ public final class VaultSession {
 
     public init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
+        self.hadPersistedVaultOnLaunch = defaults.data(forKey: Self.persistenceKey) != nil
     }
 
     // MARK: - Attach / detach
@@ -165,6 +175,7 @@ public final class VaultSession {
     }
 
     public func restoreFromPersistence() async {
+        defer { hasAttemptedRestore = true }
         guard let data = defaults.data(forKey: Self.persistenceKey) else { return }
         guard let stored = try? JSONDecoder().decode(StoredVaultLocation.self, from: data) else {
             clearPersistence()

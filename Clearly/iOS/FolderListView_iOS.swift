@@ -344,7 +344,7 @@ struct FolderListView_iOS: View {
 
     private var shouldShowWelcomeBinding: Binding<Bool> {
         Binding(
-            get: { session.currentVault == nil || showWelcome },
+            get: { session.shouldPresentWelcome || showWelcome },
             set: { if !$0 { showWelcome = false } }
         )
     }
