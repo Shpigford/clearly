@@ -51,7 +51,6 @@ enum UserDefaultsMigrator {
         "showLineNumbers",
         "showMenuBarIcon",
         "sidebarSize",
-        "annotationUsername",
         "sidebarTagsExpanded",
         "sidebarPinnedExpanded",
         "sidebarRecentsExpanded",
@@ -63,6 +62,7 @@ enum UserDefaultsMigrator {
         "grammarCheckingEnabled",
         "automaticSpellingCorrectionEnabled",
         "outlineVisible",
+        "annotationCommentsVisible",
         "backlinksVisible",
         // Bookmark blobs — Data and arrays of Data. Restore* call sites
         // refresh stale bookmarks automatically.

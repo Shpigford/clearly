@@ -200,6 +200,38 @@ final class ChangedownAnnotationTests: XCTestCase {
         XCTAssertTrue(result.contains("[^cn-2]: @avi | 2026-04-27 | comment | proposed"))
     }
 
+    func testCommentsStateParsesAnnotationsInDocumentOrder() {
+        let markdown = """
+        First {==selection==}[^cn-2].
+
+        Second {==phrase==}[^cn-1].
+
+        [^cn-1]: @avi | 2026-04-27 | comment | proposed
+            @avi 2026-04-27: Second note.
+
+        [^cn-2]: @avi | 2026-04-27 | comment | proposed
+            @avi 2026-04-27: First note.
+        """
+        let state = AnnotationCommentsState()
+
+        state.parseComments(from: markdown)
+
+        XCTAssertEqual(state.comments.map(\.id), ["cn-2", "cn-1"])
+        XCTAssertEqual(state.comments.map(\.highlightedText), ["selection", "phrase"])
+        XCTAssertEqual(state.comments.map(\.comment), ["First note.", "Second note."])
+    }
+
+    func testCommentsStateFallsBackToLegacyInlineComment() {
+        let markdown = "This has {==text==}{>> Inline note. <<}[^cn-1]."
+        let state = AnnotationCommentsState()
+
+        state.parseComments(from: markdown)
+
+        XCTAssertEqual(state.comments.count, 1)
+        XCTAssertEqual(state.comments.first?.id, "cn-1")
+        XCTAssertEqual(state.comments.first?.comment, "Inline note.")
+    }
+
     func testWriterRejectsEmptySelection() {
         let markdown = "Text"
         XCTAssertThrowsError(try ChangedownAnnotationWriter.addAnnotation(

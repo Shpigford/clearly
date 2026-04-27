@@ -8,12 +8,8 @@ extension Notification.Name {
 }
 
 enum AnnotationAuthor {
-    static let usernameKey = "annotationUsername"
-
     static var current: String {
-        let configured = UserDefaults.standard.string(forKey: usernameKey)?
-            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        return configured.isEmpty ? NSUserName() : configured
+        NSUserName()
     }
 }
 

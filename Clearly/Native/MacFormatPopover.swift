@@ -60,7 +60,7 @@ struct MacFormatPopover: View {
             Button {
                 performAddAnnotationCommand()
             } label: {
-                Label("Add Annotation", systemImage: "text.badge.plus")
+                Label("Add Annotation", systemImage: "plus.bubble")
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
             .buttonStyle(.borderless)

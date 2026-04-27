@@ -21,7 +21,6 @@ struct SettingsView: View {
     @AppStorage("showMenuBarIcon") private var showMenuBarIcon = true
     @AppStorage("sidebarSize") private var sidebarSize: String = "medium"
     @Environment(\.dismiss) private var dismiss
-    @AppStorage("annotationUsername") private var annotationUsername = ""
 
     var body: some View {
         TabView {
@@ -71,12 +70,6 @@ struct SettingsView: View {
                     Text(engine.displayName).tag(engine.rawValue)
                 }
             }
-            LabeledContent("Annotation Username") {
-                TextField(NSUserName(), text: $annotationUsername)
-                    .textFieldStyle(.roundedBorder)
-                    .frame(width: 220)
-            }
-            .help("Used in annotation footnotes. Leave blank to use your macOS account name.")
             Picker("Appearance", selection: $themePreference) {
                 Text("System").tag("system")
                 Text("Light").tag("light")

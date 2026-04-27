@@ -403,6 +403,9 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValid
         outlineItem.keyEquivalentModifierMask = [.command, .shift]
         outlineItem.target = self
 
+        let commentsItem = NSMenuItem(title: "Toggle Comments", action: #selector(toggleCommentsAction(_:)), keyEquivalent: "")
+        commentsItem.target = self
+
         let backlinksItem = NSMenuItem(title: "Toggle Backlinks", action: #selector(toggleBacklinksAction(_:)), keyEquivalent: "b")
         backlinksItem.keyEquivalentModifierMask = [.command, .shift]
         backlinksItem.target = self
@@ -421,6 +424,7 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValid
         // Insert right after Toggle Sidebar (index 0)
         var insertIndex = 1
         viewMenu.insertItem(outlineItem, at: insertIndex); insertIndex += 1
+        viewMenu.insertItem(commentsItem, at: insertIndex); insertIndex += 1
         viewMenu.insertItem(backlinksItem, at: insertIndex); insertIndex += 1
         viewMenu.insertItem(lineNumbersItem, at: insertIndex); insertIndex += 1
         viewMenu.insertItem(.separator(), at: insertIndex); insertIndex += 1
@@ -456,6 +460,10 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValid
 
     @objc private func toggleOutlineAction(_ sender: Any?) {
         NotificationCenter.default.post(name: .init("ClearlyToggleOutline"), object: nil)
+    }
+
+    @objc private func toggleCommentsAction(_ sender: Any?) {
+        NotificationCenter.default.post(name: .toggleCommentsPanel, object: nil)
     }
 
     @objc private func toggleBacklinksAction(_ sender: Any?) {
