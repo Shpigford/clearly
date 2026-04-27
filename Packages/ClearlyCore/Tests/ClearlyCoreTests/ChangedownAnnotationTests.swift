@@ -158,6 +158,48 @@ final class ChangedownAnnotationTests: XCTestCase {
         XCTAssertTrue(result.contains("[^cn-4]: @avi | 2026-04-27 | comment | proposed"))
     }
 
+    func testWriterAllowsAnnotationBeforeExistingAnnotationOnSameLine() throws {
+        let markdown = """
+        Annotate first phrase and {==second phrase==}[^cn-1] on the same line.
+
+        [^cn-1]: @avi | 2026-04-27 | comment | proposed
+            @avi 2026-04-27: Existing.
+        """
+        let range = markdown.range(of: "first phrase")!
+
+        let result = try ChangedownAnnotationWriter.addAnnotation(
+            to: markdown,
+            range: range,
+            comment: "New note.",
+            author: "@avi",
+            date: fixedDate()
+        )
+
+        XCTAssertTrue(result.contains("Annotate {==first phrase==}[^cn-2] and {==second phrase==}[^cn-1] on the same line."))
+        XCTAssertTrue(result.contains("[^cn-2]: @avi | 2026-04-27 | comment | proposed"))
+    }
+
+    func testWriterAllowsAnnotationAfterExistingAnnotationOnSameLine() throws {
+        let markdown = """
+        Annotate {==first phrase==}[^cn-1] and second phrase on the same line.
+
+        [^cn-1]: @avi | 2026-04-27 | comment | proposed
+            @avi 2026-04-27: Existing.
+        """
+        let range = markdown.range(of: "second phrase")!
+
+        let result = try ChangedownAnnotationWriter.addAnnotation(
+            to: markdown,
+            range: range,
+            comment: "New note.",
+            author: "@avi",
+            date: fixedDate()
+        )
+
+        XCTAssertTrue(result.contains("Annotate {==first phrase==}[^cn-1] and {==second phrase==}[^cn-2] on the same line."))
+        XCTAssertTrue(result.contains("[^cn-2]: @avi | 2026-04-27 | comment | proposed"))
+    }
+
     func testWriterRejectsEmptySelection() {
         let markdown = "Text"
         XCTAssertThrowsError(try ChangedownAnnotationWriter.addAnnotation(
@@ -183,15 +225,36 @@ final class ChangedownAnnotationTests: XCTestCase {
         }
     }
 
-    func testWriterRejectsExistingAnnotationLine() {
+    func testWriterRejectsSelectionInsideExistingAnnotation() {
         let markdown = "Existing {==text==}[^cn-1]."
-        let range = markdown.range(of: "Existing")!
+        let range = markdown.range(of: "text")!
         XCTAssertThrowsError(try ChangedownAnnotationWriter.addAnnotation(
             to: markdown,
             range: range,
             comment: "Note",
             author: "@avi"
-        ))
+        )) { error in
+            XCTAssertEqual(
+                error as? ChangedownAnnotationWriterError,
+                .unsupportedSelection("Selections inside existing annotations are not supported yet.")
+            )
+        }
+    }
+
+    func testWriterRejectsSelectionCrossingExistingAnnotationBoundary() {
+        let markdown = "Existing {==text==}[^cn-1] remains."
+        let range = markdown.range(of: "Existing {==text==}")!
+        XCTAssertThrowsError(try ChangedownAnnotationWriter.addAnnotation(
+            to: markdown,
+            range: range,
+            comment: "Note",
+            author: "@avi"
+        )) { error in
+            XCTAssertEqual(
+                error as? ChangedownAnnotationWriterError,
+                .unsupportedSelection("Selections inside annotation markup are not supported yet.")
+            )
+        }
     }
 
     private func fixedDate() -> Date {

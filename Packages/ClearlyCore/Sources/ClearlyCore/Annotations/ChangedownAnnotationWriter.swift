@@ -28,6 +28,10 @@ public enum ChangedownAnnotationWriter {
         pattern: #"\[\^cn-(\d+)\]"#,
         options: []
     )
+    private static let inlineAnnotationRegex = try! NSRegularExpression(
+        pattern: #"\{==[^\n\r]*?==\}(?:\{>>[^\n\r]*?<<\})?\[\^cn-[A-Za-z0-9.-]+\]"#,
+        options: []
+    )
 
     public static func addAnnotation(
         to markdown: String,
@@ -119,8 +123,8 @@ public enum ChangedownAnnotationWriter {
         guard !trimmed.hasPrefix("|"), !isTableSeparator(trimmed) else {
             throw ChangedownAnnotationWriterError.unsupportedSelection("Selections inside tables are not supported yet.")
         }
-        guard !containsAnnotationMarker(line) else {
-            throw ChangedownAnnotationWriterError.unsupportedSelection("Selections on lines with existing annotations are not supported yet.")
+        guard !overlapsExistingAnnotation(markdown: markdown, range: range) else {
+            throw ChangedownAnnotationWriterError.unsupportedSelection("Selections inside existing annotations are not supported yet.")
         }
         guard !isInsideFencedCode(markdown: markdown, range: range) else {
             throw ChangedownAnnotationWriterError.unsupportedSelection("Selections inside code blocks are not supported.")
@@ -157,6 +161,17 @@ public enum ChangedownAnnotationWriter {
         }
 
         return false
+    }
+
+    private static func overlapsExistingAnnotation(markdown: String, range: Range<String.Index>) -> Bool {
+        let nsMarkdown = markdown as NSString
+        let selectionRange = NSRange(range, in: markdown)
+        let matches = inlineAnnotationRegex.matches(
+            in: markdown,
+            range: NSRange(location: 0, length: nsMarkdown.length)
+        )
+
+        return matches.contains { NSIntersectionRange($0.range, selectionRange).length > 0 }
     }
 
     private static func containsAnnotationMarker(_ text: String) -> Bool {
