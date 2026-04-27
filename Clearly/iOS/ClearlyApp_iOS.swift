@@ -5,13 +5,18 @@ import ClearlyCore
 struct ClearlyApp_iOS: App {
     @State private var vaultSession = VaultSession()
     @State private var tabController = IPadTabController()
+    @State private var expansionState = IOSExpansionState()
 
     var body: some Scene {
         WindowGroup {
             ContentRoot_iOS(tabController: tabController)
                 .environment(vaultSession)
+                .environment(expansionState)
                 .task {
                     await vaultSession.restoreFromPersistence()
+                }
+                .onChange(of: vaultSession.currentVault?.url) { _, newURL in
+                    expansionState.bind(to: newURL)
                 }
         }
     }

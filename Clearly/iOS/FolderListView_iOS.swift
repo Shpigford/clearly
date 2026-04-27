@@ -1,13 +1,13 @@
 import SwiftUI
 import ClearlyCore
 
-/// Compact-width (iPhone, iPad split-screen narrow) root. Notes-app drill-in
-/// navigation: folders on screen 1, files in the selected folder on screen 2,
-/// editor on screen 3. Mirrors the iPad 3-column layout but compressed into
-/// a NavigationStack because there's only one column of real estate.
+/// Compact-width (iPhone, iPad split-screen narrow) root. Mac-style outline
+/// pattern: a single recursive list with disclosure arrows for folders and
+/// tap-to-open rows for files. Pushing onto the navigation stack is reserved
+/// for the editor — folder navigation happens via inline expand/collapse.
 ///
-/// Uses a `NavigationPath` so the stack can hold both URL-typed folder
-/// destinations and VaultFile-typed editor destinations heterogeneously.
+/// Uses a `NavigationPath` so wiki-link / quick-switcher routing through
+/// `VaultSession.navigationPath` keeps working unchanged.
 struct FolderListView_iOS: View {
     @Environment(VaultSession.self) private var session
     @Environment(\.scenePhase) private var scenePhase
@@ -23,11 +23,9 @@ struct FolderListView_iOS: View {
     @State private var pendingFolderParent: URL?
     @State private var operationError: String?
 
-    /// Matches `IPadRootView.allNotesSentinel` so the two layouts route folder
-    /// selection the same way. Keeping one sentinel URL across the app means
-    /// the selection vocabulary is consistent everywhere we might eventually
-    /// persist it.
-    static let allNotesSentinel = IPadRootView.allNotesSentinel
+    @State private var renameTarget: VaultFile?
+    @State private var renameDraft: String = ""
+    @State private var deleteTarget: VaultFile?
 
     var body: some View {
         @Bindable var session = session
@@ -37,9 +35,6 @@ struct FolderListView_iOS: View {
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar { rootToolbar }
                 .refreshable { session.refresh() }
-                .navigationDestination(for: URL.self) { folderURL in
-                    FileListView_iOS(folderURL: folderURL, allNotesSentinel: Self.allNotesSentinel)
-                }
                 .navigationDestination(for: VaultFile.self) { file in
                     RawTextDetailView_iOS(file: file)
                 }
@@ -83,6 +78,25 @@ struct FolderListView_iOS: View {
         } message: {
             Text("Name this folder. It will be created in \(newFolderLocationDescription).")
         }
+        .alert("Rename note", isPresented: renameAlertBinding) {
+            TextField("Name", text: $renameDraft)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+            Button("Cancel", role: .cancel) { renameTarget = nil }
+            Button("Save") { commitRename() }
+        } message: {
+            Text("Enter a new name (extension preserved).")
+        }
+        .confirmationDialog(
+            deleteTarget.map { "Delete \u{201C}\($0.name)\u{201D}?" } ?? "",
+            isPresented: deleteConfirmBinding,
+            titleVisibility: .visible
+        ) {
+            Button("Delete", role: .destructive) { commitDelete() }
+            Button("Cancel", role: .cancel) { deleteTarget = nil }
+        } message: {
+            Text("This can't be undone from within Clearly.")
+        }
         .alert(
             "Something went wrong",
             isPresented: Binding(
@@ -110,7 +124,7 @@ struct FolderListView_iOS: View {
         .onAppear { rebuildFolderTree() }
     }
 
-    // MARK: - Root folder list
+    // MARK: - Root list
 
     private var rootList: some View {
         Group {
@@ -119,28 +133,17 @@ struct FolderListView_iOS: View {
             } else {
                 List {
                     Section {
-                        NavigationLink(value: Self.allNotesSentinel) {
-                            Label("All Notes", systemImage: "tray.full")
-                                .badge(session.files.count)
-                        }
-                        OutlineGroup(topLevelFolders, children: \.directoryChildren) { node in
-                            NavigationLink(value: node.url) {
-                                Label(node.name, systemImage: "folder")
-                                    .badge(fileCount(in: node.url))
-                            }
-                            .contextMenu {
-                                Button {
-                                    createFile(in: node.url)
-                                } label: {
-                                    Label("New File", systemImage: "doc.badge.plus")
-                                }
-                                Button {
-                                    beginCreateFolder(in: node.url)
-                                } label: {
-                                    Label("New Folder", systemImage: "folder.badge.plus")
-                                }
-                            }
-                        }
+                        SidebarOutline_iOS(
+                            nodes: folderTree,
+                            onSelectFile: { file in
+                                navPath.append(file)
+                                session.markRecent(file)
+                            },
+                            onRenameFile: { file in beginRename(file) },
+                            onDeleteFile: { file in deleteTarget = file },
+                            onCreateFile: { folder in createFile(in: folder) },
+                            onCreateFolder: { folder in beginCreateFolder(in: folder) }
+                        )
                     } header: {
                         Text(session.currentVault?.displayName ?? "Vault")
                     }
@@ -156,6 +159,15 @@ struct FolderListView_iOS: View {
 
     @ToolbarContentBuilder
     private var rootToolbar: some ToolbarContent {
+        ToolbarItem(placement: .topBarTrailing) {
+            Button {
+                createNewNote()
+            } label: {
+                Image(systemName: "square.and.pencil")
+            }
+            .accessibilityLabel("New note")
+            .disabled(session.currentVault == nil)
+        }
         ToolbarItem(placement: .topBarTrailing) {
             Button {
                 beginCreateFolder()
@@ -201,26 +213,14 @@ struct FolderListView_iOS: View {
 
     // MARK: - Folder tree
 
-    private var topLevelFolders: [FileNode] {
-        folderTree.filter { $0.isDirectory }
-    }
-
-    private func fileCount(in folderURL: URL) -> Int {
-        let target = folderURL.standardizedFileURL
-        return session.files.reduce(into: 0) { acc, file in
-            if file.url.deletingLastPathComponent().standardizedFileURL == target {
-                acc += 1
-            }
-        }
-    }
-
     private func rebuildFolderTree() {
         guard let rootURL = session.currentVault?.url else {
             folderTree = []
             return
         }
+        let files = session.files
         Task.detached(priority: .userInitiated) {
-            let tree = FileNode.buildTree(at: rootURL)
+            let tree = FileNode.buildTree(at: rootURL, including: files)
             await MainActor.run {
                 folderTree = tree
             }
@@ -242,10 +242,9 @@ struct FolderListView_iOS: View {
         pendingFolderParent = nil
         Task {
             do {
-                let url = try await session.createFolder(named: name, in: parent)
+                _ = try await session.createFolder(named: name, in: parent)
                 await MainActor.run {
                     rebuildFolderTree()
-                    navPath.append(url)
                 }
             } catch VaultSessionError.readFailed(let msg) {
                 operationError = msg
@@ -270,11 +269,75 @@ struct FolderListView_iOS: View {
         }
     }
 
+    private func createNewNote() {
+        guard session.currentVault != nil else { return }
+        Task {
+            do {
+                let file = try await session.createUntitledNote(in: nil)
+                await MainActor.run {
+                    rebuildFolderTree()
+                    navPath.append(file)
+                    session.markRecent(file)
+                }
+            } catch {
+                operationError = error.localizedDescription
+            }
+        }
+    }
+
     private var newFolderLocationDescription: String {
         if let parent = pendingFolderParent {
             return parent.lastPathComponent
         }
         return session.currentVault?.displayName ?? "the vault"
+    }
+
+    // MARK: - Rename / delete
+
+    private var renameAlertBinding: Binding<Bool> {
+        Binding(
+            get: { renameTarget != nil },
+            set: { if !$0 { renameTarget = nil } }
+        )
+    }
+
+    private var deleteConfirmBinding: Binding<Bool> {
+        Binding(
+            get: { deleteTarget != nil },
+            set: { if !$0 { deleteTarget = nil } }
+        )
+    }
+
+    private func beginRename(_ file: VaultFile) {
+        renameDraft = (file.name as NSString).deletingPathExtension
+        renameTarget = file
+    }
+
+    private func commitRename() {
+        guard let target = renameTarget else { return }
+        let draft = renameDraft
+        renameTarget = nil
+        Task {
+            do {
+                try await session.renameFile(target, to: draft)
+            } catch VaultSessionError.readFailed(let msg) {
+                operationError = msg
+            } catch {
+                operationError = error.localizedDescription
+            }
+        }
+    }
+
+    private func commitDelete() {
+        guard let target = deleteTarget else { return }
+        deleteTarget = nil
+        Task {
+            do {
+                try await session.deleteFile(target)
+            } catch {
+                operationError = error.localizedDescription
+            }
+        }
     }
 
     // MARK: - Welcome

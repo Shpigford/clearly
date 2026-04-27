@@ -247,10 +247,10 @@ public final class IPadTabController {
 
     /// Walk tabs and copy any URL that `IOSDocumentSession` has been moved to
     /// (via its presenter's `handleRemoteMove`) back onto `IPadTab.file`.
-    /// Renames via `FileListView_iOS` flow through `CoordinatedFileIO.move` →
-    /// presenter callback → session updates; without this reconcile the tab
-    /// bar would keep showing the old name until the tab was closed, and
-    /// persistence would store the old URL (restore would then drop the tab).
+    /// Renames flow through `CoordinatedFileIO.move` → presenter callback →
+    /// session updates; without this reconcile the tab bar would keep showing
+    /// the old name until the tab was closed, and persistence would store the
+    /// old URL (restore would then drop the tab).
     ///
     /// Called from the root view whenever `vault.files` changes — that's when
     /// a just-completed rename becomes visible to the UI layer.
