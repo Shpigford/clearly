@@ -17,17 +17,30 @@ struct MacDetailToolbar: ToolbarContent {
     @ObservedObject var backlinksState: BacklinksState
     @Bindable var wikiController: WikiOperationController
     @Binding var showFormatPopover: Bool
+    @AppStorage("editorEngine") private var editorEngineRawValue = EditorEngine.classic.rawValue
+
+    private var editorEngine: EditorEngine {
+        EditorEngine.resolved(rawValue: editorEngineRawValue)
+    }
 
     var body: some ToolbarContent {
-        // Centered: editor / preview mode picker — sits in the toolbar's
-        // principal slot so it visually anchors the middle of the bar.
         ToolbarItem(placement: .principal) {
-            Picker("Mode", selection: $workspace.currentViewMode) {
-                Image(systemName: "pencil").tag(ViewMode.edit)
-                Image(systemName: "eye").tag(ViewMode.preview)
+            if editorEngine == .livePreviewExperimental {
+                HStack(spacing: 6) {
+                    Image(systemName: "sparkles.rectangle.stack")
+                    Text("Live Preview")
+                }
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(.secondary)
+                .help("Live Preview")
+            } else {
+                Picker("Mode", selection: $workspace.currentViewMode) {
+                    Image(systemName: "pencil").tag(ViewMode.edit)
+                    Image(systemName: "eye").tag(ViewMode.preview)
+                }
+                .pickerStyle(.segmented)
+                .help("Editor / Preview (⌘1 / ⌘2)")
             }
-            .pickerStyle(.segmented)
-            .help("Editor / Preview (⌘1 / ⌘2)")
         }
 
         // Trailing: everything else, clustered on the far right.
@@ -52,7 +65,7 @@ struct MacDetailToolbar: ToolbarContent {
             }
 
             Button {
-                NSApp.sendAction(#selector(ClearlyTextView.toggleTodoList(_:)), to: nil, from: nil)
+                performFormattingCommand(.todoList, selector: #selector(ClearlyTextView.toggleTodoList(_:)))
             } label: {
                 Label("Checklist", systemImage: "checklist")
             }
@@ -61,16 +74,16 @@ struct MacDetailToolbar: ToolbarContent {
 
             Menu {
                 Button("Insert Link…") {
-                    NSApp.sendAction(#selector(ClearlyTextView.insertLink(_:)), to: nil, from: nil)
+                    performFormattingCommand(.link, selector: #selector(ClearlyTextView.insertLink(_:)))
                 }
                 Button("Insert Image…") {
-                    NSApp.sendAction(#selector(ClearlyTextView.insertImage(_:)), to: nil, from: nil)
+                    performFormattingCommand(.image, selector: #selector(ClearlyTextView.insertImage(_:)))
                 }
                 Button("Insert Table") {
-                    NSApp.sendAction(#selector(ClearlyTextView.insertMarkdownTable(_:)), to: nil, from: nil)
+                    performFormattingCommand(.table, selector: #selector(ClearlyTextView.insertMarkdownTable(_:)))
                 }
                 Button("Insert Code Block") {
-                    NSApp.sendAction(#selector(ClearlyTextView.insertCodeBlock(_:)), to: nil, from: nil)
+                    performFormattingCommand(.codeBlock, selector: #selector(ClearlyTextView.insertCodeBlock(_:)))
                 }
             } label: {
                 Label("Insert", systemImage: "paperclip")
@@ -183,6 +196,12 @@ struct MacDetailToolbar: ToolbarContent {
 /// crossfade, conflict banner + find/jump overlays at the top, and the
 /// outline panel mounted as an HStack sibling on the trailing edge.
 struct MacDetailColumn: View {
+    private struct PendingWikiNavigation {
+        let fileURL: URL
+        let lineNumber: Int
+        let destinationMode: ViewMode
+    }
+
     @Bindable var workspace: WorkspaceManager
     @ObservedObject var findState: FindState
     @ObservedObject var outlineState: OutlineState
@@ -197,11 +216,17 @@ struct MacDetailColumn: View {
 
     @StateObject private var fileWatcher = FileWatcher()
     @State private var isFullscreen = false
+    @State private var pendingWikiNavigation: PendingWikiNavigation?
 
     @AppStorage("editorFontSize") private var fontSize: Double = 16
     @AppStorage("previewFontFamily") private var previewFontFamily: String = "sanFrancisco"
+    @AppStorage("editorEngine") private var editorEngineRawValue = EditorEngine.classic.rawValue
     @AppStorage("contentWidth") private var contentWidth: String = "default"
     @AppStorage("showLineNumbers") private var showLineNumbers: Bool = false
+
+    private var editorEngine: EditorEngine {
+        EditorEngine.resolved(rawValue: editorEngineRawValue)
+    }
 
     var body: some View {
         HStack(spacing: 0) {
@@ -263,6 +288,12 @@ struct MacDetailColumn: View {
         .animation(Theme.Motion.smooth, value: wikiLog.isVisible)
         .navigationTitle(documentTitle)
         .onAppear {
+            if editorEngineRawValue != editorEngine.rawValue {
+                editorEngineRawValue = editorEngine.rawValue
+            }
+            if editorEngine == .livePreviewExperimental {
+                workspace.currentViewMode = .edit
+            }
             outlineState.parseHeadings(from: workspace.currentFileText)
             backlinksState.update(for: workspace.currentFileURL, using: workspace.activeVaultIndexes)
             isFullscreen = NSApp.mainWindow?.styleMask.contains(.fullScreen) ?? false
@@ -309,15 +340,57 @@ struct MacDetailColumn: View {
             positionSyncID = UUID().uuidString
             findState.dismiss()
             jumpToLineState.dismiss()
+            if editorEngine == .livePreviewExperimental {
+                workspace.currentViewMode = .edit
+            }
             outlineState.parseHeadings(from: workspace.currentFileText)
             backlinksState.update(for: workspace.currentFileURL, using: workspace.activeVaultIndexes)
             setupFileWatcher()
+            applyPendingWikiNavigationIfNeeded()
+        }
+        .onChange(of: workspace.currentViewMode) { oldMode, newMode in
+            if editorEngine == .livePreviewExperimental, newMode != .edit {
+                workspace.currentViewMode = .edit
+                return
+            }
+            if newMode != .edit {
+                jumpToLineState.dismiss()
+            }
+            guard oldMode != newMode,
+                  let text = SelectionBridge.selection(for: positionSyncID) else { return }
+            if oldMode == .edit && newMode == .preview {
+                NotificationCenter.default.post(name: .highlightTextInPreview, object: nil, userInfo: ["text": text])
+            } else if oldMode == .preview && newMode == .edit {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+                    NotificationCenter.default.post(name: .highlightTextInEditor, object: nil, userInfo: ["text": text])
+                }
+            }
         }
         .onChange(of: workspace.currentFileText) { _, text in
+            if editorEngine == .livePreviewExperimental {
+                workspace.contentDidChange()
+            }
+            fileWatcher.updateCurrentText(text)
             outlineState.parseHeadings(from: text)
         }
         .onChange(of: workspace.currentFileURL) { _, _ in
             setupFileWatcher()
+        }
+        .onChange(of: workspace.vaultIndexRevision) { _, _ in
+            backlinksState.update(for: workspace.currentFileURL, using: workspace.activeVaultIndexes)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .navigateWikiLink)) { notification in
+            guard let target = notification.userInfo?["target"] as? String else { return }
+            let heading = notification.userInfo?["heading"] as? String
+            navigateToWikiLink(target: target, heading: heading, destinationMode: .edit)
+        }
+        .onChange(of: editorEngineRawValue) { _, _ in
+            if editorEngineRawValue != editorEngine.rawValue {
+                editorEngineRawValue = editorEngine.rawValue
+            }
+            if editorEngine == .livePreviewExperimental {
+                workspace.currentViewMode = .edit
+            }
         }
         .modifier(FocusedValuesModifier(
             workspace: workspace,
@@ -408,12 +481,21 @@ struct MacDetailColumn: View {
             }
 
             ZStack {
-                editorPane
-                    .opacity(workspace.currentViewMode == .edit ? 1 : 0)
-                    .allowsHitTesting(workspace.currentViewMode == .edit)
-                previewPane
-                    .opacity(workspace.currentViewMode == .preview ? 1 : 0)
-                    .allowsHitTesting(workspace.currentViewMode == .preview)
+                if editorEngine == .classic {
+                    editorPane
+                        .opacity(workspace.currentViewMode == .edit ? 1 : 0)
+                        .allowsHitTesting(workspace.currentViewMode == .edit)
+                    previewPane
+                        .opacity(workspace.currentViewMode == .preview ? 1 : 0)
+                        .allowsHitTesting(workspace.currentViewMode == .preview)
+                } else {
+                    liveEditorPane
+                    if workspace.currentFileText.isEmpty {
+                        LivePreviewEmptyState()
+                            .allowsHitTesting(false)
+                            .padding(.horizontal, 48)
+                    }
+                }
             }
             .layoutPriority(1)
 
@@ -458,6 +540,35 @@ struct MacDetailColumn: View {
         )
     }
 
+    private var liveEditorPane: some View {
+        LiveEditorView(
+            text: $workspace.currentFileText,
+            fontSize: CGFloat(fontSize),
+            fileURL: workspace.currentFileURL,
+            documentID: workspace.activeDocumentID,
+            documentEpoch: workspace.documentEpoch,
+            findState: findState,
+            outlineState: outlineState,
+            onMarkdownLinkClicked: { href in
+                openMarkdownLink(href)
+            },
+            onWikiLinkClicked: { target, heading in
+                navigateToWikiLink(target: target, heading: heading, destinationMode: .edit)
+            },
+            onTagClicked: { tagName in
+                NotificationCenter.default.post(
+                    name: .init("ClearlyFilterByTag"),
+                    object: nil,
+                    userInfo: ["tag": tagName]
+                )
+            },
+            onFlushContent: { [workspace] text in
+                guard text != workspace.currentFileText else { return }
+                workspace.currentFileText = text
+            }
+        )
+    }
+
     private var previewPane: some View {
         let fileURL = workspace.currentFileURL
         _ = workspace.vaultIndexRevision
@@ -484,11 +595,8 @@ struct MacDetailColumn: View {
             onTaskToggle: { [workspace] line, checked in
                 toggleTask(at: line, checked: checked, workspace: workspace)
             },
-            onWikiLinkClicked: { target, _ in
-                // Basic wiki-link navigation: try to open matching file by name.
-                if let url = resolveWikiLink(target) {
-                    workspace.openFile(at: url)
-                }
+            onWikiLinkClicked: { target, heading in
+                navigateToWikiLink(target: target, heading: heading, destinationMode: .preview)
             },
             onTagClicked: { tag in
                 NotificationCenter.default.post(
@@ -615,6 +723,74 @@ struct MacDetailColumn: View {
         }
         return nil
     }
+
+    private func openMarkdownLink(_ href: String) {
+        if let absoluteURL = URL(string: href), absoluteURL.scheme != nil {
+            NSWorkspace.shared.open(absoluteURL)
+            return
+        }
+
+        guard let currentFileURL = workspace.currentFileURL,
+              let resolvedURL = URL(string: href, relativeTo: currentFileURL)?.absoluteURL else {
+            return
+        }
+
+        if resolvedURL.isFileURL, workspace.openFile(at: resolvedURL) {
+            return
+        }
+
+        NSWorkspace.shared.open(resolvedURL)
+    }
+
+    private func navigateToWikiLink(target: String, heading: String?, destinationMode: ViewMode) {
+        for vaultIndex in workspace.activeVaultIndexes {
+            guard let file = vaultIndex.resolveWikiLink(name: target) else { continue }
+
+            let fileURL = vaultIndex.rootURL.appendingPathComponent(file.path)
+            let headingLine = heading.flatMap { vaultIndex.lineNumberForHeading(in: file.id, heading: $0) }
+
+            guard workspace.openFile(at: fileURL) else { return }
+
+            let resolvedMode: ViewMode = editorEngine == .livePreviewExperimental ? .edit : destinationMode
+            if let headingLine {
+                if workspace.currentFileURL == fileURL {
+                    scheduleWikiNavigation(lineNumber: headingLine, destinationMode: resolvedMode)
+                } else {
+                    pendingWikiNavigation = PendingWikiNavigation(
+                        fileURL: fileURL,
+                        lineNumber: headingLine,
+                        destinationMode: resolvedMode
+                    )
+                }
+            } else {
+                workspace.currentViewMode = resolvedMode
+                pendingWikiNavigation = nil
+            }
+            return
+        }
+    }
+
+    private func applyPendingWikiNavigationIfNeeded() {
+        guard let pendingWikiNavigation,
+              workspace.currentFileURL == pendingWikiNavigation.fileURL else { return }
+        scheduleWikiNavigation(
+            lineNumber: pendingWikiNavigation.lineNumber,
+            destinationMode: pendingWikiNavigation.destinationMode
+        )
+        self.pendingWikiNavigation = nil
+    }
+
+    private func scheduleWikiNavigation(lineNumber: Int, destinationMode: ViewMode) {
+        workspace.currentViewMode = destinationMode
+        let notificationName: Notification.Name = destinationMode == .preview ? .scrollPreviewToLine : .scrollEditorToLine
+        DispatchQueue.main.async {
+            NotificationCenter.default.post(
+                name: notificationName,
+                object: nil,
+                userInfo: ["line": lineNumber]
+            )
+        }
+    }
 }
 
 /// Extracted modifier so MacDetailColumn.body stays inside SwiftUI's
@@ -640,5 +816,29 @@ private struct WikiNotificationObserversModifier: ViewModifier {
                     wikiLog.toggle(vaultRoot: workspace.activeLocation?.url)
                 }
             }
+    }
+}
+
+private struct LivePreviewEmptyState: View {
+    var body: some View {
+        VStack(spacing: 12) {
+            Image(systemName: "sparkles.rectangle.stack")
+                .font(.system(size: 28, weight: .medium))
+                .foregroundStyle(.secondary)
+
+            Text("Live Preview is active")
+                .font(.system(size: 18, weight: .semibold))
+
+            Text("Type or open a markdown note to test it. The active line stays editable as raw markdown, and completed constructs render once the caret moves away.")
+                .font(.system(size: 13))
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: 420)
+
+            Text("Try: `# Heading`, `**bold**`, `- [ ] task`")
+                .font(.system(size: 12, weight: .medium, design: .monospaced))
+                .foregroundStyle(.tertiary)
+        }
+        .padding(.vertical, 24)
     }
 }

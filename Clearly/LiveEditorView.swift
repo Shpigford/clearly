@@ -2,6 +2,7 @@ import AppKit
 import Combine
 import SwiftUI
 import WebKit
+import ClearlyCore
 
 /// WKWebView subclass that re-focuses CodeMirror when macOS routes
 /// first-responder to this view (e.g. after clicking a toolbar button).

@@ -32,7 +32,7 @@ enum EditorEngine: String, CaseIterable, Identifiable {
     }
 
     var isAvailable: Bool {
-        self == .classic
+        true
     }
 }
 

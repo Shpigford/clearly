@@ -18,40 +18,40 @@ struct MacFormatPopover: View {
             // Row 1 — Heading level (cycles) + inline emphasis
             HStack(spacing: 8) {
                 styleButton(systemImage: "number", help: "Cycle heading (⇧⌘H)") {
-                    send(#selector(ClearlyTextView.insertHeading(_:)))
+                    send(.heading, #selector(ClearlyTextView.insertHeading(_:)))
                 }
                 Divider().frame(height: 22)
                 styleButton(systemImage: "bold", help: "Bold (⌘B)") {
-                    send(#selector(ClearlyTextView.toggleBold(_:)))
+                    send(.bold, #selector(ClearlyTextView.toggleBold(_:)))
                 }
                 styleButton(systemImage: "italic", help: "Italic (⌘I)") {
-                    send(#selector(ClearlyTextView.toggleItalic(_:)))
+                    send(.italic, #selector(ClearlyTextView.toggleItalic(_:)))
                 }
                 styleButton(systemImage: "strikethrough", help: "Strikethrough (⇧⌘X)") {
-                    send(#selector(ClearlyTextView.toggleStrikethrough(_:)))
+                    send(.strikethrough, #selector(ClearlyTextView.toggleStrikethrough(_:)))
                 }
                 styleButton(systemImage: "chevron.left.forwardslash.chevron.right", help: "Inline code") {
-                    send(#selector(ClearlyTextView.toggleInlineCode(_:)))
+                    send(.inlineCode, #selector(ClearlyTextView.toggleInlineCode(_:)))
                 }
             }
 
             // Row 2 — Lists + structural blocks
             HStack(spacing: 8) {
                 styleButton(systemImage: "list.bullet", help: "Bulleted list") {
-                    send(#selector(ClearlyTextView.toggleBulletList(_:)))
+                    send(.bulletList, #selector(ClearlyTextView.toggleBulletList(_:)))
                 }
                 styleButton(systemImage: "list.number", help: "Numbered list") {
-                    send(#selector(ClearlyTextView.toggleNumberedList(_:)))
+                    send(.numberedList, #selector(ClearlyTextView.toggleNumberedList(_:)))
                 }
                 styleButton(systemImage: "checklist", help: "Checklist") {
-                    send(#selector(ClearlyTextView.toggleTodoList(_:)))
+                    send(.todoList, #selector(ClearlyTextView.toggleTodoList(_:)))
                 }
                 Divider().frame(height: 22)
                 styleButton(systemImage: "text.quote", help: "Quote") {
-                    send(#selector(ClearlyTextView.toggleBlockquote(_:)))
+                    send(.blockquote, #selector(ClearlyTextView.toggleBlockquote(_:)))
                 }
                 styleButton(systemImage: "tablecells", help: "Table") {
-                    send(#selector(ClearlyTextView.insertMarkdownTable(_:)))
+                    send(.table, #selector(ClearlyTextView.insertMarkdownTable(_:)))
                 }
             }
         }
@@ -68,8 +68,8 @@ struct MacFormatPopover: View {
         .help(help)
     }
 
-    private func send(_ selector: Selector) {
-        NSApp.sendAction(selector, to: nil, from: nil)
+    private func send(_ command: LiveEditorCommand, _ selector: Selector) {
+        performFormattingCommand(command, selector: selector)
         // Keep popover open so users can apply multiple formats in sequence.
     }
 }
