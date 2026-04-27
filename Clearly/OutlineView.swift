@@ -3,6 +3,7 @@ import ClearlyCore
 
 struct OutlineView: View {
     @ObservedObject var outlineState: OutlineState
+    var isEditorVisible: Bool
     @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
@@ -37,8 +38,10 @@ struct OutlineView: View {
                     LazyVStack(alignment: .leading, spacing: 0) {
                         ForEach(outlineState.headings) { heading in
                             HeadingRow(heading: heading) {
-                                outlineState.scrollToRange?(heading.range)
-                                outlineState.scrollToPreviewAnchor?(heading.previewAnchor)
+                                if isEditorVisible {
+                                    outlineState.scrollToRange?(heading.range)
+                                }
+                                outlineState.scrollToHeading?(heading)
                             }
                         }
                     }
