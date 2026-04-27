@@ -4,7 +4,9 @@ import Foundation
 /// user's existing auth. Checks well-known install paths first (faster than
 /// shelling out), then falls back to `which` via PATH. Sandboxed Mac builds
 /// still see the path because the Mach-O loader resolves absolute paths, not
-/// PATH entries.
+/// PATH entries — but the home prefix has to be read from OpenDirectory
+/// (`getpwuid`) instead of `NSHomeDirectory()`, which under sandbox returns
+/// the container path (`~/Library/Containers/<bundle-id>/Data`).
 enum AgentDiscovery {
 
     /// Candidate for a concrete runner. Absolute path is guaranteed so the
@@ -42,7 +44,7 @@ enum AgentDiscovery {
     // MARK: - Private
 
     private static var claudeCandidatePaths: [String] {
-        let home = NSHomeDirectory()
+        let home = realUserHome() ?? NSHomeDirectory()
         return [
             "\(home)/.local/bin/claude",
             "\(home)/Library/Application Support/com.anthropic.claude/bin/claude",
@@ -52,13 +54,23 @@ enum AgentDiscovery {
     }
 
     private static var codexCandidatePaths: [String] {
-        let home = NSHomeDirectory()
+        let home = realUserHome() ?? NSHomeDirectory()
         return [
             "\(home)/.codex/bin/codex",
             "\(home)/.local/bin/codex",
             "/usr/local/bin/codex",
             "/opt/homebrew/bin/codex",
         ]
+    }
+
+    /// Resolve the user's REAL home directory, bypassing the sandbox redirect.
+    /// `NSHomeDirectory()` returns the container path under App Sandbox; we
+    /// need the original `/Users/<name>` so candidate-path lookups for
+    /// user-installed CLIs (`~/.local/bin/claude`) succeed. Mirrors the same
+    /// helper in `ClaudeCLIAgentRunner`.
+    private static func realUserHome() -> String? {
+        guard let pw = getpwuid(geteuid()), let dir = pw.pointee.pw_dir else { return nil }
+        return String(cString: dir)
     }
 
     private static func firstExisting(at paths: [String]) -> URL? {

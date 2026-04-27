@@ -127,6 +127,11 @@ final class WorkspaceManager {
     // MARK: - Init
 
     init() {
+        // Bridge prefs from the v2.5.0 sandbox container to the unsandboxed
+        // standard plist. Must run before any UserDefaults read in this init
+        // or anywhere else in the launch path. See UserDefaultsMigrator.swift.
+        UserDefaultsMigrator.runIfNeeded()
+
         isSidebarVisible = UserDefaults.standard.bool(forKey: Self.sidebarVisibleKey)
         showHiddenFiles = UserDefaults.standard.bool(forKey: Self.showHiddenFilesKey)
         folderIcons = UserDefaults.standard.dictionary(forKey: Self.folderIconsKey) as? [String: String] ?? [:]
