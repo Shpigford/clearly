@@ -3,6 +3,20 @@
   <channel>
     <title>Clearly</title>
     <item>
+      <title>Version 2.6.1</title>
+      <sparkle:version>2.6.1</sparkle:version>
+      <sparkle:shortVersionString>2.6.1</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+      <pubDate>Mon, 27 Apr 2026 14:45:15 +0000</pubDate>
+      <description><![CDATA[<ul><li>Settings and preferences now carry over correctly when upgrading from v2.5.0</li></ul>]]></description>
+      <enclosure
+        url="https://github.com/Shpigford/clearly/releases/download/v2.6.1/Clearly.dmg"
+        sparkle:edSignature="U6NmtGKlhwfjheWmi3Ayrgg8Th3GeeycEOJPbm8Ly5BpRVt1/NhjAAmVcO6NeCIXCTFaXfrmahKnNg2YRRFaAg=="
+        length="21260703"
+        type="application/octet-stream"
+      />
+    </item>
+    <item>
       <title>Version 2.5.0</title>
       <sparkle:version>2.5.0</sparkle:version>
       <sparkle:shortVersionString>2.5.0</sparkle:shortVersionString>

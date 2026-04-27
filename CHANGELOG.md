@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+## [2.6.1] - 2026-04-27
+- Settings and preferences now carry over correctly when upgrading from v2.5.0
+
 ## [2.6.0] - 2026-04-27
 - LLM Wiki vaults — turn any folder into an AI-curated knowledge base with AGENTS.md, index.md, and log.md
 - Capture (⌃⌘I): paste a URL or text and the agent files it as new notes
