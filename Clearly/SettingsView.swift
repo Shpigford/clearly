@@ -111,9 +111,6 @@ struct SettingsView: View {
                         launchAtLogin = SMAppService.mainApp.status == .enabled
                     }
                 }
-            Text("Live Preview is experimental. Switch back to Classic if you encounter any issues.")
-                .font(.caption)
-                .foregroundStyle(.tertiary)
         }
         .formStyle(.grouped)
         .onAppear {
