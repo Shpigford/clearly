@@ -6,13 +6,19 @@ public enum MarkdownRenderer {
     private static let escapedMathDollarToken = "\u{E101}"
     private static let escapedMathPaddingToken = "\u{E102}"
 
-    public static func renderHTML(_ markdown: String, appLinkURLs: Bool = false, includeFrontmatter: Bool = true) -> String {
+    public static func renderHTML(
+        _ markdown: String,
+        appLinkURLs: Bool = false,
+        includeFrontmatter: Bool = true,
+        renderAnnotations: Bool = false
+    ) -> String {
         guard !markdown.isEmpty else { return "" }
 
         let frontmatter = FrontmatterSupport.extract(from: markdown)
 
         let rawBody = frontmatter?.body ?? markdown
-        let (body, codeFilenames) = extractCodeFilenames(rawBody)
+        let annotationProjectedBody = renderAnnotations ? ChangedownAnnotationProjection.project(rawBody).markdown : rawBody
+        let (body, codeFilenames) = extractCodeFilenames(annotationProjectedBody)
         let protectedBody = protectEscapedMathDelimiters(in: body)
         let len = protectedBody.utf8.count
         let options = Int32(CMARK_OPT_UNSAFE | CMARK_OPT_FOOTNOTES | CMARK_OPT_STRIKETHROUGH_DOUBLE_TILDE | CMARK_OPT_SOURCEPOS | CMARK_OPT_TABLE_PREFER_STYLE_ATTRIBUTES)

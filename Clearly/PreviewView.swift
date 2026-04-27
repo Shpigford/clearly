@@ -8,6 +8,8 @@ import Combine
 /// This intercepts mouseDown in the top strip and calls `performDrag` instead.
 private final class DraggableWKWebView: WKWebView {
     static let dragHeight: CGFloat = 28
+    var annotationMenuAction: (() -> Void)?
+    private var annotationMenuInstaller: WebAnnotationContextMenuInstaller?
 
     override func mouseDown(with event: NSEvent) {
         let local = convert(event.locationInWindow, from: nil)
@@ -17,6 +19,12 @@ private final class DraggableWKWebView: WKWebView {
             return
         }
         super.mouseDown(with: event)
+    }
+
+    func installAnnotationMenu() {
+        annotationMenuInstaller = WebAnnotationContextMenuInstaller(webView: self) { [weak self] in
+            self?.annotationMenuAction?()
+        }
     }
 }
 
@@ -30,6 +38,7 @@ struct PreviewView: NSViewRepresentable {
     var findState: FindState?
     var outlineState: OutlineState?
     var onTaskToggle: ((Int, Bool) -> Void)?
+    var onAnnotationAdded: ((String) -> Void)?
     var onWikiLinkClicked: ((String, String?) -> Void)?
     var onTagClicked: ((String) -> Void)?
     var wikiFileNames: Set<String>?
@@ -67,13 +76,20 @@ struct PreviewView: NSViewRepresentable {
         config.userContentController.addUserScript(Self.copyButtonUserScript())
         let webView = DraggableWKWebView(frame: .zero, configuration: config)
         webView.navigationDelegate = context.coordinator
+        webView.annotationMenuAction = {
+            NotificationCenter.default.post(name: .previewAnnotationCommand, object: nil)
+        }
+        webView.installAnnotationMenu()
         webView.underPageBackgroundColor = Theme.backgroundColor
         webView.alphaValue = 0 // hidden until content loads
+        context.coordinator.webView = webView
         context.coordinator.fileURL = fileURL
         context.coordinator.positionSyncID = positionSyncID
+        context.coordinator.markdown = markdown
         context.coordinator.findState = findState
         context.coordinator.outlineState = outlineState
         context.coordinator.onTaskToggle = onTaskToggle
+        context.coordinator.onAnnotationAdded = onAnnotationAdded
         context.coordinator.onWikiLinkClicked = onWikiLinkClicked
         context.coordinator.onTagClicked = onTagClicked
         let coordinator = context.coordinator
@@ -89,6 +105,9 @@ struct PreviewView: NSViewRepresentable {
         outlineState?.scrollToHeading = { [weak coordinator = context.coordinator] heading in
             coordinator?.scrollToHeading(heading)
         }
+        outlineState?.scrollToPreviewAnchor = { [weak coordinator = context.coordinator] anchor in
+            coordinator?.scrollToAnchor(anchor)
+        }
         NotificationCenter.default.addObserver(
             context.coordinator,
             selector: #selector(Coordinator.handleScrollToLine(_:)),
@@ -101,6 +120,12 @@ struct PreviewView: NSViewRepresentable {
             name: .highlightTextInPreview,
             object: nil
         )
+        NotificationCenter.default.addObserver(
+            context.coordinator,
+            selector: #selector(Coordinator.handleAddAnnotation(_:)),
+            name: .previewAnnotationCommand,
+            object: nil
+        )
 
         loadHTML(in: webView, context: context)
         return webView
@@ -111,6 +136,8 @@ struct PreviewView: NSViewRepresentable {
         webView.underPageBackgroundColor = Theme.backgroundColor
         context.coordinator.fileURL = fileURL
         context.coordinator.positionSyncID = positionSyncID
+        context.coordinator.markdown = markdown
+        context.coordinator.onAnnotationAdded = onAnnotationAdded
 
         // Detect mode change: restore scroll position when becoming visible
         if mode == .preview && context.coordinator.lastMode != .preview {
@@ -152,7 +179,12 @@ struct PreviewView: NSViewRepresentable {
     private func loadHTML(in webView: WKWebView, context: Context) {
         context.coordinator.lastContentKey = contentKey
         context.coordinator.isLoadingContent = true
-        let rawBody = MarkdownRenderer.renderHTML(markdown, appLinkURLs: true, includeFrontmatter: !hideFrontmatterInPreview)
+        let rawBody = MarkdownRenderer.renderHTML(
+            markdown,
+            appLinkURLs: true,
+            includeFrontmatter: !hideFrontmatterInPreview,
+            renderAnnotations: true
+        )
         let htmlBody = LocalImageSupport.resolveImageSources(in: rawBody, relativeTo: fileURL)
         let wikiFilesJSON: String = {
             guard let names = wikiFileNames, !names.isEmpty else { return "[]" }
@@ -180,10 +212,13 @@ struct PreviewView: NSViewRepresentable {
         document.addEventListener('selectionchange', function() {
             var sel = window.getSelection();
             var text = sel ? sel.toString() : '';
-            if (text !== _lastSelText) {
-                _lastSelText = text;
-                window.webkit.messageHandlers.selectionCapture.postMessage({ text: text });
+            _lastSelText = text;
+            var rect = null;
+            if (sel && sel.rangeCount > 0 && text.length > 0) {
+                var bounds = sel.getRangeAt(0).getBoundingClientRect();
+                rect = { x: bounds.left, y: bounds.top, width: bounds.width, height: bounds.height };
             }
+            window.webkit.messageHandlers.selectionCapture.postMessage({ text: text, rect: rect });
         });
         """
         let html = """
@@ -324,6 +359,53 @@ struct PreviewView: NSViewRepresentable {
                 if (popover) { popover.remove(); popover = null; }
             });
         });
+        // Annotation click popovers
+        document.querySelectorAll('.cd-annotation').forEach(function(annotation) {
+            annotation.addEventListener('click', function(e) {
+                e.preventDefault();
+                e.stopPropagation();
+                document.querySelectorAll('.annotation-popover').forEach(function(existing) {
+                    existing.remove();
+                });
+
+                var popover = document.createElement('div');
+                popover.className = 'annotation-popover';
+
+                var title = document.createElement('div');
+                title.className = 'annotation-popover-title';
+                title.textContent = annotation.getAttribute('data-change-id') || 'Annotation';
+                popover.appendChild(title);
+
+                var metaParts = [];
+                var author = annotation.getAttribute('data-author');
+                var date = annotation.getAttribute('data-date');
+                var status = annotation.getAttribute('data-status');
+                if (author) metaParts.push(author);
+                if (date) metaParts.push(date);
+                if (status) metaParts.push(status);
+                if (metaParts.length) {
+                    var meta = document.createElement('div');
+                    meta.className = 'annotation-popover-meta';
+                    meta.textContent = metaParts.join(' • ');
+                    popover.appendChild(meta);
+                }
+
+                var comment = document.createElement('div');
+                comment.textContent = annotation.getAttribute('data-comment') || 'No note text.';
+                popover.appendChild(comment);
+
+                document.body.appendChild(popover);
+                var rect = annotation.getBoundingClientRect();
+                popover.style.top = (rect.bottom + window.scrollY + 8) + 'px';
+                popover.style.left = Math.max(8, Math.min(rect.left, window.innerWidth - 420)) + 'px';
+            });
+        });
+        document.addEventListener('click', function(e) {
+            if (e.target.closest && e.target.closest('.annotation-popover, .cd-annotation')) return;
+            document.querySelectorAll('.annotation-popover').forEach(function(existing) {
+                existing.remove();
+            });
+        });
         // Wiki-link broken detection
         (function() {
             var knownFiles = new Set(\(wikiFilesJSON));
@@ -353,19 +435,44 @@ struct PreviewView: NSViewRepresentable {
         var didInitialLoad = false
         var fileURL: URL?
         var positionSyncID = ""
+        var markdown = ""
         var findState: FindState?
         var outlineState: OutlineState?
         var onTaskToggle: ((Int, Bool) -> Void)?
+        var onAnnotationAdded: ((String) -> Void)?
         var onWikiLinkClicked: ((String, String?) -> Void)?
         var onTagClicked: ((String) -> Void)?
         var skipNextReload = false
         var isLoadingContent = false
         var pendingScrollLine: Int?
         var pendingHighlightText: String?
+        var selectionScreenRect: NSRect?
         weak var webView: WKWebView?
         private var findCancellables = Set<AnyCancellable>()
         private var matchCount = 0
         private var currentMatchIdx = 0
+
+        @objc func handleAddAnnotation(_ notification: Notification) {
+            guard lastMode == .preview else { return }
+            guard let selectedText = SelectionBridge.selection(for: positionSyncID) else {
+                AnnotationPrompt.present(error: PreviewAnnotationMapper.Error.emptySelection)
+                return
+            }
+            guard let comment = AnnotationPrompt.requestComment(anchorScreenRect: selectionScreenRect) else { return }
+
+            do {
+                let range = try PreviewAnnotationMapper.sourceRange(for: selectedText, in: markdown)
+                let updated = try ChangedownAnnotationWriter.addAnnotation(
+                    to: markdown,
+                    range: range,
+                    comment: comment,
+                    author: AnnotationAuthor.current
+                )
+                onAnnotationAdded?(updated)
+            } catch {
+                AnnotationPrompt.present(error: error)
+            }
+        }
 
         func observeFindState(_ state: FindState, webView: WKWebView) {
             self.webView = webView
@@ -460,6 +567,42 @@ struct PreviewView: NSViewRepresentable {
                     if (dist < bestDist) { best = headings[i]; bestDist = dist; }
                 }
                 if (best) flash(best);
+            })();
+            """
+            webView?.evaluateJavaScript(js)
+        }
+
+        func scrollToAnchor(_ anchor: PreviewSourceAnchor) {
+            let js = """
+            (function() {
+                var targetLine = \(anchor.startLine);
+                var targetColumn = \(anchor.startColumn);
+                var candidates = Array.from(document.querySelectorAll('[data-sourcepos]'));
+                var best = null;
+                for (var i = 0; i < candidates.length; i++) {
+                    var sp = candidates[i].getAttribute('data-sourcepos');
+                    if (!sp) continue;
+                    var match = /^(\\d+):(\\d+)-(\\d+):(\\d+)$/.exec(sp);
+                    if (!match) continue;
+                    var startLine = parseInt(match[1], 10);
+                    var startColumn = parseInt(match[2], 10);
+                    var endLine = parseInt(match[3], 10);
+                    if (startLine <= targetLine && endLine >= targetLine) {
+                        best = candidates[i];
+                        break;
+                    }
+                    if (startLine < targetLine || (startLine === targetLine && startColumn <= targetColumn)) {
+                        best = candidates[i];
+                    } else if (best === null) {
+                        best = candidates[i];
+                        break;
+                    } else {
+                        break;
+                    }
+                }
+                if (best) {
+                    best.scrollIntoView({behavior:'smooth', block:'center'});
+                }
             })();
             """
             webView?.evaluateJavaScript(js)
@@ -788,6 +931,7 @@ struct PreviewView: NSViewRepresentable {
                let body = message.body as? [String: Any],
                let text = body["text"] as? String {
                 SelectionBridge.setSelection(text, for: self.positionSyncID)
+                selectionScreenRect = screenRect(from: body["rect"])
                 return
             }
 
@@ -797,6 +941,26 @@ struct PreviewView: NSViewRepresentable {
 
             scrollFraction = fraction
             ScrollBridge.setFraction(fraction, for: self.positionSyncID)
+        }
+
+        private func screenRect(from value: Any?) -> NSRect? {
+            guard let webView,
+                  let rect = value as? [String: Any],
+                  let x = (rect["x"] as? NSNumber)?.doubleValue,
+                  let y = (rect["y"] as? NSNumber)?.doubleValue,
+                  let width = (rect["width"] as? NSNumber)?.doubleValue,
+                  let height = (rect["height"] as? NSNumber)?.doubleValue,
+                  width > 0,
+                  height > 0 else { return nil }
+
+            let viewRect = NSRect(
+                x: x,
+                y: webView.isFlipped ? y : Double(webView.bounds.height) - y - height,
+                width: width,
+                height: height
+            )
+            guard let window = webView.window else { return nil }
+            return window.convertToScreen(webView.convert(viewRect, to: nil))
         }
     }
 

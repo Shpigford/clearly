@@ -35,6 +35,9 @@ public struct PreviewPalette: Sendable {
     public var caption: String
     public var hrBorder: String
     public var markBg: String
+    public var annotationBg: String
+    public var annotationBorder: String
+    public var annotationHoverBg: String
     public var calloutDefault: String
     public var calloutTip: String
     public var calloutImportant: String
@@ -85,6 +88,9 @@ public struct PreviewPalette: Sendable {
         caption: String,
         hrBorder: String,
         markBg: String,
+        annotationBg: String,
+        annotationBorder: String,
+        annotationHoverBg: String,
         calloutDefault: String,
         calloutTip: String,
         calloutImportant: String,
@@ -134,6 +140,9 @@ public struct PreviewPalette: Sendable {
         self.caption = caption
         self.hrBorder = hrBorder
         self.markBg = markBg
+        self.annotationBg = annotationBg
+        self.annotationBorder = annotationBorder
+        self.annotationHoverBg = annotationHoverBg
         self.calloutDefault = calloutDefault
         self.calloutTip = calloutTip
         self.calloutImportant = calloutImportant
@@ -186,6 +195,9 @@ public struct PreviewPalette: Sendable {
         caption: "#86868B",
         hrBorder: "rgba(0, 0, 0, 0.1)",
         markBg: "rgba(255, 212, 0, 0.3)",
+        annotationBg: "rgba(255, 212, 0, 0.24)",
+        annotationBorder: "rgba(191, 142, 0, 0.45)",
+        annotationHoverBg: "rgba(255, 212, 0, 0.36)",
         calloutDefault: "rgba(0, 122, 255, 0.1)",
         calloutTip: "rgba(52, 199, 89, 0.1)",
         calloutImportant: "rgba(175, 82, 222, 0.1)",
@@ -238,6 +250,9 @@ public struct PreviewPalette: Sendable {
         caption: "#AEAEB2",
         hrBorder: "rgba(255, 255, 255, 0.1)",
         markBg: "rgba(255, 214, 0, 0.25)",
+        annotationBg: "rgba(255, 214, 0, 0.2)",
+        annotationBorder: "rgba(255, 214, 0, 0.45)",
+        annotationHoverBg: "rgba(255, 214, 0, 0.3)",
         calloutDefault: "rgba(10, 132, 255, 0.14)",
         calloutTip: "rgba(48, 209, 88, 0.14)",
         calloutImportant: "rgba(191, 90, 242, 0.14)",
@@ -264,6 +279,8 @@ public struct PreviewPalette: Sendable {
         var p = PreviewPalette.light
         p.tagBg = "rgba(58, 110, 165, 0.06)"
         p.markBg = "rgba(255, 212, 0, 0.4)"
+        p.annotationBg = "rgba(255, 212, 0, 0.18)"
+        p.annotationHoverBg = "rgba(255, 212, 0, 0.18)"
         return p
     }()
 }
@@ -778,6 +795,19 @@ public enum PreviewCSS {
             padding: 0.1em 0.2em;
             border-radius: 3px;
         }
+
+        .cd-annotation {
+            background: var(--c-annotation-bg);
+            border-bottom: 1px solid var(--c-annotation-border);
+            border-radius: 3px;
+            cursor: help;
+            padding: 0.05em 0.15em;
+        }
+
+        .cd-annotation:hover {
+            background: var(--c-annotation-hover-bg);
+        }
+
         /* Superscript/Subscript */
         sup, sub {
             font-size: 0.75em;
@@ -894,8 +924,9 @@ public enum PreviewCSS {
             border-radius: 8px;
         }
 
-        /* Footnote popovers */
-        .footnote-popover {
+        /* Footnote and annotation popovers */
+        .footnote-popover,
+        .annotation-popover {
             position: absolute;
             max-width: 400px;
             padding: 14px 18px;
@@ -907,6 +938,18 @@ public enum PreviewCSS {
             font-size: 0.9em;
             z-index: 100;
             line-height: 1.5;
+        }
+        .annotation-popover {
+            cursor: default;
+        }
+        .annotation-popover-title {
+            font-weight: 650;
+            margin-bottom: 0.35em;
+        }
+        .annotation-popover-meta {
+            color: var(--c-caption);
+            font-size: 0.85em;
+            margin-bottom: 0.6em;
         }
         .footnote-popover p { margin-bottom: 0.5em; }
         .footnote-popover p:last-child { margin-bottom: 0; }
@@ -1057,6 +1100,9 @@ public enum PreviewCSS {
             ("--c-caption", palette.caption),
             ("--c-hr-border", palette.hrBorder),
             ("--c-mark-bg", palette.markBg),
+            ("--c-annotation-bg", palette.annotationBg),
+            ("--c-annotation-border", palette.annotationBorder),
+            ("--c-annotation-hover-bg", palette.annotationHoverBg),
             ("--c-callout-default", palette.calloutDefault),
             ("--c-callout-tip", palette.calloutTip),
             ("--c-callout-important", palette.calloutImportant),

@@ -13,6 +13,7 @@ extension Notification.Name {
     static let navigateWikiLink = Notification.Name("navigateWikiLink")
     static let highlightTextInEditor = Notification.Name("highlightTextInEditor")
     static let highlightTextInPreview = Notification.Name("highlightTextInPreview")
+    static let toggleCommentsPanel = Notification.Name("ClearlyToggleComments")
 
     // Wiki (LLM) commands — published by Wiki menu items and observed by the
     // WikiAgentCoordinator.

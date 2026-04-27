@@ -25,6 +25,8 @@ public final class OutlineState: ObservableObject {
     public var scrollToRange: ((NSRange) -> Void)?
     /// Set by PreviewView coordinator, called when user clicks a heading (preview scroll)
     public var scrollToHeading: ((HeadingItem) -> Void)?
+    /// Set by PreviewView coordinator, called when non-heading UI needs preview scroll.
+    public var scrollToPreviewAnchor: ((PreviewSourceAnchor) -> Void)?
 
     private static let atxHeadingRegex = try! NSRegularExpression(
         pattern: "^(#{1,6})\\s+(.+)$",

@@ -54,6 +54,17 @@ struct MacFormatPopover: View {
                     send(.table, #selector(ClearlyTextView.insertMarkdownTable(_:)))
                 }
             }
+
+            Divider()
+
+            Button {
+                performAddAnnotationCommand()
+            } label: {
+                Label("Add Annotation", systemImage: "plus.bubble")
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .buttonStyle(.borderless)
+            .help("Add annotation to selected text")
         }
         .padding(16)
         .frame(width: 300)

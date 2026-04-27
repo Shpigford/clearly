@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 
 enum EditorEngine: String, CaseIterable, Identifiable {
@@ -54,6 +55,7 @@ enum LiveEditorCommand: String {
     case inlineMath
     case mathBlock
     case pageBreak
+    case addAnnotation
 }
 
 extension Notification.Name {
@@ -71,5 +73,14 @@ enum LiveEditorCommandDispatcher {
             object: nil,
             userInfo: ["command": command.rawValue]
         )
+    }
+}
+
+@MainActor
+func performLiveEditorOnlyCommand(_ command: LiveEditorCommand) {
+    if LiveEditorCommandDispatcher.isActive {
+        LiveEditorCommandDispatcher.send(command)
+    } else {
+        NSSound.beep()
     }
 }

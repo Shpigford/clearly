@@ -907,6 +907,27 @@ function insertSnippet(view: EditorView, snippet: string, selectedRangeFrom?: nu
   view.focus();
 }
 
+function requestAddAnnotation(view: EditorView) {
+  const selection = view.state.selection.main;
+  const fromRect = view.coordsAtPos(selection.from);
+  const toRect = view.coordsAtPos(selection.to);
+  const selectionRect = fromRect && toRect
+    ? {
+        x: Math.min(fromRect.left, toRect.left),
+        y: Math.min(fromRect.top, toRect.top),
+        width: Math.max(1, Math.abs(toRect.right - fromRect.left)),
+        height: Math.max(fromRect.bottom, toRect.bottom) - Math.min(fromRect.top, toRect.top)
+      }
+    : null;
+  postMessage({
+    type: "addAnnotationRequested",
+    markdown: view.state.doc.toString(),
+    from: selection.from,
+    to: selection.to,
+    selectionRect
+  });
+}
+
 function applyFormattingCommand(command: string) {
   if (!editor) {
     return;
@@ -1006,6 +1027,10 @@ function applyFormattingCommand(command: string) {
     case "pageBreak":
       insertSnippet(editor, "\n\n<div class=\"page-break\"></div>\n\n");
       break;
+    case "addAnnotation": {
+      requestAddAnnotation(editor);
+      break;
+    }
     case "findNext":
       findNext(editor);
       updateFindStatus(editor.state);
@@ -1071,6 +1096,13 @@ function buildDecorations(state: EditorState): DecorationSet {
     decorateWrapped(/(?<!!)\[([^\]]+)\]\(([^)]+)\)/g, "cm-live-link", (match) => ({
       "data-live-link-kind": "markdown",
       "data-live-href": match[2] ?? ""
+    }));
+    decorateWrapped(/\{==(.+?)==\}\{>>\s*(.+?)\s*<<\}\[\^(cn-[A-Za-z0-9.-]+)\]/g, "cm-live-annotation", (match) => ({
+      "data-live-annotation-id": match[3] ?? "",
+      "data-live-annotation-comment": match[2] ?? ""
+    }));
+    decorateWrapped(/\{==(.+?)==\}\[\^(cn-[A-Za-z0-9.-]+)\]/g, "cm-live-annotation", (match) => ({
+      "data-live-annotation-id": match[2] ?? ""
     }));
     decorateWrapped(/\[\[([^\]#]+(?:#[^\]]+)?)\]\]/g, "cm-live-wiki-link", (match) => {
       const raw = match[1] ?? "";
@@ -1499,6 +1531,12 @@ function livePreviewTheme(appearance: "light" | "dark", fontSize: number): Exten
       borderRadius: "3px",
       padding: "1px 5px",
       fontSize: "0.9em"
+    },
+    ".cm-live-annotation": {
+      backgroundColor: isDark ? "rgba(255, 214, 0, 0.2)" : "rgba(255, 212, 0, 0.24)",
+      borderBottom: `1px solid ${isDark ? "rgba(255, 214, 0, 0.45)" : "rgba(191, 142, 0, 0.45)"}`,
+      borderRadius: "3px",
+      padding: "0.05em 0.15em"
     },
     ".cm-live-prefix": {
       display: "inline-flex",

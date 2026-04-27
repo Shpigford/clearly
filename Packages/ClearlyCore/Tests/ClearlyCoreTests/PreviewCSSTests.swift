@@ -16,6 +16,7 @@ final class PreviewCSSTests: XCTestCase {
             "--c-blockquote-bg", "--c-blockquote-fg",
             "--c-border-subtle", "--c-border-strong", "--c-th-hover-bg", "--c-row-hover-bg",
             "--c-caption", "--c-hr-border", "--c-mark-bg",
+            "--c-annotation-bg", "--c-annotation-border", "--c-annotation-hover-bg",
             "--c-callout-default", "--c-callout-tip", "--c-callout-important",
             "--c-callout-warning", "--c-callout-caution", "--c-callout-abstract",
             "--c-callout-example", "--c-callout-quote", "--c-callout-question",
