@@ -30,32 +30,41 @@ public enum WikiOperationApplier {
     ) throws {
         try operation.validate()
 
-        try precheck(operation, at: vaultRoot, fileManager: fileManager)
+        let originalStates = try precheck(operation, at: vaultRoot, fileManager: fileManager)
 
         var appliedUndos: [(path: String, undo: () throws -> Void)] = []
 
         do {
             for change in operation.changes {
-                let target = vaultRoot.appendingPathComponent(change.path)
+                let target = try targetURL(for: change.path, vaultRoot: vaultRoot, fileManager: fileManager)
                 switch change {
                 case .create(_, let contents):
-                    try ensureParentDirectoryExists(for: target, fileManager: fileManager)
-                    try writeUTF8(contents, to: target)
+                    let createdDirectories = try ensureParentDirectoryExists(for: target, fileManager: fileManager)
                     appliedUndos.append((change.path, {
-                        try CoordinatedFileIO.delete(at: target)
+                        if fileManager.fileExists(atPath: target.path) {
+                            try CoordinatedFileIO.delete(at: target)
+                        }
+                        try removeCreatedDirectories(createdDirectories, fileManager: fileManager)
                     }))
+                    try writeUTF8(contents, to: target)
 
-                case .modify(_, let before, let after):
+                case .modify(_, _, let after):
+                    guard case .file(let exactBefore)? = originalStates[change.path] else {
+                        throw ApplyError.pathNotFound(change.path)
+                    }
                     try writeUTF8(after, to: target)
                     appliedUndos.append((change.path, {
-                        try writeUTF8(before, to: target)
+                        try writeUTF8(exactBefore, to: target)
                     }))
 
-                case .delete(_, let contents):
+                case .delete:
+                    guard case .file(let exactContents)? = originalStates[change.path] else {
+                        throw ApplyError.pathNotFound(change.path)
+                    }
                     try CoordinatedFileIO.delete(at: target)
                     appliedUndos.append((change.path, {
-                        try ensureParentDirectoryExists(for: target, fileManager: fileManager)
-                        try writeUTF8(contents, to: target)
+                        _ = try ensureParentDirectoryExists(for: target, fileManager: fileManager)
+                        try writeUTF8(exactContents, to: target)
                     }))
                 }
             }
@@ -76,18 +85,25 @@ public enum WikiOperationApplier {
 
     // MARK: - Precheck
 
+    private enum OriginalState {
+        case absent
+        case file(String)
+    }
+
     private static func precheck(
         _ operation: WikiOperation,
         at vaultRoot: URL,
         fileManager: FileManager
-    ) throws {
+    ) throws -> [String: OriginalState] {
+        var originals: [String: OriginalState] = [:]
         for change in operation.changes {
-            let target = vaultRoot.appendingPathComponent(change.path)
+            let target = try targetURL(for: change.path, vaultRoot: vaultRoot, fileManager: fileManager)
             switch change {
             case .create:
                 if fileManager.fileExists(atPath: target.path) {
                     throw ApplyError.pathAlreadyExists(change.path)
                 }
+                originals[change.path] = .absent
             case .modify(_, let before, _):
                 guard fileManager.fileExists(atPath: target.path) else {
                     throw ApplyError.pathNotFound(change.path)
@@ -96,6 +112,7 @@ public enum WikiOperationApplier {
                 if !looseEqual(current, before) {
                     throw ApplyError.modifyBaseMismatch(change.path)
                 }
+                originals[change.path] = .file(current)
             case .delete(_, let contents):
                 guard fileManager.fileExists(atPath: target.path) else {
                     throw ApplyError.pathNotFound(change.path)
@@ -104,8 +121,10 @@ public enum WikiOperationApplier {
                 if !looseEqual(current, contents) {
                     throw ApplyError.deleteContentMismatch(change.path)
                 }
+                originals[change.path] = .file(current)
             }
         }
+        return originals
     }
 
     // MARK: - Tolerant comparison
@@ -132,16 +151,72 @@ public enum WikiOperationApplier {
                 return String(line[line.startIndex..<end])
             }
             .joined(separator: "\n")
-            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .trimmingTrailingNewlines()
     }
 
     // MARK: - File helpers
 
-    private static func ensureParentDirectoryExists(for url: URL, fileManager: FileManager) throws {
+    private static func targetURL(for path: String, vaultRoot: URL, fileManager: FileManager) throws -> URL {
+        let rawRoot = vaultRoot.standardizedFileURL
+        let resolvedRoot = rawRoot.resolvingSymlinksInPath()
+        var rawCursor = rawRoot
+        var resolvedCursor = resolvedRoot
+
+        for component in path.split(separator: "/", omittingEmptySubsequences: false).map(String.init) {
+            rawCursor = rawCursor.appendingPathComponent(component).standardizedFileURL
+
+            var checkedURL = resolvedCursor.appendingPathComponent(component).standardizedFileURL
+            if fileManager.fileExists(atPath: rawCursor.path) {
+                checkedURL = rawCursor.resolvingSymlinksInPath().standardizedFileURL
+            }
+
+            guard isInsideVault(checkedURL, root: resolvedRoot) else {
+                throw WikiOperationError.pathEscapesVault(path)
+            }
+            resolvedCursor = checkedURL
+        }
+
+        return rawCursor
+    }
+
+    private static func isInsideVault(_ url: URL, root: URL) -> Bool {
+        let rootPath = root.standardizedFileURL.path
+        let targetPath = url.standardizedFileURL.path
+        if rootPath == "/" { return targetPath.hasPrefix("/") }
+        return targetPath == rootPath || targetPath.hasPrefix(rootPath + "/")
+    }
+
+    private static func ensureParentDirectoryExists(for url: URL, fileManager: FileManager) throws -> [URL] {
         let parent = url.deletingLastPathComponent()
         var isDir: ObjCBool = false
-        if !fileManager.fileExists(atPath: parent.path, isDirectory: &isDir) {
-            try fileManager.createDirectory(at: parent, withIntermediateDirectories: true)
+        if fileManager.fileExists(atPath: parent.path, isDirectory: &isDir) {
+            return []
+        }
+
+        var missing: [URL] = []
+        var cursor = parent
+        while !fileManager.fileExists(atPath: cursor.path, isDirectory: &isDir) {
+            missing.append(cursor)
+            let next = cursor.deletingLastPathComponent()
+            if next.path == cursor.path { break }
+            cursor = next
+        }
+
+        try fileManager.createDirectory(at: parent, withIntermediateDirectories: true)
+        return missing
+    }
+
+    private static func removeCreatedDirectories(_ directories: [URL], fileManager: FileManager) throws {
+        for directory in directories {
+            var isDir: ObjCBool = false
+            guard fileManager.fileExists(atPath: directory.path, isDirectory: &isDir),
+                  isDir.boolValue else {
+                continue
+            }
+            let contents = try fileManager.contentsOfDirectory(atPath: directory.path)
+            if contents.isEmpty {
+                try CoordinatedFileIO.delete(at: directory)
+            }
         }
     }
 
@@ -160,5 +235,15 @@ public enum WikiOperationApplier {
             throw ApplyError.nonUTF8Contents(changePath)
         }
         return text
+    }
+}
+
+private extension String {
+    func trimmingTrailingNewlines() -> String {
+        var result = self
+        while result.last == "\n" || result.last == "\r" {
+            result.removeLast()
+        }
+        return result
     }
 }

@@ -33,7 +33,7 @@ public enum AgentError: Error, Equatable, Sendable {
 
 /// Raw proposal as decoded from the agent's JSON response, before we decide
 /// whether to promote it to a full `WikiOperation`. An empty `changes` array
-/// is a legitimate outcome for Query/Lint ("nothing to file" / "no issues
+/// is a legitimate outcome for Chat/Review ("nothing to file" / "no issues
 /// found"); callers handle the empty case specially instead of throwing.
 public struct AgentProposal: Sendable, Equatable {
     public let title: String

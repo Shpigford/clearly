@@ -22,7 +22,7 @@ You are maintaining a personal LLM wiki. The user has given you a new source to 
 # Your task
 
 1. **Read `AGENTS.md`** first — it declares this vault's conventions (folder structure, naming, required frontmatter). Follow them.
-2. **Read `index.md`** — you'll need its exact current contents to propose a modify. Use Grep or Glob if you want to discover related notes that might need small updates.
+2. **Read `index.md`** — you'll need its exact current contents to propose a modify. Use Grep, Glob, or `mcp__clearly__semantic_search` if you want to discover related notes that might need small updates — semantic search is best for conceptual matches that don't share keywords.
 3. **Create a new note** in an appropriate folder (`sources/` if no better fit) summarising the source. The note MUST start with a `#` heading and include a `> Source: <URL or citation>` callout on the line after the heading.
 4. **Update `index.md`** so the new note appears under the most appropriate section. If no section fits, add one — but prefer reusing existing sections.
 5. Don't touch notes that aren't clearly improved by this source. No drive-by edits.

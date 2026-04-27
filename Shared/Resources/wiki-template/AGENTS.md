@@ -16,24 +16,25 @@ by an LLM on your behalf.
   Each entry starts with `## [YYYY-MM-DD]` so `grep` queries work.
 - `raw/` — immutable source material: articles, PDFs, clippings, transcripts.
   The agent reads from here but never edits it.
-- `.clearly/recipes/` — editable prompt templates for Ingest, Query, and Lint.
+- `.clearly/recipes/` — editable prompt templates for Capture, Chat, and Review.
 
 ## Operations
 
-Three named actions, available from Clearly's **Wiki** menu and `⌘K`:
+Two manual actions are available from Clearly's **Wiki** menu. Review runs
+quietly in the background when the vault opens.
 
-- **Ingest** (⌃⌘I). Point at a source (URL, file, selected text, `raw/` folder
-  contents). The agent reads it, writes a summary page, updates `index.md`,
-  cross-references related notes, and appends to `log.md`. Expect a single
-  ingest to touch 10–15 pages.
+- **Capture** (⌃⌘I). Paste a URL or text. The agent reads it, writes a
+  summary page, updates `index.md`, cross-references related notes, and
+  appends to `log.md`. Expect a single capture to touch 10–15 pages.
 
-- **Query** (⌃⌘A). Ask a question. The agent searches the wiki, reads relevant
+- **Chat** (⌃⌘A). Ask a question. The agent searches the wiki, reads relevant
   pages, and synthesizes an answer with inline citations. Good answers can
   be filed back as new pages so the wiki compounds.
 
-- **Lint** (⌃⌘L). The agent audits the wiki for contradictions, stale claims,
-  orphan pages, missing cross-references, and concepts mentioned without
-  their own page. Runs daily in the background; also triggered manually.
+- **Review**. The agent audits the wiki for contradictions, stale claims,
+  orphan pages, missing cross-references, and concepts mentioned without their
+  own page. Clearly runs this automatically about once a day; proposed changes
+  appear as a "Review ready" badge.
 
 ## Conventions
 
@@ -46,7 +47,7 @@ Three named actions, available from Clearly's **Wiki** menu and `⌘K`:
   Renaming any of the three removes this vault's wiki designation from
   Clearly's chrome.
 
-## Ingest checklist (what the agent should do)
+## Capture checklist (what the agent should do)
 
 1. Read the source end-to-end. Summarize to yourself.
 2. Extract entities, concepts, and claims worth having their own pages.
@@ -57,7 +58,7 @@ Three named actions, available from Clearly's **Wiki** menu and `⌘K`:
 6. Cross-reference every related note via `[[wiki-links]]`.
 7. Append one entry to `log.md` summarizing the operation.
 
-## Lint checklist (what the agent should do)
+## Review checklist (what the agent should do)
 
 1. Orphan pages (zero inbound links) — suggest merges, redirects, or
    cross-references.
@@ -68,5 +69,5 @@ Three named actions, available from Clearly's **Wiki** menu and `⌘K`:
 4. Contradictions — where two pages disagree on a factual claim, surface
    both and the source of each.
 
-Edit this file to tune the agent's behavior. Every Ingest/Query/Lint run
+Edit this file to tune the agent's behavior. Every Capture/Chat/Review run
 reads this file as part of the context.

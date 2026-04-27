@@ -1,6 +1,6 @@
 # Log
 
-Chronological record of every accepted Ingest, Query, and Lint operation.
+Chronological record of every accepted Capture, Chat, and Review operation.
 Append-only — the agent never edits prior entries.
 
 Each entry follows this shape:

@@ -1,7 +1,7 @@
 import Foundation
 
 /// A named prompt-template + metadata that drives one of the Wiki mode
-/// commands (Ingest / Query / Lint). Recipes are plain markdown with YAML
+/// commands (Capture / Chat / Review). Recipes are plain markdown with YAML
 /// frontmatter; users can edit them in place by opening the file in the
 /// editor — no app-side schema migrations.
 public struct Recipe: Equatable, Sendable {
@@ -87,9 +87,22 @@ public enum RecipeParser {
         input: String,
         vaultState: String
     ) -> String {
-        recipe.prompt
-            .replacingOccurrences(of: "{{input}}", with: input)
-            .replacingOccurrences(of: "{{vault_state}}", with: vaultState)
+        let source = recipe.prompt as NSString
+        let result = NSMutableString(string: recipe.prompt)
+        let range = NSRange(location: 0, length: source.length)
+        for match in tokenRegex.matches(in: recipe.prompt, range: range).reversed() {
+            let token = source.substring(with: match.range(at: 1))
+            let replacement: String?
+            switch token {
+            case "input": replacement = input
+            case "vault_state": replacement = vaultState
+            default: replacement = nil
+            }
+            if let replacement {
+                result.replaceCharacters(in: match.range, with: replacement)
+            }
+        }
+        return String(result)
     }
 
     // MARK: - Private
@@ -111,9 +124,8 @@ public enum RecipeParser {
     }
 
     private static func validateTokens(in prompt: String) throws {
-        let pattern = try NSRegularExpression(pattern: #"\{\{\s*([^}\s]+)\s*\}\}"#)
         let range = NSRange(prompt.startIndex..<prompt.endIndex, in: prompt)
-        let matches = pattern.matches(in: prompt, range: range)
+        let matches = tokenRegex.matches(in: prompt, range: range)
         for match in matches {
             guard let tokenRange = Range(match.range(at: 1), in: prompt) else { continue }
             let token = String(prompt[tokenRange])
@@ -136,4 +148,6 @@ public enum RecipeParser {
         let segments = lowered.split(whereSeparator: { !$0.isLetter && !$0.isNumber })
         return segments.contains { banned.contains(String($0)) }
     }
+
+    private static let tokenRegex = try! NSRegularExpression(pattern: #"\{\{\s*([^}\s]+)\s*\}\}"#)
 }

@@ -1,7 +1,7 @@
 import Foundation
 
-/// A proposed change to a Wiki vault, produced by an agent recipe (Ingest /
-/// Query / Lint) or by the `propose_operation` MCP tool. A `WikiOperation` is
+/// A proposed change to a Wiki vault, produced by an agent recipe (Capture /
+/// Chat / Review) or by the `propose_operation` MCP tool. A `WikiOperation` is
 /// staged — the user reviews it in a full-screen diff sheet and accepts or
 /// rejects the whole operation. Writes never land on disk until the user
 /// accepts.

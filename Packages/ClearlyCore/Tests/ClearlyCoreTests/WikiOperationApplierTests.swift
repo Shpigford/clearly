@@ -111,6 +111,68 @@ final class WikiOperationApplierTests: XCTestCase {
         XCTAssertEqual(try readFile("a.md"), "actual")
     }
 
+    func testRejectsCreateThroughSymlinkEscapingVault() throws {
+        let outside = FileManager.default.temporaryDirectory
+            .appendingPathComponent("wiki-apply-outside-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: outside, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: outside) }
+        try FileManager.default.createSymbolicLink(
+            at: vault.appendingPathComponent("linked"),
+            withDestinationURL: outside
+        )
+
+        let op = WikiOperation(
+            kind: .capture, title: "t", rationale: "r",
+            changes: [.create(path: "linked/outside.md", contents: "nope")]
+        )
+
+        XCTAssertThrowsError(try WikiOperationApplier.apply(op, at: vault)) { error in
+            XCTAssertEqual(error as? WikiOperationError, .pathEscapesVault("linked/outside.md"))
+        }
+        XCTAssertFalse(FileManager.default.fileExists(atPath: outside.appendingPathComponent("outside.md").path))
+    }
+
+    func testRejectsDeleteThroughSymlinkEscapingVault() throws {
+        let outside = FileManager.default.temporaryDirectory
+            .appendingPathComponent("wiki-apply-outside-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: outside, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: outside) }
+        let externalFile = outside.appendingPathComponent("secret.md")
+        try "keep".write(to: externalFile, atomically: true, encoding: .utf8)
+        try FileManager.default.createSymbolicLink(
+            at: vault.appendingPathComponent("linked"),
+            withDestinationURL: outside
+        )
+
+        let op = WikiOperation(
+            kind: .review, title: "t", rationale: "r",
+            changes: [.delete(path: "linked/secret.md", contents: "keep")]
+        )
+
+        XCTAssertThrowsError(try WikiOperationApplier.apply(op, at: vault)) { error in
+            XCTAssertEqual(error as? WikiOperationError, .pathEscapesVault("linked/secret.md"))
+        }
+        XCTAssertEqual(try String(contentsOf: externalFile, encoding: .utf8), "keep")
+    }
+
+    func testDeleteThroughSymlinkInsideVaultRemovesLinkOnly() throws {
+        try writeFile("real.md", "keep")
+        let link = vault.appendingPathComponent("link.md")
+        try FileManager.default.createSymbolicLink(
+            at: link,
+            withDestinationURL: vault.appendingPathComponent("real.md")
+        )
+
+        let op = WikiOperation(
+            kind: .review, title: "t", rationale: "r",
+            changes: [.delete(path: "link.md", contents: "keep")]
+        )
+
+        try WikiOperationApplier.apply(op, at: vault)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: link.path))
+        XCTAssertEqual(try readFile("real.md"), "keep")
+    }
+
     // MARK: - Loose-equal tolerance
 
     func testAppliesModifyWhenDiskHasTrailingNewlineDrift() throws {
@@ -145,6 +207,18 @@ final class WikiOperationApplierTests: XCTestCase {
         }
     }
 
+    func testRejectsModifyWhenOnlyLeadingWhitespaceDiffers() throws {
+        try writeFile("a.md", "  indented")
+        let op = WikiOperation(
+            kind: .capture, title: "t", rationale: "r",
+            changes: [.modify(path: "a.md", before: "indented", after: "new")]
+        )
+        XCTAssertThrowsError(try WikiOperationApplier.apply(op, at: vault)) { error in
+            XCTAssertEqual(error as? WikiOperationApplier.ApplyError, .modifyBaseMismatch("a.md"))
+        }
+        XCTAssertEqual(try readFile("a.md"), "  indented")
+    }
+
     // MARK: - Rollback
 
     func testRollsBackWhenMidApplyFails() throws {
@@ -167,6 +241,37 @@ final class WikiOperationApplierTests: XCTestCase {
         XCTAssertThrowsError(try WikiOperationApplier.apply(op, at: vault))
         XCTAssertEqual(try readFile("first.md"), "first-before",
                        "the successful modify must be rolled back when later change fails")
+    }
+
+    func testRollbackRestoresExactDiskContentsAfterLooseEqualPrecheck() throws {
+        try writeFile("first.md", "first-before\n")
+        let op = WikiOperation(
+            kind: .capture, title: "t", rationale: "r",
+            changes: [
+                .modify(path: "first.md", before: "first-before", after: "first-after"),
+                .create(path: "second/conflict.md", contents: "never"),
+            ]
+        )
+        try writeFile("second", "I am a file, not a folder")
+
+        XCTAssertThrowsError(try WikiOperationApplier.apply(op, at: vault))
+        XCTAssertEqual(try readFile("first.md"), "first-before\n",
+                       "rollback must restore the exact bytes that were on disk, not the normalized agent preimage")
+    }
+
+    func testRollbackRemovesDirectoriesCreatedForCreate() throws {
+        try writeFile("blocking", "I am a file, not a folder")
+        let op = WikiOperation(
+            kind: .capture, title: "t", rationale: "r",
+            changes: [
+                .create(path: "created/ok.md", contents: "ok"),
+                .create(path: "blocking/conflict.md", contents: "never"),
+            ]
+        )
+
+        XCTAssertThrowsError(try WikiOperationApplier.apply(op, at: vault))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: vault.appendingPathComponent("created").path),
+                       "rollback should remove directories that only existed for the rolled-back create")
     }
 
     // MARK: - Helpers

@@ -126,6 +126,18 @@ final class RecipeTests: XCTestCase {
         XCTAssertEqual(out, "q=hi s=[files]")
     }
 
+    func testInterpolatesAllowedTokensWithWhitespace() throws {
+        let recipe = try RecipeParser.parse("""
+        ---
+        name: X
+        kind: capture
+        ---
+        q={{ input }} s={{ vault_state }}
+        """)
+        let out = RecipeParser.interpolate(recipe, input: "hi", vaultState: "[files]")
+        XCTAssertEqual(out, "q=hi s=[files]")
+    }
+
     // MARK: - Engine disk IO
 
     func testEngineReturnsNilWhenRecipeMissing() throws {

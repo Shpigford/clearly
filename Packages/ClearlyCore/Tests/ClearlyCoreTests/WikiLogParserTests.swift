@@ -75,6 +75,21 @@ final class WikiLogParserTests: XCTestCase {
         XCTAssertEqual(entries.count, 1)
     }
 
+    func testIgnoresHeadersInsideFencedCodeBlocks() {
+        let source = """
+        # Log
+
+        ```
+        ## [YYYY-MM-DD] <operation> | <title>
+        ```
+
+        ## [2026-04-24 10:00] capture — Real entry
+        """
+        let entries = WikiLogParser.parse(source)
+        XCTAssertEqual(entries.count, 1)
+        XCTAssertEqual(entries[0].title, "Real entry")
+    }
+
     func testReturnsEmptyForUnparseable() {
         XCTAssertEqual(WikiLogParser.parse("").count, 0)
         XCTAssertEqual(WikiLogParser.parse("# Just a title, no entries").count, 0)

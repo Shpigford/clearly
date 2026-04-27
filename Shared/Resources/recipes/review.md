@@ -30,6 +30,7 @@ Use your tools to actually investigate — don't answer from memory:
    - Orphans: notes no other note links to. Cross-reference by `Grep`-ing for the note's filename/stem across the vault.
    - Stale claims: statements referencing sources / events that may have changed since the note was written.
    - Contradictions: two notes making incompatible claims about the same topic.
+   - Use `mcp__clearly__semantic_search` to spot conceptual contradictions across notes that don't share keywords (Grep alone misses these).
 3. **Read the candidate files** before proposing any modify — you need the exact current contents for `before:`.
 4. Fix issues via individually-reviewable `modify` / `create` changes. Never ask the user to fix something you could propose directly.
 

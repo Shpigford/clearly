@@ -51,7 +51,13 @@ public enum WikiLogParser {
         // Scan for headings that match `## [YYYY-MM-DD HH:MM] kind — title`.
         // We accept the en/em dash or a plain hyphen as the separator.
         var headingIndices: [(line: Int, header: Header)] = []
+        var isInFence = false
         for (idx, raw) in lines.enumerated() {
+            if raw.trimmingCharacters(in: .whitespaces).hasPrefix("```") {
+                isInFence.toggle()
+                continue
+            }
+            if isInFence { continue }
             if let header = parseHeader(raw) {
                 headingIndices.append((idx, header))
             }
