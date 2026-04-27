@@ -142,8 +142,8 @@ RESPONSES=$({ printf '%s\n%s\n%s\n' \
 
 # tools/list comes back as id: 2
 TOOL_COUNT=$(printf '%s\n' "$RESPONSES" | jq -s '.[] | select(.id == 2) | .result.tools | length' | head -1)
-if [ "$TOOL_COUNT" != "9" ]; then
-    echo "mcp tools/list: expected 9 tools, got $TOOL_COUNT" >&2
+if [ "$TOOL_COUNT" != "10" ]; then
+    echo "mcp tools/list: expected 10 tools, got $TOOL_COUNT" >&2
     exit 40
 fi
 
