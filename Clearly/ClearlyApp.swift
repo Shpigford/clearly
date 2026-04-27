@@ -134,12 +134,16 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValid
             return nil
         }
 
-        closeTabMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+        closeTabMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
             let mods = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
             let chars = event.charactersIgnoringModifiers?.lowercased() ?? ""
             guard chars == "w" && mods == [.command] else { return event }
             guard let window = event.window,
                   WindowRouter.isUserFacingDocumentWindow(window) else { return event }
+            // The Settings window is an AXStandardWindow that passes the document-window
+            // heuristic. Let SwiftUI's default Cmd+W close it instead of routing the event
+            // here (which would close the active document — issue #257).
+            if window === self?.trackedSettingsWindow { return event }
             let workspace = WorkspaceManager.shared
             if let activeID = workspace.activeDocumentID {
                 workspace.closeDocument(activeID)

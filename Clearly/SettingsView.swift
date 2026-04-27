@@ -20,6 +20,7 @@ struct SettingsView: View {
     @AppStorage("hideFrontmatterInPreview") private var hideFrontmatterInPreview = false
     @AppStorage("showMenuBarIcon") private var showMenuBarIcon = true
     @AppStorage("sidebarSize") private var sidebarSize: String = "medium"
+    @Environment(\.dismiss) private var dismiss
 
     var body: some View {
         TabView {
@@ -51,6 +52,13 @@ struct SettingsView: View {
         .frame(width: 460)
         .fixedSize(horizontal: false, vertical: true)
         .background(SettingsWindowObserver())
+        .background {
+            Button("") { dismiss() }
+                .keyboardShortcut("w", modifiers: .command)
+                .frame(width: 0, height: 0)
+                .opacity(0)
+                .accessibilityHidden(true)
+        }
     }
 
     @State private var launchAtLogin = SMAppService.mainApp.status == .enabled
