@@ -18,15 +18,7 @@ extension Notification.Name {
     // WikiAgentCoordinator.
     static let wikiCapture = Notification.Name("wikiCapture")
     static let wikiChat = Notification.Name("wikiChat")
-    static let wikiReview = Notification.Name("wikiReview")
     static let wikiToggleLogSidebar = Notification.Name("wikiToggleLogSidebar")
-
-    #if DEBUG
-    /// DEBUG-only: stage a canned WikiOperation so the diff sheet can be
-    /// exercised before the real agent runner lands. Removed once Phase C2 is
-    /// in place.
-    static let wikiDebugPreviewDiff = Notification.Name("wikiDebugPreviewDiff")
-    #endif
 }
 
 // MARK: - Focused values

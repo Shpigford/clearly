@@ -15,6 +15,7 @@ struct MacDetailToolbar: ToolbarContent {
     @ObservedObject var findState: FindState
     @ObservedObject var outlineState: OutlineState
     @ObservedObject var backlinksState: BacklinksState
+    @Bindable var wikiController: WikiOperationController
     @Binding var showFormatPopover: Bool
 
     var body: some ToolbarContent {
@@ -126,6 +127,55 @@ struct MacDetailToolbar: ToolbarContent {
                 .help("Share")
             }
         }
+
+        // Visual break so the wiki actions render as their own Liquid Glass
+        // pill on macOS 26+, mirroring the centered editor/preview group.
+        if workspace.activeVaultIsWiki {
+            if #available(macOS 26.0, *) {
+                ToolbarSpacer(.fixed, placement: .primaryAction)
+            }
+            ToolbarItemGroup(placement: .primaryAction) {
+                // Auto-Review surfaced affordance. Only renders when the agent
+                // has parked a proposal on `pendingOperation`; click goes
+                // straight to the diff sheet (skipping the sidebar). Lives in
+                // the wiki cluster so it sits next to Capture/Chat — the
+                // LogSidebar header badge alone is invisible to anyone who
+                // keeps the sidebar closed.
+                if wikiController.hasPendingReview {
+                    let count = wikiController.pendingOperation?.changes.count ?? 0
+                    Button {
+                        wikiController.presentPending()
+                    } label: {
+                        Image(systemName: "sparkles")
+                            .overlay(alignment: .topTrailing) {
+                                Text("\(count)")
+                                    .font(.system(size: 9, weight: .bold))
+                                    .monospacedDigit()
+                                    .foregroundStyle(.white)
+                                    .padding(.horizontal, 4)
+                                    .padding(.vertical, 1)
+                                    .background(Capsule().fill(Color.accentColor))
+                                    .offset(x: 8, y: -6)
+                            }
+                    }
+                    .help("Review ready · \(count) change\(count == 1 ? "" : "s")")
+                }
+
+                Button {
+                    NotificationCenter.default.post(name: .wikiCapture, object: nil)
+                } label: {
+                    Label("Capture", systemImage: "tray.and.arrow.down")
+                }
+                .help("Capture into this wiki (⌃⌘I)")
+
+                Button {
+                    NotificationCenter.default.post(name: .wikiChat, object: nil)
+                } label: {
+                    Label("Chat", systemImage: "bubble.left.and.bubble.right")
+                }
+                .help("Chat with this wiki (⌃⌘A)")
+            }
+        }
     }
 }
 
@@ -171,7 +221,6 @@ struct MacDetailColumn: View {
             }
 
             if wikiChat.isVisible {
-                Divider()
                 WikiChatView(
                     chat: wikiChat,
                     controller: wikiController,
@@ -192,6 +241,7 @@ struct MacDetailColumn: View {
                 Divider()
                 WikiLogSidebar(
                     state: wikiLog,
+                    controller: wikiController,
                     vaultRoot: workspace.activeLocation?.url,
                     openPath: { relativePath in
                         guard let vaultURL = workspace.activeLocation?.url else { return }
@@ -218,9 +268,17 @@ struct MacDetailColumn: View {
             isFullscreen = NSApp.mainWindow?.styleMask.contains(.fullScreen) ?? false
             setupFileWatcher()
             WikiAgentCoordinator.warmForActiveVaultIfPossible(workspace: workspace)
+            WikiAgentCoordinator.runReviewIfStale(workspace: workspace, controller: wikiController)
         }
         .onChange(of: workspace.activeLocation?.id) { _, _ in
+            handleActiveVaultChanged()
+        }
+        .onChange(of: workspace.treeRevision) { _, _ in
+            if wikiLog.isVisible, workspace.activeVaultIsWiki {
+                wikiLog.reload(vaultRoot: workspace.activeLocation?.url)
+            }
             WikiAgentCoordinator.warmForActiveVaultIfPossible(workspace: workspace)
+            WikiAgentCoordinator.runReviewIfStale(workspace: workspace, controller: wikiController)
         }
         .onReceive(NotificationCenter.default.publisher(for: NSWindow.didEnterFullScreenNotification)) { _ in
             isFullscreen = true
@@ -274,7 +332,6 @@ struct MacDetailColumn: View {
         )) {
             WikiDiffSheet(
                 controller: wikiController,
-                vaultRoot: workspace.activeLocation?.url,
                 onApplied: handleOperationApplied
             )
         }
@@ -301,19 +358,13 @@ struct MacDetailColumn: View {
             wikiLog: wikiLog,
             wikiCapture: wikiCapture
         ))
-        #if DEBUG
-        .onReceive(NotificationCenter.default.publisher(for: .wikiDebugPreviewDiff)) { _ in
-            stageDebugOperation()
-        }
-        #endif
     }
 
-    private func handleOperationApplied(_ operation: WikiOperation) {
+    private func handleOperationApplied(_ operation: WikiOperation, vaultURL: URL) {
         DiagnosticLog.log("Applied WikiOperation: \(operation.kind.rawValue) — \(operation.title), \(operation.changes.count) changes")
         // Append to log.md so the vault's own history tracks this operation.
         // Not part of the atomic apply — a log-write failure is surfaced but
         // doesn't roll back the already-committed changes.
-        guard let vaultURL = workspace.activeLocation?.url else { return }
         do {
             try WikiLogWriter.appendOperation(operation, to: vaultURL)
         } catch {
@@ -323,31 +374,6 @@ struct MacDetailColumn: View {
             wikiLog.reload(vaultRoot: vaultURL)
         }
     }
-
-    #if DEBUG
-    private func stageDebugOperation() {
-        guard let root = workspace.activeLocation?.url else { return }
-        let indexURL = root.appendingPathComponent("index.md")
-        let currentIndex = (try? String(contentsOf: indexURL, encoding: .utf8)) ?? "# Index\n"
-        let sample = WikiOperation(
-            kind: .capture,
-            title: "Debug: sample capture of example.com",
-            rationale: "Canned operation for exercising the diff-review UI before the real agent runner lands.",
-            changes: [
-                .create(
-                    path: "sources/debug-sample.md",
-                    contents: "# Debug Sample\n\nThis note was staged by the Wiki debug menu.\n"
-                ),
-                .modify(
-                    path: "index.md",
-                    before: currentIndex,
-                    after: currentIndex + "\n- [[debug-sample]]\n"
-                ),
-            ]
-        )
-        wikiController.stage(sample)
-    }
-    #endif
 
     // MARK: - Empty state
 
@@ -498,6 +524,21 @@ struct MacDetailColumn: View {
 
     // MARK: - Helpers
 
+    private func handleActiveVaultChanged() {
+        let vaultURL = workspace.activeVaultIsWiki ? workspace.activeLocation?.url : nil
+        wikiController.clearPendingReviewIfVaultChanged(to: vaultURL)
+        wikiChat.reset(vaultRoot: vaultURL)
+        wikiLog.reload(vaultRoot: vaultURL)
+
+        if vaultURL == nil {
+            wikiChat.hide()
+            wikiLog.hide()
+        }
+
+        WikiAgentCoordinator.warmForActiveVaultIfPossible(workspace: workspace)
+        WikiAgentCoordinator.runReviewIfStale(workspace: workspace, controller: wikiController)
+    }
+
     private func setupFileWatcher() {
         fileWatcher.liveCurrentText = { [workspace] in
             workspace.liveCurrentFileText()
@@ -578,7 +619,7 @@ struct MacDetailColumn: View {
 
 /// Extracted modifier so MacDetailColumn.body stays inside SwiftUI's
 /// type-checker budget. Handles every NotificationCenter-driven Wiki action
-/// (Ingest / Query / Lint / Toggle Log Sidebar).
+/// (Capture / Chat / Review / Toggle Log Sidebar).
 private struct WikiNotificationObserversModifier: ViewModifier {
     @Bindable var workspace: WorkspaceManager
     @Bindable var wikiController: WikiOperationController
@@ -594,9 +635,6 @@ private struct WikiNotificationObserversModifier: ViewModifier {
             .onReceive(NotificationCenter.default.publisher(for: .wikiChat)) { _ in
                 WikiAgentCoordinator.startChat(workspace: workspace, chat: wikiChat)
             }
-            .onReceive(NotificationCenter.default.publisher(for: .wikiReview)) { _ in
-                WikiAgentCoordinator.startReview(workspace: workspace, controller: wikiController)
-            }
             .onReceive(NotificationCenter.default.publisher(for: .wikiToggleLogSidebar)) { _ in
                 withAnimation(Theme.Motion.smooth) {
                     wikiLog.toggle(vaultRoot: workspace.activeLocation?.url)
@@ -604,4 +642,3 @@ private struct WikiNotificationObserversModifier: ViewModifier {
             }
     }
 }
-

@@ -3,8 +3,22 @@ import ClearlyCore
 import MCP
 
 enum Handlers {
-    static func dispatch(params: CallTool.Parameters, vaults: [LoadedVault]) async -> CallTool.Result {
+    static func dispatch(params: CallTool.Parameters, vaults: [LoadedVault], readOnly: Bool = false) async -> CallTool.Result {
+        if readOnly, ToolRegistry.writeToolNames.contains(params.name) {
+            return unknownTool(params.name)
+        }
+
         switch params.name {
+        case "semantic_search":
+            return await structuredCall {
+                let args = SemanticSearchArgs(
+                    query: params.arguments?["query"]?.stringValue ?? "",
+                    limit: params.arguments?["limit"]?.intValue,
+                    vault: params.arguments?["vault"]?.stringValue
+                )
+                return try await semanticSearch(args, vaults: vaults)
+            }
+
         case "search_notes":
             return await structuredCall {
                 let args = SearchNotesArgs(
@@ -93,16 +107,20 @@ enum Handlers {
             }
 
         default:
-            let payload: [String: Any] = [
-                "error": "unknown_tool",
-                "message": "Unknown tool: \(params.name)",
-                "tool": params.name
-            ]
-            let data = (try? JSONSerialization.data(withJSONObject: payload, options: [.sortedKeys])) ?? Data("{}".utf8)
-            let text = String(data: data, encoding: .utf8) ?? "{}"
-            let structured: Value? = (try? JSONDecoder().decode(Value.self, from: data)) ?? .object([:])
-            return .init(content: [.text(text)], structuredContent: structured, isError: true)
+            return unknownTool(params.name)
         }
+    }
+
+    private static func unknownTool(_ name: String) -> CallTool.Result {
+        let payload: [String: Any] = [
+            "error": "unknown_tool",
+            "message": "Unknown tool: \(name)",
+            "tool": name
+        ]
+        let data = (try? JSONSerialization.data(withJSONObject: payload, options: [.sortedKeys])) ?? Data("{}".utf8)
+        let text = String(data: data, encoding: .utf8) ?? "{}"
+        let structured: Value? = (try? JSONDecoder().decode(Value.self, from: data)) ?? .object([:])
+        return .init(content: [.text(text)], structuredContent: structured, isError: true)
     }
 
     /// Run a new structured-output tool and return a CallTool.Result with both

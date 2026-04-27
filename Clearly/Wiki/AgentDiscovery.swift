@@ -54,6 +54,7 @@ enum AgentDiscovery {
     private static var codexCandidatePaths: [String] {
         let home = NSHomeDirectory()
         return [
+            "\(home)/.codex/bin/codex",
             "\(home)/.local/bin/codex",
             "/usr/local/bin/codex",
             "/opt/homebrew/bin/codex",

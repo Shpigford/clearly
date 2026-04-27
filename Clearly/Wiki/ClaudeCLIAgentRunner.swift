@@ -7,23 +7,30 @@ import ClearlyCore
 /// OAuth token in Keychain; Clearly never touches it.
 ///
 /// Invocation:
-///   claude --print --output-format json --tools "" --no-session-persistence [--model <alias>]
+///   claude --print --output-format json
+///       --tools "<built-in subset>"
+///       --no-session-persistence
+///       --exclude-dynamic-system-prompt-sections
+///       [--model <alias>]
 ///
-/// - `--tools ""` disables every built-in tool; we only want plain text
-///   generation, not Claude Code's file/bash capabilities.
-/// - `--no-session-persistence` keeps the call stateless so repeated ingests
-///   don't grow a session history on disk.
-/// - Prompt is fed via stdin so we don't blow ARG_MAX on long sources.
+/// `--tools` REPLACES the built-in tool set (`""` disables all built-ins; `"Read,Grep,Glob"`
+/// limits to those three; the agent CANNOT call Bash, Edit, Write, etc.). Verified empirically.
+///
+/// We deliberately do NOT pass `--mcp-config`. Chat handles retrieval
+/// in-process via `WikiChatRetriever` (RAG); Capture/Review use just the
+/// built-in Read/Grep/Glob tools.
+///
+/// Prompt is fed via stdin so we don't blow ARG_MAX on long sources.
 struct ClaudeCLIAgentRunner: AgentRunner {
     let binaryURL: URL
     let environment: [String: String]
-    /// Comma-separated tool list passed to `--tools`. "" disables every tool
-    /// (useful for pure-completion runs like Ingest/Lint JSON output).
-    /// "Read,Grep,Glob" lets the agent explore the vault itself.
+    /// Built-in tool list passed to `--tools`. `""` disables every built-in (Chat RAG path —
+    /// the agent only completes over the inlined context); `"Read,Grep,Glob"` is what
+    /// Capture/Review use to explore the vault.
     let enabledTools: String
-    /// Overrides the default stable caches-dir cwd. Used by Query so Claude
-    /// Code treats the vault as its workspace and its Read/Grep/Glob tools
-    /// operate on the user's notes.
+    /// Overrides the default stable caches-dir cwd. Capture/Review pin cwd
+    /// to the vault so Read/Grep/Glob operate on notes; Chat does not need
+    /// a vault cwd because RAG inlines the retrieved context.
     let workingDirectoryOverride: URL?
 
     init(
@@ -42,8 +49,12 @@ struct ClaudeCLIAgentRunner: AgentRunner {
         let arguments = Self.buildArguments(model: model, tools: enabledTools)
         let (stdoutData, stderrText, status) = try await spawn(prompt: prompt, arguments: arguments)
 
+        DiagnosticLog.log("claude RUN: status=\(status) promptLen=\(prompt.count) stdoutLen=\(stdoutData.count) stderrLen=\(stderrText.count)")
         guard status == 0 else {
             throw AgentError.transport("claude exited with status \(status). stderr: \(stderrText.prefix(512))")
+        }
+        guard !stdoutData.isEmpty else {
+            throw AgentError.invalidResponse("claude exited successfully but produced no stdout")
         }
         return try Self.decode(data: stdoutData)
     }
@@ -76,12 +87,20 @@ struct ClaudeCLIAgentRunner: AgentRunner {
             let process = Process()
             process.executableURL = binaryURL
             process.arguments = arguments
-            // Per-operation override (Query wants cwd=vault so Read/Grep/Glob
-            // operate on notes) or the stable caches dir (Ingest/Lint — keeps
-            // the cache key identical across invocations, which is what makes
-            // subsequent calls fast).
+            // Capture/Review override cwd to the vault so Read/Grep/Glob see
+            // notes. Chat uses the stable caches dir because RAG inlines all
+            // context and needs no filesystem tools.
             process.currentDirectoryURL = workingDirectoryOverride ?? Self.stableWorkingDirectory()
-            process.environment = environment
+            // Sandboxed parents inherit a HOME pointing at the app container
+            // (`~/Library/Containers/<bundle-id>/Data`). Claude reads its OAuth
+            // credentials from `$HOME/.claude/.credentials.json` — pointing it
+            // at the container makes it think the user isn't logged in. Always
+            // hand it the real user home so subscription auth works.
+            let resolvedEnv = Self.environmentForSubprocess(
+                base: environment,
+                currentDirectory: process.currentDirectoryURL
+            )
+            process.environment = resolvedEnv
 
             let stdin = Pipe()
             let stdout = Pipe()
@@ -90,18 +109,25 @@ struct ClaudeCLIAgentRunner: AgentRunner {
             process.standardOutput = stdout
             process.standardError = stderr
 
+            let capture = ProcessCaptureState()
             process.terminationHandler = { _ in
-                let outData = stdout.fileHandleForReading.readDataToEndOfFile()
-                let errData = stderr.fileHandleForReading.readDataToEndOfFile()
-                let errText = String(data: errData, encoding: .utf8) ?? ""
-                continuation.resume(returning: (outData, errText, process.terminationStatus))
+                capture.finish(status: process.terminationStatus, continuation: continuation)
             }
 
             do {
                 try process.run()
             } catch {
-                continuation.resume(throwing: AgentError.transport(String(describing: error)))
+                capture.fail(AgentError.transport(String(describing: error)), continuation: continuation)
                 return
+            }
+
+            DispatchQueue.global(qos: .userInitiated).async {
+                let data = stdout.fileHandleForReading.readDataToEndOfFile()
+                capture.finishStdout(data, continuation: continuation)
+            }
+            DispatchQueue.global(qos: .userInitiated).async {
+                let data = stderr.fileHandleForReading.readDataToEndOfFile()
+                capture.finishStderr(data, continuation: continuation)
             }
 
             // Feed prompt on a background queue so we don't block while the
@@ -116,9 +142,48 @@ struct ClaudeCLIAgentRunner: AgentRunner {
         }
     }
 
+    /// Replaces auth-sensitive inherited values with the real user values.
+    /// Without this, sandboxed/App-launched children can look for CLI auth
+    /// state inside Clearly's container or inherit Claude's own SDK mode flags.
+    static func environmentForSubprocess(
+        base: [String: String],
+        currentDirectory: URL? = nil
+    ) -> [String: String] {
+        var env = base
+        for key in [
+            "APP_SANDBOX_CONTAINER_ID",
+            "CFFIXED_USER_HOME",
+            "CLAUDECODE",
+            "CLAUDE_AGENT_SDK_VERSION",
+            "CLAUDE_CODE_ENABLE_TASKS",
+            "CLAUDE_CODE_ENTRYPOINT",
+            "CLAUDE_CODE_EXECPATH",
+            "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS",
+        ] {
+            env.removeValue(forKey: key)
+        }
+        let user = NSUserName()
+        let resolvedHome = realUserHome() ?? "/Users/\(user)"
+        env["HOME"] = resolvedHome
+        env["USER"] = user
+        env["LOGNAME"] = user
+        if let currentDirectory {
+            env["PWD"] = currentDirectory.path
+        }
+        return env
+    }
+
+    /// Resolve the user's REAL home directory, bypassing the sandbox redirect.
+    /// `NSHomeDirectory()` and `NSHomeDirectoryForUser(_:)` both honour the
+    /// container substitution; `getpwuid(geteuid())->pw_dir` reads straight
+    /// from OpenDirectory and returns `/Users/<name>`.
+    private static func realUserHome() -> String? {
+        guard let pw = getpwuid(geteuid()), let dir = pw.pointee.pw_dir else { return nil }
+        return String(cString: dir)
+    }
+
     /// A stable per-user working directory the subprocess always runs from.
-    /// Using the app's caches directory keeps it inside the sandbox container,
-    /// writable if Claude ever needs scratch space, and identical across
+    /// It is writable if Claude needs scratch space and identical across
     /// invocations so prompt-cache keys line up.
     private static func stableWorkingDirectory() -> URL? {
         guard let caches = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first else {

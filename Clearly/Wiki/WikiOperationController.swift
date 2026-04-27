@@ -2,8 +2,8 @@ import Foundation
 import ClearlyCore
 
 /// Owns the currently-staged `WikiOperation` and drives the diff-review sheet.
-/// A recipe run (Ingest / Query / Lint) or the `propose_operation` MCP tool
-/// calls `stage(_:)`, which shows the sheet; `accept(at:)` commits on disk via
+/// A recipe run (Capture / Chat / Review) or the `propose_operation` MCP tool
+/// calls `stage(_:vaultRoot:)`, which shows the sheet; `accept()` commits on disk via
 /// `WikiOperationApplier`; `dismiss()` rejects and clears state.
 ///
 /// Per-file rejection is tracked in `rejectedPaths` — the user can drop
@@ -12,16 +12,31 @@ import ClearlyCore
 @MainActor
 final class WikiOperationController {
     var stagedOperation: WikiOperation?
+    var stagedVaultRoot: URL?
     var selectedPath: String?
     var rejectedPaths: Set<String> = []
     var isApplying: Bool = false
     var applyError: String?
 
-    /// Set while a recipe (Ingest/Query/Lint) is running in the background —
-    /// drives the progress overlay so a 30-second cache warmup doesn't look
-    /// like silent failure.
+    /// Auto-Review parks its proposal here instead of staging immediately, so
+    /// the diff sheet doesn't pop in the user's face on vault open. The
+    /// LogSidebar header surfaces a "Review ready" badge while a pending op
+    /// exists; clicking the badge calls `presentPending()` to move it onto
+    /// the staged slot and open the sheet.
+    var pendingOperation: WikiOperation?
+    var pendingVaultRoot: URL?
+    var hasPendingReview: Bool { pendingOperation != nil }
+
+    /// Set while an *interactive* recipe (Capture) is running — drives the
+    /// progress overlay so a long cache warmup doesn't look like silent
+    /// failure. Auto-Review uses `isAutoReviewing` instead so it stays out
+    /// of the user's face.
     var isRunningRecipe: Bool = false
     var recipeStatus: String?
+
+    /// Set while auto-Review runs silently in the background. Used only for
+    /// double-fire prevention; never drives a UI overlay.
+    var isAutoReviewing: Bool = false
 
     var isPresenting: Bool { stagedOperation != nil }
 
@@ -47,8 +62,9 @@ final class WikiOperationController {
 
     // MARK: - Staging
 
-    func stage(_ operation: WikiOperation) {
+    func stage(_ operation: WikiOperation, vaultRoot: URL?) {
         stagedOperation = operation
+        stagedVaultRoot = vaultRoot
         selectedPath = operation.changes.first?.path
         rejectedPaths = []
         applyError = nil
@@ -56,11 +72,46 @@ final class WikiOperationController {
     }
 
     func dismiss() {
+        recordHandledReviewIfNeeded()
         stagedOperation = nil
+        stagedVaultRoot = nil
         selectedPath = nil
         rejectedPaths = []
         applyError = nil
         isApplying = false
+    }
+
+    // MARK: - Pending review
+    //
+    // `pendingOperation` has its own lifecycle independent of `stagedOperation`.
+    // It's set by `holdForReview` (auto-Review) and consumed by `presentPending`
+    // (badge click). Dismissing or accepting an unrelated staged op (Capture /
+    // Chat) must NOT touch the pending slot — losing a held Review because
+    // the user closed a Capture sheet would be a real bug.
+
+    func holdForReview(_ operation: WikiOperation, vaultRoot: URL) {
+        pendingOperation = operation
+        pendingVaultRoot = vaultRoot
+    }
+
+    func presentPending() {
+        guard let op = pendingOperation, let root = pendingVaultRoot else { return }
+        pendingOperation = nil
+        pendingVaultRoot = nil
+        stage(op, vaultRoot: root)
+    }
+
+    func clearPendingReviewIfVaultChanged(to activeVaultRoot: URL?) {
+        guard pendingOperation != nil || pendingVaultRoot != nil else { return }
+        guard
+            let pendingVaultRoot,
+            let activeVaultRoot,
+            Self.sameFileURL(pendingVaultRoot, activeVaultRoot)
+        else {
+            pendingOperation = nil
+            pendingVaultRoot = nil
+            return
+        }
     }
 
     // MARK: - Per-file reject
@@ -77,16 +128,24 @@ final class WikiOperationController {
         rejectedPaths.contains(path)
     }
 
+    private func recordHandledReviewIfNeeded() {
+        guard stagedOperation?.kind == .review, let stagedVaultRoot else { return }
+        WikiVaultState.recordReviewRun(at: stagedVaultRoot)
+    }
+
     // MARK: - Apply
 
-    /// Applies the effective (non-rejected) changes under `vaultRoot`. On
+    /// Applies the effective (non-rejected) changes under the staged vault. On
     /// success, clears state and calls `onApplied` with the applied operation
     /// so callers can append to `log.md`, refresh the tree, etc.
     func accept(
-        at vaultRoot: URL,
-        onApplied: ((WikiOperation) -> Void)? = nil
+        onApplied: ((WikiOperation, URL) -> Void)? = nil
     ) {
         guard let staged = stagedOperation else { return }
+        guard let vaultRoot = stagedVaultRoot else {
+            applyError = "No vault selected for this operation."
+            return
+        }
         let changes = effectiveChanges
         if changes.isEmpty {
             // All files rejected — treat as dismiss.
@@ -110,7 +169,7 @@ final class WikiOperationController {
                 try WikiOperationApplier.apply(applied, at: vaultRoot)
                 await MainActor.run {
                     self.dismiss()
-                    onApplied?(applied)
+                    onApplied?(applied, vaultRoot)
                 }
             } catch {
                 await MainActor.run {
@@ -153,5 +212,10 @@ final class WikiOperationController {
             }
         }
         return String(describing: error)
+    }
+
+    private static func sameFileURL(_ lhs: URL, _ rhs: URL) -> Bool {
+        lhs.standardizedFileURL.resolvingSymlinksInPath().path ==
+            rhs.standardizedFileURL.resolvingSymlinksInPath().path
     }
 }

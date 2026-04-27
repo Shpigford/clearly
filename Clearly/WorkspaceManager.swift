@@ -66,6 +66,9 @@ final class WorkspaceManager {
     private var accessedURLs: Set<URL> = []
 
     var activeVaultIndexes: [VaultIndex] { Array(vaultIndexes.values) }
+    func vaultIndex(for location: BookmarkedLocation) -> VaultIndex? {
+        vaultIndexes[location.id]
+    }
     private(set) var vaultIndexRevision: Int = 0
     private(set) var treeRevision: Int = 0
 
@@ -1724,6 +1727,7 @@ final class WorkspaceManager {
         let showHiddenFiles = self.showHiddenFiles
         DispatchQueue.global(qos: .utility).async { [weak self, weak index] in
             index?.indexAllFiles(showHiddenFiles: showHiddenFiles)
+            index?.scheduleEmbeddingRefresh()
             DispatchQueue.main.async {
                 self?.vaultIndexRevision += 1
             }

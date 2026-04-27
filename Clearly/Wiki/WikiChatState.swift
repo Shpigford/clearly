@@ -7,6 +7,8 @@ import Foundation
 @Observable
 @MainActor
 final class WikiChatState {
+    var vaultRoot: URL?
+    var contextID = UUID()
     var messages: [WikiChatMessage] = []
     var draft: String = ""
     var isSending: Bool = false
@@ -17,11 +19,28 @@ final class WikiChatState {
     func show() { isVisible = true }
     func hide() { isVisible = false }
 
-    func reset() {
+    func reset(vaultRoot: URL? = nil) {
+        self.vaultRoot = vaultRoot
+        contextID = UUID()
         messages.removeAll()
         draft = ""
         sendError = nil
         isSending = false
+    }
+
+    func bind(to vaultRoot: URL) {
+        guard let currentRoot = self.vaultRoot else {
+            self.vaultRoot = vaultRoot
+            return
+        }
+        if !Self.sameFileURL(currentRoot, vaultRoot) {
+            reset(vaultRoot: vaultRoot)
+        }
+    }
+
+    func isCurrent(vaultRoot: URL, contextID: UUID) -> Bool {
+        guard let currentRoot = self.vaultRoot else { return false }
+        return self.contextID == contextID && Self.sameFileURL(currentRoot, vaultRoot)
     }
 
     func appendUser(_ text: String) -> WikiChatMessage {
@@ -34,6 +53,11 @@ final class WikiChatState {
         let message = WikiChatMessage(role: .assistant, text: text)
         messages.append(message)
         return message
+    }
+
+    private static func sameFileURL(_ lhs: URL, _ rhs: URL) -> Bool {
+        lhs.standardizedFileURL.resolvingSymlinksInPath().path ==
+            rhs.standardizedFileURL.resolvingSymlinksInPath().path
     }
 }
 

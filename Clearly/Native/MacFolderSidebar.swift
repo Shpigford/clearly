@@ -173,7 +173,7 @@ struct MacFolderSidebar: View {
         • index.md (table of contents)
         • log.md (operation history)
         • raw/ (source material)
-        • .clearly/recipes/ (Ingest / Query / Lint prompts)
+        • .clearly/recipes/ (Capture / Chat / Review prompts)
 
         None of your existing files will be touched. To revert, just delete \
         AGENTS.md, index.md, and log.md.

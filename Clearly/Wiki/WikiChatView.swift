@@ -14,17 +14,29 @@ struct WikiChatView: View {
     let openWikiLink: (String) -> Void
 
     @FocusState private var inputFocused: Bool
+    @AppStorage("wikiChatPanelWidth") private var panelWidth: Double = 380
+    @Environment(\.colorScheme) private var colorScheme
+
+    private static let minPanelWidth: Double = 280
+    private static let maxPanelWidth: Double = 700
 
     var body: some View {
-        VStack(spacing: 0) {
-            header
-            Divider()
-            messages
-            Divider()
-            input
+        HStack(spacing: 0) {
+            ResizeHandle(
+                width: $panelWidth,
+                minWidth: Self.minPanelWidth,
+                maxWidth: Self.maxPanelWidth
+            )
+            VStack(alignment: .leading, spacing: 0) {
+                header
+                separator
+                messages
+                separator
+                input
+            }
         }
-        .frame(minWidth: 320, idealWidth: 380, maxWidth: 480)
-        .background(Theme.backgroundColorSwiftUI)
+        .frame(width: max(Self.minPanelWidth, min(Self.maxPanelWidth, panelWidth)))
+        .background(Theme.outlinePanelBackgroundSwiftUI)
         .environment(\.openURL, OpenURLAction { url in
             // `clearly-wiki://<target>` is our synthesized scheme for
             // [[wiki-links]]. Anything else (http, mailto…) falls through
@@ -41,11 +53,11 @@ struct WikiChatView: View {
     // MARK: - Header
 
     private var header: some View {
-        HStack(spacing: 8) {
-            Image(systemName: "bubble.left.and.bubble.right")
-                .foregroundStyle(.secondary)
-            Text("Wiki Chat")
-                .font(.headline)
+        HStack(alignment: .center, spacing: 8) {
+            Text("WIKI CHAT")
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(.tertiary)
+                .tracking(1.5)
             Spacer()
             if !chat.messages.isEmpty {
                 Button {
@@ -53,6 +65,8 @@ struct WikiChatView: View {
                     inputFocused = true
                 } label: {
                     Image(systemName: "arrow.counterclockwise")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(.tertiary)
                 }
                 .buttonStyle(.plain)
                 .help("Start a new conversation")
@@ -62,13 +76,21 @@ struct WikiChatView: View {
             } label: {
                 Image(systemName: "xmark")
                     .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(.tertiary)
             }
             .buttonStyle(.plain)
             .help("Close chat")
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 10)
+        .padding(.horizontal, 12)
+        .padding(.top, 10)
+        .padding(.bottom, 6)
+    }
+
+    private var separator: some View {
+        Rectangle()
+            .fill(Color.primary.opacity(colorScheme == .dark ? Theme.separatorOpacityDark : Theme.separatorOpacity))
+            .frame(height: 1)
+            .padding(.horizontal, 12)
     }
 
     // MARK: - Messages
@@ -121,7 +143,7 @@ struct WikiChatView: View {
         VStack(alignment: .leading, spacing: 6) {
             Text("Ask the wiki.")
                 .font(.headline)
-            Text("Claude reads your notes, answers with citations, and leaves the filing to you. \"File as Note\" on any answer saves it to `answers/`.")
+            Text("The agent reads your notes, answers with citations, and leaves the filing to you. \"File as Note\" on any answer saves it to `answers/`.")
                 .font(.callout)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -195,7 +217,7 @@ struct WikiChatView: View {
             rationale: "Filed from Wiki Chat.",
             changes: [.create(path: "answers/\(slug).md", contents: contents)]
         )
-        controller.stage(op)
+        controller.stage(op, vaultRoot: vaultRoot)
     }
 
     private func precedingUserMessage(for message: WikiChatMessage) -> WikiChatMessage? {
@@ -292,6 +314,42 @@ private struct WikiChatBubble: View {
 
             Spacer()
         }
+    }
+}
+
+// MARK: - Resize handle
+
+/// Thin draggable strip on the leading edge that resizes the chat panel.
+/// Width persists across launches via `@AppStorage` on the parent view.
+private struct ResizeHandle: View {
+    @Binding var width: Double
+    let minWidth: Double
+    let maxWidth: Double
+    @State private var startWidth: Double? = nil
+    @State private var isHovered = false
+
+    var body: some View {
+        Rectangle()
+            .fill(Color.clear)
+            .frame(width: 5)
+            .contentShape(Rectangle())
+            .onHover { hovering in
+                isHovered = hovering
+                if hovering {
+                    NSCursor.resizeLeftRight.push()
+                } else {
+                    NSCursor.pop()
+                }
+            }
+            .gesture(
+                DragGesture(minimumDistance: 0)
+                    .onChanged { value in
+                        if startWidth == nil { startWidth = width }
+                        let proposed = (startWidth ?? width) - Double(value.translation.width)
+                        width = max(minWidth, min(maxWidth, proposed))
+                    }
+                    .onEnded { _ in startWidth = nil }
+            )
     }
 }
 

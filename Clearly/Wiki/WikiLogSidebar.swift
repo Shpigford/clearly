@@ -7,33 +7,42 @@ import ClearlyCore
 /// file in the editor.
 struct WikiLogSidebar: View {
     @Bindable var state: WikiLogState
+    @Bindable var controller: WikiOperationController
     let vaultRoot: URL?
     let openPath: (String) -> Void
     let openLog: () -> Void
 
+    @Environment(\.colorScheme) private var colorScheme
+
     var body: some View {
-        VStack(spacing: 0) {
+        VStack(alignment: .leading, spacing: 0) {
             header
-            Divider()
+            separator
+            if controller.hasPendingReview {
+                pendingBadge
+                separator
+            }
             content
         }
-        .frame(minWidth: 260, idealWidth: 300, maxWidth: 380)
-        .background(Theme.backgroundColorSwiftUI)
+        .frame(minWidth: 260, idealWidth: 300, maxWidth: 380, maxHeight: .infinity, alignment: .top)
+        .background(Theme.outlinePanelBackgroundSwiftUI)
     }
 
     // MARK: - Header
 
     private var header: some View {
-        HStack(spacing: 8) {
-            Image(systemName: "clock")
-                .foregroundStyle(.secondary)
-            Text("Log")
-                .font(.headline)
+        HStack(alignment: .center, spacing: 8) {
+            Text("WIKI LOG")
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(.tertiary)
+                .tracking(1.5)
             Spacer()
             Button {
                 state.reload(vaultRoot: vaultRoot)
             } label: {
                 Image(systemName: "arrow.clockwise")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(.tertiary)
             }
             .buttonStyle(.plain)
             .help("Reload log.md")
@@ -42,6 +51,8 @@ struct WikiLogSidebar: View {
                 openLog()
             } label: {
                 Image(systemName: "doc.text")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(.tertiary)
             }
             .buttonStyle(.plain)
             .help("Open log.md in the editor")
@@ -51,13 +62,45 @@ struct WikiLogSidebar: View {
             } label: {
                 Image(systemName: "xmark")
                     .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(.tertiary)
             }
             .buttonStyle(.plain)
             .help("Close log")
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 10)
+        .padding(.horizontal, 12)
+        .padding(.top, 10)
+        .padding(.bottom, 6)
+    }
+
+    private var separator: some View {
+        Rectangle()
+            .fill(Color.primary.opacity(colorScheme == .dark ? Theme.separatorOpacityDark : Theme.separatorOpacity))
+            .frame(height: 1)
+            .padding(.horizontal, 12)
+    }
+
+    private var pendingBadge: some View {
+        let count = controller.pendingOperation?.changes.count ?? 0
+        return Button {
+            controller.presentPending()
+        } label: {
+            HStack(spacing: 8) {
+                Circle()
+                    .fill(.tint)
+                    .frame(width: 6, height: 6)
+                Text("Review ready · \(count) change\(count == 1 ? "" : "s")")
+                    .font(.callout)
+                Spacer()
+                Image(systemName: "chevron.right")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help("Open the Review diff sheet")
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
     }
 
     // MARK: - Content
@@ -77,7 +120,7 @@ struct WikiLogSidebar: View {
             VStack(alignment: .leading, spacing: 6) {
                 Text("No operations logged yet.")
                     .font(.headline)
-                Text("Accepted Ingest / Query / Lint operations will appear here in reverse chronological order.")
+                Text("Accepted Capture / Chat / Review operations will appear here in reverse chronological order.")
                     .font(.callout)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -180,18 +223,18 @@ private struct WikiLogRow: View {
 
     private var kindIcon: String {
         switch entry.kind.lowercased() {
-        case "ingest": return "tray.and.arrow.down"
-        case "query": return "bubble.left"
-        case "lint": return "checkmark.shield"
+        case "capture", "ingest": return "tray.and.arrow.down"
+        case "chat", "query": return "bubble.left"
+        case "review", "lint": return "checkmark.shield"
         default: return "square.and.pencil"
         }
     }
 
     private var kindColor: Color {
         switch entry.kind.lowercased() {
-        case "ingest": return .blue
-        case "query": return .purple
-        case "lint": return .orange
+        case "capture", "ingest": return .blue
+        case "chat", "query": return .purple
+        case "review", "lint": return .orange
         default: return .secondary
         }
     }

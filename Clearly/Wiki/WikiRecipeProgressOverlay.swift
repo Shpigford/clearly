@@ -18,7 +18,7 @@ struct WikiRecipeProgressOverlay: View {
                         Text(controller.recipeStatus ?? "Working…")
                             .font(.callout)
                             .foregroundStyle(.primary)
-                        Text("First call after launch warms the cache (~30s). Subsequent calls are fast.")
+                        Text("First call after launch warms the cache and may take a minute. Subsequent calls are fast.")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }

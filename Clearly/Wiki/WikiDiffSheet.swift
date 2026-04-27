@@ -7,8 +7,7 @@ import ClearlyCore
 /// they hit Accept.
 struct WikiDiffSheet: View {
     @Bindable var controller: WikiOperationController
-    let vaultRoot: URL?
-    let onApplied: (WikiOperation) -> Void
+    let onApplied: (WikiOperation, URL) -> Void
 
     var body: some View {
         if let op = controller.stagedOperation {
@@ -82,11 +81,10 @@ struct WikiDiffSheet: View {
             .disabled(controller.isApplying)
 
             Button("Accept") {
-                guard let root = vaultRoot else { return }
-                controller.accept(at: root, onApplied: onApplied)
+                controller.accept(onApplied: onApplied)
             }
             .keyboardShortcut(.defaultAction)
-            .disabled(controller.isApplying || controller.effectiveChanges.isEmpty || vaultRoot == nil)
+            .disabled(controller.isApplying || controller.effectiveChanges.isEmpty || controller.stagedVaultRoot == nil)
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 12)

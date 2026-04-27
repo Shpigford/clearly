@@ -66,6 +66,7 @@ struct MacRootView: View {
                     findState: findState,
                     outlineState: outlineState,
                     backlinksState: backlinksState,
+                    wikiController: wikiController,
                     showFormatPopover: $showFormatPopover
                 )
             }

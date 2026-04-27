@@ -812,7 +812,7 @@ struct ClearlyApp: App {
                 FindCommand()
             }
             CommandMenu("Wiki") {
-                WikiCommands()
+                WikiCommands(workspace: workspace)
             }
             CommandGroup(replacing: .help) {
                 Button("Clearly Help") {
@@ -1038,10 +1038,17 @@ struct ViewModeCommands: View {
 // phases. Until those land, the notifications are logged but no-op.
 struct WikiCommands: View {
     @FocusedValue(\.activeVaultIsWiki) var isWiki
+    var workspace: WorkspaceManager
 
     private var enabled: Bool { isWiki ?? false }
 
     var body: some View {
+        Button("New LLM Wiki…") {
+            WikiSeeder.createNewWiki(using: workspace)
+        }
+
+        Divider()
+
         Button("Capture") {
             NotificationCenter.default.post(name: .wikiCapture, object: nil)
         }
@@ -1054,12 +1061,6 @@ struct WikiCommands: View {
         .keyboardShortcut("a", modifiers: [.command, .control])
         .disabled(!enabled)
 
-        Button("Review") {
-            NotificationCenter.default.post(name: .wikiReview, object: nil)
-        }
-        .keyboardShortcut("l", modifiers: [.command, .control])
-        .disabled(!enabled)
-
         Divider()
 
         Button("Toggle Log Sidebar") {
@@ -1067,14 +1068,6 @@ struct WikiCommands: View {
         }
         .keyboardShortcut("t", modifiers: [.command, .control])
         .disabled(!enabled)
-
-        #if DEBUG
-        Divider()
-        Button("Preview Diff Sheet (Debug)") {
-            NotificationCenter.default.post(name: .wikiDebugPreviewDiff, object: nil)
-        }
-        .disabled(!enabled)
-        #endif
     }
 }
 

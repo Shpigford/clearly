@@ -36,6 +36,11 @@ struct SettingsView: View {
                     Label("Command Line", systemImage: "terminal")
                 }
 
+            WikiSettingsTab()
+                .tabItem {
+                    Label("Wiki", systemImage: "sparkles")
+                }
+
             aboutView
                 .tabItem {
                     Label("About", systemImage: "info.circle")
@@ -606,5 +611,76 @@ private struct SyncSettingsTab: View {
 
     private func formattedBytes(_ bytes: Int64) -> String {
         ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file)
+    }
+}
+
+// MARK: - Wiki Settings Tab
+
+private struct WikiSettingsTab: View {
+    @AppStorage("wikiAgentRunner") private var runner = "auto"
+    @State private var claudePath: String?
+    @State private var codexPath: String?
+
+    var body: some View {
+        Form {
+            Section("Agent") {
+                Picker("Runner", selection: $runner) {
+                    Text("Auto").tag("auto")
+                    Text("Claude Code").tag("claude")
+                    Text("Codex").tag("codex")
+                }
+                Text("Auto picks Claude Code if installed, otherwise Codex. Both runners use read-only file tools — they propose changes, you review the diff.")
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
+            }
+
+            Section("Detection") {
+                detectionRow(
+                    name: "Claude Code",
+                    path: claudePath,
+                    installURL: URL(string: "https://docs.claude.com/claude-code")!
+                )
+                detectionRow(
+                    name: "Codex CLI",
+                    path: codexPath,
+                    installURL: URL(string: "https://developers.openai.com/codex/cli")!
+                )
+            }
+        }
+        .formStyle(.grouped)
+        .onAppear { refresh() }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            refresh()
+        }
+    }
+
+    @ViewBuilder
+    private func detectionRow(name: String, path: String?, installURL: URL) -> some View {
+        HStack(alignment: .firstTextBaseline) {
+            Text(name)
+            Spacer()
+            if let path {
+                Image(systemName: "checkmark.circle.fill")
+                    .foregroundStyle(.green)
+                Text(path)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            } else {
+                Image(systemName: "xmark.circle.fill")
+                    .foregroundStyle(.red)
+                Text("Not detected")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Link("Install", destination: installURL)
+                    .font(.caption)
+            }
+        }
+    }
+
+    private func refresh() {
+        claudePath = AgentDiscovery.findClaude()?.url.path
+        codexPath = AgentDiscovery.findCodex()?.url.path
     }
 }

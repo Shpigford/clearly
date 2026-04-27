@@ -54,50 +54,75 @@ enum WikiAgentCoordinator {
         }
     }
 
-    /// Entry point for ⌃⌘A and the Wiki menu. Shows the chat panel and
-    /// focuses the input; the user types from there.
+    /// Entry point for ⌃⌘A, the Wiki menu, and the toolbar Chat button.
+    /// Toggles the chat panel — repeated invocations close it.
     static func startChat(workspace: WorkspaceManager, chat: WikiChatState) {
-        guard let _ = workspace.activeLocation?.url, workspace.activeVaultIsWiki else {
+        if chat.isVisible {
+            chat.hide()
+            return
+        }
+        guard let vaultURL = workspace.activeLocation?.url, workspace.activeVaultIsWiki else {
             presentError("Chat is only available when the active note lives in a wiki vault.")
             return
         }
+        chat.bind(to: vaultURL)
         chat.show()
     }
 
-    /// Called by WikiChatView when the user submits a message. Runs the
-    /// query recipe with the full conversation history inlined as `{{input}}`,
-    /// appends the assistant's reply, and opportunistically warms the cache
-    /// so follow-up turns are fast.
+    /// Called by WikiChatView when the user submits a message. RAG flow:
+    /// retrieve the most-relevant notes for the latest user message in process
+    /// (semantic search via `WikiChatRetriever`), splice them into the prompt
+    /// as `{{vault_state}}`, and ask the LLM to answer over the inlined
+    /// context — no agent tool calls, no MCP subprocess.
     static func sendChatMessage(
         _ text: String,
         workspace: WorkspaceManager,
         chat: WikiChatState
     ) {
-        guard let vaultURL = workspace.activeLocation?.url, workspace.activeVaultIsWiki else {
+        guard let location = workspace.activeLocation,
+              let vaultURL = workspace.activeLocation?.url,
+              workspace.activeVaultIsWiki else {
             presentError("Chat is only available when the active note lives in a wiki vault.")
             return
         }
-        // Chat uses a tool-enabled runner pointed at the vault cwd so Claude
-        // Code can Read/Grep/Glob on demand — dramatically better synthesis
-        // than us dumping 300KB of context upfront.
-        guard let runner = resolveToolEnabledRunner(vaultURL: vaultURL) else {
-            presentError("Install Claude Code to use Wiki Chat: https://docs.claude.com/claude-code")
+        guard let runner = resolveCompletionRunner() else {
+            presentError("Install Claude Code or Codex CLI to use Wiki Chat. https://docs.claude.com/claude-code · https://developers.openai.com/codex/cli")
+            return
+        }
+        guard let vaultIndex = workspace.vaultIndex(for: location) else {
+            presentError("Vault index isn't loaded yet — give it a moment and try again.")
             return
         }
         AgentWarmer.warmIfNeeded(runner: runner)
 
-        _ = chat.appendUser(text)
+        chat.bind(to: vaultURL)
+        let userMessage = chat.appendUser(text)
         chat.draft = ""
         chat.isSending = true
         chat.sendError = nil
+        let contextID = chat.contextID
 
         Task { @MainActor in
-            defer { chat.isSending = false }
+            defer {
+                if chat.isCurrent(vaultRoot: vaultURL, contextID: contextID) {
+                    chat.isSending = false
+                }
+            }
             do {
                 let recipe = try loadRecipe(kind: .chat, vaultURL: vaultURL)
-                // Minimal context pointer — the agent explores with tools
-                // instead of us inlining files.
-                let vaultState = buildQueryVaultPointer(vaultURL: vaultURL)
+                guard chat.isCurrent(vaultRoot: vaultURL, contextID: contextID) else { return }
+
+                let hits = try await Task.detached(priority: .userInitiated) {
+                    try await WikiChatRetriever.retrieve(
+                        question: userMessage.text,
+                        vaultURL: vaultURL,
+                        index: vaultIndex
+                    )
+                }.value
+                guard chat.isCurrent(vaultRoot: vaultURL, contextID: contextID) else { return }
+                DiagnosticLog.log("Chat: retrieved \(hits.count) notes for question (\(userMessage.text.count) chars)")
+
+                let vaultState = WikiChatRetriever.renderContextBlock(hits)
                 let transcript = Self.renderTranscript(chat.messages)
                 let prompt = RecipeParser.interpolate(recipe, input: transcript, vaultState: vaultState)
                 DiagnosticLog.log("Chat: sending (turns=\(chat.messages.count), prompt=\(prompt.count) chars)")
@@ -108,6 +133,7 @@ enum WikiAgentCoordinator {
                 DiagnosticLog.log("Chat: reply \(result.text.count) chars, tokens in=\(result.inputTokens) out=\(result.outputTokens)")
 
                 let trimmed = result.text.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard chat.isCurrent(vaultRoot: vaultURL, contextID: contextID) else { return }
                 guard !trimmed.isEmpty else {
                     chat.sendError = "Empty response from the agent."
                     return
@@ -115,35 +141,13 @@ enum WikiAgentCoordinator {
                 _ = chat.appendAssistant(trimmed)
             } catch {
                 DiagnosticLog.log("Chat failed: \(error)")
+                guard chat.isCurrent(vaultRoot: vaultURL, contextID: contextID) else { return }
                 chat.sendError = Self.describe(error)
             }
         }
     }
 
-    /// Short prompt-side pointer that tells the agent how the vault is laid
-    /// out and that it should use its native tools. Replaces the 300KB
-    /// inline-everything approach — smaller prompt, smarter agent, better
-    /// answers because it reads only what's relevant.
-    private static func buildQueryVaultPointer(vaultURL: URL) -> String {
-        let paths = listVaultMarkdownPaths(under: vaultURL)
-        var lines = [
-            "# Wiki vault",
-            "",
-            "Your current working directory IS the user's wiki vault. Every markdown file in it is part of the knowledge base. Use your Read / Grep / Glob tools to explore it:",
-            "",
-            "- `Glob \"**/*.md\"` — list notes",
-            "- `Grep <term>` — search across all notes",
-            "- `Read <path>` — load a specific note's contents",
-            "",
-            "Prefer reading only the files that are actually relevant to the question. Cite what you read as `[[note-name]]` wiki-links.",
-            "",
-            "Quick inventory (you can also discover these yourself):",
-        ]
-        lines.append(contentsOf: paths.map { "- \($0)" })
-        return lines.joined(separator: "\n")
-    }
-
-    /// Serialise the conversation into the form the query recipe expects as
+    /// Serialise the conversation into the form the chat recipe expects as
     /// `{{input}}`. We flag the latest message so the model knows which turn
     /// to answer rather than re-summarising the whole history.
     private static func renderTranscript(_ messages: [WikiChatMessage]) -> String {
@@ -157,46 +161,80 @@ enum WikiAgentCoordinator {
         return lines.joined(separator: "\n")
     }
 
-    static func startReview(workspace: WorkspaceManager, controller: WikiOperationController) {
-        guard let session = beginSession(workspace: workspace, operationKind: .review) else { return }
-        // Focus is optional — empty input means "general pass".
-        let focus = promptText(
-            title: "Review",
-            message: "Optional: scope the audit to a topic or folder. Leave blank for a general pass.",
-            placeholder: "e.g. llm-training / projects/"
-        )?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+    /// Auto-Review entry point. Fires on vault open if it's been ≥24h since
+    /// the last successful run. Unscoped (general pass) — no focus prompt.
+    /// Results park on `controller.pendingOperation` so the diff sheet
+    /// doesn't pop unprompted; the LogSidebar badge invites the user to
+    /// review when ready. Idempotent (state-file-gated) and silent on
+    /// "no claude CLI" — never popping an alert at vault-open time.
+    static func runReviewIfStale(workspace: WorkspaceManager, controller: WikiOperationController) {
+        guard workspace.activeVaultIsWiki,
+              let vaultURL = workspace.activeLocation?.url else {
+            return
+        }
+
+        if let state = WikiVaultState.read(at: vaultURL),
+           let last = state.lastReviewAt {
+            let elapsed = Date().timeIntervalSince(last)
+            if elapsed < 24 * 3600 {
+                let minutes = Int(elapsed / 60)
+                DiagnosticLog.log("[Review] skipped: ran \(minutes)m ago")
+                return
+            }
+        }
+
+        // Already running or pending? Don't double-fire.
+        guard !controller.hasPendingReview,
+              !controller.isPresenting,
+              !controller.isRunningRecipe,
+              !controller.isAutoReviewing else {
+            return
+        }
+
+        guard let runner = resolveToolEnabledRunner(vaultURL: vaultURL) else {
+            DiagnosticLog.log("[Review] skipped: no agent CLI installed")
+            return
+        }
+        AgentWarmer.warmIfNeeded(runner: runner)
+        let session = Session(vaultURL: vaultURL, runner: runner)
 
         Task { @MainActor in
+            // Re-check on the @MainActor before doing real work. Two
+            // synchronous callers (`.onAppear` + `.onChange`) can both pass
+            // the synchronous guards above before either Task body runs;
+            // `runRecipe` sets `isAutoReviewing` synchronously at its top
+            // (for `.holdForReview` mode), so the second Task to start sees
+            // the flag and bails.
+            guard !controller.isAutoReviewing else {
+                DiagnosticLog.log("[Review] skipped: another auto-Review in flight")
+                return
+            }
             await runRecipe(
                 kind: .review,
                 session: session,
                 controller: controller,
-                startStatus: focus.isEmpty ? "Reviewing the wiki…" : "Reviewing — focus: \(focus)",
+                startStatus: "Reviewing the wiki…",
                 titleFor: { proposal in
                     let count = proposal.changes.count
                     return count == 0
                         ? "Review: no issues"
                         : "Review: \(count) fix\(count == 1 ? "" : "es")"
-                }
-            ) { focus }
+                },
+                stageMode: .holdForReview
+            ) { "" }
         }
     }
 
     /// Fire a silent cache warmup for the chat/query path as soon as a wiki
-    /// vault becomes active. Bails when the Claude CLI isn't installed.
-    /// Safe to call repeatedly; AgentWarmer short-circuits while the cache
-    /// is still warm.
+    /// vault becomes active. Bails when no agent CLI is installed (or the
+    /// user picked one that isn't present). Safe to call repeatedly;
+    /// AgentWarmer short-circuits while the cache is still warm.
     static func warmForActiveVaultIfPossible(workspace: WorkspaceManager) {
         guard workspace.activeVaultIsWiki,
               let vaultURL = workspace.activeLocation?.url,
-              let cli = AgentDiscovery.findClaude() else {
+              let runner = resolveToolEnabledRunner(vaultURL: vaultURL) else {
             return
         }
-        let runner = ClaudeCLIAgentRunner(
-            binaryURL: cli.url,
-            enabledTools: "Read,Grep,Glob",
-            workingDirectory: vaultURL
-        )
         AgentWarmer.warmIfNeeded(runner: runner)
     }
 
@@ -216,7 +254,7 @@ enum WikiAgentCoordinator {
             return nil
         }
         guard let runner = resolveToolEnabledRunner(vaultURL: vaultURL) else {
-            presentError("Install Claude Code to use this command: https://docs.claude.com/claude-code")
+            presentError("Install Claude Code or Codex CLI to use this command. https://docs.claude.com/claude-code · https://developers.openai.com/codex/cli")
             return nil
         }
         AgentWarmer.warmIfNeeded(runner: runner)
@@ -225,18 +263,40 @@ enum WikiAgentCoordinator {
 
     // MARK: - Shared pipeline
 
+    /// Where a successful proposal lands. `.immediate` opens the diff sheet
+    /// straight away (Capture/Chat use this); `.holdForReview` parks the
+    /// proposal on `pendingOperation` so the auto-Review path can surface a
+    /// badge instead.
+    enum StageMode {
+        case immediate
+        case holdForReview
+    }
+
     private static func runRecipe(
         kind: OperationKind,
         session: Session,
         controller: WikiOperationController,
         startStatus: String,
         titleFor: (AgentProposal) -> String,
+        stageMode: StageMode = .immediate,
         buildInput: () async throws -> String
     ) async {
         let label = kind.rawValue.capitalized
         DiagnosticLog.log("\(label): start")
-        controller.startRecipe(startStatus)
-        defer { controller.finishRecipe() }
+        switch stageMode {
+        case .immediate:
+            controller.startRecipe(startStatus)
+        case .holdForReview:
+            controller.isAutoReviewing = true
+        }
+        defer {
+            switch stageMode {
+            case .immediate:
+                controller.finishRecipe()
+            case .holdForReview:
+                controller.isAutoReviewing = false
+            }
+        }
 
         do {
             let input = try await buildInput()
@@ -245,22 +305,33 @@ enum WikiAgentCoordinator {
             let prompt = RecipeParser.interpolate(recipe, input: input, vaultState: vaultState)
             DiagnosticLog.log("\(label): calling agent (prompt=\(prompt.count) chars)")
 
-            controller.updateRecipeStatus(
-                AgentWarmer.isWarm
-                    ? "Asking Claude…"
-                    : "Asking Claude (warming cache, first call ~30s)…"
-            )
+            if stageMode == .immediate {
+                controller.updateRecipeStatus(
+                    AgentWarmer.isWarm
+                        ? "Asking the agent…"
+                        : "Asking the agent (warming cache, first call may take a minute)…"
+                )
+            }
 
             let model = UserDefaults.standard.string(forKey: "wikiAgentModel")
             let result = try await session.runner.run(prompt: prompt, model: model)
             AgentWarmer.markExercised()
             DiagnosticLog.log("\(label): agent replied \(result.text.count) chars, tokens in=\(result.inputTokens) out=\(result.outputTokens)")
 
-            controller.updateRecipeStatus("Parsing response…")
+            if stageMode == .immediate {
+                controller.updateRecipeStatus("Parsing response…")
+            }
             let proposal = try AgentResultParser.parseProposal(from: result.text)
 
             if !proposal.hasChanges {
                 DiagnosticLog.log("\(label): noop — \(proposal.rationale)")
+                if kind == .review {
+                    // Successful Review with nothing to do still resets the
+                    // 24h cooldown — otherwise a clean wiki re-fires Review
+                    // every launch.
+                    WikiVaultState.recordReviewRun(at: session.vaultURL)
+                }
+                if stageMode == .holdForReview { return }
                 let verdictTitle: String = {
                     switch kind {
                     case .capture: return "Nothing staged"
@@ -287,26 +358,74 @@ enum WikiAgentCoordinator {
             } catch let error as WikiOperationError {
                 throw AgentError.invalidWikiOperation(String(describing: error))
             }
-            DiagnosticLog.log("\(label): staging operation with \(op.changes.count) changes")
-            controller.stage(op)
+            switch stageMode {
+            case .immediate:
+                DiagnosticLog.log("\(label): staging operation with \(op.changes.count) changes")
+                controller.stage(op, vaultRoot: session.vaultURL)
+            case .holdForReview:
+                DiagnosticLog.log("\(label): holding operation with \(op.changes.count) changes for review")
+                controller.holdForReview(op, vaultRoot: session.vaultURL)
+            }
         } catch {
             DiagnosticLog.log("\(label) failed: \(error)")
-            presentError("\(label) failed: \(Self.describe(error))")
+            if stageMode == .immediate {
+                presentError("\(label) failed: \(Self.describe(error))")
+            }
         }
     }
 
     // MARK: - Runner resolution
 
-    /// Single CLI runner config for every wiki recipe (Capture/Chat/Review):
-    /// cwd=vault, tools=Read/Grep/Glob. Same config means same cache key, so
-    /// warming one recipe's cache benefits all three.
+    /// Tool-enabled runner used by Capture and Review: cwd=vault, built-in
+    /// Read/Grep/Glob enabled so the agent can explore on demand. Honors
+    /// the `wikiAgentRunner` user preference (`auto | claude | codex`).
+    /// Auto prefers Claude when both are installed; falls back to Codex;
+    /// returns nil if neither resolves.
     private static func resolveToolEnabledRunner(vaultURL: URL) -> AgentRunner? {
-        guard let cli = AgentDiscovery.findClaude() else { return nil }
-        return ClaudeCLIAgentRunner(
-            binaryURL: cli.url,
-            enabledTools: "Read,Grep,Glob",
-            workingDirectory: vaultURL
-        )
+        resolveRunner { cli in
+            ClaudeCLIAgentRunner(
+                binaryURL: cli.url,
+                enabledTools: "Read,Grep,Glob",
+                workingDirectory: vaultURL
+            )
+        } codex: { cli in
+            CodexCLIAgentRunner(
+                binaryURL: cli.url,
+                workingDirectory: vaultURL
+            )
+        }
+    }
+
+    /// Completion-only runner used by Chat (RAG path). No built-in tools —
+    /// the agent's only job is to answer over the inlined retrieved
+    /// context. cwd=stable scratch dir for prompt-cache reuse.
+    private static func resolveCompletionRunner() -> AgentRunner? {
+        resolveRunner { cli in
+            ClaudeCLIAgentRunner(
+                binaryURL: cli.url,
+                enabledTools: ""
+            )
+        } codex: { cli in
+            CodexCLIAgentRunner(binaryURL: cli.url)
+        }
+    }
+
+    private static func resolveRunner(
+        claude makeClaude: (AgentDiscovery.CLI) -> AgentRunner,
+        codex makeCodex: (AgentDiscovery.CLI) -> AgentRunner
+    ) -> AgentRunner? {
+        let pref = UserDefaults.standard.string(forKey: "wikiAgentRunner") ?? "auto"
+        switch pref {
+        case "claude":
+            return AgentDiscovery.findClaude().map(makeClaude)
+        case "codex":
+            return AgentDiscovery.findCodex().map(makeCodex)
+        default:
+            if let claude = AgentDiscovery.findClaude() {
+                return makeClaude(claude)
+            }
+            return AgentDiscovery.findCodex().map(makeCodex)
+        }
     }
 
     // MARK: - Recipe loading
@@ -403,21 +522,6 @@ enum WikiAgentCoordinator {
     }
 
     // MARK: - NSAlert + diagnostics
-
-    private static func promptText(title: String, message: String, placeholder: String) -> String? {
-        let alert = NSAlert()
-        alert.messageText = title
-        alert.informativeText = message
-        alert.addButton(withTitle: "Run")
-        alert.addButton(withTitle: "Cancel")
-        let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 340, height: 24))
-        field.placeholderString = placeholder
-        alert.accessoryView = field
-        alert.window.initialFirstResponder = field
-        let response = alert.runModal()
-        guard response == .alertFirstButtonReturn else { return nil }
-        return field.stringValue
-    }
 
     private static func presentError(_ message: String) {
         let alert = NSAlert()
