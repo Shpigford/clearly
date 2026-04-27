@@ -164,8 +164,9 @@ struct MacFolderSidebar: View {
         } header: {
             collapsibleHeader(
                 title: location.name,
-                systemImage: "folder",
-                isExpanded: locationExpandedBinding(location)
+                systemImage: location.isWiki ? "book.closed" : "folder",
+                isExpanded: locationExpandedBinding(location),
+                isWiki: location.isWiki
             )
             .contextMenu {
                 Button("New File", systemImage: "doc.badge.plus") {
@@ -178,6 +179,11 @@ struct MacFolderSidebar: View {
                 Button("Reveal in Finder", systemImage: "folder") {
                     NSWorkspace.shared.activateFileViewerSelecting([location.url])
                 }
+                if !location.isWiki {
+                    Button("Convert to LLM Wiki…", systemImage: "book.closed") {
+                        convertToWiki(location)
+                    }
+                }
                 Divider()
                 Button("Remove from List", systemImage: "minus.circle", role: .destructive) {
                     workspace.removeLocationClosingOpenDocuments(location)
@@ -186,6 +192,41 @@ struct MacFolderSidebar: View {
             .dropDestination(for: URL.self) { urls, _ in
                 workspace.handleSidebarDrop(urls: urls, into: location.url)
             }
+        }
+    }
+
+    private func convertToWiki(_ location: BookmarkedLocation) {
+        let confirm = NSAlert()
+        confirm.messageText = "Convert \"\(location.name)\" to an LLM Wiki?"
+        confirm.informativeText = """
+        Clearly will add these files to the folder:
+
+        • AGENTS.md (schema & conventions)
+        • index.md (table of contents)
+        • log.md (operation history)
+        • raw/ (source material)
+        • .clearly/recipes/ (Capture / Chat / Review prompts)
+
+        None of your existing files will be touched. To revert, just delete \
+        AGENTS.md, index.md, and log.md.
+        """
+        confirm.alertStyle = .informational
+        confirm.addButton(withTitle: "Convert")
+        confirm.addButton(withTitle: "Cancel")
+        guard confirm.runModal() == .alertFirstButtonReturn else { return }
+
+        do {
+            try WikiSeeder.seed(at: location.url)
+            // loadTree will re-detect the marker files via FSEvents; nudge it
+            // immediately so the UI updates without waiting for the 300ms
+            // debounce.
+            workspace.refreshTree(for: location.id)
+        } catch {
+            let alert = NSAlert()
+            alert.messageText = "Couldn't seed wiki files"
+            alert.informativeText = error.localizedDescription
+            alert.alertStyle = .warning
+            alert.runModal()
         }
     }
 
@@ -233,8 +274,8 @@ struct MacFolderSidebar: View {
     /// hover so the sidebar reads as quiet chrome until the user reaches for
     /// it. The entire row is the hit target. 16pt trailing padding clears
     /// the sidebar's overlay scrollbar when present.
-    private func collapsibleHeader(title: String, systemImage: String, isExpanded: Binding<Bool>) -> some View {
-        CollapsibleSectionHeader(title: title, systemImage: systemImage, isExpanded: isExpanded)
+    private func collapsibleHeader(title: String, systemImage: String, isExpanded: Binding<Bool>, isWiki: Bool = false) -> some View {
+        CollapsibleSectionHeader(title: title, systemImage: systemImage, isExpanded: isExpanded, isWiki: isWiki)
     }
 
     // MARK: - Tags section
@@ -706,6 +747,7 @@ private struct CollapsibleSectionHeader: View {
     let title: String
     let systemImage: String
     @Binding var isExpanded: Bool
+    var isWiki: Bool = false
     @State private var isHovering = false
 
     var body: some View {
@@ -715,6 +757,17 @@ private struct CollapsibleSectionHeader: View {
             HStack(spacing: 4) {
                 Image(systemName: systemImage)
                 Text(title)
+                if isWiki {
+                    Text("WIKI")
+                        .font(.system(size: 9, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal, 4)
+                        .padding(.vertical, 1)
+                        .background(
+                            RoundedRectangle(cornerRadius: 3)
+                                .fill(Color.secondary.opacity(0.15))
+                        )
+                }
                 Spacer()
                 Image(systemName: "chevron.right")
                     .font(.system(size: 9, weight: .semibold))

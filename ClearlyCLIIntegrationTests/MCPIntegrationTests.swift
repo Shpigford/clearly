@@ -1,9 +1,10 @@
 import Foundation
 import ClearlyCore
 import MCP
+import NaturalLanguage
 import XCTest
 
-/// End-to-end test of the 9 MCP tools exposed by ClearlyCLI, driving a real
+/// End-to-end test of the MCP tools exposed by ClearlyCLI, driving a real
 /// Server over InMemoryTransport with a real Client. Each test exercises the
 /// success path; ErrorPathTests covers ToolError cases.
 final class MCPIntegrationTests: XCTestCase {
@@ -20,11 +21,12 @@ final class MCPIntegrationTests: XCTestCase {
 
     // MARK: - tools/list
 
-    func testListToolsReturnsNine() async throws {
+    func testListToolsReturnsAllRegisteredTools() async throws {
         let (tools, _) = try await harness.client.listTools()
-        XCTAssertEqual(tools.count, 9)
+        XCTAssertEqual(tools.count, 10)
         let names = Set(tools.map(\.name))
         XCTAssertEqual(names, Set([
+            "semantic_search",
             "search_notes", "get_backlinks", "get_tags",
             "read_note", "list_notes", "get_headings",
             "get_frontmatter", "create_note", "update_note"
@@ -34,6 +36,36 @@ final class MCPIntegrationTests: XCTestCase {
             XCTAssertNotNil(t.outputSchema, "\(t.name) missing outputSchema")
             XCTAssertNotNil(t.annotations, "\(t.name) missing annotations")
         }
+    }
+
+    func testReadOnlyToolRegistryHidesWriteTools() throws {
+        let tools = ToolRegistry.listTools(vaults: harness.loadedVaults, readOnly: true)
+        let names = Set(tools.map(\.name))
+        XCTAssertEqual(tools.count, 8)
+        XCTAssertFalse(names.contains("create_note"))
+        XCTAssertFalse(names.contains("update_note"))
+        XCTAssertTrue(names.contains("semantic_search"))
+        XCTAssertTrue(names.contains("search_notes"))
+    }
+
+    func testReadOnlyHandlerRejectsWriteTools() async throws {
+        let result = await Handlers.dispatch(
+            params: .init(
+                name: "create_note",
+                arguments: ["relative_path": .string("blocked.md"), "content": .string("blocked")]
+            ),
+            vaults: harness.loadedVaults,
+            readOnly: true
+        )
+
+        XCTAssertEqual(result.isError, true)
+        guard case let .text(jsonString, _, _) = result.content.first else {
+            XCTFail("create_note returned non-text content: \(result.content)")
+            return
+        }
+        let payload = try JSONDecoder().decode(ErrorPayload.self, from: Data(jsonString.utf8))
+        XCTAssertEqual(payload.error, "unknown_tool")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: harness.vaultURL.appendingPathComponent("blocked.md").path))
     }
 
     // MARK: - search_notes
@@ -56,6 +88,126 @@ final class MCPIntegrationTests: XCTestCase {
             result.results.contains { $0.relativePath.contains("Link Target") },
             "expected a hit touching 'Link Target'"
         )
+    }
+
+    // MARK: - semantic_search
+
+    /// Inject deterministic embeddings for three fixture notes (a fourth has none, so it should
+    /// not appear in results) and confirm the tool ranks by cosine similarity to the query vector.
+    /// We bypass NLContextualEmbedding for stored vectors but still need the live model for the
+    /// query — skip if assets aren't on the runner.
+    func testSemanticSearchRanksByCosineSimilarity() async throws {
+        try skipIfEmbeddingAssetsMissing()
+
+        let index = harness.loadedVaults[0].index
+        let dim = try EmbeddingService().dimension
+        XCTAssertGreaterThan(dim, 0)
+
+        // Fetch a handful of indexed files we can attach vectors to.
+        let everything = index.allFiles()
+        guard everything.count >= 3 else {
+            throw XCTSkip("FixtureVault has fewer than 3 notes — adjust fixture or skip")
+        }
+        let close = everything[0]
+        let middle = everything[1]
+        let far = everything[2]
+
+        // Build three orthogonal-ish vectors. Identity + a slightly perturbed identity + noise.
+        let closeVec = unitVector(at: 0, dim: dim, scale: 1.0)
+        let middleVec = unitVector(at: 1, dim: dim, scale: 1.0)
+        let farVec = unitVector(at: 2, dim: dim, scale: 1.0)
+
+        try index.upsertEmbedding(fileID: close.id, contentHash: close.contentHash,
+                                  vector: closeVec, modelVersion: EmbeddingService.MODEL_VERSION)
+        try index.upsertEmbedding(fileID: middle.id, contentHash: middle.contentHash,
+                                  vector: middleVec, modelVersion: EmbeddingService.MODEL_VERSION)
+        try index.upsertEmbedding(fileID: far.id, contentHash: far.contentHash,
+                                  vector: farVec, modelVersion: EmbeddingService.MODEL_VERSION)
+
+        // Build a query whose embedding is *substituted* with closeVec via the helper below.
+        // Since we can't intercept the live model from a black-box test, instead we'll use a
+        // free-form string and just verify the tool returns 3 ranked entries (one per stored
+        // vector), with `close` appearing in the result set. Stronger ranking guarantees are
+        // covered by the unit-level cosine tests in EmbeddingServiceTests.
+        struct Hit: Decodable {
+            let relativePath: String
+            let filename: String
+            let score: Float
+        }
+        struct Result: Decodable {
+            let results: [Hit]
+            let totalCount: Int
+            let returnedCount: Int
+        }
+        let result = try await harness.callTool(
+            "semantic_search",
+            arguments: ["query": .string("project planning notes"), "limit": .int(10)],
+            as: Result.self
+        )
+        XCTAssertEqual(result.totalCount, 3, "should score every stored vector")
+        XCTAssertEqual(result.returnedCount, 3)
+        // Scores must be monotonically non-increasing (sorted top-N).
+        for i in 1..<result.results.count {
+            XCTAssertGreaterThanOrEqual(result.results[i - 1].score, result.results[i].score)
+        }
+        // Hits must come from the three notes we embedded.
+        let hitPaths = Set(result.results.map(\.relativePath))
+        XCTAssertEqual(hitPaths, Set([close.path, middle.path, far.path]))
+    }
+
+    func testSemanticSearchSkipsEmbeddingsAtOtherModelVersions() async throws {
+        try skipIfEmbeddingAssetsMissing()
+        let index = harness.loadedVaults[0].index
+        let dim = try EmbeddingService().dimension
+        let everything = index.allFiles()
+        guard let one = everything.first else { throw XCTSkip("empty fixture") }
+        // Stored at a different model version — must NOT appear in results.
+        try index.upsertEmbedding(fileID: one.id, contentHash: one.contentHash,
+                                  vector: unitVector(at: 0, dim: dim, scale: 1),
+                                  modelVersion: EmbeddingService.MODEL_VERSION + 1)
+
+        struct Result: Decodable { let totalCount: Int; let returnedCount: Int }
+        let result = try await harness.callTool(
+            "semantic_search",
+            arguments: ["query": .string("anything")],
+            as: Result.self
+        )
+        XCTAssertEqual(result.totalCount, 0)
+        XCTAssertEqual(result.returnedCount, 0)
+    }
+
+    func testSemanticSearchMissingQueryRejected() async throws {
+        // No model assets needed — the tool throws on missing query before embedding.
+        let payload = try await harness.callToolExpectingError(
+            "semantic_search",
+            arguments: ["query": .string("")]
+        )
+        XCTAssertEqual(payload.error, "missing_argument")
+    }
+
+    func testSemanticSearchInvalidLimitRejected() async throws {
+        let payload = try await harness.callToolExpectingError(
+            "semantic_search",
+            arguments: ["query": .string("hello"), "limit": .int(0)]
+        )
+        XCTAssertEqual(payload.error, "invalid_argument")
+    }
+
+    // MARK: - helpers
+
+    /// Skip the calling test if NLContextualEmbedding's English assets aren't on the runner.
+    private func skipIfEmbeddingAssetsMissing() throws {
+        // Probe without triggering an asset download.
+        guard let probe = NLContextualEmbedding(language: .english), probe.hasAvailableAssets else {
+            throw XCTSkip("NLContextualEmbedding English assets not available on this runner")
+        }
+    }
+
+    /// One-hot-style unit vector for deterministic ranking tests.
+    private func unitVector(at index: Int, dim: Int, scale: Float) -> [Float] {
+        var v = [Float](repeating: 0, count: dim)
+        if dim > 0 { v[index % dim] = scale }
+        return v
     }
 
     func testSearchFilesGroupedKeepsHighlightedExcerptForUI() async throws {

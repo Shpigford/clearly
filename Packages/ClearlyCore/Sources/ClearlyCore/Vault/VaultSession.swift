@@ -281,6 +281,10 @@ public final class VaultSession {
                 // watcher event afterward. Feed the current `files` through
                 // incremental now; `updateFile` hash-skips unchanged entries.
                 self.scheduleIncrementalReindex(for: self.files)
+                // Background-embed any notes that are missing or stale. Idempotent and
+                // cancellable; the incremental reindex above will trigger another sweep
+                // if it actually changes any rows.
+                index.scheduleEmbeddingRefresh()
             }
         }
     }
@@ -331,6 +335,9 @@ public final class VaultSession {
                 if Task.isCancelled { return }
                 _ = try? index.updateFile(at: path)
             }
+            // The bulk of changed files just had their content_hash bumped; let the
+            // embedding sweep refresh stale rows. Cheap when there's nothing to do.
+            index.scheduleEmbeddingRefresh()
         }
     }
 

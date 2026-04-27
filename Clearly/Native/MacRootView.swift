@@ -18,6 +18,10 @@ struct MacRootView: View {
     @StateObject private var outlineState = OutlineState()
     @StateObject private var backlinksState = BacklinksState()
     @StateObject private var jumpToLineState = JumpToLineState()
+    @State private var wikiController = WikiOperationController()
+    @State private var wikiChat = WikiChatState()
+    @State private var wikiLog = WikiLogState()
+    @State private var wikiCapture = WikiCaptureState()
 
     var body: some View {
         if workspace.isFirstRun && workspace.locations.isEmpty && workspace.activeDocumentID == nil {
@@ -48,6 +52,10 @@ struct MacRootView: View {
                     outlineState: outlineState,
                     backlinksState: backlinksState,
                     jumpToLineState: jumpToLineState,
+                    wikiController: wikiController,
+                    wikiChat: wikiChat,
+                    wikiLog: wikiLog,
+                    wikiCapture: wikiCapture,
                     positionSyncID: $positionSyncID,
                     showFormatPopover: $showFormatPopover
                 )
@@ -58,6 +66,7 @@ struct MacRootView: View {
                     findState: findState,
                     outlineState: outlineState,
                     backlinksState: backlinksState,
+                    wikiController: wikiController,
                     showFormatPopover: $showFormatPopover
                 )
             }

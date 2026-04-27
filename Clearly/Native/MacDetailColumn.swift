@@ -15,6 +15,7 @@ struct MacDetailToolbar: ToolbarContent {
     @ObservedObject var findState: FindState
     @ObservedObject var outlineState: OutlineState
     @ObservedObject var backlinksState: BacklinksState
+    @Bindable var wikiController: WikiOperationController
     @Binding var showFormatPopover: Bool
 
     var body: some ToolbarContent {
@@ -126,6 +127,55 @@ struct MacDetailToolbar: ToolbarContent {
                 .help("Share")
             }
         }
+
+        // Visual break so the wiki actions render as their own Liquid Glass
+        // pill on macOS 26+, mirroring the centered editor/preview group.
+        if workspace.activeVaultIsWiki {
+            if #available(macOS 26.0, *) {
+                ToolbarSpacer(.fixed, placement: .primaryAction)
+            }
+            ToolbarItemGroup(placement: .primaryAction) {
+                // Auto-Review surfaced affordance. Only renders when the agent
+                // has parked a proposal on `pendingOperation`; click goes
+                // straight to the diff sheet (skipping the sidebar). Lives in
+                // the wiki cluster so it sits next to Capture/Chat — the
+                // LogSidebar header badge alone is invisible to anyone who
+                // keeps the sidebar closed.
+                if wikiController.hasPendingReview {
+                    let count = wikiController.pendingOperation?.changes.count ?? 0
+                    Button {
+                        wikiController.presentPending()
+                    } label: {
+                        Image(systemName: "sparkles")
+                            .overlay(alignment: .topTrailing) {
+                                Text("\(count)")
+                                    .font(.system(size: 9, weight: .bold))
+                                    .monospacedDigit()
+                                    .foregroundStyle(.white)
+                                    .padding(.horizontal, 4)
+                                    .padding(.vertical, 1)
+                                    .background(Capsule().fill(Color.accentColor))
+                                    .offset(x: 8, y: -6)
+                            }
+                    }
+                    .help("Review ready · \(count) change\(count == 1 ? "" : "s")")
+                }
+
+                Button {
+                    NotificationCenter.default.post(name: .wikiCapture, object: nil)
+                } label: {
+                    Label("Capture", systemImage: "tray.and.arrow.down")
+                }
+                .help("Capture into this wiki (⌃⌘I)")
+
+                Button {
+                    NotificationCenter.default.post(name: .wikiChat, object: nil)
+                } label: {
+                    Label("Chat", systemImage: "bubble.left.and.bubble.right")
+                }
+                .help("Chat with this wiki (⌃⌘A)")
+            }
+        }
     }
 }
 
@@ -138,6 +188,10 @@ struct MacDetailColumn: View {
     @ObservedObject var outlineState: OutlineState
     @ObservedObject var backlinksState: BacklinksState
     @ObservedObject var jumpToLineState: JumpToLineState
+    @Bindable var wikiController: WikiOperationController
+    @Bindable var wikiChat: WikiChatState
+    @Bindable var wikiLog: WikiLogState
+    @Bindable var wikiCapture: WikiCaptureState
     @Binding var positionSyncID: String
     @Binding var showFormatPopover: Bool
 
@@ -165,14 +219,66 @@ struct MacDetailColumn: View {
                     .frame(width: 240)
                     .transition(.move(edge: .trailing).combined(with: .opacity))
             }
+
+            if wikiChat.isVisible {
+                WikiChatView(
+                    chat: wikiChat,
+                    controller: wikiController,
+                    vaultRoot: workspace.activeLocation?.url,
+                    send: { text in
+                        WikiAgentCoordinator.sendChatMessage(text, workspace: workspace, chat: wikiChat)
+                    },
+                    openWikiLink: { target in
+                        if let url = resolveWikiLink(target) {
+                            workspace.openFile(at: url)
+                        }
+                    }
+                )
+                .transition(.move(edge: .trailing).combined(with: .opacity))
+            }
+
+            if wikiLog.isVisible {
+                Divider()
+                WikiLogSidebar(
+                    state: wikiLog,
+                    controller: wikiController,
+                    vaultRoot: workspace.activeLocation?.url,
+                    openPath: { relativePath in
+                        guard let vaultURL = workspace.activeLocation?.url else { return }
+                        let fileURL = vaultURL.appendingPathComponent(relativePath)
+                        if FileManager.default.fileExists(atPath: fileURL.path) {
+                            workspace.openFile(at: fileURL)
+                        }
+                    },
+                    openLog: {
+                        guard let vaultURL = workspace.activeLocation?.url else { return }
+                        workspace.openFile(at: vaultURL.appendingPathComponent(WikiLogWriter.filename))
+                    }
+                )
+                .transition(.move(edge: .trailing).combined(with: .opacity))
+            }
         }
         .animation(Theme.Motion.smooth, value: outlineState.isVisible)
+        .animation(Theme.Motion.smooth, value: wikiChat.isVisible)
+        .animation(Theme.Motion.smooth, value: wikiLog.isVisible)
         .navigationTitle(documentTitle)
         .onAppear {
             outlineState.parseHeadings(from: workspace.currentFileText)
             backlinksState.update(for: workspace.currentFileURL, using: workspace.activeVaultIndexes)
             isFullscreen = NSApp.mainWindow?.styleMask.contains(.fullScreen) ?? false
             setupFileWatcher()
+            WikiAgentCoordinator.warmForActiveVaultIfPossible(workspace: workspace)
+            WikiAgentCoordinator.runReviewIfStale(workspace: workspace, controller: wikiController)
+        }
+        .onChange(of: workspace.activeLocation?.id) { _, _ in
+            handleActiveVaultChanged()
+        }
+        .onChange(of: workspace.treeRevision) { _, _ in
+            if wikiLog.isVisible, workspace.activeVaultIsWiki {
+                wikiLog.reload(vaultRoot: workspace.activeLocation?.url)
+            }
+            WikiAgentCoordinator.warmForActiveVaultIfPossible(workspace: workspace)
+            WikiAgentCoordinator.runReviewIfStale(workspace: workspace, controller: wikiController)
         }
         .onReceive(NotificationCenter.default.publisher(for: NSWindow.didEnterFullScreenNotification)) { _ in
             isFullscreen = true
@@ -220,6 +326,53 @@ struct MacDetailColumn: View {
             backlinksState: backlinksState,
             jumpToLineState: jumpToLineState
         ))
+        .sheet(isPresented: Binding(
+            get: { wikiController.isPresenting },
+            set: { if !$0 { wikiController.dismiss() } }
+        )) {
+            WikiDiffSheet(
+                controller: wikiController,
+                onApplied: handleOperationApplied
+            )
+        }
+        .sheet(isPresented: Binding(
+            get: { wikiCapture.isVisible },
+            set: { if !$0 { wikiCapture.dismiss() } }
+        )) {
+            WikiCaptureSheet(state: wikiCapture) { text in
+                WikiAgentCoordinator.submitCapture(
+                    text,
+                    workspace: workspace,
+                    controller: wikiController
+                )
+            }
+        }
+        .overlay(alignment: .bottom) {
+            WikiRecipeProgressOverlay(controller: wikiController)
+                .animation(Theme.Motion.smooth, value: wikiController.isRunningRecipe)
+        }
+        .modifier(WikiNotificationObserversModifier(
+            workspace: workspace,
+            wikiController: wikiController,
+            wikiChat: wikiChat,
+            wikiLog: wikiLog,
+            wikiCapture: wikiCapture
+        ))
+    }
+
+    private func handleOperationApplied(_ operation: WikiOperation, vaultURL: URL) {
+        DiagnosticLog.log("Applied WikiOperation: \(operation.kind.rawValue) — \(operation.title), \(operation.changes.count) changes")
+        // Append to log.md so the vault's own history tracks this operation.
+        // Not part of the atomic apply — a log-write failure is surfaced but
+        // doesn't roll back the already-committed changes.
+        do {
+            try WikiLogWriter.appendOperation(operation, to: vaultURL)
+        } catch {
+            DiagnosticLog.log("WikiLogWriter: append failed — \(error)")
+        }
+        if wikiLog.isVisible {
+            wikiLog.reload(vaultRoot: vaultURL)
+        }
     }
 
     // MARK: - Empty state
@@ -371,6 +524,21 @@ struct MacDetailColumn: View {
 
     // MARK: - Helpers
 
+    private func handleActiveVaultChanged() {
+        let vaultURL = workspace.activeVaultIsWiki ? workspace.activeLocation?.url : nil
+        wikiController.clearPendingReviewIfVaultChanged(to: vaultURL)
+        wikiChat.reset(vaultRoot: vaultURL)
+        wikiLog.reload(vaultRoot: vaultURL)
+
+        if vaultURL == nil {
+            wikiChat.hide()
+            wikiLog.hide()
+        }
+
+        WikiAgentCoordinator.warmForActiveVaultIfPossible(workspace: workspace)
+        WikiAgentCoordinator.runReviewIfStale(workspace: workspace, controller: wikiController)
+    }
+
     private func setupFileWatcher() {
         fileWatcher.liveCurrentText = { [workspace] in
             workspace.liveCurrentFileText()
@@ -407,7 +575,23 @@ struct MacDetailColumn: View {
     }
 
     private func resolveWikiLink(_ target: String) -> URL? {
-        let needle = target.lowercased()
+        let cleaned = target.trimmingCharacters(in: .whitespaces)
+
+        // Path-qualified link (contains "/"): try every registered vault's
+        // root as the base. Matches how Claude's `[[people/josh-pigford]]`
+        // answers map onto real vault-relative paths.
+        if cleaned.contains("/") {
+            let candidatePath = cleaned.hasSuffix(".md") ? cleaned : "\(cleaned).md"
+            for location in workspace.locations {
+                let candidate = location.url.appendingPathComponent(candidatePath)
+                if FileManager.default.fileExists(atPath: candidate.path) {
+                    return candidate
+                }
+            }
+        }
+
+        // Bare stem: walk the file tree and stem-match (existing behavior).
+        let needle = cleaned.lowercased()
         for location in workspace.locations {
             if let hit = Self.findMatchingFile(in: location.fileTree, needle: needle) {
                 return hit
@@ -433,3 +617,28 @@ struct MacDetailColumn: View {
     }
 }
 
+/// Extracted modifier so MacDetailColumn.body stays inside SwiftUI's
+/// type-checker budget. Handles every NotificationCenter-driven Wiki action
+/// (Capture / Chat / Review / Toggle Log Sidebar).
+private struct WikiNotificationObserversModifier: ViewModifier {
+    @Bindable var workspace: WorkspaceManager
+    @Bindable var wikiController: WikiOperationController
+    @Bindable var wikiChat: WikiChatState
+    @Bindable var wikiLog: WikiLogState
+    @Bindable var wikiCapture: WikiCaptureState
+
+    func body(content: Content) -> some View {
+        content
+            .onReceive(NotificationCenter.default.publisher(for: .wikiCapture)) { _ in
+                WikiAgentCoordinator.startCapture(workspace: workspace, capture: wikiCapture)
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .wikiChat)) { _ in
+                WikiAgentCoordinator.startChat(workspace: workspace, chat: wikiChat)
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .wikiToggleLogSidebar)) { _ in
+                withAnimation(Theme.Motion.smooth) {
+                    wikiLog.toggle(vaultRoot: workspace.activeLocation?.url)
+                }
+            }
+    }
+}

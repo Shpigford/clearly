@@ -753,6 +753,12 @@ struct ClearlyApp: App {
                 }
                 .keyboardShortcut("o", modifiers: .command)
 
+                Divider()
+
+                Button("New LLM Wiki…") {
+                    WikiSeeder.createNewWiki(using: workspace)
+                }
+
                 Menu("Open Recent") {
                     ForEach(workspace.recentFiles, id: \.self) { url in
                         Button(url.deletingPathExtension().lastPathComponent) {
@@ -804,6 +810,9 @@ struct ClearlyApp: App {
 
             CommandGroup(after: .textEditing) {
                 FindCommand()
+            }
+            CommandMenu("Wiki") {
+                WikiCommands(workspace: workspace)
             }
             CommandGroup(replacing: .help) {
                 Button("Clearly Help") {
@@ -1017,6 +1026,48 @@ struct ViewModeCommands: View {
             mode?.wrappedValue = .preview
         }
         .keyboardShortcut("2", modifiers: .command)
+    }
+}
+
+// MARK: - Wiki Commands
+//
+// The Wiki menu only activates when the active file lives inside a wiki
+// vault (one with the three marker files: AGENTS.md, index.md, log.md).
+// Each command posts a notification observed by the in-progress Wiki
+// subsystems — recipe engine, agent runner, diff sheet — added in later
+// phases. Until those land, the notifications are logged but no-op.
+struct WikiCommands: View {
+    @FocusedValue(\.activeVaultIsWiki) var isWiki
+    var workspace: WorkspaceManager
+
+    private var enabled: Bool { isWiki ?? false }
+
+    var body: some View {
+        Button("New LLM Wiki…") {
+            WikiSeeder.createNewWiki(using: workspace)
+        }
+
+        Divider()
+
+        Button("Capture") {
+            NotificationCenter.default.post(name: .wikiCapture, object: nil)
+        }
+        .keyboardShortcut("i", modifiers: [.command, .control])
+        .disabled(!enabled)
+
+        Button("Chat") {
+            NotificationCenter.default.post(name: .wikiChat, object: nil)
+        }
+        .keyboardShortcut("a", modifiers: [.command, .control])
+        .disabled(!enabled)
+
+        Divider()
+
+        Button("Toggle Log Sidebar") {
+            NotificationCenter.default.post(name: .wikiToggleLogSidebar, object: nil)
+        }
+        .keyboardShortcut("t", modifiers: [.command, .control])
+        .disabled(!enabled)
     }
 }
 

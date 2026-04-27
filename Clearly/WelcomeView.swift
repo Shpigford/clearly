@@ -37,6 +37,16 @@ struct WelcomeView: View {
                     }
 
                     WelcomePathCard(
+                        icon: "book.closed",
+                        title: "New LLM Wiki",
+                        description: "A knowledge base maintained by an LLM. Feed it sources; it writes and cross-references pages.",
+                        isPrimary: false,
+                        colorScheme: colorScheme
+                    ) {
+                        showNewWikiPicker()
+                    }
+
+                    WelcomePathCard(
                         icon: "sparkles",
                         title: "See It in Action",
                         description: "Explore a sample document with markdown, links, and code — editable right away.",
@@ -47,7 +57,7 @@ struct WelcomeView: View {
                     }
                 }
                 .fixedSize(horizontal: false, vertical: true)
-                .frame(maxWidth: 520)
+                .frame(maxWidth: 760)
 
                 Button("or open an existing file\u{2026}") {
                     workspace.showOpenPanel()
@@ -94,6 +104,10 @@ struct WelcomeView: View {
         // AppKit responder chain; the framework routes to the active split view.
         workspace.isSidebarVisible = true
         UserDefaults.standard.set(true, forKey: "sidebarVisible")
+    }
+
+    private func showNewWikiPicker() {
+        WikiSeeder.createNewWiki(using: workspace)
     }
 }
 

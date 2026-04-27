@@ -7,9 +7,9 @@ struct MCPCommand: AsyncParsableCommand {
         commandName: "mcp",
         abstract: "Start the Model Context Protocol stdio server.",
         discussion: """
-        Runs a JSON-RPC MCP server over stdio, exposing all 9 Clearly tools
-        (search_notes, get_backlinks, get_tags, read_note, list_notes,
-        get_headings, get_frontmatter, create_note, update_note).
+        Runs a JSON-RPC MCP server over stdio, exposing Clearly tools
+        (semantic_search, search_notes, get_backlinks, get_tags, read_note,
+        list_notes, get_headings, get_frontmatter, create_note, update_note).
 
         This is the mode invoked by Claude Desktop, Claude Code, Cursor, and
         other MCP clients. Do not run it interactively — stdout is reserved
@@ -27,6 +27,9 @@ struct MCPCommand: AsyncParsableCommand {
     )
 
     @OptionGroup var globals: GlobalOptions
+
+    @Flag(name: .customLong("read-only"), help: "Expose only read-only MCP tools.")
+    var readOnly: Bool = false
 
     func run() async throws {
         let vaults: [LoadedVault]
@@ -48,6 +51,6 @@ struct MCPCommand: AsyncParsableCommand {
             throw ExitCode(Exit.general)
         }
 
-        try await MCPServer.start(vaults: vaults)
+        try await MCPServer.start(vaults: vaults, readOnly: readOnly)
     }
 }

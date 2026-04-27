@@ -3,7 +3,9 @@ import ClearlyCore
 import MCP
 
 enum ToolRegistry {
-    static func listTools(vaults: [LoadedVault]) -> [Tool] {
+    static let writeToolNames: Set<String> = ["create_note", "update_note"]
+
+    static func listTools(vaults: [LoadedVault], readOnly: Bool = false) -> [Tool] {
         let vaultPaths = vaults.map { $0.url.path }
         let vaultDescription = vaultPaths.joined(separator: ", ")
 
@@ -21,7 +23,42 @@ enum ToolRegistry {
             openWorldHint: false
         )
 
-        return [
+        let tools = [
+            Tool(
+                name: "semantic_search",
+                description: "Conceptual search across notes via on-device embeddings (Apple's NLContextualEmbedding). Use when the user's question doesn't share keywords with the relevant notes — e.g. asking about 'productivity' when the note actually says 'flow state' or 'concentrated work'. Searches \(vaults.count) vault(s): \(vaultDescription). For exact phrases, proper nouns, or filename-style targets, prefer search_notes (FTS5) instead.",
+                inputSchema: .object([
+                    "type": .string("object"),
+                    "additionalProperties": .bool(false),
+                    "properties": .object([
+                        "query": .object([
+                            "type": .string("string"),
+                            "description": .string("Natural-language query. Free-form; no special syntax. Be descriptive — semantic ranking benefits from full sentences over single keywords.")
+                        ]),
+                        "limit": .object([
+                            "type": .string("integer"),
+                            "minimum": .int(1),
+                            "description": .string("Max results to return. Default 10, capped at 50.")
+                        ]),
+                        "vault": .object([
+                            "type": .string("string"),
+                            "description": .string("Optional vault name or path substring. When set, only matching vaults are searched.")
+                        ])
+                    ]),
+                    "required": .array([.string("query")])
+                ]),
+                annotations: readAnnotations,
+                outputSchema: .object([
+                    "type": .string("object"),
+                    "properties": .object([
+                        "query":          .object(["type": .string("string")]),
+                        "total_count":    .object(["type": .string("integer"), "description": .string("Number of notes scored across the selected vaults.")]),
+                        "returned_count": .object(["type": .string("integer"), "description": .string("Number of hits in the results array after applying limit.")]),
+                        "results":        .object(["type": .string("array"), "items": .object(["type": .string("object")]), "description": .string("Ranked top-N. Each item has 'vault', 'vault_path', 'relative_path', 'filename', 'score' (cosine similarity, -1…1, higher is closer), 'snippet'.")])
+                    ]),
+                    "required": .array([.string("query"), .string("total_count"), .string("returned_count"), .string("results")])
+                ])
+            ),
             Tool(
                 name: "search_notes",
                 description: "Full-text search across all notes in Clearly. Searches \(vaults.count) vault(s): \(vaultDescription). Returns relevance-ranked results with context snippets. Uses BM25 ranking and stemming. Results include the vault path and relative file path — use standard file access to read full content.",
@@ -319,5 +356,6 @@ enum ToolRegistry {
                 ])
             )
         ]
+        return readOnly ? tools.filter { !writeToolNames.contains($0.name) } : tools
     }
 }

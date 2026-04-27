@@ -57,6 +57,12 @@ targets:
         buildPhase: resources
       - path: Shared/Resources/getting-started.md
         buildPhase: resources
+      - path: Shared/Resources/wiki-template
+        buildPhase: resources
+        type: folder
+      - path: Shared/Resources/recipes
+        buildPhase: resources
+        type: folder
     dependencies:
       - package: ClearlyCore
       - package: cmark-gfm

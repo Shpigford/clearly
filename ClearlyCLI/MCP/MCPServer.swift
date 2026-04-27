@@ -3,20 +3,20 @@ import ClearlyCore
 import MCP
 
 enum MCPServer {
-    static func start(vaults: [LoadedVault]) async throws {
+    static func start(vaults: [LoadedVault], readOnly: Bool = false) async throws {
         let server = Server(
             name: "clearly",
             version: "1.0.0",
             capabilities: .init(tools: .init(listChanged: false))
         )
 
-        let tools = ToolRegistry.listTools(vaults: vaults)
+        let tools = ToolRegistry.listTools(vaults: vaults, readOnly: readOnly)
         await server.withMethodHandler(ListTools.self) { _ in
             .init(tools: tools)
         }
 
         await server.withMethodHandler(CallTool.self) { params in
-            await Handlers.dispatch(params: params, vaults: vaults)
+            await Handlers.dispatch(params: params, vaults: vaults, readOnly: readOnly)
         }
 
         let transport = StdioTransport()

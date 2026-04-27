@@ -51,6 +51,9 @@ public final class VaultIndex: @unchecked Sendable {
     private let dbPool: DatabasePool
     public let rootURL: URL
 
+    private let embeddingSweepLock = NSLock()
+    private var embeddingSweep: Task<Void, Never>?
+
     // MARK: Init
 
     public init(locationURL: URL) throws {
@@ -146,6 +149,19 @@ public final class VaultIndex: @unchecked Sendable {
             try db.execute(sql: "CREATE INDEX IF NOT EXISTS idx_links_source ON links(source_file_id)")
             try db.execute(sql: "CREATE INDEX IF NOT EXISTS idx_links_target_name ON links(target_name)")
             try db.execute(sql: "CREATE INDEX IF NOT EXISTS idx_links_target_file ON links(target_file_id)")
+        }
+
+        migrator.registerMigration("v2_embeddings") { db in
+            try db.execute(sql: """
+                CREATE TABLE IF NOT EXISTS embeddings (
+                    file_id INTEGER PRIMARY KEY REFERENCES files(id) ON DELETE CASCADE,
+                    content_hash TEXT NOT NULL,
+                    model_version INTEGER NOT NULL,
+                    vector BLOB NOT NULL,
+                    updated_at REAL NOT NULL
+                )
+                """)
+            try db.execute(sql: "CREATE INDEX IF NOT EXISTS idx_embeddings_model ON embeddings(model_version)")
         }
 
         try migrator.migrate(dbPool)
@@ -934,6 +950,158 @@ public final class VaultIndex: @unchecked Sendable {
         } catch {
             return nil
         }
+    }
+
+    // MARK: Embeddings
+
+    public struct StaleEmbeddingTarget: Equatable {
+        public let fileID: Int64
+        public let path: String
+        public let contentHash: String
+    }
+
+    public struct StoredEmbedding: Equatable {
+        public let fileID: Int64
+        public let path: String
+        public let vector: [Float]
+    }
+
+    /// Upsert a single note's embedding. Caller is responsible for the vector matching the file's
+    /// current `content_hash` — pass through `IndexedFile.contentHash`.
+    public func upsertEmbedding(fileID: Int64, contentHash: String, vector: [Float], modelVersion: Int) throws {
+        let blob = vector.blobData
+        let now = Date().timeIntervalSince1970
+        try dbPool.write { db in
+            try db.execute(sql: """
+                INSERT INTO embeddings (file_id, content_hash, model_version, vector, updated_at)
+                VALUES (?, ?, ?, ?, ?)
+                ON CONFLICT(file_id) DO UPDATE SET
+                    content_hash = excluded.content_hash,
+                    model_version = excluded.model_version,
+                    vector = excluded.vector,
+                    updated_at = excluded.updated_at
+                """, arguments: [fileID, contentHash, modelVersion, blob, now])
+        }
+    }
+
+    /// All `(file_id, path, content_hash)` rows whose embedding is missing OR has a stale model
+    /// version OR whose stored content_hash no longer matches the file's current hash. Driving
+    /// list for first-run catch-up sweeps and `MODEL_VERSION` bumps.
+    public func embeddingsMissingOrStale(modelVersion: Int) throws -> [StaleEmbeddingTarget] {
+        try dbPool.read { db in
+            let rows = try Row.fetchAll(db, sql: """
+                SELECT f.id AS file_id, f.path, f.content_hash
+                FROM files f
+                LEFT JOIN embeddings e ON e.file_id = f.id
+                WHERE e.file_id IS NULL
+                   OR e.model_version != ?
+                   OR e.content_hash != f.content_hash
+                """, arguments: [modelVersion])
+            return rows.map {
+                StaleEmbeddingTarget(fileID: $0["file_id"], path: $0["path"], contentHash: $0["content_hash"])
+            }
+        }
+    }
+
+    /// Returns every current stored embedding at `modelVersion`. Used by the semantic_search MCP
+    /// tool to brute-force a cosine ranking. Skips rows at other model versions or content hashes.
+    public func allEmbeddings(modelVersion: Int) throws -> [StoredEmbedding] {
+        try dbPool.read { db in
+            let rows = try Row.fetchAll(db, sql: """
+                SELECT e.file_id, f.path, e.vector
+                FROM embeddings e
+                JOIN files f ON f.id = e.file_id
+                WHERE e.model_version = ?
+                  AND e.content_hash = f.content_hash
+                """, arguments: [modelVersion])
+            return rows.compactMap { row -> StoredEmbedding? in
+                let blob: Data = row["vector"]
+                guard let vec = [Float].fromBlobData(blob) else { return nil }
+                return StoredEmbedding(fileID: row["file_id"], path: row["path"], vector: vec)
+            }
+        }
+    }
+
+    /// Explicit invalidation. Cascade delete already handles the file-removed case; this method
+    /// exists for `MODEL_VERSION` bumps that want to clear all stored vectors before re-embedding.
+    public func deleteAllEmbeddings() throws {
+        try dbPool.write { db in
+            try db.execute(sql: "DELETE FROM embeddings")
+        }
+    }
+
+    /// Lookup the stored embedding for a file, if present.
+    public func embedding(forFileID fileID: Int64) throws -> StoredEmbedding? {
+        try dbPool.read { db in
+            guard let row = try Row.fetchOne(db, sql: """
+                SELECT e.file_id, f.path, e.vector
+                FROM embeddings e
+                JOIN files f ON f.id = e.file_id
+                WHERE e.file_id = ?
+                """, arguments: [fileID]) else { return nil }
+            let blob: Data = row["vector"]
+            guard let vec = [Float].fromBlobData(blob) else { return nil }
+            return StoredEmbedding(fileID: row["file_id"], path: row["path"], vector: vec)
+        }
+    }
+
+    /// Background sweep that brings the `embeddings` table back in sync with `files`. Idempotent
+    /// and cancellable — calling it again interrupts any in-flight sweep so we never pile up
+    /// duplicate work. Silent on failure: model-asset downloads, file-read errors, and individual
+    /// embed failures are logged via `DiagnosticLog` but never surface to the user.
+    ///
+    /// Call from the indexer right after `indexAllFiles` completes — the MissingOrStale query
+    /// picks up new files, content_hash drift, and `MODEL_VERSION` bumps in one shot.
+    public func scheduleEmbeddingRefresh(modelVersion: Int = EmbeddingService.MODEL_VERSION) {
+        // Cancel the prior sweep BEFORE creating the new task. Both a) prevents two `Task.detached`
+        // bodies from being live at the same time and b) avoids the double-write we'd otherwise see
+        // when back-to-back FSEvents bursts call this method.
+        embeddingSweepLock.lock()
+        embeddingSweep?.cancel()
+        let task = Task.detached(priority: .utility) { [weak self] in
+            guard let self else { return }
+            do {
+                let stale = try self.embeddingsMissingOrStale(modelVersion: modelVersion)
+                if stale.isEmpty { return }
+
+                let service: EmbeddingService
+                do {
+                    service = try EmbeddingService()
+                } catch {
+                    DiagnosticLog.log("Embedding service init failed: \(error.localizedDescription)")
+                    return
+                }
+
+                var processed = 0
+                for target in stale {
+                    if Task.isCancelled { return }
+                    let fileURL = self.rootURL.appendingPathComponent(target.path)
+                    guard let data = try? Data(contentsOf: fileURL),
+                          let content = String(data: data, encoding: .utf8) else { continue }
+                    do {
+                        let vector = try service.embed(content)
+                        try self.upsertEmbedding(
+                            fileID: target.fileID,
+                            contentHash: target.contentHash,
+                            vector: vector,
+                            modelVersion: modelVersion
+                        )
+                        processed += 1
+                    } catch EmbeddingError.emptyText {
+                        continue   // empty/whitespace-only notes — silently skip
+                    } catch {
+                        DiagnosticLog.log("Embedding failed for \(target.path): \(error.localizedDescription)")
+                    }
+                }
+                if processed > 0 {
+                    DiagnosticLog.log("Embedding sweep complete: \(processed)/\(stale.count) notes")
+                }
+            } catch {
+                DiagnosticLog.log("Embedding sweep failed: \(error.localizedDescription)")
+            }
+        }
+        embeddingSweep = task
+        embeddingSweepLock.unlock()
     }
 
     // MARK: Lifecycle
