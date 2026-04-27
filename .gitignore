@@ -10,4 +10,4 @@ build/
 .context/
 __pycache__/
 ClearlyLiveEditorWeb/node_modules/
-tmp
+tmp/
