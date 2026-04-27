@@ -290,29 +290,12 @@ struct MacDetailColumn: View {
         .animation(Theme.Motion.smooth, value: wikiChat.isVisible)
         .animation(Theme.Motion.smooth, value: wikiLog.isVisible)
         .navigationTitle(documentTitle)
-        .onAppear {
-            if editorEngineRawValue != editorEngine.rawValue {
-                editorEngineRawValue = editorEngine.rawValue
-            }
-            if editorEngine == .livePreviewExperimental {
-                workspace.currentViewMode = .edit
-            }
-            outlineState.parseHeadings(from: workspace.currentFileText)
-            backlinksState.update(for: workspace.currentFileURL, using: workspace.activeVaultIndexes)
-            isFullscreen = NSApp.mainWindow?.styleMask.contains(.fullScreen) ?? false
-            setupFileWatcher()
-            WikiAgentCoordinator.warmForActiveVaultIfPossible(workspace: workspace)
-            WikiAgentCoordinator.runReviewIfStale(workspace: workspace, controller: wikiController)
-        }
+        .onAppear(perform: handleAppear)
         .onChange(of: workspace.activeLocation?.id) { _, _ in
             handleActiveVaultChanged()
         }
         .onChange(of: workspace.treeRevision) { _, _ in
-            if wikiLog.isVisible, workspace.activeVaultIsWiki {
-                wikiLog.reload(vaultRoot: workspace.activeLocation?.url)
-            }
-            WikiAgentCoordinator.warmForActiveVaultIfPossible(workspace: workspace)
-            WikiAgentCoordinator.runReviewIfStale(workspace: workspace, controller: wikiController)
+            handleTreeRevisionChanged()
         }
         .onReceive(NotificationCenter.default.publisher(for: NSWindow.didEnterFullScreenNotification)) { _ in
             isFullscreen = true
@@ -402,27 +385,12 @@ struct MacDetailColumn: View {
             backlinksState: backlinksState,
             jumpToLineState: jumpToLineState
         ))
-        .sheet(isPresented: Binding(
-            get: { wikiController.isPresenting },
-            set: { if !$0 { wikiController.dismiss() } }
-        )) {
-            WikiDiffSheet(
-                controller: wikiController,
-                onApplied: handleOperationApplied
-            )
-        }
-        .sheet(isPresented: Binding(
-            get: { wikiCapture.isVisible },
-            set: { if !$0 { wikiCapture.dismiss() } }
-        )) {
-            WikiCaptureSheet(state: wikiCapture) { text in
-                WikiAgentCoordinator.submitCapture(
-                    text,
-                    workspace: workspace,
-                    controller: wikiController
-                )
-            }
-        }
+        .modifier(WikiSheetsModifier(
+            workspace: workspace,
+            wikiController: wikiController,
+            wikiCapture: wikiCapture,
+            onOperationApplied: handleOperationApplied
+        ))
         .overlay(alignment: .bottom) {
             WikiRecipeProgressOverlay(controller: wikiController)
                 .animation(Theme.Motion.smooth, value: wikiController.isRunningRecipe)
@@ -449,6 +417,27 @@ struct MacDetailColumn: View {
         if wikiLog.isVisible {
             wikiLog.reload(vaultRoot: vaultURL)
         }
+    }
+
+    private func handleAppear() {
+        if editorEngineRawValue != editorEngine.rawValue {
+            editorEngineRawValue = editorEngine.rawValue
+        }
+        if editorEngine == .livePreviewExperimental {
+            workspace.currentViewMode = .edit
+        }
+        outlineState.parseHeadings(from: workspace.currentFileText)
+        backlinksState.update(for: workspace.currentFileURL, using: workspace.activeVaultIndexes)
+        isFullscreen = NSApp.mainWindow?.styleMask.contains(.fullScreen) ?? false
+        setupFileWatcher()
+        warmAndReviewActiveVaultIfNeeded()
+    }
+
+    private func handleTreeRevisionChanged() {
+        if wikiLog.isVisible, workspace.activeVaultIsWiki {
+            wikiLog.reload(vaultRoot: workspace.activeLocation?.url)
+        }
+        warmAndReviewActiveVaultIfNeeded()
     }
 
     // MARK: - Empty state
@@ -646,6 +635,10 @@ struct MacDetailColumn: View {
             wikiLog.hide()
         }
 
+        warmAndReviewActiveVaultIfNeeded()
+    }
+
+    private func warmAndReviewActiveVaultIfNeeded() {
         WikiAgentCoordinator.warmForActiveVaultIfPossible(workspace: workspace)
         WikiAgentCoordinator.runReviewIfStale(workspace: workspace, controller: wikiController)
     }
@@ -817,6 +810,38 @@ private struct WikiNotificationObserversModifier: ViewModifier {
             .onReceive(NotificationCenter.default.publisher(for: .wikiToggleLogSidebar)) { _ in
                 withAnimation(Theme.Motion.smooth) {
                     wikiLog.toggle(vaultRoot: workspace.activeLocation?.url)
+                }
+            }
+    }
+}
+
+private struct WikiSheetsModifier: ViewModifier {
+    @Bindable var workspace: WorkspaceManager
+    @Bindable var wikiController: WikiOperationController
+    @Bindable var wikiCapture: WikiCaptureState
+    let onOperationApplied: (WikiOperation, URL) -> Void
+
+    func body(content: Content) -> some View {
+        content
+            .sheet(isPresented: Binding(
+                get: { wikiController.isPresenting },
+                set: { if !$0 { wikiController.dismiss() } }
+            )) {
+                WikiDiffSheet(
+                    controller: wikiController,
+                    onApplied: onOperationApplied
+                )
+            }
+            .sheet(isPresented: Binding(
+                get: { wikiCapture.isVisible },
+                set: { if !$0 { wikiCapture.dismiss() } }
+            )) {
+                WikiCaptureSheet(state: wikiCapture) { text in
+                    WikiAgentCoordinator.submitCapture(
+                        text,
+                        workspace: workspace,
+                        controller: wikiController
+                    )
                 }
             }
     }
