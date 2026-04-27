@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+## [2.7.0] - 2026-04-27
+- New experimental live preview editor — WYSIWYG-style markdown editing
+- Sidebar context menu now offers Copy Path, Relative Path, and Wiki Link
+- Preview outline navigation scrolls reliably and no longer leaves stray highlights after switching back to edit mode
+- ⌘W now correctly closes the Settings window when open, instead of the active document
+
 ## [2.6.1] - 2026-04-27
 - Settings and preferences now carry over correctly when upgrading from v2.5.0
 
