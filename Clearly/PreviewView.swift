@@ -86,8 +86,8 @@ struct PreviewView: NSViewRepresentable {
         if let findState {
             context.coordinator.observeFindState(findState, webView: webView)
         }
-        outlineState?.scrollToPreviewAnchor = { [weak coordinator = context.coordinator] anchor in
-            coordinator?.scrollToHeading(anchor: anchor)
+        outlineState?.scrollToHeading = { [weak coordinator = context.coordinator] heading in
+            coordinator?.scrollToHeading(heading)
         }
         NotificationCenter.default.addObserver(
             context.coordinator,
@@ -196,6 +196,8 @@ struct PreviewView: NSViewRepresentable {
         mark.clearly-find { background-color: rgba(255, 230, 0, 0.4); border-radius: 2px; padding: 0 1px; }
         mark.clearly-mode-highlight { background: rgba(255, 210, 50, 0.5); border-radius: 3px; padding: 0 1px; transition: background 1.5s ease; }
         mark.clearly-mode-highlight.fade { background: transparent; }
+        mark.clearly-outline-flash { background-color: rgba(255, 245, 100, 0.95); color: inherit; border-radius: 3px; padding: 0 2px; box-shadow: 0 0 0 1px rgba(220, 180, 0, 0.5); transition: background-color 1.2s ease, box-shadow 1.2s ease; }
+        mark.clearly-outline-flash.fade { background-color: transparent; box-shadow: 0 0 0 1px transparent; }
         mark.clearly-find.current { background-color: rgba(255, 165, 0, 0.6); }
         @media (prefers-color-scheme: dark) {
             mark.clearly-find { background-color: rgba(180, 150, 0, 0.4); }
@@ -394,23 +396,70 @@ struct PreviewView: NSViewRepresentable {
                 .store(in: &findCancellables)
         }
 
-        func scrollToHeading(anchor: PreviewSourceAnchor) {
+        func scrollToHeading(_ heading: HeadingItem) {
+            guard let titleData = try? JSONSerialization.data(
+                withJSONObject: heading.title,
+                options: .fragmentsAllowed
+            ),
+            let titleJSON = String(data: titleData, encoding: .utf8) else { return }
+            let anchor = heading.previewAnchor
             let js = """
             (function() {
-                var headings = document.querySelectorAll('h1,h2,h3,h4,h5,h6');
+                var sl = \(anchor.startLine), sc = \(anchor.startColumn);
+                var title = \(titleJSON);
+                var headings = Array.from(document.querySelectorAll('h1,h2,h3,h4,h5,h6'));
+                var re = /^(\\d+):(\\d+)-(\\d+):(\\d+)$/;
+                function unwrapFlash(m) {
+                    var p = m.parentNode;
+                    if (!p) return;
+                    while (m.firstChild) p.insertBefore(m.firstChild, m);
+                    p.removeChild(m);
+                    p.normalize();
+                }
+                function flash(el) {
+                    el.scrollIntoView({behavior:'smooth',block:'start'});
+                    document.querySelectorAll('mark.clearly-outline-flash').forEach(unwrapFlash);
+                    var nodes = [];
+                    el.childNodes.forEach(function(n) {
+                        if (n.nodeType === 1 && n.classList && n.classList.contains('heading-anchor')) return;
+                        nodes.push(n);
+                    });
+                    if (nodes.length === 0) return;
+                    var mark = document.createElement('mark');
+                    mark.className = 'clearly-outline-flash';
+                    el.insertBefore(mark, nodes[0]);
+                    nodes.forEach(function(n) { mark.appendChild(n); });
+                    setTimeout(function() { mark.classList.add('fade'); }, 350);
+                    setTimeout(function() { unwrapFlash(mark); }, 1700);
+                }
                 for (var i = 0; i < headings.length; i++) {
-                    var sp = headings[i].getAttribute('data-sourcepos');
-                    if (!sp) continue;
-                    var match = /^(\\d+):(\\d+)-(\\d+):(\\d+)$/.exec(sp);
-                    if (!match) continue;
-                    if (
-                        parseInt(match[1], 10) === \(anchor.startLine) &&
-                        parseInt(match[2], 10) === \(anchor.startColumn)
-                    ) {
-                        headings[i].scrollIntoView({behavior:'smooth', block:'start'});
+                    var m = re.exec(headings[i].getAttribute('data-sourcepos') || '');
+                    if (m && parseInt(m[1],10)===sl && parseInt(m[2],10)===sc) {
+                        flash(headings[i]);
                         return;
                     }
                 }
+                for (var i = 0; i < headings.length; i++) {
+                    var m = re.exec(headings[i].getAttribute('data-sourcepos') || '');
+                    if (m && parseInt(m[1],10)===sl) {
+                        flash(headings[i]);
+                        return;
+                    }
+                }
+                var norm = title.trim().toLowerCase();
+                var best = null, bestDist = Infinity;
+                function headingText(el) {
+                    var copy = el.cloneNode(true);
+                    copy.querySelectorAll('.heading-anchor').forEach(function(a) { a.remove(); });
+                    return copy.textContent.trim().toLowerCase();
+                }
+                for (var i = 0; i < headings.length; i++) {
+                    if (headingText(headings[i]) !== norm) continue;
+                    var m = re.exec(headings[i].getAttribute('data-sourcepos') || '');
+                    var dist = m ? Math.abs(parseInt(m[1],10) - sl) : Infinity;
+                    if (dist < bestDist) { best = headings[i]; bestDist = dist; }
+                }
+                if (best) flash(best);
             })();
             """
             webView?.evaluateJavaScript(js)

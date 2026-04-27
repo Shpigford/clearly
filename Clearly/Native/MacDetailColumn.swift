@@ -249,7 +249,10 @@ struct MacDetailColumn: View {
             .frame(maxWidth: .infinity)
 
             if outlineState.isVisible {
-                OutlineView(outlineState: outlineState)
+                OutlineView(
+                    outlineState: outlineState,
+                    isEditorVisible: workspace.currentViewMode == .edit
+                )
                     .frame(width: 240)
                     .transition(.move(edge: .trailing).combined(with: .opacity))
             }
