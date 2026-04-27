@@ -14,6 +14,29 @@ enum CopyActions {
         pb.setString(url.lastPathComponent, forType: .string)
     }
 
+    static func copyRelativePath(_ url: URL, vaultRoot: URL) {
+        let target = url.standardizedFileURL.path
+        let root = vaultRoot.standardizedFileURL.path
+        let prefix = root.hasSuffix("/") ? root : root + "/"
+        let relative: String
+        if target == root {
+            relative = ""
+        } else if target.hasPrefix(prefix) {
+            relative = String(target.dropFirst(prefix.count))
+        } else {
+            relative = url.lastPathComponent
+        }
+        let pb = NSPasteboard.general
+        pb.clearContents()
+        pb.setString(relative, forType: .string)
+    }
+
+    static func copyWikiLink(_ target: String) {
+        let pb = NSPasteboard.general
+        pb.clearContents()
+        pb.setString("[[\(target)]]", forType: .string)
+    }
+
     static func copyMarkdown(_ text: String) {
         let pb = NSPasteboard.general
         pb.clearContents()

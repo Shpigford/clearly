@@ -99,6 +99,12 @@ struct MacDetailToolbar: ToolbarContent {
                 if let url = workspace.currentFileURL {
                     Button("Copy File Path") { CopyActions.copyFilePath(url) }
                     Button("Copy File Name") { CopyActions.copyFileName(url) }
+                    if let root = workspace.containingVaultRoot(for: url) {
+                        Button("Copy Relative Path") { CopyActions.copyRelativePath(url, vaultRoot: root) }
+                    }
+                    if let target = workspace.wikiLinkTarget(for: url) {
+                        Button("Copy Wiki Link") { CopyActions.copyWikiLink(target) }
+                    }
                     Divider()
                 }
                 Button("Copy Markdown") { CopyActions.copyMarkdown(workspace.currentFileText) }

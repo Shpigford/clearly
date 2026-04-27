@@ -109,6 +109,14 @@ struct MacFolderSidebar: View {
                         Button("Reveal in Finder", systemImage: "folder") {
                             NSWorkspace.shared.activateFileViewerSelecting([url])
                         }
+                        Divider()
+                        Button("Copy Path") { CopyActions.copyFilePath(url) }
+                        if let root = workspace.containingVaultRoot(for: url) {
+                            Button("Copy Relative Path") { CopyActions.copyRelativePath(url, vaultRoot: root) }
+                        }
+                        if let target = workspace.wikiLinkTarget(for: url) {
+                            Button("Copy Wiki Link") { CopyActions.copyWikiLink(target) }
+                        }
                     }
                 }
             }
@@ -140,6 +148,14 @@ struct MacFolderSidebar: View {
                             Divider()
                             Button("Reveal in Finder", systemImage: "folder") {
                                 NSWorkspace.shared.activateFileViewerSelecting([url])
+                            }
+                            Divider()
+                            Button("Copy Path") { CopyActions.copyFilePath(url) }
+                            if let root = workspace.containingVaultRoot(for: url) {
+                                Button("Copy Relative Path") { CopyActions.copyRelativePath(url, vaultRoot: root) }
+                            }
+                            if let target = workspace.wikiLinkTarget(for: url) {
+                                Button("Copy Wiki Link") { CopyActions.copyWikiLink(target) }
                             }
                         }
                 }
@@ -179,6 +195,7 @@ struct MacFolderSidebar: View {
                 Button("Reveal in Finder", systemImage: "folder") {
                     NSWorkspace.shared.activateFileViewerSelecting([location.url])
                 }
+                Button("Copy Path") { CopyActions.copyFilePath(location.url) }
                 if !location.isWiki {
                     Button("Convert to LLM Wiki…", systemImage: "book.closed") {
                         convertToWiki(location)
@@ -377,6 +394,11 @@ struct MacFolderSidebar: View {
         Button("Reveal in Finder", systemImage: "folder") {
             NSWorkspace.shared.activateFileViewerSelecting([url])
         }
+        Divider()
+        Button("Copy Path") { CopyActions.copyFilePath(url) }
+        if let root = workspace.containingVaultRoot(for: url) {
+            Button("Copy Relative Path") { CopyActions.copyRelativePath(url, vaultRoot: root) }
+        }
     }
 
     private func createNewFile(in folder: URL) {
@@ -423,6 +445,14 @@ struct MacFolderSidebar: View {
         Divider()
         Button("Reveal in Finder", systemImage: "folder") {
             NSWorkspace.shared.activateFileViewerSelecting([url])
+        }
+        Divider()
+        Button("Copy Path") { CopyActions.copyFilePath(url) }
+        if let root = workspace.containingVaultRoot(for: url) {
+            Button("Copy Relative Path") { CopyActions.copyRelativePath(url, vaultRoot: root) }
+        }
+        if let target = workspace.wikiLinkTarget(for: url) {
+            Button("Copy Wiki Link") { CopyActions.copyWikiLink(target) }
         }
     }
 

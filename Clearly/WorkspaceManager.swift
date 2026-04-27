@@ -1508,8 +1508,49 @@ final class WorkspaceManager {
         return nil
     }
 
-    private func containingVaultRoot(for url: URL) -> URL? {
+    func containingVaultRoot(for url: URL) -> URL? {
         containingLocationAndRoot(for: url)?.rootURL
+    }
+
+    /// Wiki-link target string for a file URL — bare basename when unique in
+    /// the vault, otherwise vault-relative path (without `.md`) for
+    /// disambiguation, mirroring `BacklinksState.linkTarget`. Returns nil when
+    /// the URL is not inside any registered vault or refers to the vault root.
+    func wikiLinkTarget(for url: URL) -> String? {
+        guard let vaultRoot = containingVaultRoot(for: url) else { return nil }
+        let standardized = url.standardizedFileURL.path
+        let rootPath = vaultRoot.standardizedFileURL.path
+        let prefix = rootPath.hasSuffix("/") ? rootPath : rootPath + "/"
+        guard standardized.hasPrefix(prefix) else { return nil }
+        let relativePath = String(standardized.dropFirst(prefix.count))
+        guard !relativePath.isEmpty else { return nil }
+        let basename = (relativePath as NSString).lastPathComponent
+        let basenameNoExt = (basename as NSString).deletingPathExtension
+
+        var allFiles: [(filename: String, path: String)] = []
+        for index in vaultIndexes.values {
+            for file in index.allFiles() {
+                allFiles.append((filename: file.filename, path: file.path))
+            }
+        }
+
+        let duplicateCount = allFiles.reduce(into: 0) { count, file in
+            if file.filename.localizedCaseInsensitiveCompare(basenameNoExt) == .orderedSame {
+                count += 1
+            }
+        }
+
+        if duplicateCount > 1 {
+            let pathWithoutExtension = (relativePath as NSString).deletingPathExtension
+            let pathDuplicateCount = allFiles.reduce(into: 0) { count, file in
+                if ((file.path as NSString).deletingPathExtension).localizedCaseInsensitiveCompare(pathWithoutExtension) == .orderedSame {
+                    count += 1
+                }
+            }
+            return pathDuplicateCount > 1 ? relativePath : pathWithoutExtension
+        }
+
+        return basenameNoExt
     }
 
     private func containingLocationAndRoot(for url: URL) -> (location: BookmarkedLocation, rootURL: URL)? {
