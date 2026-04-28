@@ -3,6 +3,20 @@
   <channel>
     <title>Clearly</title>
     <item>
+      <title>Version 2.8.0</title>
+      <sparkle:version>2.8.0</sparkle:version>
+      <sparkle:shortVersionString>2.8.0</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+      <pubDate>Tue, 28 Apr 2026 14:43:39 +0000</pubDate>
+      <description><![CDATA[<ul><li>Chat panel works in every vault now — no longer limited to LLM Wikis. A vault picker in the chat toolbar makes the active vault explicit for multi-vault users.</li><li>Smarter chat retrieval finds notes by title and section even when the question doesn't quote the exact words (e.g. "summarize my writing on local-first software" now matches the note literally named that).</li><li>Chat citations show the heading path so you can see which section answered.</li><li>Drop a new note into an LLM Wiki and Clearly proposes where to file it and which related notes should link to it — same diff-sheet review as Capture and Review. Notes are never moved from where you dropped them.</li></ul>]]></description>
+      <enclosure
+        url="https://github.com/Shpigford/clearly/releases/download/v2.8.0/Clearly.dmg"
+        sparkle:edSignature="Eojo8mtve4IfpoiPU4fWo1hpdi93Tis3sw02YRrbEaWnWQR8qPbYpPywA3NqkBha37RCwtv2ordKxdiao00LAg=="
+        length="21960600"
+        type="application/octet-stream"
+      />
+    </item>
+    <item>
       <title>Version 2.7.0</title>
       <sparkle:version>2.7.0</sparkle:version>
       <sparkle:shortVersionString>2.7.0</sparkle:shortVersionString>
