@@ -150,6 +150,16 @@ final class ClearlyTextView: PersistentTextCheckingTextView {
     private func handleIncomingPasteboard(
         _ pasteboard: NSPasteboard
     ) -> Bool {
+        if selectedRange().length > 0,
+           let raw = pasteboard.string(forType: .string)?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !raw.isEmpty, !raw.contains("\n"), !raw.contains(" "),
+           let url = URL(string: raw),
+           let scheme = url.scheme?.lowercased(), scheme == "http" || scheme == "https" {
+            let selected = (string as NSString).substring(with: selectedRange())
+            insertText("[\(selected)](\(raw))", replacementRange: selectedRange())
+            return true
+        }
+
         if let urls = pasteboard.readObjects(forClasses: [NSURL.self], options: [
             .urlReadingFileURLsOnly: true
         ]) as? [URL], !urls.isEmpty {

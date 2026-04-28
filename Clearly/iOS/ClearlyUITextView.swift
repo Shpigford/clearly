@@ -65,6 +65,19 @@ final class ClearlyUITextView: UITextView {
     override func paste(_ sender: Any?) {
         let pb = UIPasteboard.general
 
+        // 0. Text selected + URL on pasteboard → wrap selection as a
+        // markdown link instead of pasting/downloading.
+        if selectedRange.length > 0,
+           let raw = pb.string?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !raw.isEmpty, !raw.contains("\n"), !raw.contains(" "),
+           let url = URL(string: raw),
+           let scheme = url.scheme?.lowercased(), scheme == "http" || scheme == "https" {
+            let current = (text ?? "") as NSString
+            let selected = current.substring(with: selectedRange)
+            insertMarkdown("[\(selected)](\(raw))")
+            return
+        }
+
         // 1. Raw image on pasteboard — normalize HEIC/JPEG/etc. to PNG.
         if pb.hasImages, let image = pb.image, let png = image.pngData() {
             insertPastedPNG(png)
