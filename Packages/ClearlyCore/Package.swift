@@ -27,7 +27,10 @@ let package = Package(
         ),
         .testTarget(
             name: "ClearlyCoreTests",
-            dependencies: ["ClearlyCore"]
+            dependencies: ["ClearlyCore"],
+            resources: [
+                .copy("Fixtures"),
+            ]
         ),
     ]
 )

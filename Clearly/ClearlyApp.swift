@@ -822,7 +822,7 @@ struct ClearlyApp: App {
             CommandGroup(after: .textEditing) {
                 FindCommand()
             }
-            CommandMenu("Wiki") {
+            CommandMenu("AI") {
                 WikiCommands(workspace: workspace)
             }
             CommandGroup(replacing: .help) {
@@ -1046,13 +1046,13 @@ struct ViewModeCommands: View {
     }
 }
 
-// MARK: - Wiki Commands
+// MARK: - AI Commands
 //
-// The Wiki menu only activates when the active file lives inside a wiki
-// vault (one with the three marker files: AGENTS.md, index.md, log.md).
-// Each command posts a notification observed by the in-progress Wiki
-// subsystems — recipe engine, agent runner, diff sheet — added in later
-// phases. Until those land, the notifications are logged but no-op.
+// The "AI" menu surfaces every AI-powered action: Chat (works against any
+// vault), Capture and Toggle Log Sidebar (wiki-vault-only and disabled
+// otherwise), and "New LLM Wiki…" for creating a new wiki vault. Struct
+// name stays `WikiCommands` for git-blame continuity; the user-facing menu
+// label is "AI".
 struct WikiCommands: View {
     @FocusedValue(\.activeVaultIsWiki) var isWiki
     var workspace: WorkspaceManager
@@ -1076,7 +1076,6 @@ struct WikiCommands: View {
             NotificationCenter.default.post(name: .wikiChat, object: nil)
         }
         .keyboardShortcut("a", modifiers: [.command, .control])
-        .disabled(!enabled)
 
         Divider()
 

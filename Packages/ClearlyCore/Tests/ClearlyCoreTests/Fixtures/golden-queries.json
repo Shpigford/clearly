@@ -1,0 +1,195 @@
+{
+  "comment": "Golden retrieval queries. Each query maps to one or more expected note paths. Recall@5 measures whether ANY expected path appears in the top-5 results; MRR@10 measures the rank of the FIRST expected path within top-10. Hand-written, NOT paraphrased from note titles, to avoid lexical-leakage that inflates BM25-only baselines.",
+  "queries": [
+    {
+      "id": "local-first-summary",
+      "type": "exact-phrase",
+      "query": "Summarize my writing on local-first software",
+      "expected": ["local-first-software.md"]
+    },
+    {
+      "id": "rag-pattern",
+      "type": "exact-phrase",
+      "query": "what does my note say about RAG",
+      "expected": ["rag.md"]
+    },
+    {
+      "id": "sourdough-method",
+      "type": "exact-phrase",
+      "query": "how do I make sourdough",
+      "expected": ["sourdough.md"]
+    },
+    {
+      "id": "kettlebell-program",
+      "type": "exact-phrase",
+      "query": "kettlebell programming",
+      "expected": ["kettlebell-programming.md"]
+    },
+    {
+      "id": "sheet-pan-recipes",
+      "type": "exact-phrase",
+      "query": "sheet pan dinner ideas",
+      "expected": ["sheet-pan-dinners.md"]
+    },
+    {
+      "id": "swift-async-quirks",
+      "type": "exact-phrase",
+      "query": "Swift async/await quirks",
+      "expected": ["swift-async.md"]
+    },
+    {
+      "id": "morning-routine",
+      "type": "exact-phrase",
+      "query": "morning routine",
+      "expected": ["morning-routine.md"]
+    },
+    {
+      "id": "postgres-internals",
+      "type": "exact-phrase",
+      "query": "Postgres internals",
+      "expected": ["postgres-internals.md"]
+    },
+    {
+      "id": "guitar-practice",
+      "type": "exact-phrase",
+      "query": "guitar practice",
+      "expected": ["guitar-practice.md"]
+    },
+    {
+      "id": "weekly-review",
+      "type": "exact-phrase",
+      "query": "weekly review template",
+      "expected": ["weekly-review.md"]
+    },
+
+    {
+      "id": "offline-first-semantic",
+      "type": "semantic-only",
+      "query": "what's the deal with offline-first apps",
+      "expected": ["local-first-software.md"]
+    },
+    {
+      "id": "llm-context-retrieval",
+      "type": "semantic-only",
+      "query": "how do I retrieve relevant context for an LLM",
+      "expected": ["rag.md"]
+    },
+    {
+      "id": "wild-yeast-bread",
+      "type": "semantic-only",
+      "query": "wild yeast bread",
+      "expected": ["sourdough.md"]
+    },
+    {
+      "id": "swing-exercises-weights",
+      "type": "semantic-only",
+      "query": "swing exercises with weights",
+      "expected": ["kettlebell-programming.md"]
+    },
+    {
+      "id": "one-pan-oven",
+      "type": "semantic-only",
+      "query": "one-pan oven recipes",
+      "expected": ["sheet-pan-dinners.md"]
+    },
+    {
+      "id": "concurrency-swift",
+      "type": "semantic-only",
+      "query": "concurrency in Swift",
+      "expected": ["swift-async.md"]
+    },
+    {
+      "id": "starting-day-well",
+      "type": "semantic-only",
+      "query": "starting the day well",
+      "expected": ["morning-routine.md"]
+    },
+    {
+      "id": "database-query-planner",
+      "type": "semantic-only",
+      "query": "database query planner",
+      "expected": ["postgres-internals.md"]
+    },
+
+    {
+      "id": "what-is-crdt",
+      "type": "abbreviation",
+      "query": "what's CRDT",
+      "expected": ["distributed-consensus.md", "local-first-software.md"]
+    },
+    {
+      "id": "what-is-bm25",
+      "type": "abbreviation",
+      "query": "what's BM25",
+      "expected": ["bm25-search-engine.md"]
+    },
+    {
+      "id": "what-is-ddd",
+      "type": "abbreviation",
+      "query": "DDD design",
+      "expected": ["domain-driven-design.md"]
+    },
+    {
+      "id": "what-is-cqrs",
+      "type": "abbreviation",
+      "query": "CQRS event sourcing",
+      "expected": ["cqrs-event-sourcing.md"]
+    },
+    {
+      "id": "what-is-mvcc",
+      "type": "abbreviation",
+      "query": "MVCC and bloat",
+      "expected": ["postgres-internals.md"]
+    },
+
+    {
+      "id": "fermentation-and-bread",
+      "type": "multi-hop",
+      "query": "notes mentioning both fermentation and bread",
+      "expected": ["fermentation.md", "sourdough.md"]
+    },
+    {
+      "id": "productivity-habits",
+      "type": "multi-hop",
+      "query": "writing about productivity habits",
+      "expected": ["morning-routine.md", "weekly-review.md", "deep-work.md"]
+    },
+    {
+      "id": "swift-topics",
+      "type": "multi-hop",
+      "query": "Swift performance and concurrency",
+      "expected": ["swift-async.md", "swift-performance.md"]
+    },
+    {
+      "id": "guitar-anything",
+      "type": "multi-hop",
+      "query": "anything about guitars",
+      "expected": ["guitar-practice.md", "guitar-gear.md"]
+    },
+    {
+      "id": "fitness-anything",
+      "type": "multi-hop",
+      "query": "fitness training notes",
+      "expected": ["kettlebell-programming.md", "mobility-work.md", "running-drills.md", "gym-log-april.md"]
+    },
+
+    {
+      "id": "neg-quantum",
+      "type": "negative",
+      "query": "my notes on quantum computing",
+      "expected": []
+    },
+    {
+      "id": "neg-latin",
+      "type": "negative",
+      "query": "what did I write about Latin grammar",
+      "expected": []
+    },
+    {
+      "id": "neg-bowling",
+      "type": "negative",
+      "query": "professional bowling tips",
+      "expected": []
+    }
+  ]
+}

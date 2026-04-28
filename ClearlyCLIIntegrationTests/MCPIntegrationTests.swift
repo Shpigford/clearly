@@ -117,12 +117,9 @@ final class MCPIntegrationTests: XCTestCase {
         let middleVec = unitVector(at: 1, dim: dim, scale: 1.0)
         let farVec = unitVector(at: 2, dim: dim, scale: 1.0)
 
-        try index.upsertEmbedding(fileID: close.id, contentHash: close.contentHash,
-                                  vector: closeVec, modelVersion: EmbeddingService.MODEL_VERSION)
-        try index.upsertEmbedding(fileID: middle.id, contentHash: middle.contentHash,
-                                  vector: middleVec, modelVersion: EmbeddingService.MODEL_VERSION)
-        try index.upsertEmbedding(fileID: far.id, contentHash: far.contentHash,
-                                  vector: farVec, modelVersion: EmbeddingService.MODEL_VERSION)
+        try upsertTestChunk(index, file: close, vector: closeVec)
+        try upsertTestChunk(index, file: middle, vector: middleVec)
+        try upsertTestChunk(index, file: far, vector: farVec)
 
         // Build a query whose embedding is *substituted* with closeVec via the helper below.
         // Since we can't intercept the live model from a black-box test, instead we'll use a
@@ -162,9 +159,12 @@ final class MCPIntegrationTests: XCTestCase {
         let everything = index.allFiles()
         guard let one = everything.first else { throw XCTSkip("empty fixture") }
         // Stored at a different model version — must NOT appear in results.
-        try index.upsertEmbedding(fileID: one.id, contentHash: one.contentHash,
-                                  vector: unitVector(at: 0, dim: dim, scale: 1),
-                                  modelVersion: EmbeddingService.MODEL_VERSION + 1)
+        try upsertTestChunk(
+            index,
+            file: one,
+            vector: unitVector(at: 0, dim: dim, scale: 1),
+            modelVersion: EmbeddingService.MODEL_VERSION + 1
+        )
 
         struct Result: Decodable { let totalCount: Int; let returnedCount: Int }
         let result = try await harness.callTool(
@@ -208,6 +208,30 @@ final class MCPIntegrationTests: XCTestCase {
         var v = [Float](repeating: 0, count: dim)
         if dim > 0 { v[index % dim] = scale }
         return v
+    }
+
+    private func upsertTestChunk(
+        _ index: VaultIndex,
+        file: IndexedFile,
+        vector: [Float],
+        modelVersion: Int = EmbeddingService.MODEL_VERSION
+    ) throws {
+        let body = "semantic fixture \(file.path)"
+        try index.upsertChunkEmbeddings(
+            fileID: file.id,
+            contentHash: file.contentHash,
+            chunks: [
+                VaultIndex.ChunkEmbeddingInput(
+                    chunkIndex: 0,
+                    textOffset: 0,
+                    textLength: body.utf8.count,
+                    headingPath: [],
+                    body: body,
+                    vector: vector
+                )
+            ],
+            modelVersion: modelVersion
+        )
     }
 
     func testSearchFilesGroupedKeepsHighlightedExcerptForUI() async throws {

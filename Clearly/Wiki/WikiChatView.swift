@@ -1,15 +1,13 @@
 import SwiftUI
 import ClearlyCore
 
-/// Trailing-edge panel that hosts the Wiki chat. Message list up top, input
-/// field at the bottom. Each assistant turn has a "File as Note" action that
-/// stages a normal WikiOperation through the diff-review pipeline, so the
-/// vault still grows via explicit filing (Karpathy's premise) rather than
-/// accumulating ephemeral chat.
+/// Trailing-edge panel that hosts vault chat. Message list up top, input
+/// field at the bottom. Read-only RAG over the chat-bound vault — no filing,
+/// no writes, just citations back to source notes via [[wiki-link]] so users
+/// can jump from the answer to the underlying note.
 struct WikiChatView: View {
     @Bindable var chat: WikiChatState
-    @Bindable var controller: WikiOperationController
-    let vaultRoot: URL?
+    let locations: [BookmarkedLocation]
     let send: (String) -> Void
     let openWikiLink: (String) -> Void
 
@@ -54,22 +52,27 @@ struct WikiChatView: View {
 
     private var header: some View {
         HStack(alignment: .center, spacing: 8) {
-            Text("WIKI CHAT")
+            Text("CHAT")
                 .font(.system(size: 11, weight: .semibold))
                 .foregroundStyle(.tertiary)
                 .tracking(1.5)
+            vaultPicker
             Spacer()
             if !chat.messages.isEmpty {
                 Button {
-                    chat.reset()
+                    if let root = chat.vaultRoot {
+                        chat.reset(vaultRoot: root)
+                    } else {
+                        chat.reset()
+                    }
                     inputFocused = true
                 } label: {
-                    Image(systemName: "arrow.counterclockwise")
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(.tertiary)
+                    Image(systemName: "square.and.pencil")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(.secondary)
                 }
                 .buttonStyle(.plain)
-                .help("Start a new conversation")
+                .help("New chat")
             }
             Button {
                 chat.hide()
@@ -84,6 +87,55 @@ struct WikiChatView: View {
         .padding(.horizontal, 12)
         .padding(.top, 10)
         .padding(.bottom, 6)
+    }
+
+    @ViewBuilder
+    private var vaultPicker: some View {
+        if locations.count > 1 {
+            Menu {
+                ForEach(locations) { location in
+                    Button {
+                        chat.pin(to: location.url)
+                    } label: {
+                        if let current = chat.vaultRoot, Self.sameURL(current, location.url) {
+                            Label(location.name, systemImage: "checkmark")
+                        } else {
+                            Text(location.name)
+                        }
+                    }
+                }
+            } label: {
+                HStack(spacing: 3) {
+                    Text(currentVaultName)
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(.secondary)
+                    Image(systemName: "chevron.down")
+                        .font(.system(size: 8, weight: .semibold))
+                        .foregroundStyle(.tertiary)
+                }
+            }
+            .menuStyle(.borderlessButton)
+            .menuIndicator(.hidden)
+            .fixedSize()
+            .help("Pick which vault to chat with")
+        } else if !currentVaultName.isEmpty {
+            Text(currentVaultName)
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    private var currentVaultName: String {
+        guard let vaultURL = chat.vaultRoot else { return "" }
+        if let match = locations.first(where: { Self.sameURL($0.url, vaultURL) }) {
+            return match.name
+        }
+        return vaultURL.lastPathComponent
+    }
+
+    private static func sameURL(_ a: URL, _ b: URL) -> Bool {
+        a.standardizedFileURL.resolvingSymlinksInPath().path ==
+            b.standardizedFileURL.resolvingSymlinksInPath().path
     }
 
     private var separator: some View {
@@ -103,11 +155,8 @@ struct WikiChatView: View {
                         emptyState
                     } else {
                         ForEach(chat.messages) { message in
-                            WikiChatBubble(
-                                message: message,
-                                onFileAsNote: { fileAsNote(message) }
-                            )
-                            .id(message.id)
+                            WikiChatBubble(message: message)
+                                .id(message.id)
                         }
                     }
                     if chat.isSending {
@@ -141,9 +190,9 @@ struct WikiChatView: View {
 
     private var emptyState: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text("Ask the wiki.")
+            Text("Ask this vault.")
                 .font(.headline)
-            Text("The agent reads your notes, answers with citations, and leaves the filing to you. \"File as Note\" on any answer saves it to `answers/`.")
+            Text("Read-only Q&A over your notes. Answers cite sources as `[[note-name]]`. Best results in English; tiny vaults will return thin context.")
                 .font(.callout)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -155,7 +204,7 @@ struct WikiChatView: View {
 
     private var input: some View {
         HStack(alignment: .bottom, spacing: 8) {
-            TextField("Ask a question…", text: $chat.draft, axis: .vertical)
+            TextField(inputPlaceholder, text: $chat.draft, axis: .vertical)
                 .textFieldStyle(.plain)
                 .lineLimit(1...6)
                 .focused($inputFocused)
@@ -187,75 +236,22 @@ struct WikiChatView: View {
         !chat.isSending && !chat.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
+    private var inputPlaceholder: String {
+        chat.messages.isEmpty ? "Ask a question…" : "Reply…"
+    }
+
     private func submit() {
         let text = chat.draft.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty, !chat.isSending else { return }
         send(text)
     }
 
-    // MARK: - File as note
-
-    private func fileAsNote(_ message: WikiChatMessage) {
-        guard message.role == .assistant else { return }
-        let precedingUser = precedingUserMessage(for: message)?.text ?? "chat answer"
-        let slug = slugify(precedingUser)
-        let date = Self.dateString(from: message.timestamp)
-        let contents = """
-        ---
-        type: answer
-        question: \(precedingUser)
-        asked: \(date)
-        ---
-
-        # \(precedingUser)
-
-        \(message.text)
-        """
-        let op = WikiOperation(
-            kind: .chat,
-            title: "File answer: \(precedingUser)",
-            rationale: "Filed from Wiki Chat.",
-            changes: [.create(path: "answers/\(slug).md", contents: contents)]
-        )
-        controller.stage(op, vaultRoot: vaultRoot)
-    }
-
-    private func precedingUserMessage(for message: WikiChatMessage) -> WikiChatMessage? {
-        guard let idx = chat.messages.firstIndex(where: { $0.id == message.id }) else { return nil }
-        for i in stride(from: idx - 1, through: 0, by: -1) where chat.messages[i].role == .user {
-            return chat.messages[i]
-        }
-        return nil
-    }
-
-    private func slugify(_ s: String) -> String {
-        let lowered = s.lowercased()
-        var chars: [Character] = []
-        var lastDash = false
-        for c in lowered {
-            if c.isLetter || c.isNumber {
-                chars.append(c); lastDash = false
-            } else if !lastDash {
-                chars.append("-"); lastDash = true
-            }
-        }
-        let raw = String(chars).trimmingCharacters(in: CharacterSet(charactersIn: "-"))
-        return raw.isEmpty ? "answer" : String(raw.prefix(64))
-    }
-
-    private static func dateString(from date: Date) -> String {
-        let f = DateFormatter()
-        f.dateFormat = "yyyy-MM-dd"
-        f.locale = Locale(identifier: "en_US_POSIX")
-        return f.string(from: date)
-    }
 }
 
 // MARK: - Bubble
 
 private struct WikiChatBubble: View {
     let message: WikiChatMessage
-    let onFileAsNote: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -268,7 +264,7 @@ private struct WikiChatBubble: View {
     }
 
     private var roleLabel: some View {
-        Text(message.role == .user ? "You" : "Wiki")
+        Text(message.role == .user ? "You" : "Clearly")
             .font(.caption2)
             .fontWeight(.semibold)
             .foregroundStyle(.secondary)
@@ -292,15 +288,6 @@ private struct WikiChatBubble: View {
 
     private var actionRow: some View {
         HStack(spacing: 10) {
-            Button {
-                onFileAsNote()
-            } label: {
-                Label("File as Note", systemImage: "square.and.arrow.down")
-                    .font(.caption)
-            }
-            .buttonStyle(.plain)
-            .foregroundStyle(.secondary)
-
             Button {
                 let pb = NSPasteboard.general
                 pb.clearContents()
