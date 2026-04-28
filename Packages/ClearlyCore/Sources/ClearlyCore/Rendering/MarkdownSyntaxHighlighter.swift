@@ -69,13 +69,13 @@ public final class MarkdownSyntaxHighlighter: NSObject {
         add("^(#{1,6}\\s+)(.+)$", .heading, options: .anchorsMatchLines)
 
         // Bold italic: ***text*** or ___text___
-        add("(\\*\\*\\*|___)(.+?)(\\1)", .boldItalic)
+        add("(\\*\\*\\*|___)([^\n]+?)(\\1)", .boldItalic)
 
         // Bold: **text** or __text__ (not part of ***triple***)
-        add("(?<![*_])(\\*\\*(?!\\*)|__(?!_))(.+?)(\\1)(?![*_])", .bold)
+        add("(?<![*_])(\\*\\*(?!\\*)|__(?!_))([^\n]+?)(\\1)(?![*_])", .bold)
 
         // Italic: *text* or _text_ (not inside words for _)
-        add("(?<![\\w*])(\\*(?!\\*)|_(?!_))(?!\\s)(.+?)(?<!\\s)\\1(?![\\w*])", .italic)
+        add("(?<![\\w*])(\\*(?!\\*)|_(?!_))(?!\\s)([^\n]+?)(?<!\\s)\\1(?![\\w*])", .italic)
 
         // Strikethrough: ~~text~~
         add("(~~)([^\n]+?)(~~)", .strikethrough)
@@ -170,6 +170,10 @@ public final class MarkdownSyntaxHighlighter: NSObject {
 
     public func highlightAll(_ textStorage: PlatformTextStorage, caller: String = "") {
         guard !isHighlighting else { return }
+        guard textStorage.length <= Limits.maxHighlightAllLength else {
+            DiagnosticLog.log("MarkdownSyntaxHighlighter: skipping highlightAll over \(textStorage.length) chars")
+            return
+        }
         isHighlighting = true
         defer { isHighlighting = false }
         let startTime = CACurrentMediaTime()
@@ -483,6 +487,15 @@ public final class MarkdownSyntaxHighlighter: NSObject {
         }
         let postEditRange = NSRange(location: safeLocation, length: safeLength)
         let paragraphRange = nsText.paragraphRange(for: postEditRange)
+
+        // A "paragraph" here is a `\n`-bounded run. A file with no newlines (binary blob,
+        // pasted log dump) is one paragraph the size of the whole file — running the regex
+        // pipeline over multi-MB input is the catastrophic case. Bail; the file-size cap on
+        // open already keeps these out of the editor in normal use.
+        guard paragraphRange.length <= Limits.maxHighlightAllLength else {
+            DiagnosticLog.log("MarkdownSyntaxHighlighter: skipping highlightAround over \(paragraphRange.length)-char paragraph")
+            return
+        }
 
         // If the edited paragraph contains a block delimiter, the change could affect
         // everything below (opening/closing a code block or math block). Signal the caller

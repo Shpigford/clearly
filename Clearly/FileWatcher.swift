@@ -88,6 +88,10 @@ final class FileWatcher: ObservableObject {
 
     private func readAndNotify() {
         guard let url = monitoredURL else { return }
+        guard Limits.isOpenableSize(url) else {
+            DiagnosticLog.log("FileWatcher: skipping oversized reload \(url.lastPathComponent)")
+            return
+        }
         guard let data = try? Data(contentsOf: url),
               let newText = String(data: data, encoding: .utf8) else { return }
 

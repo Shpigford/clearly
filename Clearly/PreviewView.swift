@@ -45,7 +45,7 @@ struct PreviewView: NSViewRepresentable {
     }
 
     private var contentKey: String {
-        "\(markdown)__\(fontSize)__\(fontFamily)__\(colorScheme == .dark ? "dark" : "light")__\(LocalImageSupport.fileURLKeyFragment(fileURL))__\(wikiFilesKey)__\(contentWidthEm.map { "\($0)" } ?? "off")__\(hideFrontmatterInPreview)"
+        "\(markdown.count)|\(markdown.hashValue)__\(fontSize)__\(fontFamily)__\(colorScheme == .dark ? "dark" : "light")__\(LocalImageSupport.fileURLKeyFragment(fileURL))__\(wikiFilesKey)__\(contentWidthEm.map { "\($0)" } ?? "off")__\(hideFrontmatterInPreview)"
     }
 
     private var wikiFilesKey: String {

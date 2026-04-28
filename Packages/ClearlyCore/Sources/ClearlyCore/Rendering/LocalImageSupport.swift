@@ -80,8 +80,25 @@ public final class LocalImageSchemeHandler: NSObject, WKURLSchemeHandler {
         }
 
         let path = url.path.removingPercentEncoding ?? url.path
-        guard !path.isEmpty,
-              let data = try? Data(contentsOf: URL(fileURLWithPath: path)) else {
+        guard !path.isEmpty else {
+            urlSchemeTask.didFailWithError(URLError(.fileDoesNotExist))
+            return
+        }
+
+        let fileURL = URL(fileURLWithPath: path)
+        if !Limits.isFileSize(fileURL, atMost: Limits.maxLocalImageSize) {
+            let response = HTTPURLResponse(
+                url: url,
+                statusCode: 413,
+                httpVersion: "HTTP/1.1",
+                headerFields: ["Content-Type": "text/plain"]
+            )!
+            urlSchemeTask.didReceive(response)
+            urlSchemeTask.didFinish()
+            return
+        }
+
+        guard let data = try? Data(contentsOf: fileURL) else {
             urlSchemeTask.didFailWithError(URLError(.fileDoesNotExist))
             return
         }
