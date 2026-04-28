@@ -20,8 +20,8 @@ by an LLM on your behalf.
 
 ## Operations
 
-Two manual actions are available from Clearly's **Wiki** menu. Review runs
-quietly in the background when the vault opens.
+Two manual actions are available from Clearly's **Wiki** menu. Review and
+Integrate run quietly in the background when the vault opens.
 
 - **Capture** (⌃⌘I). Paste a URL or text. The agent reads it, writes a
   summary page, updates `index.md`, cross-references related notes, and
@@ -35,6 +35,13 @@ quietly in the background when the vault opens.
   orphan pages, missing cross-references, and concepts mentioned without their
   own page. Clearly runs this automatically about once a day; proposed changes
   appear as a "Review ready" badge.
+
+- **Integrate**. When you drop a `.md` file into the vault by hand, Clearly
+  proposes adding it to `index.md` under the right section and inserting
+  `[[wiki-link]]` cross-references in topically related notes. Hand-dropped
+  notes are treated identically to agent-created ones — same diff sheet, same
+  review flow. Notes are never moved; wherever you put them is where they
+  stay.
 
 ## Conventions
 

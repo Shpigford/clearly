@@ -24,9 +24,14 @@ to each other with `[[wiki-links]]` — click one to jump.
 Capture is for when you want the agent to synthesize a note from a
 source. If you already know what you want to write, just drop a `.md`
 file into this folder — drag from Finder, drop onto a folder in the
-sidebar, or press ⌘N and save here. Clearly indexes everything, and
-Chat finds hand-written notes the same way it finds agent-written ones.
-The next Review pass will spot them and suggest cross-references.
+sidebar, or press ⌘N and save here. Wherever you put it is where it
+stays — Clearly never moves your notes around.
+
+Shortly after you drop a note, an Integrate pass runs in the background:
+it adds the note to `index.md` under the right section and proposes
+`[[wiki-link]]` cross-references in topically related pages. You review
+the diff before anything lands. Hand-dropped notes are treated
+identically to agent-created ones.
 
 For raw source material (articles, PDFs, transcripts) you want the agent
 to read later, drop the file into `raw/`. The agent reads from there but

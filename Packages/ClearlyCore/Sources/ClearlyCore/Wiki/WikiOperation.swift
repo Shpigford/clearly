@@ -38,6 +38,7 @@ public enum OperationKind: String, Codable, Sendable, CaseIterable {
     case capture
     case chat
     case review
+    case integrate
     case other
 }
 

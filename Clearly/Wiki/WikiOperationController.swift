@@ -20,12 +20,21 @@ final class WikiOperationController {
 
     /// Auto-Review parks its proposal here instead of staging immediately, so
     /// the diff sheet doesn't pop in the user's face on vault open. The
-    /// LogSidebar header surfaces a "Review ready" badge while a pending op
+    /// LogSidebar header surfaces a ready badge while a pending op
     /// exists; clicking the badge calls `presentPending()` to move it onto
     /// the staged slot and open the sheet.
     var pendingOperation: WikiOperation?
     var pendingVaultRoot: URL?
-    var hasPendingReview: Bool { pendingOperation != nil }
+    var hasPendingOperation: Bool { pendingOperation != nil }
+    var pendingOperationLabel: String {
+        switch pendingOperation?.kind {
+        case .capture: return "Capture"
+        case .chat: return "Chat"
+        case .review: return "Review"
+        case .integrate: return "Integrate"
+        case .other, .none: return "Operation"
+        }
+    }
 
     /// Set while an *interactive* recipe (Capture) is running — drives the
     /// progress overlay so a long cache warmup doesn't look like silent

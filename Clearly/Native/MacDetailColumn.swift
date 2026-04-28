@@ -157,14 +157,15 @@ struct MacDetailToolbar: ToolbarContent {
                 ToolbarSpacer(.fixed, placement: .primaryAction)
             }
             ToolbarItemGroup(placement: .primaryAction) {
-                // Auto-Review surfaced affordance. Only renders when the agent
+                // Background wiki operation affordance. Only renders when the agent
                 // has parked a proposal on `pendingOperation`; click goes
                 // straight to the diff sheet (skipping the sidebar). Lives in
                 // the wiki cluster so it sits next to Capture/Chat — the
                 // LogSidebar header badge alone is invisible to anyone who
                 // keeps the sidebar closed.
-                if wikiController.hasPendingReview {
+                if wikiController.hasPendingOperation {
                     let count = wikiController.pendingOperation?.changes.count ?? 0
+                    let label = wikiController.pendingOperationLabel
                     Button {
                         wikiController.presentPending()
                     } label: {
@@ -180,7 +181,7 @@ struct MacDetailToolbar: ToolbarContent {
                                     .offset(x: 8, y: -6)
                             }
                     }
-                    .help("Review ready · \(count) change\(count == 1 ? "" : "s")")
+                    .help("\(label) ready · \(count) change\(count == 1 ? "" : "s")")
                 }
 
                 Button {
@@ -650,6 +651,7 @@ struct MacDetailColumn: View {
     private func warmAndReviewActiveVaultIfNeeded() {
         WikiAgentCoordinator.warmForActiveVaultIfPossible(workspace: workspace)
         WikiAgentCoordinator.runReviewIfStale(workspace: workspace, controller: wikiController)
+        WikiAgentCoordinator.runIntegrationIfNeeded(workspace: workspace, controller: wikiController)
     }
 
     private func setupFileWatcher() {
