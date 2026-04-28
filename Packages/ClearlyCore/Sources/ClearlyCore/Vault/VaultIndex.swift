@@ -214,16 +214,20 @@ public final class VaultIndex: @unchecked Sendable {
 
             guard FileManager.default.fileExists(atPath: fileURL.path) else {
                 if let id: Int64 = existingRow?["id"] {
-                    try db.execute(sql: "DELETE FROM files_fts WHERE rowid = ?", arguments: [id])
-                    try db.execute(sql: "DELETE FROM links WHERE source_file_id = ?", arguments: [id])
-                    try db.execute(sql: "DELETE FROM tags WHERE file_id = ?", arguments: [id])
-                    try db.execute(sql: "DELETE FROM headings WHERE file_id = ?", arguments: [id])
-                    try db.execute(sql: "DELETE FROM files WHERE id = ?", arguments: [id])
+                    try self.removeIndexedFile(db: db, id: id)
                     try self.resolveWikiLinkTargets(db: db)
                 }
                 return nil
             }
 
+            guard Limits.isOpenableSize(fileURL) else {
+                DiagnosticLog.log("VaultIndex: skipping oversized file \(fileURL.lastPathComponent)")
+                if let id: Int64 = existingRow?["id"] {
+                    try self.removeIndexedFile(db: db, id: id)
+                    try self.resolveWikiLinkTargets(db: db)
+                }
+                return nil
+            }
             guard let data = try? Data(contentsOf: fileURL),
                   let content = String(data: data, encoding: .utf8) else {
                 return nil
@@ -310,6 +314,14 @@ public final class VaultIndex: @unchecked Sendable {
 
                 for fileURL in markdownFiles {
                     let relativePath = Self.relativePath(of: fileURL, from: rootURL)
+
+                    guard Limits.isOpenableSize(fileURL) else {
+                        DiagnosticLog.log("VaultIndex: skipping oversized file \(fileURL.lastPathComponent)")
+                        if let existing = existingByPath[relativePath] {
+                            try self.removeIndexedFile(db: db, id: existing.id)
+                        }
+                        continue
+                    }
                     processedPaths.insert(relativePath)
 
                     guard let data = try? Data(contentsOf: fileURL),
@@ -366,8 +378,7 @@ public final class VaultIndex: @unchecked Sendable {
                 let removedPaths = existingPaths.subtracting(processedPaths)
                 for path in removedPaths {
                     if let existing = existingByPath[path] {
-                        try db.execute(sql: "DELETE FROM files_fts WHERE rowid = ?", arguments: [existing.id])
-                        try db.execute(sql: "DELETE FROM files WHERE id = ?", arguments: [existing.id])
+                        try self.removeIndexedFile(db: db, id: existing.id)
                     }
                 }
 
@@ -409,11 +420,21 @@ public final class VaultIndex: @unchecked Sendable {
             if Task.isCancelled { return }
 
             let relativePath = Self.relativePath(of: fileURL, from: rootURL)
-            processedPaths.insert(relativePath)
 
             var usable = true
             if let hook = downloadPlaceholder {
                 usable = await hook(fileURL)
+            }
+
+            var retainIndexedPath = true
+            if usable, !Limits.isOpenableSize(fileURL) {
+                DiagnosticLog.log("VaultIndex: skipping oversized file \(fileURL.lastPathComponent)")
+                usable = false
+                retainIndexedPath = false
+            }
+
+            if retainIndexedPath {
+                processedPaths.insert(relativePath)
             }
 
             if usable,
@@ -488,11 +509,7 @@ public final class VaultIndex: @unchecked Sendable {
                 let removedPaths = existingPaths.subtracting(processed)
                 for path in removedPaths {
                     if let existing = existingByPath[path] {
-                        try db.execute(sql: "DELETE FROM files_fts WHERE rowid = ?", arguments: [existing.id])
-                        try db.execute(sql: "DELETE FROM links WHERE source_file_id = ?", arguments: [existing.id])
-                        try db.execute(sql: "DELETE FROM tags WHERE file_id = ?", arguments: [existing.id])
-                        try db.execute(sql: "DELETE FROM headings WHERE file_id = ?", arguments: [existing.id])
-                        try db.execute(sql: "DELETE FROM files WHERE id = ?", arguments: [existing.id])
+                        try self.removeIndexedFile(db: db, id: existing.id)
                     }
                 }
 
@@ -536,6 +553,17 @@ public final class VaultIndex: @unchecked Sendable {
                 VALUES (?, ?, ?, ?)
                 """, arguments: [fileId, heading.text, heading.level, heading.lineNumber])
         }
+    }
+
+    private func removeIndexedFile(db: Database, id: Int64) throws {
+        try db.execute(sql: "DELETE FROM files_fts WHERE rowid = ?", arguments: [id])
+        try db.execute(sql: "DELETE FROM chunks_fts WHERE file_id = ?", arguments: [id])
+        try db.execute(sql: "DELETE FROM embeddings WHERE file_id = ?", arguments: [id])
+        try db.execute(sql: "DELETE FROM links WHERE source_file_id = ?", arguments: [id])
+        try db.execute(sql: "UPDATE links SET target_file_id = NULL WHERE target_file_id = ?", arguments: [id])
+        try db.execute(sql: "DELETE FROM tags WHERE file_id = ?", arguments: [id])
+        try db.execute(sql: "DELETE FROM headings WHERE file_id = ?", arguments: [id])
+        try db.execute(sql: "DELETE FROM files WHERE id = ?", arguments: [id])
     }
 
     // MARK: Read — Files
@@ -1264,6 +1292,10 @@ public final class VaultIndex: @unchecked Sendable {
                 for target in stale {
                     if Task.isCancelled { return }
                     let fileURL = self.rootURL.appendingPathComponent(target.path)
+                    guard Limits.isOpenableSize(fileURL) else {
+                        DiagnosticLog.log("VaultIndex embed: skipping oversized file \(fileURL.lastPathComponent)")
+                        continue
+                    }
                     guard let data = try? Data(contentsOf: fileURL),
                           let content = String(data: data, encoding: .utf8) else { continue }
 

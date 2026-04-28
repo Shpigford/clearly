@@ -417,6 +417,12 @@ final class WorkspaceManager {
         // Save current file-backed document before switching
         guard saveFileBacked() else { return false }
 
+        guard Limits.isOpenableSize(url) else {
+            DiagnosticLog.log("Refusing to open oversized file: \(url.lastPathComponent)")
+            presentFileTooLargeAlert(for: url)
+            return false
+        }
+
         // Load new file
         guard let data = try? Data(contentsOf: url),
               let text = String(data: data, encoding: .utf8) else {
@@ -485,6 +491,12 @@ final class WorkspaceManager {
         }
 
         guard saveFileBacked() else { return false }
+
+        guard Limits.isOpenableSize(url) else {
+            DiagnosticLog.log("Refusing to open oversized file: \(url.lastPathComponent)")
+            presentFileTooLargeAlert(for: url)
+            return false
+        }
 
         guard let data = try? Data(contentsOf: url),
               let text = String(data: data, encoding: .utf8) else {
@@ -597,6 +609,10 @@ final class WorkspaceManager {
                 content = openDocuments[openDocumentIndex].text
             }
         } else {
+            guard Limits.isOpenableSize(fileURL) else {
+                DiagnosticLog.log("Skipping oversized backlink source: \(fileURL.lastPathComponent)")
+                return false
+            }
             guard let data = try? Data(contentsOf: fileURL),
                   let diskContent = String(data: data, encoding: .utf8) else {
                 DiagnosticLog.log("Failed to read backlink source: \(fileURL.lastPathComponent)")
@@ -2049,8 +2065,12 @@ final class WorkspaceManager {
                 accessedURLs.insert(normalizedURL)
             }
 
-            guard FileManager.default.fileExists(atPath: normalizedURL.path),
-                  let data = try? Data(contentsOf: normalizedURL),
+            guard FileManager.default.fileExists(atPath: normalizedURL.path) else { return nil }
+            guard Limits.isOpenableSize(normalizedURL) else {
+                DiagnosticLog.log("Skipping oversized restore: \(normalizedURL.lastPathComponent)")
+                return nil
+            }
+            guard let data = try? Data(contentsOf: normalizedURL),
                   let text = String(data: data, encoding: .utf8) else {
                 return nil
             }
@@ -2102,6 +2122,16 @@ final class WorkspaceManager {
         Task { @MainActor in
             WindowRouter.shared.showMainWindow()
         }
+    }
+
+    private func presentFileTooLargeAlert(for url: URL) {
+        let limitMB = Limits.maxOpenableFileSize / 1_000_000
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = "“\(url.lastPathComponent)” is too large to open."
+        alert.informativeText = "Clearly limits markdown files to \(limitMB) MB. Files larger than this are typically logs or pasted dumps and can crash the editor. Open a smaller file or split this one."
+        alert.addButton(withTitle: "OK")
+        alert.runModal()
     }
 
     private func showSidebar() {

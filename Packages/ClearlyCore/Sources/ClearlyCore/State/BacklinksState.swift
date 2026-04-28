@@ -113,6 +113,7 @@ public final class BacklinksState: ObservableObject {
 
     private func readContextLine(from fileURL: URL, at lineNumber: Int?) -> String {
         guard let lineNumber, lineNumber > 0,
+              Limits.isOpenableSize(fileURL),
               let data = try? Data(contentsOf: fileURL),
               let content = String(data: data, encoding: .utf8) else {
             return ""

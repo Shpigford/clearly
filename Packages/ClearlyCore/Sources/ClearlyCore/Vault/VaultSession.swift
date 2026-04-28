@@ -207,6 +207,9 @@ public final class VaultSession {
 
     public func readRawText(at url: URL) async throws -> String {
         try await Task.detached(priority: .userInitiated) { () throws -> String in
+            guard Limits.isOpenableSize(url) else {
+                throw CocoaError(.fileReadTooLarge)
+            }
             let data = try CoordinatedFileIO.read(at: url)
             return String(decoding: data, as: UTF8.self)
         }.value

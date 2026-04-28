@@ -59,6 +59,12 @@ public final class IOSDocumentSession {
             if file.isPlaceholder {
                 try await vault.ensureDownloaded(file.url)
             }
+            guard Limits.isOpenableSize(file.url) else {
+                let limitMB = Limits.maxOpenableFileSize / 1_000_000
+                errorMessage = "“\(file.url.lastPathComponent)” is larger than \(limitMB) MB. Clearly can't open files this large safely."
+                isLoading = false
+                return
+            }
             let loaded = try await vault.readRawText(at: file.url)
             lastSavedText = loaded
             text = loaded
