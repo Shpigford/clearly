@@ -45,17 +45,22 @@ func semanticSearch(_ args: SemanticSearchArgs, vaults: [LoadedVault]) async thr
     let service = try EmbeddingService()
     let queryVector = try service.embed(args.query)
 
-    var scored: [(vault: LoadedVault, path: String, score: Float)] = []
+    // Cosine over chunks, then dedupe by file (keep each file's best-scoring chunk) so the
+    // returned hit list isn't dominated by multiple slices of the same long note. Matches
+    // chat-side retrieval semantics — file-level output is what the MCP tool's contract
+    // promised callers.
+    var bestPerFile: [String: (vault: LoadedVault, path: String, score: Float)] = [:]
     for vault in candidateVaults {
-        let stored = try vault.index.allEmbeddings(modelVersion: EmbeddingService.MODEL_VERSION)
+        let stored = try vault.index.allChunkEmbeddings(modelVersion: EmbeddingService.MODEL_VERSION)
         for entry in stored {
-            // Defensive: stored vectors with unexpected dim are skipped, not crashed against.
             guard entry.vector.count == queryVector.count else { continue }
             let score = EmbeddingService.cosine(queryVector, entry.vector)
-            scored.append((vault, entry.path, score))
+            let key = "\(vault.url.path)\u{0}\(entry.path)"
+            if let prev = bestPerFile[key], prev.score >= score { continue }
+            bestPerFile[key] = (vault, entry.path, score)
         }
     }
-    scored.sort { $0.score > $1.score }
+    let scored = bestPerFile.values.sorted { $0.score > $1.score }
 
     let capped = Array(scored.prefix(limit))
     let hits = capped.map { item -> SemanticSearchResult.Hit in

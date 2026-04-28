@@ -9,7 +9,9 @@ import NaturalLanguage
 public final class EmbeddingService {
 
     /// Bump to force a vault-wide re-embed. Stored next to each row so we can detect drift.
-    public static let MODEL_VERSION: Int = 1
+    /// v2 (2026-04-28): chunked embeddings — one row per chunk, embedText prefixed with
+    ///                  filename + heading path. Schema migrated via `v3_chunked_embeddings`.
+    public static let MODEL_VERSION: Int = 2
 
     /// Long inputs are truncated to the model's `maximumSequenceLength` token cap. We additionally
     /// cap input bytes here so very long notes don't make the call disproportionately slow.

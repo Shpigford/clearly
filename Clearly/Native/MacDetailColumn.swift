@@ -150,19 +150,18 @@ struct MacDetailToolbar: ToolbarContent {
             }
         }
 
-        // Visual break so the wiki actions render as their own Liquid Glass
-        // pill on macOS 26+, mirroring the centered editor/preview group.
-        if workspace.activeVaultIsWiki {
-            if #available(macOS 26.0, *) {
-                ToolbarSpacer(.fixed, placement: .primaryAction)
-            }
-            ToolbarItemGroup(placement: .primaryAction) {
-                // Background wiki operation affordance. Only renders when the agent
-                // has parked a proposal on `pendingOperation`; click goes
-                // straight to the diff sheet (skipping the sidebar). Lives in
-                // the wiki cluster so it sits next to Capture/Chat — the
-                // LogSidebar header badge alone is invisible to anyone who
-                // keeps the sidebar closed.
+        // Visual break so the chat/wiki cluster renders as its own Liquid
+        // Glass pill on macOS 26+, mirroring the centered editor/preview
+        // group. Always present so the chat button sits in a consistent
+        // position whether or not the vault is a wiki.
+        if #available(macOS 26.0, *) {
+            ToolbarSpacer(.fixed, placement: .primaryAction)
+        }
+        ToolbarItemGroup(placement: .primaryAction) {
+            // Pending-operation badge and Capture stay wiki-only — they
+            // depend on the wiki marker scheme and review log. Chat is
+            // available in any vault.
+            if workspace.activeVaultIsWiki {
                 if wikiController.hasPendingOperation {
                     let count = wikiController.pendingOperation?.changes.count ?? 0
                     let label = wikiController.pendingOperationLabel
@@ -190,14 +189,14 @@ struct MacDetailToolbar: ToolbarContent {
                     Label("Capture", systemImage: "tray.and.arrow.down")
                 }
                 .help("Capture into this wiki (⌃⌘I)")
-
-                Button {
-                    NotificationCenter.default.post(name: .wikiChat, object: nil)
-                } label: {
-                    Label("Chat", systemImage: "bubble.left.and.bubble.right")
-                }
-                .help("Chat with this wiki (⌃⌘A)")
             }
+
+            Button {
+                NotificationCenter.default.post(name: .wikiChat, object: nil)
+            } label: {
+                Label("Chat", systemImage: "bubble.left.and.bubble.right")
+            }
+            .help("Chat with this vault (⌃⌘A)")
         }
     }
 }
@@ -261,13 +260,12 @@ struct MacDetailColumn: View {
             if wikiChat.isVisible {
                 WikiChatView(
                     chat: wikiChat,
-                    controller: wikiController,
-                    vaultRoot: workspace.activeLocation?.url,
+                    locations: workspace.locations,
                     send: { text in
                         WikiAgentCoordinator.sendChatMessage(text, workspace: workspace, chat: wikiChat)
                     },
                     openWikiLink: { target in
-                        if let url = resolveWikiLink(target) {
+                        if let url = resolveWikiLink(target, in: wikiChat.vaultRoot) {
                             workspace.openFile(at: url)
                         }
                     }
@@ -635,14 +633,25 @@ struct MacDetailColumn: View {
     // MARK: - Helpers
 
     private func handleActiveVaultChanged() {
-        let vaultURL = workspace.activeVaultIsWiki ? workspace.activeLocation?.url : nil
-        wikiController.clearPendingReviewIfVaultChanged(to: vaultURL)
-        wikiChat.reset(vaultRoot: vaultURL)
-        wikiLog.reload(vaultRoot: vaultURL)
-
-        if vaultURL == nil {
-            wikiChat.hide()
+        // Wiki-only state (review proposals, log sidebar) follows the
+        // wiki-vault rule: present only when the active vault is a wiki.
+        let wikiVaultURL = workspace.activeVaultIsWiki ? workspace.activeLocation?.url : nil
+        wikiController.clearPendingReviewIfVaultChanged(to: wikiVaultURL)
+        wikiLog.reload(vaultRoot: wikiVaultURL)
+        if wikiVaultURL == nil {
             wikiLog.hide()
+        }
+
+        // Chat works in any vault. Auto-rebind to the new active vault — but
+        // bind(to:) no-ops when the user has pinned a specific vault via the
+        // picker, so the pinned target survives sidebar focus changes. When
+        // there's no active vault at all (workspace empty), drop chat
+        // entirely.
+        if let activeURL = workspace.activeLocation?.url {
+            wikiChat.bind(to: activeURL)
+        } else {
+            wikiChat.reset()
+            wikiChat.hide()
         }
 
         warmAndReviewActiveVaultIfNeeded()
@@ -689,30 +698,34 @@ struct MacDetailColumn: View {
         workspace.currentFileText = lines.joined(separator: "\n")
     }
 
-    private func resolveWikiLink(_ target: String) -> URL? {
+    private func resolveWikiLink(_ target: String, in vaultRoot: URL?) -> URL? {
+        guard let vaultRoot,
+              let location = workspace.locations.first(where: {
+                  Self.sameFileURL($0.url, vaultRoot)
+              }) else {
+            return nil
+        }
+
         let cleaned = target.trimmingCharacters(in: .whitespaces)
 
-        // Path-qualified link (contains "/"): try every registered vault's
-        // root as the base. Matches how Claude's `[[people/josh-pigford]]`
-        // answers map onto real vault-relative paths.
+        // Path-qualified link (contains "/"): resolve within chat's selected
+        // vault, not the active sidebar vault or another registered vault.
         if cleaned.contains("/") {
             let candidatePath = cleaned.hasSuffix(".md") ? cleaned : "\(cleaned).md"
-            for location in workspace.locations {
-                let candidate = location.url.appendingPathComponent(candidatePath)
-                if FileManager.default.fileExists(atPath: candidate.path) {
-                    return candidate
-                }
+            let candidate = location.url.appendingPathComponent(candidatePath)
+            if FileManager.default.fileExists(atPath: candidate.path) {
+                return candidate
             }
         }
 
-        // Bare stem: walk the file tree and stem-match (existing behavior).
+        // Bare stem: walk the selected vault tree and stem-match.
         let needle = cleaned.lowercased()
-        for location in workspace.locations {
-            if let hit = Self.findMatchingFile(in: location.fileTree, needle: needle) {
-                return hit
-            }
-        }
-        return nil
+        return Self.findMatchingFile(in: location.fileTree, needle: needle)
+    }
+
+    private static func sameFileURL(_ lhs: URL, _ rhs: URL) -> Bool {
+        lhs.standardizedFileURL.resolvingSymlinksInPath().path ==
+            rhs.standardizedFileURL.resolvingSymlinksInPath().path
     }
 
     private static func findMatchingFile(in tree: [FileNode], needle: String) -> URL? {

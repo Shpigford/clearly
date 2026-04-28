@@ -17,7 +17,7 @@ import ClearlyCore
 /// limits to those three; the agent CANNOT call Bash, Edit, Write, etc.). Verified empirically.
 ///
 /// We deliberately do NOT pass `--mcp-config`. Chat handles retrieval
-/// in-process via `WikiChatRetriever` (RAG); Capture/Review use just the
+/// in-process via `VaultChatRetriever` (RAG); Capture/Review use just the
 /// built-in Read/Grep/Glob tools.
 ///
 /// Prompt is fed via stdin so we don't blow ARG_MAX on long sources.

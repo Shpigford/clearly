@@ -55,14 +55,16 @@ enum WikiAgentCoordinator {
     }
 
     /// Entry point for ⌃⌘A, the Wiki menu, and the toolbar Chat button.
-    /// Toggles the chat panel — repeated invocations close it.
+    /// Toggles the chat panel — repeated invocations close it. Available in
+    /// any vault (was wiki-only); the picker in the panel header is the
+    /// authoritative selector for which vault chat is talking to.
     static func startChat(workspace: WorkspaceManager, chat: WikiChatState) {
         if chat.isVisible {
             chat.hide()
             return
         }
-        guard let vaultURL = workspace.activeLocation?.url, workspace.activeVaultIsWiki else {
-            presentError("Chat is only available when the active note lives in a wiki vault.")
+        guard let vaultURL = workspace.activeLocation?.url else {
+            presentError("Open a vault to start chatting.")
             return
         }
         chat.bind(to: vaultURL)
@@ -71,7 +73,7 @@ enum WikiAgentCoordinator {
 
     /// Called by WikiChatView when the user submits a message. RAG flow:
     /// retrieve the most-relevant notes for the latest user message in process
-    /// (semantic search via `WikiChatRetriever`), splice them into the prompt
+    /// (semantic search via `VaultChatRetriever`), splice them into the prompt
     /// as `{{vault_state}}`, and ask the LLM to answer over the inlined
     /// context — no agent tool calls, no MCP subprocess.
     static func sendChatMessage(
@@ -79,14 +81,23 @@ enum WikiAgentCoordinator {
         workspace: WorkspaceManager,
         chat: WikiChatState
     ) {
-        guard let location = workspace.activeLocation,
-              let vaultURL = workspace.activeLocation?.url,
-              workspace.activeVaultIsWiki else {
-            presentError("Chat is only available when the active note lives in a wiki vault.")
+        guard let vaultURL = chat.vaultRoot else {
+            presentError("Open a vault to start chatting.")
+            return
+        }
+        // Resolve the BookmarkedLocation matching the chat panel's pinned
+        // vault. The picker may target a different vault than activeLocation,
+        // so we can't use workspace.activeLocation here. Match through
+        // symlinks to align with WikiChatState's canonical comparison.
+        let target = vaultURL.standardizedFileURL.resolvingSymlinksInPath().path
+        guard let location = workspace.locations.first(where: {
+            $0.url.standardizedFileURL.resolvingSymlinksInPath().path == target
+        }) else {
+            presentError("This vault is no longer registered.")
             return
         }
         guard let runner = resolveCompletionRunner() else {
-            presentError("Install Claude Code or Codex CLI to use Wiki Chat. https://docs.claude.com/claude-code · https://developers.openai.com/codex/cli")
+            presentError("Install Claude Code or Codex CLI to use Chat. https://docs.claude.com/claude-code · https://developers.openai.com/codex/cli")
             return
         }
         guard let vaultIndex = workspace.vaultIndex(for: location) else {
@@ -95,7 +106,6 @@ enum WikiAgentCoordinator {
         }
         AgentWarmer.warmIfNeeded(runner: runner)
 
-        chat.bind(to: vaultURL)
         let userMessage = chat.appendUser(text)
         chat.draft = ""
         chat.isSending = true
@@ -113,7 +123,7 @@ enum WikiAgentCoordinator {
                 guard chat.isCurrent(vaultRoot: vaultURL, contextID: contextID) else { return }
 
                 let hits = try await Task.detached(priority: .userInitiated) {
-                    try await WikiChatRetriever.retrieve(
+                    try await VaultChatRetriever.retrieve(
                         question: userMessage.text,
                         vaultURL: vaultURL,
                         index: vaultIndex
@@ -122,7 +132,7 @@ enum WikiAgentCoordinator {
                 guard chat.isCurrent(vaultRoot: vaultURL, contextID: contextID) else { return }
                 DiagnosticLog.log("Chat: retrieved \(hits.count) notes for question (\(userMessage.text.count) chars)")
 
-                let vaultState = WikiChatRetriever.renderContextBlock(hits)
+                let vaultState = VaultChatRetriever.renderContextBlock(hits)
                 let transcript = Self.renderTranscript(chat.messages)
                 let prompt = RecipeParser.interpolate(recipe, input: transcript, vaultState: vaultState)
                 DiagnosticLog.log("Chat: sending (turns=\(chat.messages.count), prompt=\(prompt.count) chars)")
@@ -360,13 +370,12 @@ enum WikiAgentCoordinator {
         paths.joined(separator: "\n")
     }
 
-    /// Fire a silent cache warmup for the chat/query path as soon as a wiki
-    /// vault becomes active. Bails when no agent CLI is installed (or the
+    /// Fire a silent cache warmup for the chat/query path as soon as a vault
+    /// becomes active. Bails when no agent CLI is installed (or the
     /// user picked one that isn't present). Safe to call repeatedly;
     /// AgentWarmer short-circuits while the cache is still warm.
     static func warmForActiveVaultIfPossible(workspace: WorkspaceManager) {
-        guard workspace.activeVaultIsWiki,
-              let vaultURL = workspace.activeLocation?.url,
+        guard let vaultURL = workspace.activeLocation?.url,
               let runner = resolveToolEnabledRunner(vaultURL: vaultURL) else {
             return
         }

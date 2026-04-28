@@ -164,6 +164,41 @@ public final class VaultIndex: @unchecked Sendable {
             try db.execute(sql: "CREATE INDEX IF NOT EXISTS idx_embeddings_model ON embeddings(model_version)")
         }
 
+        // v3 (2026-04-28): chunked embeddings. The v2 table becomes one-row-per-file legacy;
+        // v3 replaces it with one-row-per-chunk so long notes don't dilute their signal in a
+        // single mean-pooled vector. Drop existing v2 rows — users re-embed on first launch with
+        // the new build via the `embeddingsMissingOrStale` sweep. Companion `chunks_fts`
+        // virtual table mirrors the chunk text for FTS5/bm25 keyword search at chunk granularity
+        // (the existing `files_fts` is preserved for whole-file search like the sidebar's find UI).
+        migrator.registerMigration("v3_chunked_embeddings") { db in
+            try db.execute(sql: "DROP TABLE IF EXISTS embeddings")
+            try db.execute(sql: """
+                CREATE TABLE embeddings (
+                    file_id INTEGER NOT NULL REFERENCES files(id) ON DELETE CASCADE,
+                    chunk_index INTEGER NOT NULL,
+                    chunk_text_offset INTEGER NOT NULL,
+                    chunk_text_length INTEGER NOT NULL,
+                    heading_path TEXT NOT NULL DEFAULT '[]',
+                    content_hash TEXT NOT NULL,
+                    model_version INTEGER NOT NULL,
+                    vector BLOB NOT NULL,
+                    updated_at REAL NOT NULL,
+                    PRIMARY KEY (file_id, chunk_index)
+                )
+                """)
+            try db.execute(sql: "CREATE INDEX idx_embeddings_model ON embeddings(model_version)")
+            try db.execute(sql: "CREATE INDEX idx_embeddings_file ON embeddings(file_id)")
+
+            try db.execute(sql: """
+                CREATE VIRTUAL TABLE chunks_fts USING fts5(
+                    chunk_text,
+                    file_id UNINDEXED,
+                    chunk_index UNINDEXED,
+                    tokenize='porter unicode61'
+                )
+                """)
+        }
+
         try migrator.migrate(dbPool)
     }
 
@@ -544,6 +579,58 @@ public final class VaultIndex: @unchecked Sendable {
                 return rows.map { row in
                     SearchResult(
                         file: Self.indexedFile(from: row),
+                        snippet: row["snippet"] ?? ""
+                    )
+                }
+            }
+        } catch {
+            return []
+        }
+    }
+
+    /// FTS5 chunk-level ranked search where the supplied keywords are OR'd together with
+    /// prefix matching. Used by chat RAG fusion — small mean-pooled embedders silently miss
+    /// obvious literal matches (e.g. "local-first software" → `Local-First Software.md`)
+    /// when the vault has many similarly-shaped Lorem Ipsum notes; bm25 over chunk text catches
+    /// those. Returns chunk-level rows so the retriever can correlate keyword hits to specific
+    /// chunks (heading path, etc.) when fusing with cosine. Caller is expected to pre-strip
+    /// stopwords and short tokens.
+    public func searchByKeywords(
+        _ keywords: [String],
+        limit: Int = 50,
+        modelVersion: Int = EmbeddingService.MODEL_VERSION
+    ) -> [ChunkSearchResult] {
+        let escaped = keywords
+            .map { $0.replacingOccurrences(of: "\"", with: "\"\"") }
+            .filter { !$0.isEmpty }
+        guard !escaped.isEmpty else { return [] }
+        let ftsQuery = escaped.map { "\"\($0)\"*" }.joined(separator: " OR ")
+
+        do {
+            return try dbPool.read { db in
+                let rows = try Row.fetchAll(db, sql: """
+                    SELECT chunks_fts.file_id AS file_id,
+                           chunks_fts.chunk_index AS chunk_index,
+                           f.path AS path,
+                           chunks_fts.chunk_text AS chunk_text,
+                           snippet(chunks_fts, 0, '<b>', '</b>', '…', 32) AS snippet
+                    FROM chunks_fts
+                    JOIN files f ON f.id = chunks_fts.file_id
+                    JOIN embeddings e ON e.file_id = chunks_fts.file_id
+                                     AND e.chunk_index = chunks_fts.chunk_index
+                    WHERE chunks_fts MATCH ?
+                      AND e.model_version = ?
+                      AND e.content_hash = f.content_hash
+                    ORDER BY bm25(chunks_fts)
+                    LIMIT ?
+                    """, arguments: [ftsQuery, modelVersion, limit])
+
+                return rows.map { row in
+                    ChunkSearchResult(
+                        fileID: row["file_id"],
+                        chunkIndex: row["chunk_index"],
+                        path: row["path"],
+                        chunkText: row["chunk_text"] ?? "",
                         snippet: row["snippet"] ?? ""
                     )
                 }
@@ -960,42 +1047,105 @@ public final class VaultIndex: @unchecked Sendable {
         public let contentHash: String
     }
 
-    public struct StoredEmbedding: Equatable {
-        public let fileID: Int64
-        public let path: String
+    /// Materialized chunk: caller-supplied input to `upsertChunkEmbeddings`. The `embedText`
+    /// (title + heading path + body) is what the embedder sees; `body` is what the LLM context
+    /// renderer shows; `headingPath` survives via `StoredChunkEmbedding` for citation rendering.
+    public struct ChunkEmbeddingInput {
+        public let chunkIndex: Int
+        public let textOffset: Int
+        public let textLength: Int
+        public let headingPath: [String]
+        public let body: String
         public let vector: [Float]
-    }
 
-    /// Upsert a single note's embedding. Caller is responsible for the vector matching the file's
-    /// current `content_hash` — pass through `IndexedFile.contentHash`.
-    public func upsertEmbedding(fileID: Int64, contentHash: String, vector: [Float], modelVersion: Int) throws {
-        let blob = vector.blobData
-        let now = Date().timeIntervalSince1970
-        try dbPool.write { db in
-            try db.execute(sql: """
-                INSERT INTO embeddings (file_id, content_hash, model_version, vector, updated_at)
-                VALUES (?, ?, ?, ?, ?)
-                ON CONFLICT(file_id) DO UPDATE SET
-                    content_hash = excluded.content_hash,
-                    model_version = excluded.model_version,
-                    vector = excluded.vector,
-                    updated_at = excluded.updated_at
-                """, arguments: [fileID, contentHash, modelVersion, blob, now])
+        public init(
+            chunkIndex: Int,
+            textOffset: Int,
+            textLength: Int,
+            headingPath: [String],
+            body: String,
+            vector: [Float]
+        ) {
+            self.chunkIndex = chunkIndex
+            self.textOffset = textOffset
+            self.textLength = textLength
+            self.headingPath = headingPath
+            self.body = body
+            self.vector = vector
         }
     }
 
-    /// All `(file_id, path, content_hash)` rows whose embedding is missing OR has a stale model
-    /// version OR whose stored content_hash no longer matches the file's current hash. Driving
-    /// list for first-run catch-up sweeps and `MODEL_VERSION` bumps.
+    /// Hydrated chunk row from the `embeddings` + `files` tables. Carries everything the chat
+    /// retriever needs to rank, dedupe by file, and render citations with heading context.
+    public struct StoredChunkEmbedding: Equatable {
+        public let fileID: Int64
+        public let chunkIndex: Int
+        public let path: String
+        public let headingPath: [String]
+        public let textOffset: Int
+        public let textLength: Int
+        public let vector: [Float]
+    }
+
+    /// FTS5 chunk-level keyword hit. File path is denormalized through the JOIN with `files`
+    /// so the chat retriever can correlate keyword hits to cosine hits without an extra round
+    /// trip. `chunkText` is the verbatim body that matched (small enough to inline).
+    public struct ChunkSearchResult: Equatable {
+        public let fileID: Int64
+        public let chunkIndex: Int
+        public let path: String
+        public let chunkText: String
+        public let snippet: String
+    }
+
+    /// Upsert all chunks for one file in a single transaction. Atomically deletes any prior
+    /// rows for `fileID` (in both `embeddings` and `chunks_fts`) before inserting the new set —
+    /// this is how chunk-count changes (e.g. note grew/shrank) propagate cleanly without
+    /// orphaned rows. All chunks share the same `contentHash` and `modelVersion`.
+    public func upsertChunkEmbeddings(
+        fileID: Int64,
+        contentHash: String,
+        chunks: [ChunkEmbeddingInput],
+        modelVersion: Int
+    ) throws {
+        let now = Date().timeIntervalSince1970
+        try dbPool.write { db in
+            try db.execute(sql: "DELETE FROM embeddings WHERE file_id = ?", arguments: [fileID])
+            try db.execute(sql: "DELETE FROM chunks_fts WHERE file_id = ?", arguments: [fileID])
+            for chunk in chunks {
+                let headingJSON = Self.encodeHeadingPath(chunk.headingPath)
+                try db.execute(sql: """
+                    INSERT INTO embeddings (
+                        file_id, chunk_index, chunk_text_offset, chunk_text_length,
+                        heading_path, content_hash, model_version, vector, updated_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """, arguments: [
+                        fileID, chunk.chunkIndex, chunk.textOffset, chunk.textLength,
+                        headingJSON, contentHash, modelVersion, chunk.vector.blobData, now
+                    ])
+                try db.execute(sql: """
+                    INSERT INTO chunks_fts (file_id, chunk_index, chunk_text)
+                    VALUES (?, ?, ?)
+                    """, arguments: [fileID, chunk.chunkIndex, chunk.body])
+            }
+        }
+    }
+
+    /// Files that need (re-)chunking + (re-)embedding. A file is stale if it has zero chunks at
+    /// the current `modelVersion`, or if any of its chunks has drifted `content_hash`. The
+    /// caller re-chunks the entire file when it picks up a stale target — partial re-embeds
+    /// would leave the chunk_index space inconsistent.
     public func embeddingsMissingOrStale(modelVersion: Int) throws -> [StaleEmbeddingTarget] {
         try dbPool.read { db in
             let rows = try Row.fetchAll(db, sql: """
                 SELECT f.id AS file_id, f.path, f.content_hash
                 FROM files f
-                LEFT JOIN embeddings e ON e.file_id = f.id
-                WHERE e.file_id IS NULL
-                   OR e.model_version != ?
-                   OR e.content_hash != f.content_hash
+                WHERE NOT EXISTS (
+                    SELECT 1 FROM embeddings e
+                    WHERE e.file_id = f.id
+                      AND e.model_version = ?
+                      AND e.content_hash = f.content_hash
+                )
                 """, arguments: [modelVersion])
             return rows.map {
                 StaleEmbeddingTarget(fileID: $0["file_id"], path: $0["path"], contentHash: $0["content_hash"])
@@ -1003,46 +1153,83 @@ public final class VaultIndex: @unchecked Sendable {
         }
     }
 
-    /// Returns every current stored embedding at `modelVersion`. Used by the semantic_search MCP
-    /// tool to brute-force a cosine ranking. Skips rows at other model versions or content hashes.
-    public func allEmbeddings(modelVersion: Int) throws -> [StoredEmbedding] {
+    /// All current chunk embeddings at `modelVersion`. Skips rows whose stored content_hash
+    /// has drifted from the file's current hash (those will be replaced by the next sweep).
+    /// Used by the chat retriever's cosine ranking.
+    public func allChunkEmbeddings(modelVersion: Int) throws -> [StoredChunkEmbedding] {
         try dbPool.read { db in
             let rows = try Row.fetchAll(db, sql: """
-                SELECT e.file_id, f.path, e.vector
+                SELECT e.file_id, e.chunk_index, f.path, e.heading_path,
+                       e.chunk_text_offset, e.chunk_text_length, e.vector
                 FROM embeddings e
                 JOIN files f ON f.id = e.file_id
                 WHERE e.model_version = ?
                   AND e.content_hash = f.content_hash
                 """, arguments: [modelVersion])
-            return rows.compactMap { row -> StoredEmbedding? in
+            return rows.compactMap { row -> StoredChunkEmbedding? in
                 let blob: Data = row["vector"]
                 guard let vec = [Float].fromBlobData(blob) else { return nil }
-                return StoredEmbedding(fileID: row["file_id"], path: row["path"], vector: vec)
+                let headingJSON: String = row["heading_path"]
+                return StoredChunkEmbedding(
+                    fileID: row["file_id"],
+                    chunkIndex: row["chunk_index"],
+                    path: row["path"],
+                    headingPath: Self.decodeHeadingPath(headingJSON),
+                    textOffset: row["chunk_text_offset"],
+                    textLength: row["chunk_text_length"],
+                    vector: vec
+                )
             }
         }
     }
 
-    /// Explicit invalidation. Cascade delete already handles the file-removed case; this method
-    /// exists for `MODEL_VERSION` bumps that want to clear all stored vectors before re-embedding.
-    public func deleteAllEmbeddings() throws {
-        try dbPool.write { db in
-            try db.execute(sql: "DELETE FROM embeddings")
-        }
-    }
-
-    /// Lookup the stored embedding for a file, if present.
-    public func embedding(forFileID fileID: Int64) throws -> StoredEmbedding? {
+    /// Lookup all chunks for a file. Empty array if none stored.
+    public func chunkEmbeddings(forFileID fileID: Int64) throws -> [StoredChunkEmbedding] {
         try dbPool.read { db in
-            guard let row = try Row.fetchOne(db, sql: """
-                SELECT e.file_id, f.path, e.vector
+            let rows = try Row.fetchAll(db, sql: """
+                SELECT e.file_id, e.chunk_index, f.path, e.heading_path,
+                       e.chunk_text_offset, e.chunk_text_length, e.vector
                 FROM embeddings e
                 JOIN files f ON f.id = e.file_id
                 WHERE e.file_id = ?
-                """, arguments: [fileID]) else { return nil }
-            let blob: Data = row["vector"]
-            guard let vec = [Float].fromBlobData(blob) else { return nil }
-            return StoredEmbedding(fileID: row["file_id"], path: row["path"], vector: vec)
+                ORDER BY e.chunk_index
+                """, arguments: [fileID])
+            return rows.compactMap { row -> StoredChunkEmbedding? in
+                let blob: Data = row["vector"]
+                guard let vec = [Float].fromBlobData(blob) else { return nil }
+                let headingJSON: String = row["heading_path"]
+                return StoredChunkEmbedding(
+                    fileID: row["file_id"],
+                    chunkIndex: row["chunk_index"],
+                    path: row["path"],
+                    headingPath: Self.decodeHeadingPath(headingJSON),
+                    textOffset: row["chunk_text_offset"],
+                    textLength: row["chunk_text_length"],
+                    vector: vec
+                )
+            }
         }
+    }
+
+    /// Explicit invalidation — clears every chunk row + chunks_fts. Used when the embedder
+    /// itself changes (e.g. dimension flip on a future swap) and you'd rather take the hit
+    /// up-front than rely on `embeddingsMissingOrStale` to drip-detect.
+    public func deleteAllEmbeddings() throws {
+        try dbPool.write { db in
+            try db.execute(sql: "DELETE FROM embeddings")
+            try db.execute(sql: "DELETE FROM chunks_fts")
+        }
+    }
+
+    private static func encodeHeadingPath(_ path: [String]) -> String {
+        guard !path.isEmpty else { return "[]" }
+        let data = (try? JSONEncoder().encode(path)) ?? Data("[]".utf8)
+        return String(data: data, encoding: .utf8) ?? "[]"
+    }
+
+    private static func decodeHeadingPath(_ json: String) -> [String] {
+        guard let data = json.data(using: .utf8) else { return [] }
+        return (try? JSONDecoder().decode([String].self, from: data)) ?? []
     }
 
     /// Background sweep that brings the `embeddings` table back in sync with `files`. Idempotent
@@ -1073,28 +1260,66 @@ public final class VaultIndex: @unchecked Sendable {
                 }
 
                 var processed = 0
+                var totalChunks = 0
                 for target in stale {
                     if Task.isCancelled { return }
                     let fileURL = self.rootURL.appendingPathComponent(target.path)
                     guard let data = try? Data(contentsOf: fileURL),
                           let content = String(data: data, encoding: .utf8) else { continue }
-                    do {
-                        let vector = try service.embed(content)
-                        try self.upsertEmbedding(
+
+                    // Chunk first; embed each chunk separately so long notes don't dilute
+                    // their signal in a single mean-pooled vector. Title + heading-path
+                    // prepended via `embedText` per the contextual-retrieval pattern.
+                    let filename = (target.path as NSString).lastPathComponent
+                    let chunks = MarkdownChunker.chunk(source: content, filename: filename)
+                    if chunks.isEmpty {
+                        // Empty / frontmatter-only note. Clear any prior chunks for this file
+                        // so a previously-non-empty note doesn't keep stale rows around.
+                        try? self.upsertChunkEmbeddings(
                             fileID: target.fileID,
                             contentHash: target.contentHash,
-                            vector: vector,
+                            chunks: [],
+                            modelVersion: modelVersion
+                        )
+                        continue
+                    }
+
+                    do {
+                        var inputs: [ChunkEmbeddingInput] = []
+                        inputs.reserveCapacity(chunks.count)
+                        for chunk in chunks {
+                            do {
+                                let vector = try service.embed(chunk.embedText)
+                                inputs.append(ChunkEmbeddingInput(
+                                    chunkIndex: chunk.index,
+                                    textOffset: chunk.textOffset,
+                                    textLength: chunk.textLength,
+                                    headingPath: chunk.headingPath,
+                                    body: chunk.body,
+                                    vector: vector
+                                ))
+                            } catch EmbeddingError.emptyText {
+                                continue
+                            }
+                        }
+                        // Atomically replace this file's chunks. Skip the upsert if every
+                        // chunk failed to embed — leaves the prior state in place rather
+                        // than blanking the file out on a transient embed failure.
+                        guard !inputs.isEmpty else { continue }
+                        try self.upsertChunkEmbeddings(
+                            fileID: target.fileID,
+                            contentHash: target.contentHash,
+                            chunks: inputs,
                             modelVersion: modelVersion
                         )
                         processed += 1
-                    } catch EmbeddingError.emptyText {
-                        continue   // empty/whitespace-only notes — silently skip
+                        totalChunks += inputs.count
                     } catch {
                         DiagnosticLog.log("Embedding failed for \(target.path): \(error.localizedDescription)")
                     }
                 }
                 if processed > 0 {
-                    DiagnosticLog.log("Embedding sweep complete: \(processed)/\(stale.count) notes")
+                    DiagnosticLog.log("Embedding sweep complete: \(processed)/\(stale.count) notes, \(totalChunks) chunks")
                 }
             } catch {
                 DiagnosticLog.log("Embedding sweep failed: \(error.localizedDescription)")
