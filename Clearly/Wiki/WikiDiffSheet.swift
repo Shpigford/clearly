@@ -122,6 +122,7 @@ private extension OperationKind {
         case .capture: return "Capture"
         case .chat: return "Chat"
         case .review: return "Review"
+        case .integrate: return "Integrate"
         case .other: return "Operation"
         }
     }

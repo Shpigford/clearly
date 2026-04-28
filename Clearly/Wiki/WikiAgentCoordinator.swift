@@ -184,7 +184,7 @@ enum WikiAgentCoordinator {
         }
 
         // Already running or pending? Don't double-fire.
-        guard !controller.hasPendingReview,
+        guard !controller.hasPendingOperation,
               !controller.isPresenting,
               !controller.isRunningRecipe,
               !controller.isAutoReviewing else {
@@ -223,6 +223,141 @@ enum WikiAgentCoordinator {
                 stageMode: .holdForReview
             ) { "" }
         }
+    }
+
+    /// Background pass that integrates user-dropped notes — adds them to
+    /// `index.md` and proposes cross-references. Same lifecycle as auto-Review:
+    /// throttled, parks on `pendingOperation`, never popping a sheet unprompted.
+    /// Throttle is 5 min so editing a single note doesn't trigger an agent run
+    /// every keystroke; the batch cap keeps token cost and diff size bounded
+    /// for bulk imports.
+    static func runIntegrationIfNeeded(workspace: WorkspaceManager, controller: WikiOperationController) {
+        guard workspace.activeVaultIsWiki,
+              let vaultURL = workspace.activeLocation?.url else {
+            return
+        }
+
+        let candidates = integrationCandidates(under: vaultURL)
+        let candidateSignature = integrationCandidateSignature(candidates)
+
+        if let state = WikiVaultState.read(at: vaultURL),
+           let last = state.lastIntegrationAt {
+            let elapsed = Date().timeIntervalSince(last)
+            if elapsed < integrationThrottleSeconds,
+               state.lastIntegrationCandidateSignature == candidateSignature {
+                return
+            }
+        }
+
+        guard !controller.hasPendingOperation,
+              !controller.isPresenting,
+              !controller.isRunningRecipe,
+              !controller.isAutoReviewing else {
+            return
+        }
+
+        guard !candidates.isEmpty else {
+            // Mark the pass as run so we don't re-scan on every tree-revision
+            // change while the wiki is fully indexed. A changed candidate
+            // signature bypasses the throttle, so new drops still run
+            // immediately.
+            WikiVaultState.recordIntegrationRun(at: vaultURL, candidateSignature: candidateSignature)
+            return
+        }
+
+        guard let runner = resolveToolEnabledRunner(vaultURL: vaultURL) else {
+            DiagnosticLog.log("[Integrate] skipped: no agent CLI installed")
+            return
+        }
+        AgentWarmer.warmIfNeeded(runner: runner)
+        let session = Session(vaultURL: vaultURL, runner: runner)
+
+        let truncated = candidates.count > integrationCap
+        let batch = truncated ? Array(candidates.prefix(integrationCap)) : candidates
+        let inputBody = renderIntegrationInput(paths: batch, truncatedRemaining: truncated ? candidates.count - integrationCap : 0)
+
+        Task { @MainActor in
+            guard !controller.isAutoReviewing else {
+                DiagnosticLog.log("[Integrate] skipped: another auto-pass in flight")
+                return
+            }
+            DiagnosticLog.log("[Integrate] start: \(batch.count) note(s) (\(candidates.count) total candidate(s))")
+            await runRecipe(
+                kind: .integrate,
+                session: session,
+                controller: controller,
+                startStatus: "Integrating dropped notes…",
+                titleFor: { proposal in
+                    let count = batch.count
+                    return "Integrate: \(count) note\(count == 1 ? "" : "s")"
+                },
+                stageMode: .holdForReview
+            ) { inputBody }
+            WikiVaultState.recordIntegrationRun(at: vaultURL, candidateSignature: candidateSignature)
+        }
+    }
+
+    /// Cap on notes integrated per pass. Above this, the recipe input gets
+    /// truncated and a "drop the rest after" hint is added — the next throttle
+    /// window picks them up. Conservative starting point: each integrated note
+    /// costs the agent one Read on the note plus up to three Reads on cross-ref
+    /// targets, so a 25-note batch is already ~100 file reads + the recipe.
+    /// Tune up only after observing real runs.
+    static let integrationCap = 25
+
+    /// Minimum gap between integration passes. Prevents tree-revision events
+    /// (which fire on every save) from re-triggering an agent run while a
+    /// previous pass is still cooling down.
+    static let integrationThrottleSeconds: TimeInterval = 5 * 60
+
+    /// Compute the set of vault-relative `.md` paths that are NOT yet
+    /// referenced from `index.md` and aren't wiki infrastructure. Sorted
+    /// deterministically so test fixtures are stable.
+    static func integrationCandidates(under vaultURL: URL) -> [String] {
+        let indexURL = vaultURL.appendingPathComponent("index.md")
+        let indexContent = (try? String(contentsOf: indexURL, encoding: .utf8)) ?? ""
+        return WikiIntegrationCandidates.select(
+            allPaths: enumerateMarkdown(under: vaultURL),
+            indexContent: indexContent
+        )
+    }
+
+    private static func enumerateMarkdown(under vaultURL: URL) -> [String] {
+        let fm = FileManager.default
+        guard let enumerator = fm.enumerator(
+            at: vaultURL,
+            includingPropertiesForKeys: [.isRegularFileKey],
+            options: [.skipsHiddenFiles]
+        ) else { return [] }
+        let root = vaultURL.resolvingSymlinksInPath().path
+        var results: [String] = []
+        for case let url as URL in enumerator {
+            guard url.pathExtension.lowercased() == "md" else { continue }
+            let full = url.resolvingSymlinksInPath().path
+            guard full.hasPrefix(root) else { continue }
+            var relative = String(full.dropFirst(root.count))
+            if relative.hasPrefix("/") { relative = String(relative.dropFirst()) }
+            results.append(relative)
+        }
+        return results
+    }
+
+    private static func renderIntegrationInput(paths: [String], truncatedRemaining: Int) -> String {
+        var lines: [String] = []
+        lines.append("These notes were dropped into the vault and aren't yet referenced from `index.md`. Integrate them.")
+        lines.append("")
+        for path in paths {
+            lines.append("- \(path)")
+        }
+        if truncatedRemaining > 0 {
+            lines.append("")
+            lines.append("\(truncatedRemaining) more note\(truncatedRemaining == 1 ? "" : "s") will be integrated on the next pass — focus on the list above.")
+        }
+        return lines.joined(separator: "\n")
+    }
+
+    private static func integrationCandidateSignature(_ paths: [String]) -> String {
+        paths.joined(separator: "\n")
     }
 
     /// Fire a silent cache warmup for the chat/query path as soon as a wiki
@@ -337,6 +472,7 @@ enum WikiAgentCoordinator {
                     case .capture: return "Nothing staged"
                     case .chat: return "Answer"
                     case .review: return "No issues found"
+                    case .integrate: return "Nothing to integrate"
                     case .other: return "No action"
                     }
                 }()

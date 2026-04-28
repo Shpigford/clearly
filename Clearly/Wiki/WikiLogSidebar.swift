@@ -18,7 +18,7 @@ struct WikiLogSidebar: View {
         VStack(alignment: .leading, spacing: 0) {
             header
             separator
-            if controller.hasPendingReview {
+            if controller.hasPendingOperation {
                 pendingBadge
                 separator
             }
@@ -81,6 +81,7 @@ struct WikiLogSidebar: View {
 
     private var pendingBadge: some View {
         let count = controller.pendingOperation?.changes.count ?? 0
+        let label = controller.pendingOperationLabel
         return Button {
             controller.presentPending()
         } label: {
@@ -88,7 +89,7 @@ struct WikiLogSidebar: View {
                 Circle()
                     .fill(.tint)
                     .frame(width: 6, height: 6)
-                Text("Review ready · \(count) change\(count == 1 ? "" : "s")")
+                Text("\(label) ready · \(count) change\(count == 1 ? "" : "s")")
                     .font(.callout)
                 Spacer()
                 Image(systemName: "chevron.right")
@@ -98,7 +99,7 @@ struct WikiLogSidebar: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .help("Open the Review diff sheet")
+        .help("Open the \(label) diff sheet")
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
     }
@@ -226,6 +227,7 @@ private struct WikiLogRow: View {
         case "capture", "ingest": return "tray.and.arrow.down"
         case "chat", "query": return "bubble.left"
         case "review", "lint": return "checkmark.shield"
+        case "integrate": return "link"
         default: return "square.and.pencil"
         }
     }
@@ -235,6 +237,7 @@ private struct WikiLogRow: View {
         case "capture", "ingest": return .blue
         case "chat", "query": return .purple
         case "review", "lint": return .orange
+        case "integrate": return .teal
         default: return .secondary
         }
     }

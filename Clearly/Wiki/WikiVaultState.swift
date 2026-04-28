@@ -10,14 +10,23 @@ import ClearlyCore
 /// via `DiagnosticLog` and swallow.
 struct WikiVaultState: Codable {
     var lastReviewAt: Date?
+    var lastIntegrationAt: Date?
+    var lastIntegrationCandidateSignature: String?
     var schemaVersion: Int
 
     static let currentSchemaVersion = 1
     static let directoryName = ".clearly"
     static let fileName = "state.json"
 
-    init(lastReviewAt: Date? = nil, schemaVersion: Int = currentSchemaVersion) {
+    init(
+        lastReviewAt: Date? = nil,
+        lastIntegrationAt: Date? = nil,
+        lastIntegrationCandidateSignature: String? = nil,
+        schemaVersion: Int = currentSchemaVersion
+    ) {
         self.lastReviewAt = lastReviewAt
+        self.lastIntegrationAt = lastIntegrationAt
+        self.lastIntegrationCandidateSignature = lastIntegrationCandidateSignature
         self.schemaVersion = schemaVersion
     }
 
@@ -36,6 +45,18 @@ struct WikiVaultState: Codable {
     static func recordReviewRun(at vaultURL: URL, time: Date = Date()) {
         var state = read(at: vaultURL) ?? WikiVaultState()
         state.lastReviewAt = time
+        state.schemaVersion = currentSchemaVersion
+        write(state, to: vaultURL)
+    }
+
+    static func recordIntegrationRun(
+        at vaultURL: URL,
+        time: Date = Date(),
+        candidateSignature: String? = nil
+    ) {
+        var state = read(at: vaultURL) ?? WikiVaultState()
+        state.lastIntegrationAt = time
+        state.lastIntegrationCandidateSignature = candidateSignature
         state.schemaVersion = currentSchemaVersion
         write(state, to: vaultURL)
     }
