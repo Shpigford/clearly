@@ -18,13 +18,13 @@ public enum ImagePasteService {
     ]
 
     /// URL is worth attempting to download as an image when it's HTTP(S) and
-    /// either its path ends in a known image extension OR it has no
-    /// extension (common for CDN / signed URLs — MIME check decides later).
+    /// its path ends in a known image extension. Extension-less URLs aren't
+    /// treated as images — most modern links (articles, share URLs, CDN
+    /// endpoints without an explicit extension) would otherwise trigger a
+    /// download that fails and leaves a broken `![](failed-download)`.
     public static func isLikelyImageURL(_ url: URL) -> Bool {
         guard let scheme = url.scheme?.lowercased(), scheme == "http" || scheme == "https" else { return false }
-        let ext = url.pathExtension.lowercased()
-        if ext.isEmpty { return true }
-        return imageFileExtensions.contains(ext)
+        return imageFileExtensions.contains(url.pathExtension.lowercased())
     }
 
     /// Derive a URL-safe slug from the document's filename stem. Lowercased,
