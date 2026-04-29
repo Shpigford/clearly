@@ -22,7 +22,7 @@ public enum MermaidSupport {
             mermaid.initialize({
                 startOnLoad: false,
                 theme: isDark ? 'dark' : 'neutral',
-                securityLevel: 'strict'
+                securityLevel: 'antiscript'
             });
             document.querySelectorAll('pre code.language-mermaid').forEach(function(codeEl) {
                 var pre = codeEl.parentElement;
@@ -34,6 +34,8 @@ public enum MermaidSupport {
                 pre.replaceWith(container);
             });
             mermaid.run().then(function() {
+                window.__mermaidReady = true;
+                window.dispatchEvent(new Event('mermaid-ready'));
                 if (window._scheduleCacheRebuild) {
                     window._scheduleCacheRebuild();
                 }

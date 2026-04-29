@@ -52,6 +52,11 @@ public struct PreviewPalette: Sendable {
     public var popoverShadow2: String
     public var frontmatterBg: String
     public var lightboxBg: String
+    public var mermaidLightboxBg: String
+    public var lightboxControlSurface: String
+    public var lightboxControlSurfaceHover: String
+    public var lightboxControlBorder: String
+    public var lightboxControlButtonHover: String
 
     public init(
         text: String,
@@ -101,7 +106,12 @@ public struct PreviewPalette: Sendable {
         popoverShadow1: String,
         popoverShadow2: String,
         frontmatterBg: String,
-        lightboxBg: String
+        lightboxBg: String,
+        mermaidLightboxBg: String,
+        lightboxControlSurface: String,
+        lightboxControlSurfaceHover: String,
+        lightboxControlBorder: String,
+        lightboxControlButtonHover: String
     ) {
         self.text = text
         self.headingSecondary = headingSecondary
@@ -151,6 +161,11 @@ public struct PreviewPalette: Sendable {
         self.popoverShadow2 = popoverShadow2
         self.frontmatterBg = frontmatterBg
         self.lightboxBg = lightboxBg
+        self.mermaidLightboxBg = mermaidLightboxBg
+        self.lightboxControlSurface = lightboxControlSurface
+        self.lightboxControlSurfaceHover = lightboxControlSurfaceHover
+        self.lightboxControlBorder = lightboxControlBorder
+        self.lightboxControlButtonHover = lightboxControlButtonHover
     }
 
     /// Palette applied by default (base `:root`). Matches the pre-tokenization Mac preview values.
@@ -202,7 +217,12 @@ public struct PreviewPalette: Sendable {
         popoverShadow1: "rgba(0, 0, 0, 0.08)",
         popoverShadow2: "rgba(0, 0, 0, 0.06)",
         frontmatterBg: "rgba(0, 0, 0, 0.03)",
-        lightboxBg: "rgba(0, 0, 0, 0.75)"
+        lightboxBg: "rgba(0, 0, 0, 0.75)",
+        mermaidLightboxBg: "rgba(245, 245, 247, 0.92)",
+        lightboxControlSurface: "rgba(40, 40, 40, 0.92)",
+        lightboxControlSurfaceHover: "rgba(60, 60, 60, 0.95)",
+        lightboxControlBorder: "rgba(255, 255, 255, 0.08)",
+        lightboxControlButtonHover: "rgba(255, 255, 255, 0.14)"
     )
 
     /// Palette applied inside `@media (prefers-color-scheme: dark)`.
@@ -254,7 +274,12 @@ public struct PreviewPalette: Sendable {
         popoverShadow1: "rgba(0, 0, 0, 0.35)",
         popoverShadow2: "rgba(255, 255, 255, 0.08)",
         frontmatterBg: "rgba(255, 255, 255, 0.04)",
-        lightboxBg: "rgba(0, 0, 0, 0.75)"
+        lightboxBg: "rgba(0, 0, 0, 0.75)",
+        mermaidLightboxBg: "rgba(0, 0, 0, 0.85)",
+        lightboxControlSurface: "rgba(40, 40, 40, 0.92)",
+        lightboxControlSurfaceHover: "rgba(60, 60, 60, 0.95)",
+        lightboxControlBorder: "rgba(255, 255, 255, 0.08)",
+        lightboxControlButtonHover: "rgba(255, 255, 255, 0.14)"
     )
 
     /// Palette applied inside `@media print` (and inlined into `:root` when `forExport: true`).
@@ -319,6 +344,10 @@ public enum PreviewCSS {
         details.callout > summary::before { content: "" !important; }
         .heading-anchor { display: none !important; }
         .lightbox-overlay { display: none !important; }
+        .mermaid-lightbox { display: none !important; }
+        .mermaid-zoom-icon { display: none !important; }
+        .mermaid-wrapper .mermaid,
+        .mermaid-wrapper .mermaid svg { cursor: default !important; }
         .footnote-popover { display: none !important; }
         .wiki-link, .wiki-link-broken { border-bottom: none !important; }
         .callout { border: none !important; }
@@ -969,6 +998,119 @@ public enum PreviewCSS {
             height: auto;
         }
 
+        .mermaid-wrapper {
+            position: relative;
+            display: block;
+        }
+        .mermaid-wrapper .mermaid,
+        .mermaid-wrapper .mermaid svg {
+            cursor: zoom-in;
+        }
+        .mermaid-zoom-icon {
+            position: absolute;
+            top: 8px;
+            right: 8px;
+            width: 28px;
+            height: 28px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 6px;
+            background: var(--c-popover-bg);
+            color: var(--c-text);
+            box-shadow: 0 1px 3px var(--c-popover-shadow-1);
+            opacity: 0;
+            transition: opacity 0.15s ease;
+            pointer-events: none;
+        }
+        .mermaid-wrapper:hover .mermaid-zoom-icon {
+            opacity: 0.9;
+        }
+
+        .mermaid-lightbox {
+            position: fixed;
+            inset: 0;
+            background: var(--c-mermaid-lightbox-bg);
+            z-index: 10000;
+            opacity: 0;
+            transition: opacity 0.18s ease;
+            touch-action: none;
+            -webkit-user-select: none;
+            user-select: none;
+            outline: none;
+        }
+        .mermaid-lightbox.mermaid-lightbox--open {
+            opacity: 1;
+        }
+        .mermaid-lightbox-stage {
+            position: absolute;
+            inset: max(16px, 5vh) max(16px, 5vw);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .mermaid-lightbox-stage svg {
+            width: 100% !important;
+            height: 100% !important;
+            max-width: none !important;
+        }
+        .mermaid-lightbox-controls {
+            position: absolute;
+            bottom: max(20px, env(safe-area-inset-bottom, 0px));
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            align-items: center;
+            gap: 2px;
+            padding: 4px 6px;
+            background: var(--c-lightbox-control-surface);
+            border: 1px solid var(--c-lightbox-control-border);
+            border-radius: 999px;
+        }
+        .mermaid-lightbox-controls button {
+            background: transparent;
+            border: none;
+            color: #FFF;
+            font-size: 14px;
+            min-width: 32px;
+            height: 28px;
+            padding: 0 10px;
+            border-radius: 999px;
+            cursor: pointer;
+            font-family: inherit;
+        }
+        .mermaid-lightbox-controls button:hover {
+            background: var(--c-lightbox-control-button-hover);
+        }
+        .mermaid-lightbox-controls .zoom-readout {
+            min-width: 52px;
+            font-variant-numeric: tabular-nums;
+            text-align: center;
+            color: #FFF;
+            opacity: 0.85;
+            font-size: 12px;
+            padding: 0 4px;
+        }
+        .mermaid-lightbox-close {
+            position: absolute;
+            top: max(16px, env(safe-area-inset-top, 0px));
+            right: max(16px, env(safe-area-inset-right, 0px));
+            width: 36px;
+            height: 36px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border: 1px solid var(--c-lightbox-control-border);
+            border-radius: 50%;
+            background: var(--c-lightbox-control-surface);
+            color: #FFF;
+            cursor: pointer;
+            padding: 0;
+        }
+        .mermaid-lightbox-close:hover {
+            background: var(--c-lightbox-control-surface-hover);
+        }
+
         @media print {
             mark {
                 -webkit-print-color-adjust: exact;
@@ -993,6 +1135,10 @@ public enum PreviewCSS {
             details.callout > summary::before { content: "" !important; }
             .heading-anchor { display: none !important; }
             .lightbox-overlay { display: none !important; }
+            .mermaid-lightbox { display: none !important; }
+            .mermaid-zoom-icon { display: none !important; }
+            .mermaid-wrapper .mermaid,
+            .mermaid-wrapper .mermaid svg { cursor: default !important; }
             .footnote-popover { display: none !important; }
             .page-break {
                 page-break-after: always;
@@ -1074,6 +1220,11 @@ public enum PreviewCSS {
             ("--c-popover-shadow-2", palette.popoverShadow2),
             ("--c-frontmatter-bg", palette.frontmatterBg),
             ("--c-lightbox-bg", palette.lightboxBg),
+            ("--c-mermaid-lightbox-bg", palette.mermaidLightboxBg),
+            ("--c-lightbox-control-surface", palette.lightboxControlSurface),
+            ("--c-lightbox-control-surface-hover", palette.lightboxControlSurfaceHover),
+            ("--c-lightbox-control-border", palette.lightboxControlBorder),
+            ("--c-lightbox-control-button-hover", palette.lightboxControlButtonHover),
         ]
         let inner = pairs.map { "\(indent)    \($0.0): \($0.1);" }.joined(separator: "\n")
         return "\(indent)\(selector) {\n\(inner)\n\(indent)}"

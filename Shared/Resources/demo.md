@@ -253,6 +253,8 @@ $$
 
 ### Mermaid Diagrams
 
+*Click any diagram to expand it. Drag to pan, scroll or pinch to zoom, double-click to toggle fit ↔ 200%. Linked nodes open in your browser.*
+
 ```mermaid
 flowchart LR
     A[Write Markdown] --> B{Mode?}
@@ -262,6 +264,8 @@ flowchart LR
     D --> F[Live HTML]
     E --> G[Save .md]
     F --> G
+    click F "https://daringfireball.net/projects/markdown/" "Markdown spec" _blank
+    click G "https://github.com/Shpigford/clearly" "Clearly on GitHub" _blank
 ```
 
 ```mermaid
