@@ -203,7 +203,7 @@ struct MacFolderSidebar: View {
                 }
                 Divider()
                 Button("Remove from List", systemImage: "minus.circle", role: .destructive) {
-                    workspace.removeLocationClosingOpenDocuments(location)
+                    removeLocation(location)
                 }
             }
             .dropDestination(for: URL.self) { urls, _ in
@@ -403,6 +403,34 @@ struct MacFolderSidebar: View {
 
     private func createNewFile(in folder: URL) {
         _ = workspace.createUntitledFileInFolder(folder)
+    }
+
+    /// Defer the structural mutation to a later runloop iteration so SwiftUI's
+    /// `List` (backed by `NSOutlineView`) can commit the selection clear before
+    /// it diffs the doomed subtree. `DispatchQueue.main.async` would batch into
+    /// the same SwiftUI transaction; the timer-backed delay forces a separate
+    /// iteration after the render observer fires. Without the gap, the diff
+    /// dereferences a freed `FileNode` in `NSOutlineView`'s item map (#288).
+    private func removeLocation(_ location: BookmarkedLocation) {
+        let rootPath = location.url.standardizedFileURL.path
+        let prefix = rootPath.hasSuffix("/") ? rootPath : rootPath + "/"
+        let previousSelection = selectedFileURL
+        let clearedSelection: Bool
+        if let selectedPath = selectedFileURL?.standardizedFileURL.path,
+           selectedPath == rootPath || selectedPath.hasPrefix(prefix) {
+            selectedFileURL = nil
+            clearedSelection = true
+        } else {
+            clearedSelection = false
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+            guard workspace.removeLocationClosingOpenDocuments(location) else {
+                if clearedSelection, selectedFileURL == nil {
+                    selectedFileURL = previousSelection
+                }
+                return
+            }
+        }
     }
 
     private func promptForNewFolder(in parent: URL) {

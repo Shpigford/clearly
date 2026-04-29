@@ -911,8 +911,21 @@ final class WorkspaceManager {
             location.url.stopAccessingSecurityScopedResource()
             accessedURLs.remove(location.url)
         }
+        removeDeletedItemReferences(at: location.url)
+        pruneExpandedFolderPaths(under: location.url)
         locations.removeAll { $0.id == location.id }
         persistLocations()
+    }
+
+    private func pruneExpandedFolderPaths(under url: URL) {
+        let rootPath = url.standardizedFileURL.path
+        let prefix = rootPath.hasSuffix("/") ? rootPath : rootPath + "/"
+        let filtered = expandedFolderPaths.filter { path in
+            path != rootPath && !path.hasPrefix(prefix)
+        }
+        guard filtered != expandedFolderPaths else { return }
+        expandedFolderPaths = filtered
+        UserDefaults.standard.set(Array(expandedFolderPaths), forKey: Self.expandedFolderPathsKey)
     }
 
     /// Closes any open documents inside `location`, prompting save/discard for dirty
