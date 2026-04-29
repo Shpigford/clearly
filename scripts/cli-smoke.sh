@@ -27,12 +27,16 @@ if [ ! -d "$FIXTURE" ]; then
 fi
 
 # ─── Build ─────────────────────────────────────────────────────────────────
+# Pin DerivedData to a workspace-local path so parallel Conductor worktrees
+# don't cross-contaminate. CLAUDE.md mandates this for any direct xcodebuild
+# invocation.
+DERIVED="$REPO_ROOT/.build/DerivedData"
 echo "→ xcodebuild -scheme ClearlyCLI -configuration Debug build"
-xcodebuild -scheme ClearlyCLI -configuration Debug build -quiet >/dev/null
+xcodebuild -scheme ClearlyCLI -configuration Debug build -quiet -derivedDataPath "$DERIVED" >/dev/null
 
-CLI="$(find ~/Library/Developer/Xcode/DerivedData/Clearly-*/Build/Products/Debug -maxdepth 2 -name ClearlyCLI -type f 2>/dev/null | head -1 || true)"
-if [ -z "$CLI" ] || [ ! -x "$CLI" ]; then
-    echo "ClearlyCLI binary not found in DerivedData" >&2
+CLI="$DERIVED/Build/Products/Debug/ClearlyCLI"
+if [ ! -x "$CLI" ]; then
+    echo "ClearlyCLI binary not found at $CLI" >&2
     exit 11
 fi
 echo "  using $CLI"
@@ -142,10 +146,19 @@ RESPONSES=$({ printf '%s\n%s\n%s\n' \
 
 # tools/list comes back as id: 2
 TOOL_COUNT=$(printf '%s\n' "$RESPONSES" | jq -s '.[] | select(.id == 2) | .result.tools | length' | head -1)
-if [ "$TOOL_COUNT" != "10" ]; then
-    echo "mcp tools/list: expected 10 tools, got $TOOL_COUNT" >&2
+if [ "$TOOL_COUNT" != "12" ]; then
+    echo "mcp tools/list: expected 12 tools, got $TOOL_COUNT" >&2
     exit 40
 fi
+
+# Spot-check that the new tools show up alongside the originals.
+TOOL_NAMES=$(printf '%s\n' "$RESPONSES" | jq -rs '.[] | select(.id == 2) | .result.tools[].name' | sort | tr '\n' ' ')
+for required in semantic_search find_related search_notes get_backlinks get_tags read_note list_notes get_headings get_frontmatter create_note update_note move_note; do
+    if ! printf '%s' "$TOOL_NAMES" | grep -q -w "$required"; then
+        echo "mcp tools/list: missing tool '$required' in: $TOOL_NAMES" >&2
+        exit 40
+    fi
+done
 
 echo "→ mcp: tools/call read_note (success + error)"
 CALL_RESPONSES=$({ printf '%s\n%s\n%s\n%s\n' \

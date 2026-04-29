@@ -90,7 +90,7 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.sabotage.clearly
         PRODUCT_NAME: Clearly
-        MARKETING_VERSION: "2.9.0"
+        MARKETING_VERSION: "2.10.0"
         CURRENT_PROJECT_VERSION: "1"
         SWIFT_VERSION: "5.9"
         CODE_SIGN_ENTITLEMENTS: Clearly/Clearly.entitlements
@@ -134,7 +134,7 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.sabotage.clearly
         PRODUCT_NAME: Clearly
-        MARKETING_VERSION: "1.3.0"
+        MARKETING_VERSION: "1.4.0"
         CURRENT_PROJECT_VERSION: "1"
         SWIFT_VERSION: "5.9"
         TARGETED_DEVICE_FAMILY: "1,2"
@@ -181,7 +181,7 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.sabotage.clearly.quicklook
         PRODUCT_NAME: ClearlyQuickLook
-        MARKETING_VERSION: "2.9.0"
+        MARKETING_VERSION: "2.10.0"
         CURRENT_PROJECT_VERSION: "1"
         SWIFT_VERSION: "5.9"
         GENERATE_INFOPLIST_FILE: NO
@@ -211,12 +211,17 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.sabotage.clearly.mcp
         PRODUCT_NAME: ClearlyCLI
-        MARKETING_VERSION: "2.9.0"
+        MARKETING_VERSION: "2.10.0"
         CURRENT_PROJECT_VERSION: "1"
         SWIFT_VERSION: "6.0"
         SWIFT_STRICT_CONCURRENCY: minimal
         ENABLE_HARDENED_RUNTIME: YES
         SKIP_INSTALL: YES
+        # Embed an Info.plist via -sectcreate so `Bundle.main` exposes
+        # CFBundleShortVersionString — `clearly status` reads it for the
+        # binary_version diagnostic.
+        GENERATE_INFOPLIST_FILE: YES
+        CREATE_INFOPLIST_SECTION_IN_BINARY: YES
       configs:
         Release:
           CODE_SIGN_STYLE: Manual

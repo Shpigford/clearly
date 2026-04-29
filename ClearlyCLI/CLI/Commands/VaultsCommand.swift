@@ -40,9 +40,16 @@ struct VaultsListCommand: AsyncParsableCommand {
         vault. `last_indexed_at` is an ISO-8601 timestamp (fractional
         seconds) or null when the index is empty.
 
+        Output is NDJSON — one vault per line. Wrap with `jq -s '.'` for
+        a single JSON array. For a single-document diagnostic snapshot
+        (binary version, embedding model, all vaults), use
+        `clearly status` instead.
+
         EXAMPLES
           clearly vaults list
           clearly vaults list | jq -r '.name + "\\t" + (.file_count|tostring)'
+
+        Full reference: https://clearly.md/cli#vaults
         """
     )
 

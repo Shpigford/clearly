@@ -28,6 +28,16 @@ enum Handlers {
                 return try await searchNotes(args, vaults: vaults)
             }
 
+        case "find_related":
+            return await structuredCall {
+                let args = FindRelatedArgs(
+                    relativePath: params.arguments?["relative_path"]?.stringValue ?? "",
+                    limit: params.arguments?["limit"]?.intValue,
+                    vault: params.arguments?["vault"]?.stringValue
+                )
+                return try await findRelated(args, vaults: vaults)
+            }
+
         case "get_backlinks":
             return await structuredCall {
                 let args = GetBacklinksArgs(
@@ -91,6 +101,16 @@ enum Handlers {
                 return try await createNote(args, vaults: vaults)
             }
 
+        case "move_note":
+            return await structuredCall {
+                let args = MoveNoteArgs(
+                    fromPath: params.arguments?["from_path"]?.stringValue ?? "",
+                    toPath: params.arguments?["to_path"]?.stringValue ?? "",
+                    vault: params.arguments?["vault"]?.stringValue
+                )
+                return try await moveNote(args, vaults: vaults)
+            }
+
         case "update_note":
             return await structuredCall {
                 guard let modeStr = params.arguments?["mode"]?.stringValue,
@@ -101,7 +121,8 @@ enum Handlers {
                     relativePath: params.arguments?["relative_path"]?.stringValue ?? "",
                     content: params.arguments?["content"]?.stringValue ?? "",
                     mode: mode,
-                    vault: params.arguments?["vault"]?.stringValue
+                    vault: params.arguments?["vault"]?.stringValue,
+                    expectedContentHash: params.arguments?["expected_content_hash"]?.stringValue
                 )
                 return try await updateNote(args, vaults: vaults)
             }

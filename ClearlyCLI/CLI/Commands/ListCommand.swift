@@ -14,8 +14,11 @@ struct ListCommand: AsyncParsableCommand {
         Use --under to scope to a subdirectory prefix and --in-vault to
         scope to a single vault when multiple are loaded.
 
-        Output shape documented in README.md, section "clearly CLI" →
-        "Tool reference" → list_notes.
+        Why NDJSON? One record per line — streams as the walker produces
+        results, ideal for pipelines. Wrap with `jq -s '.'` if you want a
+        single JSON array.
+
+        Full reference: https://clearly.md/cli#list
 
         EXAMPLES
           # Every note across every vault

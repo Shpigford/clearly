@@ -63,8 +63,9 @@ struct PreviewView: NSViewRepresentable {
         config.userContentController.add(context.coordinator, name: "scrollSync")
         config.userContentController.add(context.coordinator, name: "copyToClipboard")
         config.userContentController.add(context.coordinator, name: "taskToggle")
+        config.userContentController.add(context.coordinator, name: "foldToggle")
         config.userContentController.add(context.coordinator, name: "selectionCapture")
-        config.userContentController.addUserScript(Self.copyButtonUserScript())
+        config.userContentController.addUserScript(PreviewUserScripts.codeBlockChromeScript())
         let webView = DraggableWKWebView(frame: .zero, configuration: config)
         webView.navigationDelegate = context.coordinator
         webView.underPageBackgroundColor = Theme.backgroundColor
@@ -147,6 +148,8 @@ struct PreviewView: NSViewRepresentable {
         webView.configuration.userContentController.removeScriptMessageHandler(forName: "scrollSync")
         webView.configuration.userContentController.removeScriptMessageHandler(forName: "copyToClipboard")
         webView.configuration.userContentController.removeScriptMessageHandler(forName: "taskToggle")
+        webView.configuration.userContentController.removeScriptMessageHandler(forName: "foldToggle")
+        webView.configuration.userContentController.removeScriptMessageHandler(forName: "selectionCapture")
     }
 
     private func loadHTML(in webView: WKWebView, context: Context) {
@@ -706,6 +709,7 @@ struct PreviewView: NSViewRepresentable {
                 didInitialLoad = true
             }
             webView.alphaValue = 1
+            applyPersistedFolds(in: webView)
             // Restore scroll position after HTML reload
             if scrollFraction > 0.01 {
                 let js = "var ms=Math.max(1,document.body.scrollHeight-window.innerHeight);window.scrollTo(0,\(scrollFraction)*ms);"
@@ -720,6 +724,19 @@ struct PreviewView: NSViewRepresentable {
             }
             scrollToPendingLine()
             applyPendingHighlight()
+        }
+
+        private func applyPersistedFolds(in webView: WKWebView) {
+            let foldedIDs = FoldStateStore.shared.foldedKeyIDs(for: fileURL)
+            guard !foldedIDs.isEmpty else { return }
+            let payload: String
+            if let data = try? JSONSerialization.data(withJSONObject: foldedIDs),
+               let str = String(data: data, encoding: .utf8) {
+                payload = str
+            } else {
+                return
+            }
+            webView.evaluateJavaScript("window.clearlyApplyFolds && window.clearlyApplyFolds(\(payload));")
         }
 
         private func resolvedLinkURL(for href: String) -> URL? {
@@ -787,6 +804,19 @@ struct PreviewView: NSViewRepresentable {
                 return
             }
 
+            if message.name == "foldToggle",
+               let body = message.body as? [String: Any],
+               let id = body["key"] as? String,
+               let folded = body["folded"] as? Bool,
+               let foldKey = FoldKey(stableID: id) {
+                // No skipNextReload here: folding doesn't change markdown, so
+                // contentKey doesn't change and no reload is pending. The user
+                // script + applyPersistedFolds re-paint correctly on any
+                // future genuine reload.
+                FoldStateStore.shared.setFolded(folded, key: foldKey, for: fileURL)
+                return
+            }
+
             if message.name == "selectionCapture",
                let body = message.body as? [String: Any],
                let text = body["text"] as? String {
@@ -803,61 +833,4 @@ struct PreviewView: NSViewRepresentable {
         }
     }
 
-    private static func copyButtonUserScript() -> WKUserScript {
-        let copyIcon = #"<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"18\" height=\"18\" viewBox=\"0 0 18 18\"><g fill=\"none\" stroke-linecap=\"round\" stroke-linejoin=\"round\" stroke-width=\"1.5\" stroke=\"currentColor\"><path d=\"M12.25 5.75H13.75C14.8546 5.75 15.75 6.6454 15.75 7.75V13.75C15.75 14.8546 14.8546 15.75 13.75 15.75H7.75C6.6454 15.75 5.75 14.8546 5.75 13.75V12.25\"></path><path d=\"M10.25 2.25H4.25C3.14543 2.25 2.25 3.14543 2.25 4.25V10.25C2.25 11.3546 3.14543 12.25 4.25 12.25H10.25C11.3546 12.25 12.25 11.3546 12.25 10.25V4.25C12.25 3.14543 11.3546 2.25 10.25 2.25Z\"></path></g></svg>"#
-        let checkIcon = #"<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"12\" height=\"12\" viewBox=\"0 0 12 12\"><g fill=\"none\" stroke-linecap=\"round\" stroke-linejoin=\"round\" stroke-width=\"1.5\" stroke=\"currentColor\"><path d=\"m1.76,7.004l2.25,3L10.24,1.746\"></path></g></svg>"#
-        let source = """
-        (function() {
-            var copyIcon = '\(copyIcon)';
-            var checkIcon = '\(checkIcon)';
-            document.querySelectorAll('pre').forEach(function(pre) {
-                if (pre.closest('.frontmatter') || pre.closest('.code-block-wrapper')) return;
-                var wrapper = document.createElement('div');
-                wrapper.className = 'code-block-wrapper';
-                var prev = pre.previousElementSibling;
-                var hasFilename = prev && prev.classList.contains('code-filename');
-                if (hasFilename) {
-                    pre.parentNode.insertBefore(wrapper, prev);
-                    wrapper.appendChild(prev);
-                } else {
-                    pre.parentNode.insertBefore(wrapper, pre);
-                }
-                wrapper.appendChild(pre);
-                var btn = document.createElement('button');
-                btn.className = 'code-copy-btn';
-                if (hasFilename) {
-                    btn.style.top = (prev.offsetHeight + 6) + 'px';
-                }
-                btn.type = 'button';
-                btn.setAttribute('aria-label', 'Copy code');
-                btn.innerHTML = copyIcon;
-                btn.addEventListener('click', function(e) {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    var code = pre.querySelector('code');
-                    var lines = code ? code.querySelectorAll('.code-line') : null;
-                    var text;
-                    if (lines && lines.length > 0) {
-                        text = Array.from(lines).map(function(l) { return l.textContent; }).join('\\n');
-                    } else {
-                        text = code ? code.textContent : pre.textContent;
-                    }
-                    window.webkit.messageHandlers.copyToClipboard.postMessage(text);
-                    btn.classList.add('copied');
-                    btn.innerHTML = checkIcon;
-                    setTimeout(function() {
-                        btn.classList.remove('copied');
-                        btn.innerHTML = copyIcon;
-                    }, 1500);
-                });
-                wrapper.appendChild(btn);
-            });
-        })();
-        """
-        return WKUserScript(
-            source: source,
-            injectionTime: .atDocumentEnd,
-            forMainFrameOnly: true
-        )
-    }
 }

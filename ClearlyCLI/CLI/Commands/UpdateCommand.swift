@@ -57,6 +57,9 @@ struct UpdateCommand: AsyncParsableCommand {
     @Option(name: .customLong("in-vault"), help: "Vault name or path.")
     var inVault: String?
 
+    @Option(name: .customLong("expected-content-hash"), help: "Optional optimistic-concurrency guard. Reject the update with exit 5 / error stale_content if the on-disk SHA-256 doesn't match.")
+    var expectedContentHash: String?
+
     func run() async throws {
         let body: String
         if let c = content {
@@ -86,7 +89,13 @@ struct UpdateCommand: AsyncParsableCommand {
 
         do {
             let result = try await updateNote(
-                UpdateNoteArgs(relativePath: relativePath, content: body, mode: mode, vault: inVault),
+                UpdateNoteArgs(
+                    relativePath: relativePath,
+                    content: body,
+                    mode: mode,
+                    vault: inVault,
+                    expectedContentHash: expectedContentHash
+                ),
                 vaults: vaults
             )
             try Emitter.emit(result, format: globals.format)

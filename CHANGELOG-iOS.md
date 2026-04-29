@@ -4,6 +4,10 @@ iOS release notes. Mac release notes live in `CHANGELOG.md`.
 
 ## [Unreleased]
 
+## [1.4.0] - 2026-04-29
+- Find + Replace across the editor, with stale-highlight fix
+- Fold and unfold code blocks in Preview and Live Preview
+
 ## [1.3.0] - 2026-04-28
 - Long-press a file in the sidebar for Move, Duplicate, Share, and inline Rename
 - Click any mermaid diagram in preview to zoom it full-screen

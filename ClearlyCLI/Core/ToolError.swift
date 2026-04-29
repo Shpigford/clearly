@@ -9,6 +9,9 @@ enum ToolError: Error, LocalizedError {
     case pathOutsideVault(String)
     case ambiguousVault(relativePath: String, matches: [String])
     case conflict(existingPath: String)
+    /// On-disk content hash didn't match the caller's `expected_content_hash`.
+    /// The agent should re-read the note and retry the write with a fresh hash.
+    case staleContent(relativePath: String, expected: String, actual: String)
 
     // Exact text the MCP adapter emits in the `.text` content block. Preserves
     // byte-for-byte parity with the pre-refactor handler output — notably,
@@ -29,6 +32,8 @@ enum ToolError: Error, LocalizedError {
             return "Ambiguous path '\(path)': matches \(matches.count) vaults (\(matches.joined(separator: ", "))). Specify --vault or the vault field."
         case .conflict(let path):
             return "Note already exists: \(path)\nUse update_note to modify existing notes."
+        case .staleContent(let path, let expected, let actual):
+            return "Note has changed on disk since you last read it: \(path) (expected hash \(expected), actual \(actual)). Re-read the note and retry."
         }
     }
 }
@@ -78,6 +83,13 @@ extension ToolError {
             payload["error"] = "note_exists"
             payload["message"] = errorDescription ?? ""
             payload["relative_path"] = path
+        case .staleContent(let path, let expected, let actual):
+            code = 5
+            payload["error"] = "stale_content"
+            payload["message"] = errorDescription ?? ""
+            payload["relative_path"] = path
+            payload["expected_content_hash"] = expected
+            payload["actual_content_hash"] = actual
         }
 
         let data = (try? JSONSerialization.data(withJSONObject: payload, options: [.sortedKeys])) ?? Data("{}".utf8)

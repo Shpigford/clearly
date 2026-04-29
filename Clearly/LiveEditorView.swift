@@ -114,6 +114,7 @@ struct LiveEditorView: NSViewRepresentable {
         private var hasReceivedDocChanged = false
         private var lastKnownDocumentID: UUID?
         private var lastThemeSignature = ""
+        private var lastFoldFilePath = ""
         private var lastFindQuery = ""
         private var lastFindSignature = ""
         private var lastFindVisibility = false
@@ -243,6 +244,12 @@ struct LiveEditorView: NSViewRepresentable {
                 lastKnownDocumentID = parent.documentID
                 hasReceivedDocChanged = false
             }
+            let foldFilePath = parent.fileURL?.standardizedFileURL.path ?? ""
+            var shouldApplyFolds = false
+            if foldFilePath != lastFoldFilePath {
+                lastFoldFilePath = foldFilePath
+                shouldApplyFolds = true
+            }
 
             let appearance = parent.colorScheme == .dark ? "dark" : "light"
             let themeSignature = "\(appearance)|\(parent.fontSize)|\(parent.fileURL?.path ?? "")"
@@ -261,6 +268,11 @@ struct LiveEditorView: NSViewRepresentable {
             if parent.text != lastSyncedText {
                 lastSyncedText = parent.text
                 call(function: "setDocument", payload: ["markdown": parent.text, "epoch": parent.documentEpoch])
+                shouldApplyFolds = true
+            }
+
+            if shouldApplyFolds {
+                applyPersistedFolds()
             }
 
             if parent.findState?.isVisible == true {
@@ -475,6 +487,7 @@ struct LiveEditorView: NSViewRepresentable {
             lastSyncedText = ""
             hasReceivedDocChanged = false
             lastThemeSignature = ""
+            lastFoldFilePath = ""
             call(
                 function: "mount",
                 payload: [
@@ -579,9 +592,20 @@ struct LiveEditorView: NSViewRepresentable {
                     DiagnosticLog.log("LiveEditor: \(message)")
                 }
 
+            case "foldToggle":
+                guard let id = body["key"] as? String,
+                      let folded = body["folded"] as? Bool,
+                      let foldKey = FoldKey(stableID: id) else { return }
+                FoldStateStore.shared.setFolded(folded, key: foldKey, for: parent.fileURL)
+
             default:
                 break
             }
+        }
+
+        private func applyPersistedFolds() {
+            let foldedIDs = FoldStateStore.shared.foldedKeyIDs(for: parent.fileURL)
+            call(function: "applyFolds", payload: ["keys": foldedIDs])
         }
 
         private func call(function: String, payload: [String: Any]? = nil) {
