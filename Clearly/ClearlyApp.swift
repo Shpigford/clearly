@@ -56,6 +56,29 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValid
     private weak var trackedSettingsWindow: NSWindow?
     private var isOpeningSettingsFromMenuBar = false
 
+    private let toolbarMenuItemTag = 7287
+
+    private var isToolbarHidden: Bool {
+        get { UserDefaults.standard.bool(forKey: "toolbarHidden") }
+        set { UserDefaults.standard.set(newValue, forKey: "toolbarHidden") }
+    }
+
+    private var trafficLightHoverMonitor: Any?
+    private var trafficLightsAreInHoverZone: Bool = false
+    private var lastAppliedToolbarHidden: Bool? = nil
+    private weak var lastAppliedWindow: NSWindow?
+
+    /// Like `mainWindow` but explicitly skips the Settings window. Settings
+    /// matches `isUserFacingDocumentWindow` (regular non-panel window ≥
+    /// 200×200) and on macOS 26 carries its own NSToolbar, so without this
+    /// filter ⌥⌘T while Settings is focused could hide the Settings toolbar.
+    private var documentMainWindow: NSWindow? {
+        NSApp.windows.first { window in
+            guard WindowRouter.isUserFacingDocumentWindow(window) else { return false }
+            return window !== trackedSettingsWindow
+        }
+    }
+
     /// Returns the active main document window if SwiftUI has presented one.
     var mainWindow: NSWindow? {
         NSApp.windows.first { WindowRouter.isUserFacingDocumentWindow($0) }
@@ -332,9 +355,11 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValid
     func applicationWillUpdate(_ notification: Notification) {
         injectSpellingMenuIfNeeded()
         injectSidebarToggleIfNeeded()
+        injectHideToolbarIfNeeded()
         injectViewCommandsIfNeeded()
         injectGlobalSearchIfNeeded()
         injectExportPrintIfNeeded()
+        applyToolbarVisibility()
     }
 
     private func injectGlobalSearchIfNeeded() {
@@ -372,6 +397,153 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValid
 
     @objc private func toggleSidebarMenuAction(_ sender: Any?) {
         doToggleSidebar()
+    }
+
+    private func injectHideToolbarIfNeeded() {
+        guard let viewMenu = NSApp.mainMenu?.item(withTitle: "View")?.submenu else { return }
+
+        // AppKit auto-injects "Hide Toolbar" / "Show Toolbar" / "Customize
+        // Toolbar…" items whenever an NSToolbar is attached. They're wired to
+        // toggleToolbarShown: / runToolbarCustomizationPalette: and would
+        // race with our custom action — pressing ⌥⌘T would fire both, with
+        // the system action reverting our state. Strip them every cycle,
+        // preserving our tagged item.
+        viewMenu.items.removeAll { item in
+            guard item.tag != toolbarMenuItemTag else { return false }
+            return item.title == "Hide Toolbar" || item.title == "Show Toolbar" || item.title == "Customize Toolbar…"
+        }
+
+        if let existing = viewMenu.items.first(where: { $0.tag == toolbarMenuItemTag }) {
+            let desiredTitle = isToolbarHidden ? "Show Toolbar" : "Hide Toolbar"
+            if existing.title != desiredTitle { existing.title = desiredTitle }
+            return
+        }
+
+        // Sidebar injector must run first so Toggle Sidebar is at index 0.
+        // Slot Hide Toolbar between Toggle Sidebar and the separator that
+        // follows it; the existing separator gets pushed to index 2.
+        guard viewMenu.items.first?.title == "Toggle Sidebar" else { return }
+
+        let item = NSMenuItem(
+            title: isToolbarHidden ? "Show Toolbar" : "Hide Toolbar",
+            action: #selector(toggleToolbarHiddenAction(_:)),
+            keyEquivalent: "t"
+        )
+        item.keyEquivalentModifierMask = [.command, .option]
+        item.target = self
+        item.tag = toolbarMenuItemTag
+
+        viewMenu.insertItem(item, at: 1)
+    }
+
+    @objc private func toggleToolbarHiddenAction(_ sender: Any?) {
+        isToolbarHidden.toggle()
+        applyToolbarVisibility()
+        if let item = NSApp.mainMenu?.item(withTitle: "View")?.submenu?
+            .items.first(where: { $0.tag == toolbarMenuItemTag }) {
+            item.title = isToolbarHidden ? "Show Toolbar" : "Hide Toolbar"
+        }
+    }
+
+    /// Applies the persisted `toolbarHidden` flag to the main window's NSToolbar.
+    /// Same primitive AppKit's stock View → Hide Toolbar uses. Idempotent and cheap,
+    /// safe to call from `applicationWillUpdate` so SwiftUI scene churn (window
+    /// rebuild on fullscreen / occlusion) cannot leave the toolbar disagreeing
+    /// with the persisted state.
+    private func applyToolbarVisibility() {
+        guard let window = documentMainWindow, let toolbar = window.toolbar else { return }
+        let shouldBeVisible = !isToolbarHidden
+        if toolbar.isVisible != shouldBeVisible {
+            toolbar.isVisible = shouldBeVisible
+        }
+        // Apply traffic-light state on (a) hidden/visible transitions, and
+        // (b) when the underlying NSWindow itself is replaced (e.g., user
+        // closed and reopened the document window — SwiftUI hands us a fresh
+        // instance whose buttons default to alpha=1). Without (b) the new
+        // window would land in inconsistent state. Without (a) the hover
+        // monitor's alpha=1 would be stomped back to 0 every cycle.
+        let windowChanged = lastAppliedWindow !== window
+        lastAppliedWindow = window
+        if windowChanged || lastAppliedToolbarHidden != isToolbarHidden {
+            lastAppliedToolbarHidden = isToolbarHidden
+            applyTrafficLightAutoHide(window: window, hidden: isToolbarHidden)
+        }
+    }
+
+    private func trafficLightButtons(for window: NSWindow) -> [NSButton] {
+        [.closeButton, .miniaturizeButton, .zoomButton]
+            .compactMap { window.standardWindowButton($0) }
+    }
+
+    /// When the toolbar is hidden, fade out the traffic lights too — they
+    /// reappear only when the cursor enters the top strip of the window.
+    /// Goal: a focused writing surface with no chrome at rest.
+    private func applyTrafficLightAutoHide(window: NSWindow, hidden: Bool) {
+        let buttons = trafficLightButtons(for: window)
+        if hidden {
+            // Reset hover-zone tracking so the next mouseMoved event always
+            // re-evaluates against the current window's frame. Without this,
+            // a window change while staying hidden could leave the flag stuck
+            // at `true` (from the old window's zone) and the new window's
+            // first valid hover would be skipped.
+            trafficLightsAreInHoverZone = false
+            for button in buttons { button.alphaValue = 0 }
+            installTrafficLightHoverMonitor(window: window)
+        } else {
+            for button in buttons { button.alphaValue = 1 }
+            removeTrafficLightHoverMonitor()
+        }
+    }
+
+    private func installTrafficLightHoverMonitor(window: NSWindow) {
+        // Always set the flag, even when the monitor already exists — a
+        // window-replacement (close + reopen of the document window while
+        // in hidden mode) hands us a fresh NSWindow whose
+        // `acceptsMouseMovedEvents` defaults to false, which would silently
+        // kill hover detection without this.
+        window.acceptsMouseMovedEvents = true
+        guard trafficLightHoverMonitor == nil else { return }
+        trafficLightHoverMonitor = NSEvent.addLocalMonitorForEvents(matching: .mouseMoved) { [weak self] event in
+            self?.handleTrafficLightHover(event)
+            return event
+        }
+    }
+
+    private func removeTrafficLightHoverMonitor() {
+        if let monitor = trafficLightHoverMonitor {
+            NSEvent.removeMonitor(monitor)
+            trafficLightHoverMonitor = nil
+        }
+        trafficLightsAreInHoverZone = false
+    }
+
+    private func handleTrafficLightHover(_ event: NSEvent) {
+        guard isToolbarHidden, let window = documentMainWindow else { return }
+
+        // Use screen coordinates rather than event.locationInWindow — local
+        // event monitors sometimes deliver mouseMoved events with event.window
+        // unset, and `event.window === mainWindow` then bails incorrectly.
+        // Top ~50pt of the window covers the titlebar (where the lights sit)
+        // plus a buffer below — entering the very top of the editor triggers
+        // the fade-in.
+        let mouse = NSEvent.mouseLocation
+        let zone = NSRect(
+            x: window.frame.minX,
+            y: window.frame.maxY - 50,
+            width: window.frame.width,
+            height: 50
+        )
+        let inZone = zone.contains(mouse)
+
+        guard inZone != trafficLightsAreInHoverZone else { return }
+        trafficLightsAreInHoverZone = inZone
+
+        let target: CGFloat = inZone ? 1 : 0
+        let buttons = trafficLightButtons(for: window)
+        NSAnimationContext.runAnimationGroup { ctx in
+            ctx.duration = 0.18
+            for button in buttons { button.animator().alphaValue = target }
+        }
     }
 
     private func injectQuickOpenIfNeeded() {
@@ -418,8 +590,8 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValid
         previewItem.keyEquivalentModifierMask = [.command]
         previewItem.target = self
 
-        // Insert right after Toggle Sidebar (index 0)
-        var insertIndex = 1
+        // Insert after Toggle Sidebar (0), Hide Toolbar (1), separator (2)
+        var insertIndex = 3
         viewMenu.insertItem(outlineItem, at: insertIndex); insertIndex += 1
         viewMenu.insertItem(backlinksItem, at: insertIndex); insertIndex += 1
         viewMenu.insertItem(lineNumbersItem, at: insertIndex); insertIndex += 1
