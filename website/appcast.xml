@@ -3,6 +3,20 @@
   <channel>
     <title>Clearly</title>
     <item>
+      <title>Version 2.9.0</title>
+      <sparkle:version>2.9.0</sparkle:version>
+      <sparkle:shortVersionString>2.9.0</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+      <pubDate>Wed, 29 Apr 2026 01:00:18 +0000</pubDate>
+      <description><![CDATA[<ul><li>Click any mermaid diagram in preview to zoom it full-screen</li><li>⌘⇧T toggles a todo on the current line, with consistent prefix handling across formats</li><li>Detects Claude and Codex CLIs installed via nvm so you don't need to fix PATH manually</li><li>Pasting a URL now keeps it as a link instead of failing an image download</li><li>Hardened large-file handling to keep memory in check when opening big notes</li></ul>]]></description>
+      <enclosure
+        url="https://github.com/Shpigford/clearly/releases/download/v2.9.0/Clearly.dmg"
+        sparkle:edSignature="HiBTrgug9F3twe7gm3Jke9HCgl3Ys1Y62FF6fBcJQwClnVylQhPy1RcxDsCJmu3NCRQV6LryCtOdIMAxldf9AA=="
+        length="22034626"
+        type="application/octet-stream"
+      />
+    </item>
+    <item>
       <title>Version 2.8.0</title>
       <sparkle:version>2.8.0</sparkle:version>
       <sparkle:shortVersionString>2.8.0</sparkle:shortVersionString>
