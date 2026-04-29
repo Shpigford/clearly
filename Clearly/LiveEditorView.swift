@@ -182,8 +182,7 @@ struct LiveEditorView: NSViewRepresentable {
                           event.modifierFlags.intersection(.deviceIndependentFlagsMask) == .command,
                           event.charactersIgnoringModifiers == "v",
                           let webView = self.webView,
-                          webView.window?.isKeyWindow == true,
-                          let text = NSPasteboard.general.string(forType: .string) else {
+                          webView.window?.isKeyWindow == true else {
                         return event
                     }
                     // Only redirect paste into the editor when the webview (or one
@@ -194,8 +193,15 @@ struct LiveEditorView: NSViewRepresentable {
                           fr.isDescendant(of: webView) else {
                         return event
                     }
-                    self.insertText(text)
-                    return nil  // Consume — prevents WKWebView's broken native paste
+                    let pasteboard = NSPasteboard.general
+                    if self.tryInsertImageFromPasteboard(pasteboard) != nil {
+                        return nil  // Consume — image was written + markdown inserted
+                    }
+                    if let text = pasteboard.string(forType: .string) {
+                        self.insertText(text)
+                        return nil  // Consume — prevents WKWebView's broken native paste
+                    }
+                    return event
                 }
             }
 
@@ -405,6 +411,54 @@ struct LiveEditorView: NSViewRepresentable {
 
         private func insertText(_ text: String) {
             call(function: "insertText", payload: ["text": text])
+        }
+
+        /// Reads an image from the pasteboard, writes it as a sibling file
+        /// next to the open document, and inserts a markdown image token via
+        /// CodeMirror's dispatch. Returns the markdown token on success, nil
+        /// when there's no usable image or no document URL.
+        fileprivate func tryInsertImageFromPasteboard(_ pasteboard: NSPasteboard) -> String? {
+            guard let docURL = parent.fileURL else { return nil }
+
+            // Preserve-format types: write original bytes with matching
+            // extension so animations / quality / metadata survive. JPEG /
+            // GIF / HEIC don't have built-in NSPasteboard.PasteboardType
+            // constants on macOS, so use the UTI strings directly.
+            let preserveFormats: [(NSPasteboard.PasteboardType, String)] = [
+                (.png, "png"),
+                (NSPasteboard.PasteboardType("public.jpeg"), "jpg"),
+                (NSPasteboard.PasteboardType("com.compuserve.gif"), "gif"),
+                (NSPasteboard.PasteboardType("public.heic"), "heic"),
+            ]
+            var pickedData: Data?
+            var pickedExt: String?
+            for (type, ext) in preserveFormats {
+                if let data = pasteboard.data(forType: type) {
+                    pickedData = data
+                    pickedExt = ext
+                    break
+                }
+            }
+            // TIFF is macOS's generic image container — Cmd+Shift+Ctrl+4
+            // screenshots land here. Decode + re-encode to PNG so we don't
+            // drop a multi-MB uncompressed sibling next to the document.
+            if pickedData == nil,
+               let tiff = pasteboard.data(forType: .tiff),
+               let bitmap = NSBitmapImageRep(data: tiff),
+               let png = bitmap.representation(using: .png, properties: [:]) {
+                pickedData = png
+                pickedExt = "png"
+            }
+            guard let data = pickedData, let ext = pickedExt else { return nil }
+
+            do {
+                let result = try ImagePasteService.writeImageData(data, ext: ext, besidesDocumentAt: docURL, presenter: nil)
+                self.insertText(result.markdown)
+                return result.markdown
+            } catch {
+                DiagnosticLog.log("LiveEditor paste: writeImageData failed: \(error.localizedDescription)")
+                return nil
+            }
         }
 
         private func scrollToOffset(_ offset: Int) {

@@ -135,6 +135,19 @@ final class ClearlyTextView: PersistentTextCheckingTextView {
 
     // MARK: - Paste
 
+    /// NSTextView's default validation rejects `paste:` when the clipboard
+    /// has no string/RTF data (e.g., a screenshot put TIFF on the clipboard
+    /// via Cmd+Shift+Ctrl+4). The Edit > Paste menu item gets disabled and
+    /// Cmd+V silently no-ops before our `paste(_:)` ever runs. Force-allow
+    /// `paste:` so our override sees every Cmd+V regardless of clipboard
+    /// contents — we route image data ourselves in `handleIncomingPasteboard`.
+    override func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
+        if menuItem.action == #selector(NSText.paste(_:)) {
+            return true
+        }
+        return super.validateMenuItem(menuItem)
+    }
+
     override func paste(_ sender: Any?) {
         let pasteboard = NSPasteboard.general
         if handleIncomingPasteboard(pasteboard) { return }
@@ -173,10 +186,34 @@ final class ClearlyTextView: PersistentTextCheckingTextView {
             }
         }
 
+        // Preserve-format types: write original bytes with matching
+        // extension so animations / quality / metadata survive. JPEG / GIF
+        // / HEIC don't have built-in NSPasteboard.PasteboardType constants
+        // on macOS, so use the UTI strings directly.
+        let preserveFormats: [(NSPasteboard.PasteboardType, String)] = [
+            (.png, "png"),
+            (NSPasteboard.PasteboardType("public.jpeg"), "jpg"),
+            (NSPasteboard.PasteboardType("com.compuserve.gif"), "gif"),
+            (NSPasteboard.PasteboardType("public.heic"), "heic"),
+        ]
+        for (type, ext) in preserveFormats {
+            if let data = pasteboard.data(forType: type) {
+                return insertPastedImage(data, ext: ext)
+            }
+        }
+
+        // TIFF is macOS's generic image container — Cmd+Shift+Ctrl+4
+        // screenshots land here. Decode + re-encode to PNG so we don't
+        // drop a multi-MB uncompressed sibling next to the document.
+        if let tiff = pasteboard.data(forType: .tiff),
+           let png = Self.pngData(from: tiff) {
+            return insertPastedImage(png, ext: "png")
+        }
+
         if pasteboard.canReadObject(forClasses: [NSImage.self], options: nil),
            let image = NSImage(pasteboard: pasteboard),
            let png = Self.pngData(from: image) {
-            return insertPastedPNG(png)
+            return insertPastedImage(png, ext: "png")
         }
 
         if let text = pasteboard.string(forType: .string)?.trimmingCharacters(in: .whitespacesAndNewlines),
@@ -221,14 +258,14 @@ final class ClearlyTextView: PersistentTextCheckingTextView {
     }
 
     @discardableResult
-    private func insertPastedPNG(_ png: Data) -> Bool {
+    private func insertPastedImage(_ data: Data, ext: String) -> Bool {
         guard let docURL = resolveDocumentURLForPaste() else { return false }
         do {
-            let result = try ImagePasteService.writePNG(png, besidesDocumentAt: docURL, presenter: nil)
+            let result = try ImagePasteService.writeImageData(data, ext: ext, besidesDocumentAt: docURL, presenter: nil)
             insertText(result.markdown, replacementRange: selectedRange())
             return true
         } catch {
-            DiagnosticLog.log("Paste: failed to write sibling PNG: \(error.localizedDescription)")
+            DiagnosticLog.log("Paste: failed to write sibling image (\(ext)): \(error.localizedDescription)")
             return false
         }
     }
