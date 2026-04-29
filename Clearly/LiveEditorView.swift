@@ -7,6 +7,9 @@ import ClearlyCore
 /// WKWebView subclass that re-focuses CodeMirror when macOS routes
 /// first-responder to this view (e.g. after clicking a toolbar button).
 final class LiveEditorWebView: WKWebView {
+    var annotationMenuAction: (() -> Void)?
+    private var annotationMenuInstaller: WebAnnotationContextMenuInstaller?
+
     override func becomeFirstResponder() -> Bool {
         let result = super.becomeFirstResponder()
         if result, allowsDOMFocusForwarding {
@@ -19,6 +22,12 @@ final class LiveEditorWebView: WKWebView {
     /// keep first-responder ownership without immediately forcing DOM focus back
     /// into CodeMirror.
     var allowsDOMFocusForwarding = true
+
+    func installAnnotationMenu() {
+        annotationMenuInstaller = WebAnnotationContextMenuInstaller(webView: self) { [weak self] in
+            self?.annotationMenuAction?()
+        }
+    }
 }
 
 struct LiveEditorView: NSViewRepresentable {
@@ -49,6 +58,10 @@ struct LiveEditorView: NSViewRepresentable {
 
         let webView = LiveEditorWebView(frame: .zero, configuration: config)
         webView.navigationDelegate = context.coordinator
+        webView.annotationMenuAction = {
+            performAddAnnotationCommand()
+        }
+        webView.installAnnotationMenu()
         webView.underPageBackgroundColor = Theme.backgroundColor
         // Publish the active host revision before any async callbacks from an
         // older web session can race with this view's setup.
@@ -431,6 +444,19 @@ struct LiveEditorView: NSViewRepresentable {
                     self.parent.findState?.currentIndex = currentIndex
                 }
 
+            case "addAnnotationRequested":
+                guard !isDismantled,
+                      LiveEditorSession.matches(documentID: parent.documentID),
+                      let markdown = body["markdown"] as? String,
+                      let from = body["from"] as? NSNumber,
+                      let to = body["to"] as? NSNumber else { return }
+                requestAnnotation(
+                    markdown: markdown,
+                    from: from.intValue,
+                    to: to.intValue,
+                    anchorScreenRect: screenRect(from: body["selectionRect"])
+                )
+
             case "openLink":
                 guard LiveEditorSession.matches(documentID: parent.documentID) else { return }
                 let kind = body["kind"] as? String ?? "markdown"
@@ -461,6 +487,57 @@ struct LiveEditorView: NSViewRepresentable {
             default:
                 break
             }
+        }
+
+        private func requestAnnotation(markdown: String, from: Int, to: Int, anchorScreenRect: NSRect?) {
+            DispatchQueue.main.async { [weak self] in
+                guard let self, !self.isDismantled else { return }
+                guard from != to else {
+                    let errorAlert = NSAlert(error: ChangedownAnnotationWriterError.emptySelection)
+                    errorAlert.runModal()
+                    return
+                }
+
+                guard let comment = AnnotationPrompt.requestComment(anchorScreenRect: anchorScreenRect) else { return }
+
+                do {
+                    let updated = try ChangedownAnnotationWriter.addAnnotation(
+                        to: markdown,
+                        utf16Range: NSRange(location: from, length: max(0, to - from)),
+                        comment: comment,
+                        author: AnnotationAuthor.current
+                    )
+                    self.hasReceivedDocChanged = true
+                    self.lastSyncedText = updated
+                    self.parent.text = updated
+                    self.call(
+                        function: "setDocument",
+                        payload: ["markdown": updated, "epoch": self.parent.documentEpoch]
+                    )
+                } catch {
+                    AnnotationPrompt.present(error: error)
+                }
+            }
+        }
+
+        private func screenRect(from value: Any?) -> NSRect? {
+            guard let webView,
+                  let rect = value as? [String: Any],
+                  let x = (rect["x"] as? NSNumber)?.doubleValue,
+                  let y = (rect["y"] as? NSNumber)?.doubleValue,
+                  let width = (rect["width"] as? NSNumber)?.doubleValue,
+                  let height = (rect["height"] as? NSNumber)?.doubleValue,
+                  width > 0,
+                  height > 0 else { return nil }
+
+            let viewRect = NSRect(
+                x: x,
+                y: webView.isFlipped ? y : Double(webView.bounds.height) - y - height,
+                width: width,
+                height: height
+            )
+            guard let window = webView.window else { return nil }
+            return window.convertToScreen(webView.convert(viewRect, to: nil))
         }
 
         private func call(function: String, payload: [String: Any]? = nil) {

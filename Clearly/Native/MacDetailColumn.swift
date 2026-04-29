@@ -14,6 +14,7 @@ struct MacDetailToolbar: ToolbarContent {
     @Bindable var workspace: WorkspaceManager
     @ObservedObject var findState: FindState
     @ObservedObject var outlineState: OutlineState
+    @ObservedObject var commentsState: AnnotationCommentsState
     @ObservedObject var backlinksState: BacklinksState
     @Bindable var wikiController: WikiOperationController
     @Binding var showFormatPopover: Bool
@@ -95,6 +96,17 @@ struct MacDetailToolbar: ToolbarContent {
             .menuIndicator(.hidden)
             .disabled(workspace.activeDocumentID == nil || workspace.currentViewMode != .edit)
 
+            Button {
+                performAddAnnotationCommand()
+            } label: {
+                Label("Add Annotation", systemImage: "plus.bubble")
+            }
+            .help("Add annotation to selected text")
+            .disabled(
+                workspace.activeDocumentID == nil ||
+                    (editorEngine == .livePreviewExperimental && workspace.currentViewMode != .edit)
+            )
+
             Menu {
                 if let url = workspace.currentFileURL {
                     Button("Copy File Path") { CopyActions.copyFilePath(url) }
@@ -132,6 +144,14 @@ struct MacDetailToolbar: ToolbarContent {
                 Label("Outline", systemImage: "list.bullet.indent")
             }
             .help("Outline (⇧⌘O)")
+            .disabled(workspace.activeDocumentID == nil)
+
+            Button {
+                commentsState.toggle()
+            } label: {
+                Label("Comments", systemImage: "text.bubble")
+            }
+            .help("Comments")
             .disabled(workspace.activeDocumentID == nil)
 
             Button {
@@ -214,6 +234,7 @@ struct MacDetailColumn: View {
     @Bindable var workspace: WorkspaceManager
     @ObservedObject var findState: FindState
     @ObservedObject var outlineState: OutlineState
+    @ObservedObject var commentsState: AnnotationCommentsState
     @ObservedObject var backlinksState: BacklinksState
     @ObservedObject var jumpToLineState: JumpToLineState
     @Bindable var wikiController: WikiOperationController
@@ -257,6 +278,15 @@ struct MacDetailColumn: View {
                     .transition(.move(edge: .trailing).combined(with: .opacity))
             }
 
+            if commentsState.isVisible {
+                AnnotationCommentsView(
+                    commentsState: commentsState,
+                    outlineState: outlineState
+                )
+                .frame(width: 280)
+                .transition(.move(edge: .trailing).combined(with: .opacity))
+            }
+
             if wikiChat.isVisible {
                 WikiChatView(
                     chat: wikiChat,
@@ -295,6 +325,7 @@ struct MacDetailColumn: View {
             }
         }
         .animation(Theme.Motion.smooth, value: outlineState.isVisible)
+        .animation(Theme.Motion.smooth, value: commentsState.isVisible)
         .animation(Theme.Motion.smooth, value: wikiChat.isVisible)
         .animation(Theme.Motion.smooth, value: wikiLog.isVisible)
         .navigationTitle(documentTitle)
@@ -314,6 +345,11 @@ struct MacDetailColumn: View {
         .onReceive(NotificationCenter.default.publisher(for: .init("ClearlyToggleOutline"))) { _ in
             withAnimation(Theme.Motion.smooth) {
                 outlineState.toggle()
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .toggleCommentsPanel)) { _ in
+            withAnimation(Theme.Motion.smooth) {
+                commentsState.toggle()
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: .init("ClearlyToggleBacklinks"))) { _ in
@@ -338,6 +374,7 @@ struct MacDetailColumn: View {
                 workspace.currentViewMode = .edit
             }
             outlineState.parseHeadings(from: workspace.currentFileText)
+            commentsState.parseComments(from: workspace.currentFileText)
             backlinksState.update(for: workspace.currentFileURL, using: workspace.activeVaultIndexes)
             setupFileWatcher()
             applyPendingWikiNavigationIfNeeded()
@@ -366,6 +403,7 @@ struct MacDetailColumn: View {
             }
             fileWatcher.updateCurrentText(text)
             outlineState.parseHeadings(from: text)
+            commentsState.parseComments(from: text)
         }
         .onChange(of: workspace.currentFileURL) { _, _ in
             setupFileWatcher()
@@ -435,6 +473,7 @@ struct MacDetailColumn: View {
             workspace.currentViewMode = .edit
         }
         outlineState.parseHeadings(from: workspace.currentFileText)
+        commentsState.parseComments(from: workspace.currentFileText)
         backlinksState.update(for: workspace.currentFileURL, using: workspace.activeVaultIndexes)
         isFullscreen = NSApp.mainWindow?.styleMask.contains(.fullScreen) ?? false
         setupFileWatcher()
@@ -594,6 +633,9 @@ struct MacDetailColumn: View {
             outlineState: outlineState,
             onTaskToggle: { [workspace] line, checked in
                 toggleTask(at: line, checked: checked, workspace: workspace)
+            },
+            onAnnotationAdded: { [workspace] updated in
+                workspace.currentFileText = updated
             },
             onWikiLinkClicked: { target, heading in
                 navigateToWikiLink(target: target, heading: heading, destinationMode: .preview)

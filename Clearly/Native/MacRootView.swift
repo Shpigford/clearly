@@ -16,6 +16,7 @@ struct MacRootView: View {
     @State private var lastSidebarClickTime: Date? = nil
     @StateObject private var findState = FindState()
     @StateObject private var outlineState = OutlineState()
+    @StateObject private var commentsState = AnnotationCommentsState()
     @StateObject private var backlinksState = BacklinksState()
     @StateObject private var jumpToLineState = JumpToLineState()
     @State private var wikiController = WikiOperationController()
@@ -50,6 +51,7 @@ struct MacRootView: View {
                     workspace: workspace,
                     findState: findState,
                     outlineState: outlineState,
+                    commentsState: commentsState,
                     backlinksState: backlinksState,
                     jumpToLineState: jumpToLineState,
                     wikiController: wikiController,
@@ -65,6 +67,7 @@ struct MacRootView: View {
                     workspace: workspace,
                     findState: findState,
                     outlineState: outlineState,
+                    commentsState: commentsState,
                     backlinksState: backlinksState,
                     wikiController: wikiController,
                     showFormatPopover: $showFormatPopover

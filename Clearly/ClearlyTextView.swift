@@ -492,10 +492,39 @@ final class ClearlyTextView: PersistentTextCheckingTextView {
         insertText(snippet, replacementRange: range)
     }
 
+    @objc func addAnnotation(_ sender: Any?) {
+        let range = selectedRange()
+        guard range.length > 0 else {
+            AnnotationPrompt.present(error: ChangedownAnnotationWriterError.emptySelection)
+            return
+        }
+        let anchor = firstRect(forCharacterRange: range, actualRange: nil)
+        guard let comment = AnnotationPrompt.requestComment(anchorScreenRect: anchor.isEmpty ? nil : anchor) else { return }
+
+        do {
+            let updated = try ChangedownAnnotationWriter.addAnnotation(
+                to: string,
+                utf16Range: range,
+                comment: comment,
+                author: AnnotationAuthor.current
+            )
+            insertText(updated, replacementRange: NSRange(location: 0, length: (string as NSString).length))
+        } catch {
+            AnnotationPrompt.present(error: error)
+        }
+    }
+
     // MARK: - Context Menu
 
     override func menu(for event: NSEvent) -> NSMenu? {
         let menu = super.menu(for: event) ?? NSMenu()
+
+        let annotationItem = NSMenuItem(
+            title: "Add Annotation...",
+            action: #selector(addAnnotation(_:)),
+            keyEquivalent: ""
+        )
+        annotationItem.isEnabled = selectedRange().length > 0
 
         let formatMenu = NSMenu(title: "Text Format")
 
@@ -534,6 +563,8 @@ final class ClearlyTextView: PersistentTextCheckingTextView {
         let formatItem = NSMenuItem(title: "Text Format", action: nil, keyEquivalent: "")
         formatItem.submenu = formatMenu
 
+        menu.insertItem(.separator(), at: 0)
+        menu.insertItem(annotationItem, at: 0)
         menu.insertItem(.separator(), at: 0)
         menu.insertItem(formatItem, at: 0)
 
