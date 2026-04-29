@@ -60,6 +60,42 @@ enum ToolRegistry {
                 ])
             ),
             Tool(
+                name: "find_related",
+                description: "Find notes semantically related to a given note. Reuses on-device embeddings to score every other note's chunks against the source's mean vector, returns the top matches with cosine similarity. Use when you have one note and want \"more like this\" — e.g. surface adjacent thinking, related projects, or earlier passes at the same idea. English-only via Apple's NLContextualEmbedding.",
+                inputSchema: .object([
+                    "type": .string("object"),
+                    "additionalProperties": .bool(false),
+                    "properties": .object([
+                        "relative_path": .object([
+                            "type": .string("string"),
+                            "description": .string("Vault-relative path of the source note, e.g. 'Notes/local-first.md'.")
+                        ]),
+                        "limit": .object([
+                            "type": .string("integer"),
+                            "minimum": .int(1),
+                            "description": .string("Max results to return. Default 10, capped at 50.")
+                        ]),
+                        "vault": .object([
+                            "type": .string("string"),
+                            "description": .string("Optional vault name or path substring. When set, only matching vaults are searched. The source note must still resolve unambiguously among loaded vaults.")
+                        ])
+                    ]),
+                    "required": .array([.string("relative_path")])
+                ]),
+                annotations: readAnnotations,
+                outputSchema: .object([
+                    "type": .string("object"),
+                    "properties": .object([
+                        "vault":           .object(["type": .string("string"), "description": .string("Vault that owns the source note.")]),
+                        "source":          .object(["type": .string("string"), "description": .string("Vault-relative path of the source note.")]),
+                        "total_count":     .object(["type": .string("integer"), "description": .string("Number of distinct files scored across the selected vaults.")]),
+                        "returned_count":  .object(["type": .string("integer"), "description": .string("Number of hits in the results array after applying limit.")]),
+                        "results":         .object(["type": .string("array"), "items": .object(["type": .string("object")]), "description": .string("Ranked top-N. Each item has 'vault', 'vault_path', 'relative_path', 'filename', 'score' (cosine similarity, -1…1, higher is closer).")])
+                    ]),
+                    "required": .array([.string("vault"), .string("source"), .string("total_count"), .string("returned_count"), .string("results")])
+                ])
+            ),
+            Tool(
                 name: "search_notes",
                 description: "Full-text search across all notes in Clearly. Searches \(vaults.count) vault(s): \(vaultDescription). Returns relevance-ranked results with context snippets. Uses BM25 ranking and stemming. Supports `tag:foo` (AND-combined, case-insensitive) and `path:notes/sub` operators inside the query string to narrow by tag or vault-relative path prefix. Results include the vault path and relative file path — use standard file access to read full content.",
                 inputSchema: .object([

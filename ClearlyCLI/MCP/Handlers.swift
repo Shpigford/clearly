@@ -28,6 +28,16 @@ enum Handlers {
                 return try await searchNotes(args, vaults: vaults)
             }
 
+        case "find_related":
+            return await structuredCall {
+                let args = FindRelatedArgs(
+                    relativePath: params.arguments?["relative_path"]?.stringValue ?? "",
+                    limit: params.arguments?["limit"]?.intValue,
+                    vault: params.arguments?["vault"]?.stringValue
+                )
+                return try await findRelated(args, vaults: vaults)
+            }
+
         case "get_backlinks":
             return await structuredCall {
                 let args = GetBacklinksArgs(

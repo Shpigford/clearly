@@ -23,10 +23,10 @@ final class MCPIntegrationTests: XCTestCase {
 
     func testListToolsReturnsAllRegisteredTools() async throws {
         let (tools, _) = try await harness.client.listTools()
-        XCTAssertEqual(tools.count, 10)
+        XCTAssertEqual(tools.count, 11)
         let names = Set(tools.map(\.name))
         XCTAssertEqual(names, Set([
-            "semantic_search",
+            "semantic_search", "find_related",
             "search_notes", "get_backlinks", "get_tags",
             "read_note", "list_notes", "get_headings",
             "get_frontmatter", "create_note", "update_note"
@@ -41,10 +41,11 @@ final class MCPIntegrationTests: XCTestCase {
     func testReadOnlyToolRegistryHidesWriteTools() throws {
         let tools = ToolRegistry.listTools(vaults: harness.loadedVaults, readOnly: true)
         let names = Set(tools.map(\.name))
-        XCTAssertEqual(tools.count, 8)
+        XCTAssertEqual(tools.count, 9)
         XCTAssertFalse(names.contains("create_note"))
         XCTAssertFalse(names.contains("update_note"))
         XCTAssertTrue(names.contains("semantic_search"))
+        XCTAssertTrue(names.contains("find_related"))
         XCTAssertTrue(names.contains("search_notes"))
     }
 

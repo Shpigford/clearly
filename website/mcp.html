@@ -114,6 +114,7 @@
                     <h2 class="text-xs font-mono tracking-wide uppercase text-zinc-500 mb-3">Tools</h2>
                     <ul class="grid grid-cols-2 gap-x-4 gap-y-1 text-sm font-mono">
                         <li><a class="text-zinc-300 hover:text-white" href="#semantic_search">semantic_search</a></li>
+                        <li><a class="text-zinc-300 hover:text-white" href="#find_related">find_related</a></li>
                         <li><a class="text-zinc-300 hover:text-white" href="#search_notes">search_notes</a></li>
                         <li><a class="text-zinc-300 hover:text-white" href="#get_backlinks">get_backlinks</a></li>
                         <li><a class="text-zinc-300 hover:text-white" href="#get_tags">get_tags</a></li>
@@ -143,6 +144,19 @@
                     <pre class="mt-2 rounded-md bg-black/40 p-4 text-xs font-mono text-zinc-300 overflow-x-auto"><code>{ query, total_count, returned_count,
   results: [{ vault, vault_path, relative_path, filename, score, snippet }] }</code></pre>
                     <p class="mt-3 text-sm text-zinc-400"><code class="font-mono">score</code> is cosine similarity (-1 to 1, higher is closer).</p>
+                </article>
+
+                <article id="find_related" class="rounded-xl outline-1 -outline-offset-1 outline-white/10 bg-white/[0.02] p-6 md:p-8 scroll-mt-20">
+                    <header class="mb-4 flex items-center gap-3">
+                        <h2 class="text-lg font-medium text-white font-mono">find_related</h2>
+                        <span class="px-2 py-0.5 rounded-full text-xs bg-blue-500/10 text-blue-300 ring-1 ring-inset ring-blue-500/20">read</span>
+                    </header>
+                    <p class="text-sm text-zinc-400 mb-3">&ldquo;More like this.&rdquo; Reuses on-device embeddings to score every other note's chunks against the source's mean vector. Use when you have one note and want to surface adjacent thinking, related projects, or earlier passes at the same idea.</p>
+                    <h3 class="mt-3 text-xs font-mono tracking-wide uppercase text-zinc-500">Input</h3>
+                    <pre class="mt-2 rounded-md bg-black/40 p-4 text-xs font-mono text-zinc-300 overflow-x-auto"><code>{ relative_path: string, limit?: integer (default 10, max 50), vault?: string }</code></pre>
+                    <h3 class="mt-4 text-xs font-mono tracking-wide uppercase text-zinc-500">Output</h3>
+                    <pre class="mt-2 rounded-md bg-black/40 p-4 text-xs font-mono text-zinc-300 overflow-x-auto"><code>{ vault, source, total_count, returned_count,
+  results: [{ vault, vault_path, relative_path, filename, score }] }</code></pre>
                 </article>
 
                 <article id="search_notes" class="rounded-xl outline-1 -outline-offset-1 outline-white/10 bg-white/[0.02] p-6 md:p-8 scroll-mt-20">
