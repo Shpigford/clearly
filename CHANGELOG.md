@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+## [2.10.0] - 2026-04-29
+- Find + Replace across the editor, with stale-highlight fix
+- Fold and unfold code blocks in Preview and Live Preview
+- Hide Toolbar (⌥⌘T) for distraction-free writing
+- ⌘P recents show their parent folder, and same-name tabs are disambiguated
+- New CLI/MCP capabilities: vault status, search operators, find_related, move_note, plus public docs
+- Pasting screenshots from the system clipboard now works reliably
+- Fixed a crash when removing a vault folder from the sidebar context menu
+- Better compatibility with the latest Claude CLI versions
+
 ## [2.9.0] - 2026-04-28
 - Click any mermaid diagram in preview to zoom it full-screen
 - ⌘⇧T toggles a todo on the current line, with consistent prefix handling across formats
