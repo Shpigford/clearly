@@ -3,7 +3,7 @@ import ClearlyCore
 import MCP
 
 enum ToolRegistry {
-    static let writeToolNames: Set<String> = ["create_note", "update_note"]
+    static let writeToolNames: Set<String> = ["create_note", "update_note", "move_note"]
 
     static func listTools(vaults: [LoadedVault], readOnly: Bool = false) -> [Tool] {
         let vaultPaths = vaults.map { $0.url.path }
@@ -60,15 +60,51 @@ enum ToolRegistry {
                 ])
             ),
             Tool(
+                name: "find_related",
+                description: "Find notes semantically related to a given note. Reuses on-device embeddings to score every other note's chunks against the source's mean vector, returns the top matches with cosine similarity. Use when you have one note and want \"more like this\" — e.g. surface adjacent thinking, related projects, or earlier passes at the same idea. English-only via Apple's NLContextualEmbedding.",
+                inputSchema: .object([
+                    "type": .string("object"),
+                    "additionalProperties": .bool(false),
+                    "properties": .object([
+                        "relative_path": .object([
+                            "type": .string("string"),
+                            "description": .string("Vault-relative path of the source note, e.g. 'Notes/local-first.md'.")
+                        ]),
+                        "limit": .object([
+                            "type": .string("integer"),
+                            "minimum": .int(1),
+                            "description": .string("Max results to return. Default 10, capped at 50.")
+                        ]),
+                        "vault": .object([
+                            "type": .string("string"),
+                            "description": .string("Optional vault name or path substring. When set, only matching vaults are searched. The source note must still resolve unambiguously among loaded vaults.")
+                        ])
+                    ]),
+                    "required": .array([.string("relative_path")])
+                ]),
+                annotations: readAnnotations,
+                outputSchema: .object([
+                    "type": .string("object"),
+                    "properties": .object([
+                        "vault":           .object(["type": .string("string"), "description": .string("Vault that owns the source note.")]),
+                        "source":          .object(["type": .string("string"), "description": .string("Vault-relative path of the source note.")]),
+                        "total_count":     .object(["type": .string("integer"), "description": .string("Number of distinct files scored across the selected vaults.")]),
+                        "returned_count":  .object(["type": .string("integer"), "description": .string("Number of hits in the results array after applying limit.")]),
+                        "results":         .object(["type": .string("array"), "items": .object(["type": .string("object")]), "description": .string("Ranked top-N. Each item has 'vault', 'vault_path', 'relative_path', 'filename', 'score' (cosine similarity, -1…1, higher is closer).")])
+                    ]),
+                    "required": .array([.string("vault"), .string("source"), .string("total_count"), .string("returned_count"), .string("results")])
+                ])
+            ),
+            Tool(
                 name: "search_notes",
-                description: "Full-text search across all notes in Clearly. Searches \(vaults.count) vault(s): \(vaultDescription). Returns relevance-ranked results with context snippets. Uses BM25 ranking and stemming. Results include the vault path and relative file path — use standard file access to read full content.",
+                description: "Full-text search across all notes in Clearly. Searches \(vaults.count) vault(s): \(vaultDescription). Returns relevance-ranked results with context snippets. Uses BM25 ranking and stemming. Supports `tag:foo` (AND-combined, case-insensitive) and `path:notes/sub` operators inside the query string to narrow by tag or vault-relative path prefix. Results include the vault path and relative file path — use standard file access to read full content.",
                 inputSchema: .object([
                     "type": .string("object"),
                     "additionalProperties": .bool(false),
                     "properties": .object([
                         "query": .object([
                             "type": .string("string"),
-                            "description": .string("Search query. Supports quoted phrases for exact match.")
+                            "description": .string("Search query. Supports quoted phrases for exact match. Operators: `tag:work` filters to files carrying that tag (repeat for AND); `path:journal/2026/` filters by vault-relative path prefix. Filter-only queries (e.g. `tag:idea`) are valid and return every matching file.")
                         ]),
                         "limit": .object([
                             "type": .string("integer"),
@@ -315,8 +351,46 @@ enum ToolRegistry {
                 ])
             ),
             Tool(
+                name: "move_note",
+                description: "Rename or move a note within a vault, rewriting every inbound [[wiki-link]] in other notes to point at the new path. Preserves heading anchors and aliases on rewritten links. Index `id` is preserved across the move, so backlink relationships survive without re-resolution. Fails with note_exists if the destination already exists.",
+                inputSchema: .object([
+                    "type": .string("object"),
+                    "additionalProperties": .bool(false),
+                    "properties": .object([
+                        "from_path": .object([
+                            "type": .string("string"),
+                            "description": .string("Vault-relative path of the source note, e.g. 'Inbox/draft.md'.")
+                        ]),
+                        "to_path": .object([
+                            "type": .string("string"),
+                            "description": .string("Vault-relative destination path, e.g. 'Notes/published.md'. Parent folders are created automatically.")
+                        ]),
+                        "vault": .object([
+                            "type": .string("string"),
+                            "description": .string("Optional vault name; required only when 'from_path' is ambiguous across multiple loaded vaults.")
+                        ])
+                    ]),
+                    "required": .array([.string("from_path"), .string("to_path")])
+                ]),
+                annotations: writeAnnotations,
+                outputSchema: .object([
+                    "type": .string("object"),
+                    "properties": .object([
+                        "vault":           .object(["type": .string("string")]),
+                        "from":            .object(["type": .string("string")]),
+                        "to":              .object(["type": .string("string")]),
+                        "links_rewritten": .object([
+                            "type": .string("array"),
+                            "items": .object(["type": .string("object")]),
+                            "description": .string("Per-file count of [[wiki-link]] rewrites. Each entry has 'relative_path' and 'count'.")
+                        ])
+                    ]),
+                    "required": .array([.string("vault"), .string("from"), .string("to"), .string("links_rewritten")])
+                ])
+            ),
+            Tool(
                 name: "update_note",
-                description: "Update an existing note. Mode 'replace' overwrites the entire file. Mode 'append' adds content to the end (with a leading newline if the file does not end in one). Mode 'prepend' inserts content after YAML frontmatter if present, or at the beginning of the file.",
+                description: "Update an existing note. Mode 'replace' overwrites the entire file. Mode 'append' adds content to the end (with a leading newline if the file does not end in one). Mode 'prepend' inserts content after YAML frontmatter if present, or at the beginning of the file. Pass `expected_content_hash` (the value `read_note` returned) to opt into optimistic concurrency: the call is rejected with `stale_content` if the file changed since you last read it.",
                 inputSchema: .object([
                     "type": .string("object"),
                     "additionalProperties": .bool(false),
@@ -337,6 +411,10 @@ enum ToolRegistry {
                         "vault": .object([
                             "type": .string("string"),
                             "description": .string("Optional vault name; required only when 'relative_path' is ambiguous across multiple loaded vaults.")
+                        ]),
+                        "expected_content_hash": .object([
+                            "type": .string("string"),
+                            "description": .string("Optional. SHA-256 hex digest of the on-disk content the agent last observed (typically from `read_note`). If provided and the on-disk hash differs at write time, the call is rejected with error `stale_content` so the agent can re-read and retry without clobbering a concurrent edit.")
                         ])
                     ]),
                     "required": .array([.string("relative_path"), .string("content"), .string("mode")])

@@ -715,7 +715,7 @@ final class WorkspaceManager {
 
         guard let url = doc.fileURL, doc.isDirty else { return true }
         do {
-            try doc.text.write(to: url, atomically: true, encoding: .utf8)
+            try CoordinatedFileIO.write(Data(doc.text.utf8), to: url)
             openDocuments[index].lastSavedText = doc.text
 
             let finalURL: URL
@@ -761,7 +761,7 @@ final class WorkspaceManager {
 
         do {
             let text = openDocuments[index].text
-            try text.write(to: url, atomically: true, encoding: .utf8)
+            try CoordinatedFileIO.write(Data(text.utf8), to: url)
             openDocuments[index].fileURL = url
             openDocuments[index].lastSavedText = text
             openDocuments[index].untitledNumber = nil
@@ -1095,15 +1095,7 @@ final class WorkspaceManager {
 
     func renameItem(at url: URL, to newName: String) -> URL? {
         let newURL = url.deletingLastPathComponent().appendingPathComponent(newName)
-        do {
-            try FileManager.default.moveItem(at: url, to: newURL)
-            rewriteMovedItemReferences(from: url, to: newURL)
-            DiagnosticLog.log("Renamed: \(url.lastPathComponent) → \(newName)")
-            return newURL
-        } catch {
-            DiagnosticLog.log("Failed to rename: \(error.localizedDescription)")
-            return nil
-        }
+        return performVaultMove(from: url, to: newURL, kind: "Renamed")
     }
 
     func moveItem(at sourceURL: URL, into folderURL: URL) -> URL? {
@@ -1114,15 +1106,58 @@ final class WorkspaceManager {
             return nil
         }
 
+        return performVaultMove(from: sourceURL, to: destURL, kind: "Moved")
+    }
+
+    /// Vault-aware move/rename. When BOTH source and destination fall
+    /// under the same managed vault, every inbound `[[wiki-link]]` is
+    /// rewritten to the new path before the file moves, and the SQLite
+    /// index is updated without losing inbound link relationships.
+    /// Cross-vault moves and moves outside any managed vault fall
+    /// through to a plain `FileManager.moveItem` — the source vault's
+    /// link graph genuinely shouldn't follow a file that's leaving it,
+    /// and the destination vault's watcher will pick the new file up.
+    private func performVaultMove(from url: URL, to newURL: URL, kind: String) -> URL? {
+        if let (location, rootURL) = containingLocationAndRoot(for: url),
+           let index = vaultIndexes[location.id],
+           isURL(newURL, under: rootURL) {
+            let oldRelative = VaultIndex.relativePath(of: url, from: rootURL)
+            let newRelative = VaultIndex.relativePath(of: newURL, from: rootURL)
+            do {
+                try VaultMover.move(
+                    index: index,
+                    vaultRootURL: rootURL,
+                    oldRelativePath: oldRelative,
+                    newRelativePath: newRelative
+                )
+                rewriteMovedItemReferences(from: url, to: newURL)
+                DiagnosticLog.log("\(kind): \(url.lastPathComponent) → \(newURL.lastPathComponent)")
+                return newURL
+            } catch VaultMover.MoveError.sourceNotIndexed {
+                // File wasn't in the index yet (e.g. an untitled save that
+                // raced ahead of the watcher) — fall through to a plain
+                // move and let the watcher catch up.
+            } catch {
+                DiagnosticLog.log("Vault-aware \(kind.lowercased()) failed for \(url.lastPathComponent): \(error.localizedDescription)")
+                return nil
+            }
+        }
+
         do {
-            try FileManager.default.moveItem(at: sourceURL, to: destURL)
-            rewriteMovedItemReferences(from: sourceURL, to: destURL)
-            DiagnosticLog.log("Moved: \(sourceURL.lastPathComponent) → \(folderURL.lastPathComponent)/")
-            return destURL
+            try FileManager.default.moveItem(at: url, to: newURL)
+            rewriteMovedItemReferences(from: url, to: newURL)
+            DiagnosticLog.log("\(kind): \(url.lastPathComponent) → \(newURL.lastPathComponent)")
+            return newURL
         } catch {
-            DiagnosticLog.log("Failed to move: \(error.localizedDescription)")
+            DiagnosticLog.log("Failed to \(kind.lowercased()): \(error.localizedDescription)")
             return nil
         }
+    }
+
+    private func isURL(_ url: URL, under root: URL) -> Bool {
+        let urlPath = url.standardizedFileURL.path
+        let rootPath = root.standardizedFileURL.path
+        return urlPath == rootPath || urlPath.hasPrefix(rootPath + "/")
     }
 
     // MARK: - Sidebar drop handling

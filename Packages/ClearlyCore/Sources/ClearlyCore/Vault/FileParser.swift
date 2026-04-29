@@ -7,12 +7,18 @@ public struct ParsedLink: Equatable {
     public let heading: String?
     public let alias: String?
     public let lineNumber: Int
+    /// Full `[[...]]` span in the source string, expressed as an NSRange
+    /// over UTF-16 code units (the same coordinate space `NSRegularExpression`
+    /// produces). `WikiLinkRewriter` uses this to splice replacements
+    /// in place.
+    public let range: NSRange
 
-    public init(target: String, heading: String?, alias: String?, lineNumber: Int) {
+    public init(target: String, heading: String?, alias: String?, lineNumber: Int, range: NSRange = NSRange(location: NSNotFound, length: 0)) {
         self.target = target
         self.heading = heading
         self.alias = alias
         self.lineNumber = lineNumber
+        self.range = range
     }
 }
 
@@ -142,7 +148,7 @@ public enum FileParser {
             }
 
             let line = lineNumber(at: match.range.location, in: nsContent)
-            links.append(ParsedLink(target: target, heading: heading, alias: alias, lineNumber: line))
+            links.append(ParsedLink(target: target, heading: heading, alias: alias, lineNumber: line, range: match.range))
         }
 
         return links

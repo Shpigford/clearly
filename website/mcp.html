@@ -1,0 +1,300 @@
+<!DOCTYPE html>
+<html lang="en" style="color-scheme: dark">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="icon" type="image/png" href="/favicon-96x96.png" sizes="96x96">
+    <link rel="shortcut icon" href="/favicon.ico">
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
+    <meta name="apple-mobile-web-app-title" content="Clearly">
+    <link rel="manifest" href="/site.webmanifest">
+
+    <title>MCP server — Clearly</title>
+    <meta name="description" content="The Model Context Protocol server bundled with Clearly. Local stdio, no auth, no cloud — every MCP client (Claude Desktop, Claude Code, Cursor, Codex CLI) just works.">
+    <meta property="og:title" content="MCP server — Clearly">
+    <meta property="og:description" content="Local-first MCP server for your markdown vault. No auth, no cloud, your files stay on your disk.">
+    <meta property="og:image" content="https://clearly.md/icon.png">
+    <meta property="og:url" content="https://clearly.md/mcp">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="MCP server — Clearly">
+    <meta name="twitter:description" content="Local-first MCP server for your markdown vault.">
+    <meta name="twitter:image" content="https://clearly.md/icon.png">
+
+    <link rel="preconnect" href="https://rsms.me" crossorigin>
+    <link href="https://rsms.me/inter/inter.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/geist@1.3.1/dist/fonts/geist-mono/style.css" rel="stylesheet">
+
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['InterVariable', 'Inter', 'system-ui', 'sans-serif'],
+                        mono: ['"Geist Mono"', 'ui-monospace', 'monospace'],
+                    },
+                },
+            },
+        }
+    </script>
+    <style>
+        html { scroll-behavior: smooth; }
+        :root { font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11'; }
+        pre { font-feature-settings: normal; }
+    </style>
+</head>
+<body class="bg-[#0a0a0a] text-zinc-300 antialiased overflow-x-hidden">
+
+    <nav class="relative z-20">
+        <div class="max-w-3xl mx-auto px-6 py-4 flex items-center justify-between text-sm">
+            <a href="/" class="flex items-center gap-2 text-white font-medium hover:opacity-80 transition-opacity">
+                <img src="icon.png" alt="" class="size-6 rounded-md">
+                Clearly
+            </a>
+            <div class="flex items-center gap-5 text-zinc-400">
+                <a href="/changelog" class="hover:text-white transition-colors">Changelog</a>
+                <a href="/cli" class="text-white" aria-current="page">Docs</a>
+                <a href="https://github.com/Shpigford/clearly" class="hover:text-white transition-colors">GitHub</a>
+            </div>
+        </div>
+    </nav>
+
+    <main class="relative z-10">
+        <section class="pt-10 pb-6 md:pt-16 md:pb-8">
+            <div class="max-w-3xl mx-auto px-6">
+                <h1 class="text-3xl sm:text-4xl font-medium tracking-tight text-white text-balance">
+                    MCP server
+                </h1>
+                <p class="mt-3 text-zinc-400 text-pretty max-w-[60ch]">
+                    The Model Context Protocol server bundled with Clearly. Run it as <code class="font-mono text-zinc-200">clearly mcp</code> from any MCP client &mdash; Claude Desktop, Claude Code, Cursor, Codex CLI &mdash; and your AI gets vault-aware search, link graph traversal, and file edit tools. Your notes never leave the device.
+                </p>
+                <div class="mt-6 flex items-center gap-2 text-sm">
+                    <a href="/cli" class="px-3 py-1.5 rounded-md text-zinc-400 hover:text-white hover:bg-white/5 transition-colors">CLI</a>
+                    <a href="/mcp" class="px-3 py-1.5 rounded-md bg-white/10 text-white" aria-current="page">MCP server</a>
+                </div>
+            </div>
+        </section>
+
+        <section class="pb-10">
+            <div class="max-w-3xl mx-auto px-6">
+                <article class="rounded-xl outline-1 -outline-offset-1 outline-white/10 bg-white/[0.02] p-6 md:p-8">
+                    <h2 class="text-xs font-mono tracking-wide uppercase text-zinc-500 mb-3">Setup</h2>
+                    <p class="text-sm text-zinc-400 mb-4">Install the CLI from Clearly &rarr; Settings &rarr; Command Line. Then add the server to your MCP client. For Claude Desktop, edit <code class="font-mono text-zinc-200">claude_desktop_config.json</code>:</p>
+                    <pre class="rounded-md bg-black/40 p-4 text-xs font-mono text-zinc-300 overflow-x-auto"><code>{
+  "mcpServers": {
+    "clearly": {
+      "command": "/usr/local/bin/clearly",
+      "args": ["mcp"]
+    }
+  }
+}</code></pre>
+                    <p class="mt-4 text-sm text-zinc-400">For an opt-in read-only profile, append <code class="font-mono text-zinc-200">"--read-only"</code> to the args. The server discovers vaults the same way the CLI does &mdash; auto-detected, or pass <code class="font-mono text-zinc-200">"--vault", "&lt;path&gt;"</code>.</p>
+                </article>
+            </div>
+        </section>
+
+        <section class="pb-10">
+            <div class="max-w-3xl mx-auto px-6">
+                <article class="rounded-xl outline-1 -outline-offset-1 outline-white/10 bg-white/[0.02] p-6 md:p-8">
+                    <h2 class="text-xs font-mono tracking-wide uppercase text-zinc-500 mb-3">Design</h2>
+                    <ul class="space-y-2 text-sm text-zinc-400 list-none pl-0">
+                        <li class="relative pl-5 before:content-[''] before:absolute before:left-1 before:top-[0.55rem] before:size-1 before:rounded-full before:bg-zinc-600">Local stdio only. No HTTP, no relay, no OAuth. Notes never leave the device.</li>
+                        <li class="relative pl-5 before:content-[''] before:absolute before:left-1 before:top-[0.55rem] before:size-1 before:rounded-full before:bg-zinc-600">Reads from the same SQLite index the app uses, in WAL mode &mdash; safe to query while the app is open.</li>
+                        <li class="relative pl-5 before:content-[''] before:absolute before:left-1 before:top-[0.55rem] before:size-1 before:rounded-full before:bg-zinc-600">Reads use the link graph, BM25 ranking, on-device embeddings &mdash; not just substring matching.</li>
+                        <li class="relative pl-5 before:content-[''] before:absolute before:left-1 before:top-[0.55rem] before:size-1 before:rounded-full before:bg-zinc-600"><code class="font-mono text-zinc-200">--read-only</code> hides every write tool at registration time. The client genuinely cannot call them.</li>
+                        <li class="relative pl-5 before:content-[''] before:absolute before:left-1 before:top-[0.55rem] before:size-1 before:rounded-full before:bg-zinc-600">Use <code class="font-mono text-zinc-200">clearly mcp tools</code> to dump every registered tool and its JSON Schema for debugging or generating client manifests.</li>
+                    </ul>
+                </article>
+            </div>
+        </section>
+
+        <section class="pb-10">
+            <div class="max-w-3xl mx-auto px-6">
+                <article class="rounded-xl outline-1 -outline-offset-1 outline-white/10 bg-white/[0.02] p-6 md:p-8">
+                    <h2 class="text-xs font-mono tracking-wide uppercase text-zinc-500 mb-3">Tools</h2>
+                    <ul class="grid grid-cols-2 gap-x-4 gap-y-1 text-sm font-mono">
+                        <li><a class="text-zinc-300 hover:text-white" href="#semantic_search">semantic_search</a></li>
+                        <li><a class="text-zinc-300 hover:text-white" href="#find_related">find_related</a></li>
+                        <li><a class="text-zinc-300 hover:text-white" href="#search_notes">search_notes</a></li>
+                        <li><a class="text-zinc-300 hover:text-white" href="#get_backlinks">get_backlinks</a></li>
+                        <li><a class="text-zinc-300 hover:text-white" href="#get_tags">get_tags</a></li>
+                        <li><a class="text-zinc-300 hover:text-white" href="#read_note">read_note</a></li>
+                        <li><a class="text-zinc-300 hover:text-white" href="#list_notes">list_notes</a></li>
+                        <li><a class="text-zinc-300 hover:text-white" href="#get_headings">get_headings</a></li>
+                        <li><a class="text-zinc-300 hover:text-white" href="#get_frontmatter">get_frontmatter</a></li>
+                        <li><a class="text-zinc-300 hover:text-white" href="#create_note">create_note</a></li>
+                        <li><a class="text-zinc-300 hover:text-white" href="#update_note">update_note</a></li>
+                        <li><a class="text-zinc-300 hover:text-white" href="#move_note">move_note</a></li>
+                    </ul>
+                </article>
+            </div>
+        </section>
+
+        <section class="pb-10">
+            <div class="max-w-3xl mx-auto px-6 space-y-4">
+
+                <article id="semantic_search" class="rounded-xl outline-1 -outline-offset-1 outline-white/10 bg-white/[0.02] p-6 md:p-8 scroll-mt-20">
+                    <header class="mb-4 flex items-center gap-3">
+                        <h2 class="text-lg font-medium text-white font-mono">semantic_search</h2>
+                        <span class="px-2 py-0.5 rounded-full text-xs bg-blue-500/10 text-blue-300 ring-1 ring-inset ring-blue-500/20">read</span>
+                    </header>
+                    <p class="text-sm text-zinc-400 mb-3">Conceptual search via on-device embeddings (Apple's <code class="font-mono">NLContextualEmbedding</code>). Use when the user's question doesn't share keywords with the relevant notes &mdash; e.g. asking about &ldquo;productivity&rdquo; when the note actually says &ldquo;flow state&rdquo;.</p>
+                    <h3 class="mt-3 text-xs font-mono tracking-wide uppercase text-zinc-500">Input</h3>
+                    <pre class="mt-2 rounded-md bg-black/40 p-4 text-xs font-mono text-zinc-300 overflow-x-auto"><code>{ query: string, limit?: integer (default 10, max 50), vault?: string }</code></pre>
+                    <h3 class="mt-4 text-xs font-mono tracking-wide uppercase text-zinc-500">Output</h3>
+                    <pre class="mt-2 rounded-md bg-black/40 p-4 text-xs font-mono text-zinc-300 overflow-x-auto"><code>{ query, total_count, returned_count,
+  results: [{ vault, vault_path, relative_path, filename, score, snippet }] }</code></pre>
+                    <p class="mt-3 text-sm text-zinc-400"><code class="font-mono">score</code> is cosine similarity (-1 to 1, higher is closer).</p>
+                </article>
+
+                <article id="find_related" class="rounded-xl outline-1 -outline-offset-1 outline-white/10 bg-white/[0.02] p-6 md:p-8 scroll-mt-20">
+                    <header class="mb-4 flex items-center gap-3">
+                        <h2 class="text-lg font-medium text-white font-mono">find_related</h2>
+                        <span class="px-2 py-0.5 rounded-full text-xs bg-blue-500/10 text-blue-300 ring-1 ring-inset ring-blue-500/20">read</span>
+                    </header>
+                    <p class="text-sm text-zinc-400 mb-3">&ldquo;More like this.&rdquo; Reuses on-device embeddings to score every other note's chunks against the source's mean vector. Use when you have one note and want to surface adjacent thinking, related projects, or earlier passes at the same idea.</p>
+                    <h3 class="mt-3 text-xs font-mono tracking-wide uppercase text-zinc-500">Input</h3>
+                    <pre class="mt-2 rounded-md bg-black/40 p-4 text-xs font-mono text-zinc-300 overflow-x-auto"><code>{ relative_path: string, limit?: integer (default 10, max 50), vault?: string }</code></pre>
+                    <h3 class="mt-4 text-xs font-mono tracking-wide uppercase text-zinc-500">Output</h3>
+                    <pre class="mt-2 rounded-md bg-black/40 p-4 text-xs font-mono text-zinc-300 overflow-x-auto"><code>{ vault, source, total_count, returned_count,
+  results: [{ vault, vault_path, relative_path, filename, score }] }</code></pre>
+                </article>
+
+                <article id="search_notes" class="rounded-xl outline-1 -outline-offset-1 outline-white/10 bg-white/[0.02] p-6 md:p-8 scroll-mt-20">
+                    <header class="mb-4 flex items-center gap-3">
+                        <h2 class="text-lg font-medium text-white font-mono">search_notes</h2>
+                        <span class="px-2 py-0.5 rounded-full text-xs bg-blue-500/10 text-blue-300 ring-1 ring-inset ring-blue-500/20">read</span>
+                    </header>
+                    <p class="text-sm text-zinc-400 mb-3">Full-text search with BM25 ranking and stemming. Supports quoted phrases for exact match. Use this for keyword targets and proper nouns; use <a href="#semantic_search" class="text-zinc-200 hover:text-white">semantic_search</a> when the question is conceptual.</p>
+                    <p class="text-sm text-zinc-400 mb-3">Operators inside the query string narrow without a schema change:</p>
+                    <ul class="space-y-1 text-sm text-zinc-400 mb-3">
+                        <li><code class="font-mono text-zinc-200">tag:foo</code> &mdash; file must carry tag <code class="font-mono">foo</code> (case-insensitive). Repeat for AND.</li>
+                        <li><code class="font-mono text-zinc-200">path:notes/sub</code> &mdash; file's vault-relative path must start with this prefix.</li>
+                    </ul>
+                    <h3 class="mt-3 text-xs font-mono tracking-wide uppercase text-zinc-500">Input</h3>
+                    <pre class="mt-2 rounded-md bg-black/40 p-4 text-xs font-mono text-zinc-300 overflow-x-auto"><code>{ query: string, limit?: integer (default 20, max 100) }</code></pre>
+                    <h3 class="mt-4 text-xs font-mono tracking-wide uppercase text-zinc-500">Output</h3>
+                    <pre class="mt-2 rounded-md bg-black/40 p-4 text-xs font-mono text-zinc-300 overflow-x-auto"><code>{ query, total_count, returned_count, results: [...] }</code></pre>
+                </article>
+
+                <article id="get_backlinks" class="rounded-xl outline-1 -outline-offset-1 outline-white/10 bg-white/[0.02] p-6 md:p-8 scroll-mt-20">
+                    <header class="mb-4 flex items-center gap-3">
+                        <h2 class="text-lg font-medium text-white font-mono">get_backlinks</h2>
+                        <span class="px-2 py-0.5 rounded-full text-xs bg-blue-500/10 text-blue-300 ring-1 ring-inset ring-blue-500/20">read</span>
+                    </header>
+                    <p class="text-sm text-zinc-400 mb-3">Notes that link to a target via <code class="font-mono">[[wiki-links]]</code>, plus &ldquo;unlinked mentions&rdquo; &mdash; places the target's filename appears as plain text without being wrapped.</p>
+                    <h3 class="mt-3 text-xs font-mono tracking-wide uppercase text-zinc-500">Input</h3>
+                    <pre class="mt-2 rounded-md bg-black/40 p-4 text-xs font-mono text-zinc-300 overflow-x-auto"><code>{ relative_path: string, vault?: string }</code></pre>
+                    <h3 class="mt-4 text-xs font-mono tracking-wide uppercase text-zinc-500">Output</h3>
+                    <pre class="mt-2 rounded-md bg-black/40 p-4 text-xs font-mono text-zinc-300 overflow-x-auto"><code>{ vault, relative_path,
+  linked:   [{ vault, relative_path, line_number, display_text, context }],
+  unlinked: [{ vault, relative_path, line_number, context_line }] }</code></pre>
+                </article>
+
+                <article id="get_tags" class="rounded-xl outline-1 -outline-offset-1 outline-white/10 bg-white/[0.02] p-6 md:p-8 scroll-mt-20">
+                    <header class="mb-4 flex items-center gap-3">
+                        <h2 class="text-lg font-medium text-white font-mono">get_tags</h2>
+                        <span class="px-2 py-0.5 rounded-full text-xs bg-blue-500/10 text-blue-300 ring-1 ring-inset ring-blue-500/20">read</span>
+                    </header>
+                    <p class="text-sm text-zinc-400 mb-3">Without <code class="font-mono">tag</code>: list every tag with file count (mode <code class="font-mono">all</code>). With <code class="font-mono">tag</code>: list every note carrying it (mode <code class="font-mono">by_tag</code>). Tags come from inline <code class="font-mono">#hashtags</code> and YAML frontmatter <code class="font-mono">tags:</code>.</p>
+                    <h3 class="mt-3 text-xs font-mono tracking-wide uppercase text-zinc-500">Input</h3>
+                    <pre class="mt-2 rounded-md bg-black/40 p-4 text-xs font-mono text-zinc-300 overflow-x-auto"><code>{ tag?: string }</code></pre>
+                </article>
+
+                <article id="read_note" class="rounded-xl outline-1 -outline-offset-1 outline-white/10 bg-white/[0.02] p-6 md:p-8 scroll-mt-20">
+                    <header class="mb-4 flex items-center gap-3">
+                        <h2 class="text-lg font-medium text-white font-mono">read_note</h2>
+                        <span class="px-2 py-0.5 rounded-full text-xs bg-blue-500/10 text-blue-300 ring-1 ring-inset ring-blue-500/20">read</span>
+                    </header>
+                    <p class="text-sm text-zinc-400 mb-3">Full content of a note plus metadata: content hash, byte size, modified timestamp, parsed frontmatter, headings, and tags. Optional 1-based line range.</p>
+                    <h3 class="mt-3 text-xs font-mono tracking-wide uppercase text-zinc-500">Input</h3>
+                    <pre class="mt-2 rounded-md bg-black/40 p-4 text-xs font-mono text-zinc-300 overflow-x-auto"><code>{ relative_path: string, start_line?: integer, end_line?: integer, vault?: string }</code></pre>
+                </article>
+
+                <article id="list_notes" class="rounded-xl outline-1 -outline-offset-1 outline-white/10 bg-white/[0.02] p-6 md:p-8 scroll-mt-20">
+                    <header class="mb-4 flex items-center gap-3">
+                        <h2 class="text-lg font-medium text-white font-mono">list_notes</h2>
+                        <span class="px-2 py-0.5 rounded-full text-xs bg-blue-500/10 text-blue-300 ring-1 ring-inset ring-blue-500/20">read</span>
+                    </header>
+                    <p class="text-sm text-zinc-400 mb-3">Walks the filesystem fresh every call &mdash; results always reflect current on-disk state. Optional subpath prefix.</p>
+                    <h3 class="mt-3 text-xs font-mono tracking-wide uppercase text-zinc-500">Input</h3>
+                    <pre class="mt-2 rounded-md bg-black/40 p-4 text-xs font-mono text-zinc-300 overflow-x-auto"><code>{ under?: string, vault?: string }</code></pre>
+                </article>
+
+                <article id="get_headings" class="rounded-xl outline-1 -outline-offset-1 outline-white/10 bg-white/[0.02] p-6 md:p-8 scroll-mt-20">
+                    <header class="mb-4 flex items-center gap-3">
+                        <h2 class="text-lg font-medium text-white font-mono">get_headings</h2>
+                        <span class="px-2 py-0.5 rounded-full text-xs bg-blue-500/10 text-blue-300 ring-1 ring-inset ring-blue-500/20">read</span>
+                    </header>
+                    <p class="text-sm text-zinc-400 mb-3">Heading outline (H1&ndash;H6) with level, text, and 1-based line number.</p>
+                </article>
+
+                <article id="get_frontmatter" class="rounded-xl outline-1 -outline-offset-1 outline-white/10 bg-white/[0.02] p-6 md:p-8 scroll-mt-20">
+                    <header class="mb-4 flex items-center gap-3">
+                        <h2 class="text-lg font-medium text-white font-mono">get_frontmatter</h2>
+                        <span class="px-2 py-0.5 rounded-full text-xs bg-blue-500/10 text-blue-300 ring-1 ring-inset ring-blue-500/20">read</span>
+                    </header>
+                    <p class="text-sm text-zinc-400 mb-3">Parsed YAML frontmatter as a flat key-value map, plus a <code class="font-mono">has_frontmatter</code> boolean.</p>
+                </article>
+
+                <article id="create_note" class="rounded-xl outline-1 -outline-offset-1 outline-white/10 bg-white/[0.02] p-6 md:p-8 scroll-mt-20">
+                    <header class="mb-4 flex items-center gap-3">
+                        <h2 class="text-lg font-medium text-white font-mono">create_note</h2>
+                        <span class="px-2 py-0.5 rounded-full text-xs bg-amber-500/10 text-amber-300 ring-1 ring-inset ring-amber-500/20">write</span>
+                    </header>
+                    <p class="text-sm text-zinc-400 mb-3">Create a new note. Parent folders are created automatically. Returns a <code class="font-mono">note_exists</code> error if the path is already taken.</p>
+                    <h3 class="mt-3 text-xs font-mono tracking-wide uppercase text-zinc-500">Input</h3>
+                    <pre class="mt-2 rounded-md bg-black/40 p-4 text-xs font-mono text-zinc-300 overflow-x-auto"><code>{ relative_path: string, content: string, vault?: string }</code></pre>
+                </article>
+
+                <article id="move_note" class="rounded-xl outline-1 -outline-offset-1 outline-white/10 bg-white/[0.02] p-6 md:p-8 scroll-mt-20">
+                    <header class="mb-4 flex items-center gap-3">
+                        <h2 class="text-lg font-medium text-white font-mono">move_note</h2>
+                        <span class="px-2 py-0.5 rounded-full text-xs bg-amber-500/10 text-amber-300 ring-1 ring-inset ring-amber-500/20">write</span>
+                    </header>
+                    <p class="text-sm text-zinc-400 mb-3">Rename or move a note within a vault, rewriting every inbound <code class="font-mono">[[wiki-link]]</code> to point at the new path. Preserves heading anchors and aliases. Index <code class="font-mono">id</code> is preserved across the move &mdash; existing backlink relationships survive without re-resolution.</p>
+                    <h3 class="mt-3 text-xs font-mono tracking-wide uppercase text-zinc-500">Input</h3>
+                    <pre class="mt-2 rounded-md bg-black/40 p-4 text-xs font-mono text-zinc-300 overflow-x-auto"><code>{ from_path: string, to_path: string, vault?: string }</code></pre>
+                    <h3 class="mt-4 text-xs font-mono tracking-wide uppercase text-zinc-500">Output</h3>
+                    <pre class="mt-2 rounded-md bg-black/40 p-4 text-xs font-mono text-zinc-300 overflow-x-auto"><code>{ vault, from, to,
+  links_rewritten: [{ relative_path, count }] }</code></pre>
+                </article>
+
+                <article id="update_note" class="rounded-xl outline-1 -outline-offset-1 outline-white/10 bg-white/[0.02] p-6 md:p-8 scroll-mt-20">
+                    <header class="mb-4 flex items-center gap-3">
+                        <h2 class="text-lg font-medium text-white font-mono">update_note</h2>
+                        <span class="px-2 py-0.5 rounded-full text-xs bg-amber-500/10 text-amber-300 ring-1 ring-inset ring-amber-500/20">write</span>
+                    </header>
+                    <p class="text-sm text-zinc-400 mb-3">Update an existing note. <code class="font-mono">replace</code> overwrites the whole file. <code class="font-mono">append</code> adds to the end. <code class="font-mono">prepend</code> inserts after the YAML frontmatter block (or at the top if there is none).</p>
+                    <p class="text-sm text-zinc-400 mb-3">Pass <code class="font-mono text-zinc-200">expected_content_hash</code> (the value <code class="font-mono">read_note</code> returned) to opt into optimistic concurrency &mdash; the call is rejected with <code class="font-mono">stale_content</code> if the file changed since you last read it. The editor's save path goes through the same coordinated I/O, so a user typing in the editor and an MCP write to the same note can no longer drop each other's edits.</p>
+                    <h3 class="mt-3 text-xs font-mono tracking-wide uppercase text-zinc-500">Input</h3>
+                    <pre class="mt-2 rounded-md bg-black/40 p-4 text-xs font-mono text-zinc-300 overflow-x-auto"><code>{ relative_path: string, content: string, mode: "replace"|"append"|"prepend",
+  vault?: string, expected_content_hash?: string }</code></pre>
+                </article>
+
+            </div>
+        </section>
+
+        <section class="pb-24">
+            <div class="max-w-3xl mx-auto px-6">
+                <article class="rounded-xl outline-1 -outline-offset-1 outline-white/10 bg-white/[0.02] p-6 md:p-8">
+                    <h2 class="text-xs font-mono tracking-wide uppercase text-zinc-500 mb-3">Errors</h2>
+                    <p class="text-sm text-zinc-400">Tool calls that fail return MCP error responses with a stable <code class="font-mono text-zinc-200">error</code> code: <code class="font-mono">note_not_found</code>, <code class="font-mono">note_exists</code>, <code class="font-mono">path_outside_vault</code>, <code class="font-mono">ambiguous_vault</code>, <code class="font-mono">no_vault_match</code>, <code class="font-mono">invalid_argument</code>. Inspect the full schema with <code class="font-mono text-zinc-200">clearly mcp tools</code>.</p>
+                </article>
+            </div>
+        </section>
+    </main>
+
+    <footer class="relative z-10 border-t border-white/5">
+        <div class="max-w-3xl mx-auto px-6 py-8 flex flex-wrap items-center gap-4 text-xs text-zinc-600">
+            <a href="/" class="hover:text-zinc-300 transition-colors">Home</a>
+            <a href="/changelog" class="hover:text-zinc-300 transition-colors">Changelog</a>
+            <a href="/cli" class="hover:text-zinc-300 transition-colors">CLI</a>
+            <a href="/mcp" class="hover:text-zinc-300 transition-colors">MCP server</a>
+            <a href="/privacy" class="hover:text-zinc-300 transition-colors">Privacy</a>
+            <a href="https://github.com/Shpigford/clearly" class="hover:text-zinc-300 transition-colors">GitHub</a>
+        </div>
+    </footer>
+
+</body>
+</html>
