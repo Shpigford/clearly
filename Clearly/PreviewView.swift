@@ -644,6 +644,7 @@ struct PreviewView: NSViewRepresentable {
                     guard self.findState?.activeMode == .preview else { return }
                     self.findState?.matchCount = count
                     self.findState?.currentIndex = count > 0 ? 1 : 0
+                    self.findState?.resultsAreStale = false
                 }
             }
         }
@@ -695,6 +696,7 @@ struct PreviewView: NSViewRepresentable {
                 guard self?.findState?.activeMode == .preview || self?.findState?.isVisible == false else { return }
                 self?.findState?.matchCount = 0
                 self?.findState?.currentIndex = 0
+                self?.findState?.resultsAreStale = false
             }
         }
 

@@ -7,6 +7,7 @@ public final class FindState: ObservableObject {
     @Published public var query = ""
     @Published public var matchCount = 0
     @Published public var currentIndex = 0 // 1-based, 0 = no matches
+    @Published public var resultsAreStale = false
     @Published public var focusRequest = UUID()
     public var activeMode: ViewMode = .edit
 
@@ -14,6 +15,10 @@ public final class FindState: ObservableObject {
     public var editorNavigateToPrevious: (() -> Void)?
     public var previewNavigateToNext: (() -> Void)?
     public var previewNavigateToPrevious: (() -> Void)?
+
+    public var canNavigate: Bool {
+        !query.isEmpty && (resultsAreStale || matchCount > 0)
+    }
 
     public var navigateToNext: (() -> Void)? {
         switch activeMode {
