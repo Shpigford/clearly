@@ -911,6 +911,7 @@ struct ClearlyApp: App {
                 Button("Todo") {
                     performFormattingCommand(.todoList, selector: #selector(ClearlyTextView.toggleTodoList(_:)))
                 }
+                .keyboardShortcut("t", modifiers: [.command, .shift])
 
                 Divider()
 

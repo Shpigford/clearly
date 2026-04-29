@@ -394,15 +394,31 @@ final class ClearlyTextView: PersistentTextCheckingTextView {
 
     @objc func toggleNumberedList(_ sender: Any?) {
         let range = selectedRange()
-        let selected = (string as NSString).substring(with: range)
+        let nsString = string as NSString
+        let selected = nsString.substring(with: range)
         if selected.isEmpty {
-            insertText("1. list item", replacementRange: range)
-            let start = range.location + "1. ".utf16.count
-            setSelectedRange(NSRange(location: start, length: "list item".utf16.count))
+            let lineRange = nsString.lineRange(for: range)
+            let line = nsString.substring(with: lineRange)
+            let hasTrailingNewline = line.hasSuffix("\n")
+            let lineBody = hasTrailingNewline ? String(line.dropLast()) : line
+
+            if lineBody.isEmpty {
+                insertText("1. list item", replacementRange: range)
+                let start = range.location + "1. ".utf16.count
+                setSelectedRange(NSRange(location: start, length: "list item".utf16.count))
+                return
+            }
+
+            if lineBody.range(of: #"^\d+\. "#, options: .regularExpression) != nil { return }
+
+            let cursorOffset = min(range.location - lineRange.location, lineBody.utf16.count)
+            let newLine = "1. \(lineBody)" + (hasTrailingNewline ? "\n" : "")
+            insertText(newLine, replacementRange: lineRange)
+            setSelectedRange(NSRange(location: lineRange.location + "1. ".utf16.count + cursorOffset, length: 0))
             return
         }
-        let lineRange = (string as NSString).lineRange(for: range)
-        let block = (string as NSString).substring(with: lineRange)
+        let lineRange = nsString.lineRange(for: range)
+        let block = nsString.substring(with: lineRange)
         let lines = block.components(separatedBy: "\n")
         var result: [String] = []
         var num = 1
@@ -528,18 +544,38 @@ final class ClearlyTextView: PersistentTextCheckingTextView {
 
     private func toggleLinePrefix(prefix: String, placeholder: String) {
         let range = selectedRange()
-        let selected = (string as NSString).substring(with: range)
+        let nsString = string as NSString
+        let selected = nsString.substring(with: range)
         if selected.isEmpty {
-            let text = "\(prefix)\(placeholder)"
-            insertText(text, replacementRange: range)
-            let start = range.location + prefix.utf16.count
-            setSelectedRange(NSRange(location: start, length: placeholder.utf16.count))
+            let lineRange = nsString.lineRange(for: range)
+            let line = nsString.substring(with: lineRange)
+            let hasTrailingNewline = line.hasSuffix("\n")
+            let lineBody = hasTrailingNewline ? String(line.dropLast()) : line
+
+            if lineBody.isEmpty {
+                let text = "\(prefix)\(placeholder)"
+                insertText(text, replacementRange: range)
+                let start = range.location + prefix.utf16.count
+                setSelectedRange(NSRange(location: start, length: placeholder.utf16.count))
+                return
+            }
+
+            if lineBody.hasPrefix(prefix) { return }
+
+            let cursorOffset = min(range.location - lineRange.location, lineBody.utf16.count)
+            let newLine = "\(prefix)\(lineBody)" + (hasTrailingNewline ? "\n" : "")
+            insertText(newLine, replacementRange: lineRange)
+            setSelectedRange(NSRange(location: lineRange.location + prefix.utf16.count + cursorOffset, length: 0))
             return
         }
-        let lineRange = (string as NSString).lineRange(for: range)
-        let block = (string as NSString).substring(with: lineRange)
+        let lineRange = nsString.lineRange(for: range)
+        let block = nsString.substring(with: lineRange)
         let lines = block.components(separatedBy: "\n")
-        let result = lines.map { $0.isEmpty ? $0 : "\(prefix)\($0)" }
+        let result = lines.map { line -> String in
+            if line.isEmpty { return line }
+            if line.hasPrefix(prefix) { return line }
+            return "\(prefix)\(line)"
+        }
         insertText(result.joined(separator: "\n"), replacementRange: lineRange)
     }
 
