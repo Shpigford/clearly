@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+## [2.9.0] - 2026-04-28
+- Click any mermaid diagram in preview to zoom it full-screen
+- ⌘⇧T toggles a todo on the current line, with consistent prefix handling across formats
+- Detects Claude and Codex CLIs installed via nvm so you don't need to fix PATH manually
+- Pasting a URL now keeps it as a link instead of failing an image download
+- Hardened large-file handling to keep memory in check when opening big notes
+
 ## [2.8.0] - 2026-04-28
 - Chat panel works in every vault now — no longer limited to LLM Wikis. A vault picker in the chat toolbar makes the active vault explicit for multi-vault users.
 - Smarter chat retrieval finds notes by title and section even when the question doesn't quote the exact words (e.g. "summarize my writing on local-first software" now matches the note literally named that).
