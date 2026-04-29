@@ -20,6 +20,7 @@ struct ClearlyCLI: AsyncParsableCommand {
             UpdateCommand.self,
             VaultsCommand.self,
             IndexCommand.self,
+            StatusCommand.self,
         ]
     )
 }

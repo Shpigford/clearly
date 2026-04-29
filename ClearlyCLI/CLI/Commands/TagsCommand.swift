@@ -17,8 +17,10 @@ struct TagsCommand: AsyncParsableCommand {
         Tags come from both inline #hashtags and YAML frontmatter `tags:`
         entries. The argument must NOT include the leading "#".
 
-        Output shape documented in README.md, section "clearly CLI" →
-        "Tool reference" → get_tags.
+        Output is NDJSON in JSON mode — one record per line, streamed.
+        Wrap with `jq -s '.'` for a single JSON array.
+
+        Full reference: https://clearly.md/cli#tags
 
         EXAMPLES
           # Top 20 tags by count

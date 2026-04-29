@@ -12,8 +12,12 @@ struct SearchCommand: AsyncParsableCommand {
         context excerpts. Output is NDJSON — one hit per line — which
         composes well with jq / xargs.
 
-        Output shape documented in README.md, section "clearly CLI" →
-        "Tool reference" → search_notes.
+        Why NDJSON? Streaming results land on stdout as the index produces
+        them, so callers can pipeline with `head`, `xargs`, or jq without
+        waiting for the full set. If you need a single JSON array instead,
+        wrap the output: `clearly search foo | jq -s '.'`.
+
+        Full reference: https://clearly.md/cli#search
 
         EXAMPLES
           # Basic search

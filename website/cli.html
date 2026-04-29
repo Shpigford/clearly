@@ -1,0 +1,330 @@
+<!DOCTYPE html>
+<html lang="en" style="color-scheme: dark">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="icon" type="image/png" href="/favicon-96x96.png" sizes="96x96">
+    <link rel="shortcut icon" href="/favicon.ico">
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
+    <meta name="apple-mobile-web-app-title" content="Clearly">
+    <link rel="manifest" href="/site.webmanifest">
+
+    <title>Command line — Clearly</title>
+    <meta name="description" content="Reference for the clearly CLI — search, read, list, tag, edit, and serve MCP from your vault, all on disk, no cloud.">
+    <meta property="og:title" content="Command line — Clearly">
+    <meta property="og:description" content="Reference for the clearly CLI — search, read, list, tag, edit, and serve MCP from your vault.">
+    <meta property="og:image" content="https://clearly.md/icon.png">
+    <meta property="og:url" content="https://clearly.md/cli">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="Command line — Clearly">
+    <meta name="twitter:description" content="Reference for the clearly CLI.">
+    <meta name="twitter:image" content="https://clearly.md/icon.png">
+
+    <link rel="preconnect" href="https://rsms.me" crossorigin>
+    <link href="https://rsms.me/inter/inter.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/geist@1.3.1/dist/fonts/geist-mono/style.css" rel="stylesheet">
+
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['InterVariable', 'Inter', 'system-ui', 'sans-serif'],
+                        mono: ['"Geist Mono"', 'ui-monospace', 'monospace'],
+                    },
+                },
+            },
+        }
+    </script>
+    <style>
+        html { scroll-behavior: smooth; }
+        :root { font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11'; }
+        pre { font-feature-settings: normal; }
+    </style>
+</head>
+<body class="bg-[#0a0a0a] text-zinc-300 antialiased overflow-x-hidden">
+
+    <nav class="relative z-20">
+        <div class="max-w-3xl mx-auto px-6 py-4 flex items-center justify-between text-sm">
+            <a href="/" class="flex items-center gap-2 text-white font-medium hover:opacity-80 transition-opacity">
+                <img src="icon.png" alt="" class="size-6 rounded-md">
+                Clearly
+            </a>
+            <div class="flex items-center gap-5 text-zinc-400">
+                <a href="/changelog" class="hover:text-white transition-colors">Changelog</a>
+                <a href="/cli" class="text-white" aria-current="page">Docs</a>
+                <a href="https://github.com/Shpigford/clearly" class="hover:text-white transition-colors">GitHub</a>
+            </div>
+        </div>
+    </nav>
+
+    <main class="relative z-10">
+        <section class="pt-10 pb-6 md:pt-16 md:pb-8">
+            <div class="max-w-3xl mx-auto px-6">
+                <h1 class="text-3xl sm:text-4xl font-medium tracking-tight text-white text-balance">
+                    Command line
+                </h1>
+                <p class="mt-3 text-zinc-400 text-pretty max-w-[60ch]">
+                    Search, read, list, tag, and edit your vault from the terminal. Pipe results into anything. Same SQLite index the app uses, no daemon, no auth, no cloud.
+                </p>
+                <div class="mt-6 flex items-center gap-2 text-sm">
+                    <a href="/cli" class="px-3 py-1.5 rounded-md bg-white/10 text-white" aria-current="page">CLI</a>
+                    <a href="/mcp" class="px-3 py-1.5 rounded-md text-zinc-400 hover:text-white hover:bg-white/5 transition-colors">MCP server</a>
+                </div>
+            </div>
+        </section>
+
+        <section class="pb-10">
+            <div class="max-w-3xl mx-auto px-6">
+                <article class="rounded-xl outline-1 -outline-offset-1 outline-white/10 bg-white/[0.02] p-6 md:p-8">
+                    <h2 class="text-xs font-mono tracking-wide uppercase text-zinc-500 mb-3">Install</h2>
+                    <p class="text-sm text-zinc-400 mb-4">Open Clearly &rarr; Settings &rarr; Command Line &rarr; Install. A symlink lands at <code class="font-mono text-zinc-200">~/.local/bin/clearly</code> &mdash; no sudo, no Homebrew, no second update channel. Add <code class="font-mono text-zinc-200">~/.local/bin</code> to your <code class="font-mono text-zinc-200">PATH</code> if it isn't there:</p>
+                    <pre class="rounded-md bg-black/40 p-4 text-xs font-mono text-zinc-300 overflow-x-auto"><code>export PATH="$HOME/.local/bin:$PATH"</code></pre>
+                    <p class="mt-4 text-sm text-zinc-400">Verify:</p>
+                    <pre class="mt-2 rounded-md bg-black/40 p-4 text-xs font-mono text-zinc-300 overflow-x-auto"><code>clearly status</code></pre>
+                </article>
+            </div>
+        </section>
+
+        <section class="pb-10">
+            <div class="max-w-3xl mx-auto px-6">
+                <article class="rounded-xl outline-1 -outline-offset-1 outline-white/10 bg-white/[0.02] p-6 md:p-8">
+                    <h2 class="text-xs font-mono tracking-wide uppercase text-zinc-500 mb-3">Global flags</h2>
+                    <dl class="space-y-3 text-sm">
+                        <div class="sm:flex sm:gap-3">
+                            <dt class="font-mono text-zinc-200 sm:shrink-0 sm:w-44">--vault &lt;path&gt;</dt>
+                            <dd class="text-zinc-400">Load a specific vault. Repeat to load multiple. Omit to auto-discover every vault Clearly has opened.</dd>
+                        </div>
+                        <div class="sm:flex sm:gap-3">
+                            <dt class="font-mono text-zinc-200 sm:shrink-0 sm:w-44">--format json|text</dt>
+                            <dd class="text-zinc-400">JSON (default) is structured snake_case for machines. Text is loose and tab-separated for humans. Pipelines should stay on JSON.</dd>
+                        </div>
+                        <div class="sm:flex sm:gap-3">
+                            <dt class="font-mono text-zinc-200 sm:shrink-0 sm:w-44">--bundle-id &lt;id&gt;</dt>
+                            <dd class="text-zinc-400">Override the app bundle identifier when running against a Debug build (<code class="font-mono">com.sabotage.clearly.dev</code>).</dd>
+                        </div>
+                    </dl>
+                </article>
+            </div>
+        </section>
+
+        <section class="pb-10">
+            <div class="max-w-3xl mx-auto px-6">
+                <article class="rounded-xl outline-1 -outline-offset-1 outline-white/10 bg-white/[0.02] p-6 md:p-8">
+                    <h2 class="text-xs font-mono tracking-wide uppercase text-zinc-500 mb-3">Commands</h2>
+                    <ul class="grid grid-cols-2 sm:grid-cols-3 gap-x-4 gap-y-1 text-sm font-mono">
+                        <li><a class="text-zinc-300 hover:text-white" href="#mcp">mcp</a></li>
+                        <li><a class="text-zinc-300 hover:text-white" href="#search">search</a></li>
+                        <li><a class="text-zinc-300 hover:text-white" href="#read">read</a></li>
+                        <li><a class="text-zinc-300 hover:text-white" href="#list">list</a></li>
+                        <li><a class="text-zinc-300 hover:text-white" href="#headings">headings</a></li>
+                        <li><a class="text-zinc-300 hover:text-white" href="#frontmatter">frontmatter</a></li>
+                        <li><a class="text-zinc-300 hover:text-white" href="#backlinks">backlinks</a></li>
+                        <li><a class="text-zinc-300 hover:text-white" href="#tags">tags</a></li>
+                        <li><a class="text-zinc-300 hover:text-white" href="#create">create</a></li>
+                        <li><a class="text-zinc-300 hover:text-white" href="#update">update</a></li>
+                        <li><a class="text-zinc-300 hover:text-white" href="#vaults">vaults</a></li>
+                        <li><a class="text-zinc-300 hover:text-white" href="#index">index</a></li>
+                        <li><a class="text-zinc-300 hover:text-white" href="#status">status</a></li>
+                    </ul>
+                </article>
+            </div>
+        </section>
+
+        <section class="pb-10">
+            <div class="max-w-3xl mx-auto px-6 space-y-4">
+
+                <article id="mcp" class="rounded-xl outline-1 -outline-offset-1 outline-white/10 bg-white/[0.02] p-6 md:p-8 scroll-mt-20">
+                    <header class="mb-4 flex items-center gap-3">
+                        <h2 class="text-lg font-medium text-white font-mono">mcp</h2>
+                        <span class="px-2 py-0.5 rounded-full text-xs bg-emerald-500/10 text-emerald-300 ring-1 ring-inset ring-emerald-500/20">read &amp; write</span>
+                    </header>
+                    <p class="text-sm text-zinc-400 mb-3">Start the Model Context Protocol stdio server, or inspect registered tools.</p>
+                    <pre class="rounded-md bg-black/40 p-4 text-xs font-mono text-zinc-300 overflow-x-auto"><code>clearly mcp [serve | tools] [--read-only]</code></pre>
+                    <h3 class="mt-5 text-xs font-mono tracking-wide uppercase text-zinc-500">Subcommands</h3>
+                    <ul class="mt-2 space-y-1 text-sm text-zinc-400">
+                        <li><code class="font-mono text-zinc-200">serve</code> &mdash; start the stdio server. Default. Same as <code class="font-mono text-zinc-200">clearly mcp</code>.</li>
+                        <li><code class="font-mono text-zinc-200">tools</code> &mdash; print every registered tool's name, description, input schema, and output schema as JSON.</li>
+                    </ul>
+                    <h3 class="mt-5 text-xs font-mono tracking-wide uppercase text-zinc-500">Examples</h3>
+                    <pre class="mt-2 rounded-md bg-black/40 p-4 text-xs font-mono text-zinc-300 overflow-x-auto"><code># Typical Claude Desktop config (claude_desktop_config.json)
+"clearly": { "command": "/usr/local/bin/clearly", "args": ["mcp"] }
+
+# List every registered tool
+clearly mcp tools | jq -r '.[].name'
+
+# Inspect the read-only-only set
+clearly mcp tools --read-only</code></pre>
+                </article>
+
+                <article id="search" class="rounded-xl outline-1 -outline-offset-1 outline-white/10 bg-white/[0.02] p-6 md:p-8 scroll-mt-20">
+                    <header class="mb-4 flex items-center gap-3">
+                        <h2 class="text-lg font-medium text-white font-mono">search</h2>
+                        <span class="px-2 py-0.5 rounded-full text-xs bg-blue-500/10 text-blue-300 ring-1 ring-inset ring-blue-500/20">read</span>
+                    </header>
+                    <p class="text-sm text-zinc-400 mb-3">Full-text search across loaded vaults. Streams NDJSON hits &mdash; one per line &mdash; ranked by BM25.</p>
+                    <pre class="rounded-md bg-black/40 p-4 text-xs font-mono text-zinc-300 overflow-x-auto"><code>clearly search &lt;query&gt; [--limit N]</code></pre>
+                    <h3 class="mt-5 text-xs font-mono tracking-wide uppercase text-zinc-500">Output</h3>
+                    <p class="mt-2 text-sm text-zinc-400">One JSON object per line: <code class="font-mono text-zinc-200">{vault, vault_path, relative_path, filename, matches_filename, excerpts:[{line_number, context_line}]}</code>.</p>
+                    <h3 class="mt-5 text-xs font-mono tracking-wide uppercase text-zinc-500">Examples</h3>
+                    <pre class="mt-2 rounded-md bg-black/40 p-4 text-xs font-mono text-zinc-300 overflow-x-auto"><code>clearly search pricing
+clearly search "API design" --limit 5 | head -1 | jq .
+clearly search rust --limit 20 | jq -r '.relative_path'
+
+# Wrap NDJSON into a single array
+clearly search foo | jq -s '.'</code></pre>
+                </article>
+
+                <article id="read" class="rounded-xl outline-1 -outline-offset-1 outline-white/10 bg-white/[0.02] p-6 md:p-8 scroll-mt-20">
+                    <header class="mb-4 flex items-center gap-3">
+                        <h2 class="text-lg font-medium text-white font-mono">read</h2>
+                        <span class="px-2 py-0.5 rounded-full text-xs bg-blue-500/10 text-blue-300 ring-1 ring-inset ring-blue-500/20">read</span>
+                    </header>
+                    <p class="text-sm text-zinc-400 mb-3">Read a note by vault-relative path, with optional line range. Returns content plus content hash, size, modified timestamp, parsed frontmatter, headings, and tags.</p>
+                    <pre class="rounded-md bg-black/40 p-4 text-xs font-mono text-zinc-300 overflow-x-auto"><code>clearly read &lt;path&gt; [--start-line N] [--end-line N] [--in-vault NAME]</code></pre>
+                    <h3 class="mt-5 text-xs font-mono tracking-wide uppercase text-zinc-500">Examples</h3>
+                    <pre class="mt-2 rounded-md bg-black/40 p-4 text-xs font-mono text-zinc-300 overflow-x-auto"><code>clearly read Daily/2026-04-17.md
+clearly read Strategy/pricing.md --start-line 10 --end-line 40
+clearly read Inbox/idea.md --in-vault Work | jq -r '.content'</code></pre>
+                </article>
+
+                <article id="list" class="rounded-xl outline-1 -outline-offset-1 outline-white/10 bg-white/[0.02] p-6 md:p-8 scroll-mt-20">
+                    <header class="mb-4 flex items-center gap-3">
+                        <h2 class="text-lg font-medium text-white font-mono">list</h2>
+                        <span class="px-2 py-0.5 rounded-full text-xs bg-blue-500/10 text-blue-300 ring-1 ring-inset ring-blue-500/20">read</span>
+                    </header>
+                    <p class="text-sm text-zinc-400 mb-3">List notes in loaded vault(s). Walks the filesystem fresh every call &mdash; results always reflect current on-disk state. Streams NDJSON.</p>
+                    <pre class="rounded-md bg-black/40 p-4 text-xs font-mono text-zinc-300 overflow-x-auto"><code>clearly list [--under PREFIX] [--in-vault NAME]</code></pre>
+                    <h3 class="mt-5 text-xs font-mono tracking-wide uppercase text-zinc-500">Examples</h3>
+                    <pre class="mt-2 rounded-md bg-black/40 p-4 text-xs font-mono text-zinc-300 overflow-x-auto"><code>clearly list
+clearly list --under Daily/
+clearly list | jq -r '.vault' | sort | uniq -c
+clearly list --under Projects/ | jq -r '.relative_path' | xargs -I{} clearly headings {}</code></pre>
+                </article>
+
+                <article id="headings" class="rounded-xl outline-1 -outline-offset-1 outline-white/10 bg-white/[0.02] p-6 md:p-8 scroll-mt-20">
+                    <header class="mb-4 flex items-center gap-3">
+                        <h2 class="text-lg font-medium text-white font-mono">headings</h2>
+                        <span class="px-2 py-0.5 rounded-full text-xs bg-blue-500/10 text-blue-300 ring-1 ring-inset ring-blue-500/20">read</span>
+                    </header>
+                    <p class="text-sm text-zinc-400 mb-3">Heading outline (H1&ndash;H6) for a note: level, text, and 1-based line number.</p>
+                    <pre class="rounded-md bg-black/40 p-4 text-xs font-mono text-zinc-300 overflow-x-auto"><code>clearly headings &lt;path&gt; [--in-vault NAME]</code></pre>
+                </article>
+
+                <article id="frontmatter" class="rounded-xl outline-1 -outline-offset-1 outline-white/10 bg-white/[0.02] p-6 md:p-8 scroll-mt-20">
+                    <header class="mb-4 flex items-center gap-3">
+                        <h2 class="text-lg font-medium text-white font-mono">frontmatter</h2>
+                        <span class="px-2 py-0.5 rounded-full text-xs bg-blue-500/10 text-blue-300 ring-1 ring-inset ring-blue-500/20">read</span>
+                    </header>
+                    <p class="text-sm text-zinc-400 mb-3">Parsed YAML frontmatter as a flat key-value map. Empty map when the note has no frontmatter block.</p>
+                    <pre class="rounded-md bg-black/40 p-4 text-xs font-mono text-zinc-300 overflow-x-auto"><code>clearly frontmatter &lt;path&gt; [--in-vault NAME]</code></pre>
+                </article>
+
+                <article id="backlinks" class="rounded-xl outline-1 -outline-offset-1 outline-white/10 bg-white/[0.02] p-6 md:p-8 scroll-mt-20">
+                    <header class="mb-4 flex items-center gap-3">
+                        <h2 class="text-lg font-medium text-white font-mono">backlinks</h2>
+                        <span class="px-2 py-0.5 rounded-full text-xs bg-blue-500/10 text-blue-300 ring-1 ring-inset ring-blue-500/20">read</span>
+                    </header>
+                    <p class="text-sm text-zinc-400 mb-3">Notes that link to a target note via <code class="font-mono text-zinc-200">[[wiki-links]]</code>, plus &ldquo;unlinked mentions&rdquo; &mdash; places the target's filename appears as plain text without being wrapped.</p>
+                    <pre class="rounded-md bg-black/40 p-4 text-xs font-mono text-zinc-300 overflow-x-auto"><code>clearly backlinks &lt;path&gt; [--in-vault NAME]</code></pre>
+                </article>
+
+                <article id="tags" class="rounded-xl outline-1 -outline-offset-1 outline-white/10 bg-white/[0.02] p-6 md:p-8 scroll-mt-20">
+                    <header class="mb-4 flex items-center gap-3">
+                        <h2 class="text-lg font-medium text-white font-mono">tags</h2>
+                        <span class="px-2 py-0.5 rounded-full text-xs bg-blue-500/10 text-blue-300 ring-1 ring-inset ring-blue-500/20">read</span>
+                    </header>
+                    <p class="text-sm text-zinc-400 mb-3">No argument: stream <code class="font-mono text-zinc-200">{tag, count}</code> records across every vault. With a tag argument: stream every note carrying that tag. Tags come from inline <code class="font-mono">#hashtags</code> and YAML frontmatter <code class="font-mono">tags:</code>.</p>
+                    <pre class="rounded-md bg-black/40 p-4 text-xs font-mono text-zinc-300 overflow-x-auto"><code>clearly tags                       # all tags with counts
+clearly tags architecture          # all notes tagged #architecture
+clearly tags | jq -s 'sort_by(-.count) | .[:20]'</code></pre>
+                </article>
+
+                <article id="create" class="rounded-xl outline-1 -outline-offset-1 outline-white/10 bg-white/[0.02] p-6 md:p-8 scroll-mt-20">
+                    <header class="mb-4 flex items-center gap-3">
+                        <h2 class="text-lg font-medium text-white font-mono">create</h2>
+                        <span class="px-2 py-0.5 rounded-full text-xs bg-amber-500/10 text-amber-300 ring-1 ring-inset ring-amber-500/20">write</span>
+                    </header>
+                    <p class="text-sm text-zinc-400 mb-3">Create a new note. Parent directories created automatically. Fails with exit 5 / <code class="font-mono">note_exists</code> if the path is already taken &mdash; use <a href="#update" class="text-zinc-200 hover:text-white">update</a> to modify.</p>
+                    <pre class="rounded-md bg-black/40 p-4 text-xs font-mono text-zinc-300 overflow-x-auto"><code>clearly create &lt;path&gt; (--content STR | --from-stdin) [--in-vault NAME]</code></pre>
+                    <h3 class="mt-5 text-xs font-mono tracking-wide uppercase text-zinc-500">Examples</h3>
+                    <pre class="mt-2 rounded-md bg-black/40 p-4 text-xs font-mono text-zinc-300 overflow-x-auto"><code>clearly create Daily/2026-04-17.md --content "# Today\n\nNotes..."
+cat draft.md | clearly create Inbox/draft.md --from-stdin
+clearly create Notes/idea.md --content "..." --in-vault Work</code></pre>
+                </article>
+
+                <article id="update" class="rounded-xl outline-1 -outline-offset-1 outline-white/10 bg-white/[0.02] p-6 md:p-8 scroll-mt-20">
+                    <header class="mb-4 flex items-center gap-3">
+                        <h2 class="text-lg font-medium text-white font-mono">update</h2>
+                        <span class="px-2 py-0.5 rounded-full text-xs bg-amber-500/10 text-amber-300 ring-1 ring-inset ring-amber-500/20">write</span>
+                    </header>
+                    <p class="text-sm text-zinc-400 mb-3">Update an existing note in one of three modes. <code class="font-mono">replace</code> overwrites the whole file. <code class="font-mono">append</code> adds to the end. <code class="font-mono">prepend</code> inserts after the YAML frontmatter block (or at the top if there is none).</p>
+                    <pre class="rounded-md bg-black/40 p-4 text-xs font-mono text-zinc-300 overflow-x-auto"><code>clearly update &lt;path&gt; --mode replace|append|prepend (--content STR | --from-stdin) [--in-vault NAME]</code></pre>
+                </article>
+
+                <article id="vaults" class="rounded-xl outline-1 -outline-offset-1 outline-white/10 bg-white/[0.02] p-6 md:p-8 scroll-mt-20">
+                    <header class="mb-4 flex items-center gap-3">
+                        <h2 class="text-lg font-medium text-white font-mono">vaults</h2>
+                        <span class="px-2 py-0.5 rounded-full text-xs bg-blue-500/10 text-blue-300 ring-1 ring-inset ring-blue-500/20">read</span>
+                    </header>
+                    <p class="text-sm text-zinc-400 mb-3">List loaded vaults as NDJSON: <code class="font-mono text-zinc-200">{name, path, file_count, last_indexed_at, bundle_id}</code>. Use <a href="#status" class="text-zinc-200 hover:text-white">status</a> for a single-document diagnostic snapshot. Vault add/remove lives in the app &mdash; the CLI subcommands are placeholders that exit 2 and point you to Settings.</p>
+                    <pre class="rounded-md bg-black/40 p-4 text-xs font-mono text-zinc-300 overflow-x-auto"><code>clearly vaults                         # same as `clearly vaults list`
+clearly vaults list --format text      # name<tab>path<tab>file_count</code></pre>
+                </article>
+
+                <article id="index" class="rounded-xl outline-1 -outline-offset-1 outline-white/10 bg-white/[0.02] p-6 md:p-8 scroll-mt-20">
+                    <header class="mb-4 flex items-center gap-3">
+                        <h2 class="text-lg font-medium text-white font-mono">index</h2>
+                        <span class="px-2 py-0.5 rounded-full text-xs bg-amber-500/10 text-amber-300 ring-1 ring-inset ring-amber-500/20">write</span>
+                    </header>
+                    <p class="text-sm text-zinc-400 mb-3">Vault index maintenance. <code class="font-mono">rebuild</code> performs a full filesystem walk and re-hashes every markdown file &mdash; use it after out-of-band file ops or to recover from a corrupted index.</p>
+                    <pre class="rounded-md bg-black/40 p-4 text-xs font-mono text-zinc-300 overflow-x-auto"><code>clearly index                        # same as `clearly index rebuild`
+clearly index rebuild --in-vault Work</code></pre>
+                </article>
+
+                <article id="status" class="rounded-xl outline-1 -outline-offset-1 outline-white/10 bg-white/[0.02] p-6 md:p-8 scroll-mt-20">
+                    <header class="mb-4 flex items-center gap-3">
+                        <h2 class="text-lg font-medium text-white font-mono">status</h2>
+                        <span class="px-2 py-0.5 rounded-full text-xs bg-blue-500/10 text-blue-300 ring-1 ring-inset ring-blue-500/20">read</span>
+                    </header>
+                    <p class="text-sm text-zinc-400 mb-3">One-shot diagnostic snapshot: binary version, configured bundle id, embedding model version, every loaded vault with file count and last-indexed timestamp. Single JSON document &mdash; intended for support tickets and human eyeballing.</p>
+                    <pre class="rounded-md bg-black/40 p-4 text-xs font-mono text-zinc-300 overflow-x-auto"><code>clearly status
+clearly status | jq '.vault_count'
+clearly status --format text</code></pre>
+                </article>
+
+            </div>
+        </section>
+
+        <section class="pb-24">
+            <div class="max-w-3xl mx-auto px-6">
+                <article class="rounded-xl outline-1 -outline-offset-1 outline-white/10 bg-white/[0.02] p-6 md:p-8">
+                    <h2 class="text-xs font-mono tracking-wide uppercase text-zinc-500 mb-3">Exit codes</h2>
+                    <dl class="space-y-2 text-sm">
+                        <div class="flex gap-3"><dt class="font-mono text-zinc-200 w-8">0</dt><dd class="text-zinc-400">Success.</dd></div>
+                        <div class="flex gap-3"><dt class="font-mono text-zinc-200 w-8">1</dt><dd class="text-zinc-400">General error (vault not loadable, internal failure).</dd></div>
+                        <div class="flex gap-3"><dt class="font-mono text-zinc-200 w-8">2</dt><dd class="text-zinc-400">Usage error (bad flags, missing required argument).</dd></div>
+                        <div class="flex gap-3"><dt class="font-mono text-zinc-200 w-8">3</dt><dd class="text-zinc-400">Not found (note doesn't exist, vault filter matches nothing).</dd></div>
+                        <div class="flex gap-3"><dt class="font-mono text-zinc-200 w-8">4</dt><dd class="text-zinc-400">Permission / sandboxing error (path outside vault, traversal attempt).</dd></div>
+                        <div class="flex gap-3"><dt class="font-mono text-zinc-200 w-8">5</dt><dd class="text-zinc-400">Conflict (creating a note that already exists).</dd></div>
+                    </dl>
+                    <p class="mt-4 text-sm text-zinc-400">Errors are written to stderr as JSON: <code class="font-mono text-zinc-200">{error: "&lt;code&gt;", message: "&lt;human&gt;", ...}</code>.</p>
+                </article>
+            </div>
+        </section>
+    </main>
+
+    <footer class="relative z-10 border-t border-white/5">
+        <div class="max-w-3xl mx-auto px-6 py-8 flex flex-wrap items-center gap-4 text-xs text-zinc-600">
+            <a href="/" class="hover:text-zinc-300 transition-colors">Home</a>
+            <a href="/changelog" class="hover:text-zinc-300 transition-colors">Changelog</a>
+            <a href="/cli" class="hover:text-zinc-300 transition-colors">CLI</a>
+            <a href="/mcp" class="hover:text-zinc-300 transition-colors">MCP server</a>
+            <a href="/privacy" class="hover:text-zinc-300 transition-colors">Privacy</a>
+            <a href="https://github.com/Shpigford/clearly" class="hover:text-zinc-300 transition-colors">GitHub</a>
+        </div>
+    </footer>
+
+</body>
+</html>
