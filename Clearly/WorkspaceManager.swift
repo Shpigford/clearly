@@ -1109,14 +1109,18 @@ final class WorkspaceManager {
         return performVaultMove(from: sourceURL, to: destURL, kind: "Moved")
     }
 
-    /// Vault-aware move/rename. When the source falls under a managed
-    /// vault, every inbound `[[wiki-link]]` is rewritten to the new path
-    /// before the file moves, and the SQLite index is updated without
-    /// losing inbound link relationships. Outside any managed vault we
-    /// fall through to a plain `FileManager.moveItem`.
+    /// Vault-aware move/rename. When BOTH source and destination fall
+    /// under the same managed vault, every inbound `[[wiki-link]]` is
+    /// rewritten to the new path before the file moves, and the SQLite
+    /// index is updated without losing inbound link relationships.
+    /// Cross-vault moves and moves outside any managed vault fall
+    /// through to a plain `FileManager.moveItem` — the source vault's
+    /// link graph genuinely shouldn't follow a file that's leaving it,
+    /// and the destination vault's watcher will pick the new file up.
     private func performVaultMove(from url: URL, to newURL: URL, kind: String) -> URL? {
         if let (location, rootURL) = containingLocationAndRoot(for: url),
-           let index = vaultIndexes[location.id] {
+           let index = vaultIndexes[location.id],
+           isURL(newURL, under: rootURL) {
             let oldRelative = VaultIndex.relativePath(of: url, from: rootURL)
             let newRelative = VaultIndex.relativePath(of: newURL, from: rootURL)
             do {
@@ -1148,6 +1152,12 @@ final class WorkspaceManager {
             DiagnosticLog.log("Failed to \(kind.lowercased()): \(error.localizedDescription)")
             return nil
         }
+    }
+
+    private func isURL(_ url: URL, under root: URL) -> Bool {
+        let urlPath = url.standardizedFileURL.path
+        let rootPath = root.standardizedFileURL.path
+        return urlPath == rootPath || urlPath.hasPrefix(rootPath + "/")
     }
 
     // MARK: - Sidebar drop handling

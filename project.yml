@@ -217,6 +217,11 @@ targets:
         SWIFT_STRICT_CONCURRENCY: minimal
         ENABLE_HARDENED_RUNTIME: YES
         SKIP_INSTALL: YES
+        # Embed an Info.plist via -sectcreate so `Bundle.main` exposes
+        # CFBundleShortVersionString — `clearly status` reads it for the
+        # binary_version diagnostic.
+        GENERATE_INFOPLIST_FILE: YES
+        CREATE_INFOPLIST_SECTION_IN_BINARY: YES
       configs:
         Release:
           CODE_SIGN_STYLE: Manual

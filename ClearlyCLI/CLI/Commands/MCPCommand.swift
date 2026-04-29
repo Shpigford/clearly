@@ -117,7 +117,17 @@ struct MCPToolsCommand: AsyncParsableCommand {
 
         switch globals.format {
         case .json:
-            try Emitter.emit(tools, format: .json)
+            // MCP's wire format uses camelCase keys (`inputSchema`,
+            // `outputSchema`, `readOnlyHint`, …) so the dump matches what
+            // a client sees over JSON-RPC. The shared Emitter helper
+            // converts to snake_case for our own structured output, which
+            // would silently rename these keys and confuse anyone
+            // comparing against the spec.
+            let encoder = JSONEncoder()
+            encoder.outputFormatting = [.sortedKeys]
+            let data = try encoder.encode(tools)
+            FileHandle.standardOutput.write(data)
+            FileHandle.standardOutput.write(Data("\n".utf8))
         case .text:
             for tool in tools {
                 Emitter.emitLine(tool.name)
