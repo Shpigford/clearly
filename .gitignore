@@ -10,3 +10,4 @@ build/
 .context/
 __pycache__/
 ClearlyLiveEditorWeb/node_modules/
+Packages/ClearlyCore/Package.resolved

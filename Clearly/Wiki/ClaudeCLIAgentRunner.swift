@@ -1,4 +1,5 @@
 import Foundation
+import os
 import ClearlyCore
 
 /// Spawns the user's locally-installed `claude` CLI to answer a prompt. This
@@ -10,7 +11,7 @@ import ClearlyCore
 ///   claude --print --output-format json
 ///       --tools "<built-in subset>"
 ///       --no-session-persistence
-///       --exclude-dynamic-system-prompt-sections
+///       [--exclude-dynamic-system-prompt-sections]   // only if claude >= 2.1.98 (issue #289)
 ///       [--model <alias>]
 ///
 /// `--tools` REPLACES the built-in tool set (`""` disables all built-ins; `"Read,Grep,Glob"`
@@ -46,7 +47,12 @@ struct ClaudeCLIAgentRunner: AgentRunner {
     }
 
     func run(prompt: String, model: String?) async throws -> AgentResult {
-        let arguments = Self.buildArguments(model: model, tools: enabledTools)
+        let supportsExcludeDynamic = await Self.supportsExcludeDynamicFlag(binaryURL: binaryURL)
+        let arguments = Self.buildArguments(
+            model: model,
+            tools: enabledTools,
+            includeExcludeDynamicFlag: supportsExcludeDynamic
+        )
         let (stdoutData, stderrText, status) = try await spawn(prompt: prompt, arguments: arguments)
 
         DiagnosticLog.log("claude RUN: status=\(status) promptLen=\(prompt.count) stdoutLen=\(stdoutData.count) stderrLen=\(stderrText.count)")
@@ -61,23 +67,129 @@ struct ClaudeCLIAgentRunner: AgentRunner {
 
     // MARK: - Argument layout
 
-    static func buildArguments(model: String?, tools: String) -> [String] {
+    static func buildArguments(
+        model: String?,
+        tools: String,
+        includeExcludeDynamicFlag: Bool
+    ) -> [String] {
         var args: [String] = [
             "--print",
             "--output-format", "json",
             "--tools", tools,
             "--no-session-persistence",
+        ]
+        if includeExcludeDynamicFlag {
             // Critical for cache reuse: moves cwd / git / env sections out of
             // the system prompt into the first user message. Without this,
             // every invocation gets a slightly different system prompt (e.g.
             // a file touched by FSEvents changes `git status` output) and
             // the ~95K prompt-cache entry gets invalidated on every call.
-            "--exclude-dynamic-system-prompt-sections",
-        ]
+            // Added in @anthropic-ai/claude-code 2.1.98 — gated by
+            // `supportsExcludeDynamicFlag(binaryURL:)` so older CLIs don't
+            // bail with "unknown option" (issue #289).
+            args.append("--exclude-dynamic-system-prompt-sections")
+        }
         if let model, !model.isEmpty {
             args.append(contentsOf: ["--model", model])
         }
         return args
+    }
+
+    // MARK: - Version probing
+
+    /// `OSAllocatedUnfairLock` (rather than `NSLock`) so the lock is safe to
+    /// acquire from async contexts — `NSLock.lock()` is flagged unavailable
+    /// from async functions (warning today, error in Swift 6 language mode).
+    private static let versionCache = OSAllocatedUnfairLock<[String: Bool]>(initialState: [:])
+
+    /// True if the `claude` CLI at `binaryURL` recognises
+    /// `--exclude-dynamic-system-prompt-sections`. The flag landed in
+    /// `@anthropic-ai/claude-code@2.1.98`; older builds reject the unknown
+    /// option and exit status 1, breaking Wiki Chat + Capture (issue #289).
+    /// Result is cached per absolute path for the lifetime of the process —
+    /// the probe runs at most once per binary path per app launch.
+    ///
+    /// Async because the underlying `Process.waitUntilExit()` would otherwise
+    /// block the MainActor (the chat / capture entry points run in
+    /// `Task { @MainActor in ... }` contexts) for ~50–150ms on first call.
+    /// The dispatch hop suspends the cooperative thread instead.
+    static func supportsExcludeDynamicFlag(binaryURL: URL) async -> Bool {
+        let key = binaryURL.path
+        if let cached = versionCache.withLock({ $0[key] }) {
+            return cached
+        }
+        let supported: Bool = await withCheckedContinuation { continuation in
+            DispatchQueue.global(qos: .userInitiated).async {
+                continuation.resume(returning: probeSupportsExcludeDynamicFlag(at: binaryURL))
+            }
+        }
+        versionCache.withLock { $0[key] = supported }
+        return supported
+    }
+
+    /// Spawns `claude --version` synchronously and parses the output.
+    /// Mirrors the lightweight pattern in `AgentDiscovery.lookupOnPath`.
+    /// On any error / non-zero exit / unparseable output, returns `false`
+    /// — safer to drop the optimisation than to risk re-introducing the
+    /// "unknown option" error from a malformed version string.
+    private static func probeSupportsExcludeDynamicFlag(at binaryURL: URL) -> Bool {
+        let process = Process()
+        process.executableURL = binaryURL
+        process.arguments = ["--version"]
+        process.environment = environmentForSubprocess(
+            base: ProcessInfo.processInfo.environment,
+            currentDirectory: nil,
+            binaryURL: binaryURL
+        )
+        let stdoutPipe = Pipe()
+        process.standardOutput = stdoutPipe
+        process.standardError = Pipe()
+        do {
+            try process.run()
+            process.waitUntilExit()
+        } catch {
+            return false
+        }
+        guard process.terminationStatus == 0 else { return false }
+        let data = stdoutPipe.fileHandleForReading.readDataToEndOfFile()
+        guard let text = String(data: data, encoding: .utf8),
+              let version = parseClaudeVersion(text)
+        else { return false }
+        return isAtLeast(version: version, major: 2, minor: 1, patch: 98)
+    }
+
+    /// Parses the leading semver from `claude --version` output, e.g.
+    /// `"2.1.122 (Claude Code)\n"` → `(2, 1, 122)`. Tolerates trailing
+    /// non-digit suffixes on the patch component (`"2.1.98-beta"` → 98).
+    /// Returns nil on any parse failure; caller treats nil as "unsupported".
+    static func parseClaudeVersion(_ stdout: String) -> (Int, Int, Int)? {
+        let firstToken = stdout
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .split(whereSeparator: { $0.isWhitespace })
+            .first
+            .map(String.init) ?? ""
+        let parts = firstToken.split(separator: ".")
+        guard parts.count >= 3,
+              let major = Int(parts[0]),
+              let minor = Int(parts[1])
+        else { return nil }
+        let patchDigits = String(parts[2]).prefix { $0.isASCII && $0.isNumber }
+        guard !patchDigits.isEmpty, let patch = Int(patchDigits) else { return nil }
+        return (major, minor, patch)
+    }
+
+    /// Numeric tuple comparison. Don't string-compare semvers — `"2.1.100"`
+    /// sorts *before* `"2.1.98"` lexicographically, which would silently
+    /// misclassify the latest CLIs as too old.
+    private static func isAtLeast(
+        version v: (Int, Int, Int),
+        major: Int,
+        minor: Int,
+        patch: Int
+    ) -> Bool {
+        if v.0 != major { return v.0 > major }
+        if v.1 != minor { return v.1 > minor }
+        return v.2 >= patch
     }
 
     // MARK: - Process plumbing
