@@ -98,7 +98,8 @@ struct CodexCLIAgentRunner: AgentRunner {
             // env can point CLI auth lookups at the wrong home.
             process.environment = ClaudeCLIAgentRunner.environmentForSubprocess(
                 base: environment,
-                currentDirectory: process.currentDirectoryURL
+                currentDirectory: process.currentDirectoryURL,
+                binaryURL: binaryURL
             )
 
             let stdin = Pipe()
