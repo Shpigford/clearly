@@ -115,6 +115,7 @@ struct LiveEditorView: NSViewRepresentable {
         private var lastKnownDocumentID: UUID?
         private var lastThemeSignature = ""
         private var lastFindQuery = ""
+        private var lastFindSignature = ""
         private var lastFindVisibility = false
         private var findCancellables = Set<AnyCancellable>()
         /// Local event monitor that intercepts Cmd+V and routes it through
@@ -207,6 +208,16 @@ struct LiveEditorView: NSViewRepresentable {
                 findState.editorNavigateToPrevious = { [weak self] in
                     self?.call(function: "applyCommand", payload: ["command": "findPrevious"])
                 }
+                findState.editorPerformReplace = { [weak self, weak findState] in
+                    guard let self, let findState else { return }
+                    self.syncFindState(findState, force: true)
+                    self.call(function: "applyCommand", payload: ["command": "replaceCurrent"])
+                }
+                findState.editorPerformReplaceAll = { [weak self, weak findState] in
+                    guard let self, let findState else { return }
+                    self.syncFindState(findState, force: true)
+                    self.call(function: "applyCommand", payload: ["command": "replaceAll"])
+                }
             }
 
             outlineState?.scrollToRange = { [weak self] range in
@@ -247,19 +258,40 @@ struct LiveEditorView: NSViewRepresentable {
             }
 
             if parent.findState?.isVisible == true {
-                let query = parent.findState?.query ?? ""
-                if query != lastFindQuery || !lastFindVisibility {
-                    lastFindQuery = query
-                    lastFindVisibility = true
-                    call(function: "setFindQuery", payload: ["query": query])
+                if let findState = parent.findState {
+                    if !lastFindVisibility {
+                        lastFindVisibility = true
+                    }
+                    syncFindState(findState)
                 }
             } else {
                 if lastFindVisibility || !lastFindQuery.isEmpty {
                     lastFindQuery = ""
+                    lastFindSignature = ""
                     lastFindVisibility = false
                     call(function: "setFindQuery", payload: ["query": ""])
                 }
             }
+        }
+
+        private func syncFindState(_ state: FindState, force: Bool = false) {
+            let query = state.isVisible && state.activeMode == .edit ? state.query : ""
+            let signature = [
+                query,
+                state.replacementText,
+                state.caseSensitive ? "1" : "0",
+                state.useRegex ? "1" : "0"
+            ].joined(separator: "\u{1f}")
+            guard force || signature != lastFindSignature else { return }
+            lastFindQuery = query
+            lastFindSignature = signature
+            call(function: "setFindQuery", payload: [
+                "query": query,
+                "replacement": state.replacementText,
+                "caseSensitive": state.caseSensitive,
+                "wholeWord": false,
+                "useRegex": state.useRegex
+            ])
         }
 
         func observeFindState(_ state: FindState) {
@@ -267,24 +299,43 @@ struct LiveEditorView: NSViewRepresentable {
 
             state.$query
                 .removeDuplicates()
-                .sink { [weak self] query in
-                    guard let self,
-                          state.isVisible,
-                          state.activeMode == .edit else { return }
-                    self.lastFindQuery = query
-                    self.call(function: "setFindQuery", payload: ["query": query])
+                .sink { [weak self, weak state] _ in
+                    DispatchQueue.main.async {
+                        guard let self, let state, state.isVisible, state.activeMode == .edit else { return }
+                        self.syncFindState(state)
+                    }
                 }
                 .store(in: &findCancellables)
 
             state.$isVisible
                 .removeDuplicates()
-                .sink { [weak self] visible in
-                    guard let self else { return }
-                    self.lastFindVisibility = visible
-                    (self.webView as? LiveEditorWebView)?.allowsDOMFocusForwarding = !visible
-                    let query = visible && state.activeMode == .edit ? state.query : ""
-                    self.lastFindQuery = query
-                    self.call(function: "setFindQuery", payload: ["query": query])
+                .sink { [weak self, weak state] visible in
+                    DispatchQueue.main.async {
+                        guard let self, let state else { return }
+                        self.lastFindVisibility = visible
+                        (self.webView as? LiveEditorWebView)?.allowsDOMFocusForwarding = !visible
+                        self.syncFindState(state, force: true)
+                    }
+                }
+                .store(in: &findCancellables)
+
+            Publishers.CombineLatest(state.$caseSensitive, state.$useRegex)
+                .dropFirst()
+                .sink { [weak self, weak state] _, _ in
+                    DispatchQueue.main.async {
+                        guard let self, let state, state.isVisible, state.activeMode == .edit else { return }
+                        self.syncFindState(state)
+                    }
+                }
+                .store(in: &findCancellables)
+
+            state.$replacementText
+                .removeDuplicates()
+                .sink { [weak self, weak state] _ in
+                    DispatchQueue.main.async {
+                        guard let self, let state, state.isVisible, state.activeMode == .edit else { return }
+                        self.syncFindState(state)
+                    }
                 }
                 .store(in: &findCancellables)
         }
@@ -425,11 +476,26 @@ struct LiveEditorView: NSViewRepresentable {
                 guard LiveEditorSession.matches(documentID: parent.documentID),
                       let matchCount = body["matchCount"] as? Int,
                       let currentIndex = body["currentIndex"] as? Int else { return }
+                let regexError = body["regexError"] as? String
                 DispatchQueue.main.async {
                     guard self.parent.findState?.activeMode == .edit || self.parent.findState?.isVisible == false else { return }
                     self.parent.findState?.matchCount = matchCount
                     self.parent.findState?.currentIndex = currentIndex
                     self.parent.findState?.resultsAreStale = false
+                    self.parent.findState?.regexError = regexError
+                    self.parent.findState?.lastReplaceCount = nil
+                }
+
+            case "replaceStatus":
+                guard LiveEditorSession.matches(documentID: parent.documentID),
+                      let replaceCount = body["replaceCount"] as? Int else { return }
+                DispatchQueue.main.async {
+                    guard self.parent.findState?.activeMode == .edit else { return }
+                    self.parent.findState?.lastReplaceCount = replaceCount
+                }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) { [weak self] in
+                    guard let self, self.parent.findState?.lastReplaceCount == replaceCount else { return }
+                    self.parent.findState?.lastReplaceCount = nil
                 }
 
             case "openLink":

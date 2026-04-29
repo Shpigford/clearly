@@ -66,7 +66,9 @@ struct EditorView_iOS: UIViewRepresentable {
         private weak var attachedFindState: FindState?
         private var lastFindQuery: String = ""
         private var lastFindVisible: Bool = false
+        private var lastFindOptions: TextMatchOptions = TextMatchOptions()
         private var matchRanges: [NSRange] = []
+        private var lastMatches: [TextMatch] = []
         private var currentMatchIdx: Int = 0
 
         init(parent: EditorView_iOS) {
@@ -93,6 +95,8 @@ struct EditorView_iOS: UIViewRepresentable {
                 attachedFindState = state
                 state?.editorNavigateToNext = { [weak self] in self?.navigateToNextMatch() }
                 state?.editorNavigateToPrevious = { [weak self] in self?.navigateToPreviousMatch() }
+                state?.editorPerformReplace = { [weak self] in self?.performReplaceCurrent() }
+                state?.editorPerformReplaceAll = { [weak self] in self?.performReplaceAll() }
             }
             guard let state else {
                 if lastFindVisible {
@@ -110,31 +114,71 @@ struct EditorView_iOS: UIViewRepresentable {
                 lastFindQuery = ""
                 return
             }
-            if !lastFindVisible || state.query != lastFindQuery {
+            let currentOptions = TextMatchOptions(
+                caseSensitive: state.caseSensitive,
+                useRegex: state.useRegex
+            )
+            if !lastFindVisible || state.query != lastFindQuery || currentOptions != lastFindOptions {
                 lastFindVisible = true
                 lastFindQuery = state.query
+                lastFindOptions = currentOptions
                 performFind(for: state)
             }
         }
 
         private func performFind(for state: FindState) {
             guard let textView else { return }
-            let ranges = TextMatcher.ranges(of: state.query, in: textView.text ?? "")
-            matchRanges = ranges
-            currentMatchIdx = 0
+            guard recomputeMatches(for: state) else { return }
             applyFindHighlights()
-
-            DispatchQueue.main.async { [weak self, weak state] in
-                guard let state, state.activeMode == .edit else { return }
-                state.matchCount = ranges.count
-                state.currentIndex = ranges.isEmpty ? 0 : 1
-                state.resultsAreStale = false
-                _ = self
-            }
-
-            if let first = ranges.first {
+            if let first = matchRanges.first {
                 textView.scrollRangeToVisible(first)
             }
+        }
+
+        /// Recomputes matches without painting highlights or scrolling.
+        /// Returns false on empty/error so the caller can short-circuit.
+        @discardableResult
+        private func recomputeMatches(for state: FindState) -> Bool {
+            guard let textView else { return false }
+            let options = TextMatchOptions(
+                caseSensitive: state.caseSensitive,
+                useRegex: state.useRegex
+            )
+
+            let matches: [TextMatch]
+            do {
+                matches = try TextMatcher.matches(of: state.query, in: textView.text ?? "", options: options)
+            } catch let TextMatcherError.invalidRegex(message) {
+                matchRanges = []
+                lastMatches = []
+                currentMatchIdx = 0
+                clearFindHighlights()
+                DispatchQueue.main.async { [weak state] in
+                    guard let state, state.activeMode == .edit else { return }
+                    state.matchCount = 0
+                    state.currentIndex = 0
+                    state.resultsAreStale = false
+                    state.regexError = message
+                    state.lastReplaceCount = nil
+                }
+                return false
+            } catch {
+                matches = []
+            }
+
+            matchRanges = matches.map(\.range)
+            lastMatches = matches
+            currentMatchIdx = 0
+
+            DispatchQueue.main.async { [weak state] in
+                guard let state, state.activeMode == .edit else { return }
+                state.matchCount = matches.count
+                state.currentIndex = matches.isEmpty ? 0 : 1
+                state.resultsAreStale = false
+                state.regexError = nil
+                state.lastReplaceCount = nil
+            }
+            return true
         }
 
         private func navigateToNextMatch() {
@@ -180,7 +224,7 @@ struct EditorView_iOS: UIViewRepresentable {
         private func applyFindHighlights() {
             guard let textView else { return }
             let storage = textView.textStorage
-            rerunSyntaxHighlighter(on: storage)
+            resetBackgroundsThenRehighlight(storage: storage)
             storage.beginEditing()
             for (i, range) in matchRanges.enumerated() {
                 guard range.upperBound <= storage.length else { continue }
@@ -192,9 +236,119 @@ struct EditorView_iOS: UIViewRepresentable {
 
         private func clearFindHighlights() {
             guard let textView else { return }
-            rerunSyntaxHighlighter(on: textView.textStorage)
+            resetBackgroundsThenRehighlight(storage: textView.textStorage)
             matchRanges = []
+            lastMatches = []
             currentMatchIdx = 0
+        }
+
+        /// Wipe every `.backgroundColor` attribute, then re-run the syntax
+        /// highlighter so `==highlight==` markdown backgrounds get repainted.
+        /// Without the explicit wipe, find paints from previous queries (e.g.
+        /// the partial matches on each keystroke) stay attached to text storage
+        /// since the highlighter only adds attributes, never clears them.
+        private func resetBackgroundsThenRehighlight(storage: NSTextStorage) {
+            let fullRange = NSRange(location: 0, length: storage.length)
+            storage.beginEditing()
+            storage.removeAttribute(.backgroundColor, range: fullRange)
+            storage.endEditing()
+            rerunSyntaxHighlighter(on: storage)
+        }
+
+        // MARK: - Replace
+
+        private func performReplaceCurrent() {
+            guard let textView, let state = attachedFindState,
+                  !lastMatches.isEmpty,
+                  currentMatchIdx < lastMatches.count else { return }
+            let match = lastMatches[currentMatchIdx]
+            let oldText = textView.text ?? ""
+            let nsText = oldText as NSString
+            guard match.range.upperBound <= nsText.length else { return }
+            let replacement = ReplaceEngine.substitution(for: match,
+                                                         in: oldText,
+                                                         template: state.replacementText,
+                                                         isRegex: state.useRegex)
+            let resumeLocation = match.range.location + (replacement as NSString).length
+            applyTextReplacement(in: textView, fullOldText: oldText,
+                                 replaceRange: match.range,
+                                 replacement: replacement,
+                                 actionName: "Replace")
+            // Silent rescan against the now-updated text, then highlight + scroll
+            // to the first remaining match at-or-after the replacement end. Skips
+            // any match the replacement string itself may have introduced and
+            // avoids the double-paint that calling performFind would cause.
+            recomputeMatches(for: state)
+            guard !lastMatches.isEmpty else { return }
+            currentMatchIdx = lastMatches.firstIndex(where: { $0.range.location >= resumeLocation }) ?? 0
+            applyFindHighlights()
+            textView.scrollRangeToVisible(matchRanges[currentMatchIdx])
+            let idx = currentMatchIdx
+            DispatchQueue.main.async { [weak state] in
+                guard let state, state.activeMode == .edit else { return }
+                state.currentIndex = idx + 1
+            }
+        }
+
+        private func performReplaceAll() {
+            guard let textView, let state = attachedFindState, !lastMatches.isEmpty else { return }
+            let oldText = textView.text ?? ""
+            let nsOldText = oldText as NSString
+            let newText = ReplaceEngine.applyAll(matches: lastMatches,
+                                                 in: oldText,
+                                                 template: state.replacementText,
+                                                 isRegex: state.useRegex)
+            let fullRange = NSRange(location: 0, length: nsOldText.length)
+            let replaceCount = lastMatches.count
+            applyTextReplacement(in: textView, fullOldText: oldText,
+                                 replaceRange: fullRange,
+                                 replacement: newText,
+                                 actionName: "Replace All")
+            DispatchQueue.main.async { [weak state] in
+                state?.lastReplaceCount = replaceCount
+            }
+            // Clear the "Replaced N" label after a beat so it doesn't linger.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) { [weak state] in
+                if state?.lastReplaceCount == replaceCount {
+                    state?.lastReplaceCount = nil
+                }
+            }
+        }
+
+        /// Apply a programmatic edit that's reversible via UndoManager.
+        /// Single full-text replace produces one undo step and one
+        /// `textViewDidChange` pass that runs the highlighter end-to-end.
+        /// The textViewDidChange callback bumps `pendingBindingUpdates` itself,
+        /// so this method doesn't need to touch that counter.
+        private func applyTextReplacement(in textView: ClearlyUITextView,
+                                          fullOldText: String,
+                                          replaceRange: NSRange,
+                                          replacement: String,
+                                          actionName: String) {
+            let nsOld = fullOldText as NSString
+            let newText = nsOld.replacingCharacters(in: replaceRange, with: replacement)
+            let undoManager = textView.undoManager
+            undoManager?.beginUndoGrouping()
+            undoManager?.registerUndo(withTarget: textView) { [weak self] tv in
+                self?.applyUndoneText(in: tv, restoredText: fullOldText)
+            }
+            undoManager?.setActionName(actionName)
+            textView.text = newText
+            textView.delegate?.textViewDidChange?(textView)
+            undoManager?.endUndoGrouping()
+        }
+
+        /// Inverse of `applyTextReplacement` — restores the prior text and
+        /// re-registers the redo so the next ⌘⇧Z plays the change back.
+        private func applyUndoneText(in textView: UITextView, restoredText: String) {
+            guard let ctv = textView as? ClearlyUITextView else { return }
+            let currentText = ctv.text ?? ""
+            let undoManager = ctv.undoManager
+            undoManager?.registerUndo(withTarget: ctv) { [weak self] tv in
+                self?.applyUndoneText(in: tv, restoredText: currentText)
+            }
+            ctv.text = restoredText
+            ctv.delegate?.textViewDidChange?(ctv)
         }
 
         private func rerunSyntaxHighlighter(on storage: NSTextStorage) {
@@ -233,8 +387,9 @@ struct EditorView_iOS: UIViewRepresentable {
             lastAppliedText = newText
 
             // External text replacement (file load/revert) — old match ranges are stale.
-            if !matchRanges.isEmpty {
+            if !matchRanges.isEmpty || !lastMatches.isEmpty {
                 matchRanges = []
+                lastMatches = []
                 currentMatchIdx = 0
                 if let state = attachedFindState, state.isVisible, state.activeMode == .edit {
                     DispatchQueue.main.async { [weak state] in
