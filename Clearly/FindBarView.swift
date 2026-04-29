@@ -23,7 +23,7 @@ struct FindBarView: View {
                 )
                 .frame(minWidth: 120)
 
-                if !findState.query.isEmpty {
+                if !findState.query.isEmpty && !findState.resultsAreStale {
                     if findState.matchCount > 0 {
                         Text("\(findState.currentIndex) of \(findState.matchCount)")
                             .font(.system(size: 11, weight: .medium))
@@ -49,10 +49,10 @@ struct FindBarView: View {
             )
 
             HStack(spacing: 2) {
-                FindNavButton(icon: "chevron.left", disabled: findState.matchCount == 0) {
+                FindNavButton(icon: "chevron.left", disabled: !findState.canNavigate) {
                     findState.navigateToPrevious?()
                 }
-                FindNavButton(icon: "chevron.right", disabled: findState.matchCount == 0) {
+                FindNavButton(icon: "chevron.right", disabled: !findState.canNavigate) {
                     findState.navigateToNext?()
                 }
             }

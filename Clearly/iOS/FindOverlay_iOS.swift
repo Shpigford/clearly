@@ -23,7 +23,7 @@ struct FindOverlay_iOS: View {
                     .focused($isFieldFocused)
                     .onSubmit { findState.navigateToNext?() }
 
-                if !findState.query.isEmpty {
+                if !findState.query.isEmpty && !findState.resultsAreStale {
                     if findState.matchCount > 0 {
                         Text("\(findState.currentIndex) of \(findState.matchCount)")
                             .font(Theme.Typography.findCount)
@@ -62,10 +62,10 @@ struct FindOverlay_iOS: View {
             )
 
             HStack(spacing: 2) {
-                FindNavButton_iOS(icon: "chevron.up", disabled: findState.matchCount == 0) {
+                FindNavButton_iOS(icon: "chevron.up", disabled: !findState.canNavigate) {
                     findState.navigateToPrevious?()
                 }
-                FindNavButton_iOS(icon: "chevron.down", disabled: findState.matchCount == 0) {
+                FindNavButton_iOS(icon: "chevron.down", disabled: !findState.canNavigate) {
                     findState.navigateToNext?()
                 }
             }

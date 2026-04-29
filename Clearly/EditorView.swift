@@ -313,7 +313,6 @@ struct EditorView: NSViewRepresentable {
             context.coordinator.isHighlightingInProgress = true
             context.coordinator.highlighter?.highlightAll(textView.textStorage!, caller: "appearance")
             context.coordinator.isHighlightingInProgress = false
-            context.coordinator.restoreFindHighlightsIfNeeded()
 
             // Refresh ruler when appearance/font changes
             context.coordinator.gutterView?.appearanceDidChange()
@@ -334,7 +333,16 @@ struct EditorView: NSViewRepresentable {
             context.coordinator.isHighlightingInProgress = true
             context.coordinator.highlighter?.highlightAll(textView.textStorage!, caller: "externalText")
             context.coordinator.isHighlightingInProgress = false
-            context.coordinator.restoreFindHighlightsIfNeeded()
+            // External text replacement (file load/revert) — old match ranges are stale.
+            context.coordinator.clearFindHighlights()
+            if let findState = context.coordinator.findState, findState.isVisible, findState.activeMode == .edit {
+                DispatchQueue.main.async { [weak findState] in
+                    guard let findState, findState.activeMode == .edit else { return }
+                    findState.matchCount = 0
+                    findState.currentIndex = 0
+                    findState.resultsAreStale = true
+                }
+            }
             context.coordinator.gutterView?.textDidChange()
             context.coordinator.gutterView?.selectionDidChange(selectedRange: textView.selectedRange())
             context.coordinator.isUpdating = false
@@ -521,12 +529,15 @@ struct EditorView: NSViewRepresentable {
 
             state.$query
                 .removeDuplicates()
-                .sink { [weak self] _ in
+                .sink { [weak self] newQuery in
                     guard let self,
                           let findState = self.findState,
                           findState.isVisible,
                           findState.activeMode == .edit else { return }
-                    self.performFind()
+                    // `@Published` fires in willSet — `findState.query` still
+                    // reads the OLD value here. Pass `newQuery` explicitly so
+                    // performFind doesn't run a keystroke behind.
+                    self.performFind(query: newQuery)
                 }
                 .store(in: &findCancellables)
 
@@ -602,7 +613,6 @@ struct EditorView: NSViewRepresentable {
                         sv.reflectScrolledClipView(sv.contentView)
                     }
                     self.invalidateVisibleRegion(of: textView)
-                    self.restoreFindHighlightsIfNeeded()
                 }
                 pendingFullHighlightWork = work
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.3, execute: work)
@@ -619,8 +629,18 @@ struct EditorView: NSViewRepresentable {
             // the visible rect so large documents don't repaint end-to-end.
             invalidateVisibleRegion(of: textView)
 
-            // Re-apply find highlights after syntax highlighting
-            restoreFindHighlightsIfNeeded()
+            // Clear on edit; user retypes the query to refresh (#264).
+            if let findState, findState.isVisible, !matchRanges.isEmpty {
+                clearFindHighlights()
+                if findState.activeMode == .edit {
+                    DispatchQueue.main.async { [weak findState] in
+                        guard let findState, findState.activeMode == .edit else { return }
+                        findState.matchCount = 0
+                        findState.currentIndex = 0
+                        findState.resultsAreStale = true
+                    }
+                }
+            }
 
             // Update line number ruler
             gutterView?.textDidChange()
@@ -763,17 +783,9 @@ struct EditorView: NSViewRepresentable {
 
         // MARK: - Find
 
-        func restoreFindHighlightsIfNeeded() {
-            guard findState?.isVisible == true, !(findState?.query.isEmpty ?? true) else { return }
-            // Re-apply cached highlight colors without re-running the full find
-            // (which would scroll to the first match on every keystroke).
-            guard !matchRanges.isEmpty else { return }
-            applyFindHighlights()
-        }
-
-        func performFind() {
+        func performFind(query overrideQuery: String? = nil) {
             guard let textView, let findState else { return }
-            let query = findState.query
+            let query = overrideQuery ?? findState.query
             clearFindHighlights()
 
             guard !query.isEmpty else {
@@ -785,6 +797,7 @@ struct EditorView: NSViewRepresentable {
                           findState.activeMode == .edit else { return }
                     findState.matchCount = 0
                     findState.currentIndex = 0
+                    findState.resultsAreStale = false
                 }
                 return
             }
@@ -801,6 +814,7 @@ struct EditorView: NSViewRepresentable {
                       findState.activeMode == .edit else { return }
                 findState.matchCount = ranges.count
                 findState.currentIndex = ranges.isEmpty ? 0 : 1
+                findState.resultsAreStale = false
             }
 
             if !ranges.isEmpty {
@@ -809,6 +823,12 @@ struct EditorView: NSViewRepresentable {
         }
 
         func navigateToNextMatch() {
+            // After clear-on-edit, matchRanges is empty but the user's query is
+            // still in the find bar — treat ⌘G / Find Next as a re-run trigger.
+            if matchRanges.isEmpty, let findState, !findState.query.isEmpty {
+                performFind()
+                return
+            }
             guard !matchRanges.isEmpty else { return }
             currentMatchIdx = (currentMatchIdx + 1) % matchRanges.count
             applyFindHighlights()
@@ -822,6 +842,10 @@ struct EditorView: NSViewRepresentable {
         }
 
         func navigateToPreviousMatch() {
+            if matchRanges.isEmpty, let findState, !findState.query.isEmpty {
+                performFind()
+                return
+            }
             guard !matchRanges.isEmpty else { return }
             currentMatchIdx = (currentMatchIdx - 1 + matchRanges.count) % matchRanges.count
             applyFindHighlights()
@@ -834,31 +858,27 @@ struct EditorView: NSViewRepresentable {
             }
         }
 
+        // Find highlights live on the layout manager via temporary attributes,
+        // not on text storage. This is Apple's recommended pattern for
+        // transient UI highlighting and means find painting never overwrites
+        // `==highlight==` markdown backgrounds (which DO live on storage).
         private func applyFindHighlights() {
-            guard let textView else { return }
+            guard let textView, let layoutManager = textView.layoutManager else { return }
             let storage = textView.textStorage!
-
-            // Clear existing find highlights first
             let fullRange = NSRange(location: 0, length: storage.length)
-            storage.beginEditing()
-            storage.removeAttribute(.backgroundColor, range: fullRange)
-
-            // Apply highlight to all matches
+            layoutManager.removeTemporaryAttribute(.backgroundColor, forCharacterRange: fullRange)
             for (i, range) in matchRanges.enumerated() {
                 guard range.upperBound <= storage.length else { continue }
                 let color = (i == currentMatchIdx) ? Theme.findCurrentHighlightColor : Theme.findHighlightColor
-                storage.addAttribute(.backgroundColor, value: color, range: range)
+                layoutManager.addTemporaryAttribute(.backgroundColor, value: color, forCharacterRange: range)
             }
-            storage.endEditing()
         }
 
         func clearFindHighlights() {
-            guard let textView else { return }
+            guard let textView, let layoutManager = textView.layoutManager else { return }
             let storage = textView.textStorage!
             let fullRange = NSRange(location: 0, length: storage.length)
-            storage.beginEditing()
-            storage.removeAttribute(.backgroundColor, range: fullRange)
-            storage.endEditing()
+            layoutManager.removeTemporaryAttribute(.backgroundColor, forCharacterRange: fullRange)
             matchRanges = []
             currentMatchIdx = 0
         }

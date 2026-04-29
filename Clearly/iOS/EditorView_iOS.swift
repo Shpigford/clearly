@@ -128,6 +128,7 @@ struct EditorView_iOS: UIViewRepresentable {
                 guard let state, state.activeMode == .edit else { return }
                 state.matchCount = ranges.count
                 state.currentIndex = ranges.isEmpty ? 0 : 1
+                state.resultsAreStale = false
                 _ = self
             }
 
@@ -137,6 +138,12 @@ struct EditorView_iOS: UIViewRepresentable {
         }
 
         private func navigateToNextMatch() {
+            // After clear-on-edit, matchRanges is empty but the query is still
+            // in the find bar — treat Next as a re-run trigger.
+            if matchRanges.isEmpty, let state = attachedFindState, !state.query.isEmpty {
+                performFind(for: state)
+                return
+            }
             guard !matchRanges.isEmpty else { return }
             currentMatchIdx = (currentMatchIdx + 1) % matchRanges.count
             applyFindHighlights()
@@ -149,6 +156,10 @@ struct EditorView_iOS: UIViewRepresentable {
         }
 
         private func navigateToPreviousMatch() {
+            if matchRanges.isEmpty, let state = attachedFindState, !state.query.isEmpty {
+                performFind(for: state)
+                return
+            }
             guard !matchRanges.isEmpty else { return }
             currentMatchIdx = (currentMatchIdx - 1 + matchRanges.count) % matchRanges.count
             applyFindHighlights()
@@ -160,12 +171,17 @@ struct EditorView_iOS: UIViewRepresentable {
             }
         }
 
+        // UIKit's NSLayoutManager has no temporary-attribute API, so find
+        // highlights have to use storage attributes. To prevent find color
+        // from clobbering `==highlight==` markdown backgrounds, we re-run
+        // the syntax highlighter (which resets bg per paragraph) before
+        // every paint — and again on clear so dismissed find never leaves
+        // missing backgrounds behind.
         private func applyFindHighlights() {
             guard let textView else { return }
             let storage = textView.textStorage
-            let fullRange = NSRange(location: 0, length: storage.length)
+            rerunSyntaxHighlighter(on: storage)
             storage.beginEditing()
-            storage.removeAttribute(.backgroundColor, range: fullRange)
             for (i, range) in matchRanges.enumerated() {
                 guard range.upperBound <= storage.length else { continue }
                 let color = (i == currentMatchIdx) ? Theme.findCurrentHighlightColor : Theme.findHighlightColor
@@ -176,22 +192,16 @@ struct EditorView_iOS: UIViewRepresentable {
 
         private func clearFindHighlights() {
             guard let textView else { return }
-            let storage = textView.textStorage
-            let fullRange = NSRange(location: 0, length: storage.length)
-            storage.beginEditing()
-            storage.removeAttribute(.backgroundColor, range: fullRange)
-            storage.endEditing()
+            rerunSyntaxHighlighter(on: textView.textStorage)
             matchRanges = []
             currentMatchIdx = 0
         }
 
-        /// Called at the tail of `textViewDidChange` so the syntax-highlighter's
-        /// attribute rewrite doesn't wipe find backgrounds. Mirrors the Mac
-        /// `restoreFindHighlightsIfNeeded` pattern — if the query is still
-        /// active, re-run the search so match ranges track the edit too.
-        private func restoreFindHighlightsIfNeeded() {
-            guard let state = attachedFindState, state.isVisible, !state.query.isEmpty else { return }
-            performFind(for: state)
+        private func rerunSyntaxHighlighter(on storage: NSTextStorage) {
+            let wasHighlighting = isHighlighting
+            isHighlighting = true
+            highlighter.highlightAll(storage, caller: "find-rerun")
+            isHighlighting = wasHighlighting
         }
 
         private func scrollToRange(_ range: NSRange) {
@@ -221,6 +231,20 @@ struct EditorView_iOS: UIViewRepresentable {
             textView.selectedRange = clamped
             isHighlighting = false
             lastAppliedText = newText
+
+            // External text replacement (file load/revert) — old match ranges are stale.
+            if !matchRanges.isEmpty {
+                matchRanges = []
+                currentMatchIdx = 0
+                if let state = attachedFindState, state.isVisible, state.activeMode == .edit {
+                    DispatchQueue.main.async { [weak state] in
+                        guard let state, state.activeMode == .edit else { return }
+                        state.matchCount = 0
+                        state.currentIndex = 0
+                        state.resultsAreStale = true
+                    }
+                }
+            }
         }
 
         // MARK: - UITextViewDelegate
@@ -272,7 +296,18 @@ struct EditorView_iOS: UIViewRepresentable {
             lastAppliedText = newText
             parent.text = newText
 
-            restoreFindHighlightsIfNeeded()
+            // Clear on edit; user retypes the query to refresh (#264).
+            if let state = attachedFindState, state.isVisible, !matchRanges.isEmpty {
+                clearFindHighlights()
+                if state.activeMode == .edit {
+                    DispatchQueue.main.async { [weak state] in
+                        guard let state, state.activeMode == .edit else { return }
+                        state.matchCount = 0
+                        state.currentIndex = 0
+                        state.resultsAreStale = true
+                    }
+                }
+            }
 
             let token = UUID()
             pendingBindingUpdateToken = token

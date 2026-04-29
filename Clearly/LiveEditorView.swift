@@ -429,6 +429,7 @@ struct LiveEditorView: NSViewRepresentable {
                     guard self.parent.findState?.activeMode == .edit || self.parent.findState?.isVisible == false else { return }
                     self.parent.findState?.matchCount = matchCount
                     self.parent.findState?.currentIndex = currentIndex
+                    self.parent.findState?.resultsAreStale = false
                 }
 
             case "openLink":
