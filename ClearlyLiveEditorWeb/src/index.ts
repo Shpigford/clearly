@@ -7,7 +7,9 @@ import {
   SearchQuery,
   setSearchQuery,
   findNext,
-  findPrevious
+  findPrevious,
+  replaceNext,
+  replaceAll
 } from "@codemirror/search";
 import {
   Decoration,
@@ -25,7 +27,7 @@ declare global {
       mount: (payload: MountPayload) => void;
       setDocument: (payload: { markdown: string }) => void;
       setTheme: (payload: ThemePayload) => void;
-      setFindQuery: (payload: { query: string }) => void;
+      setFindQuery: (payload: FindQueryPayload) => void;
       applyCommand: (payload: { command: string }) => void;
       scrollToLine: (payload: { line: number }) => void;
       scrollToOffset: (payload: { offset: number }) => void;
@@ -70,6 +72,13 @@ type ThemePayload = {
 };
 
 type ActiveRange = { from: number; to: number };
+type FindQueryPayload = {
+  query: string;
+  replacement?: string;
+  caseSensitive?: boolean;
+  wholeWord?: boolean;
+  useRegex?: boolean;
+};
 
 const root = document.getElementById("editor");
 const themeCompartment = new Compartment();
@@ -79,6 +88,10 @@ const markdownIt = new MarkdownIt({ html: true, linkify: true, breaks: false });
 let editor: EditorView | null = null;
 let currentFilePath = "";
 let currentQuery = "";
+let currentReplacement = "";
+let currentCaseSensitive = false;
+let currentWholeWord = false;
+let currentUseRegex = false;
 let currentAppearance: "light" | "dark" = "light";
 let currentFontSize = 16;
 let isApplyingHostUpdate = false;
@@ -732,44 +745,69 @@ function sliceBetweenLines(state: EditorState, startLineNumber: number, endLineN
   return state.sliceDoc(state.doc.line(startLineNumber).from, state.doc.line(endLineNumber).to);
 }
 
-function updateFindStatus(state: EditorState) {
+function currentSearchQuery() {
+  return new SearchQuery({
+    search: currentQuery,
+    replace: currentReplacement,
+    caseSensitive: currentCaseSensitive,
+    wholeWord: currentWholeWord,
+    regexp: currentUseRegex,
+    literal: !currentUseRegex
+  });
+}
+
+function collectMatches(state: EditorState) {
   if (!currentQuery) {
-    postMessage({ type: "findStatus", matchCount: 0, currentIndex: 0 });
-    return;
+    return { matches: [] as ActiveRange[], regexError: undefined as string | undefined };
   }
 
-  const text = state.doc.toString();
-  const query = currentQuery.toLowerCase();
-  const lower = text.toLowerCase();
-  const positions: number[] = [];
-  let start = 0;
+  const query = currentSearchQuery();
+  if (!query.valid) {
+    return { matches: [] as ActiveRange[], regexError: "Invalid regular expression" };
+  }
 
-  while (start < lower.length) {
-    const found = lower.indexOf(query, start);
-    if (found === -1) {
-      break;
+  const cursor = query.getCursor(state);
+  const matches: ActiveRange[] = [];
+  for (let result = cursor.next(); !result.done; result = cursor.next()) {
+    const match = result.value as ActiveRange;
+    if (match.to > match.from) {
+      matches.push({ from: match.from, to: match.to });
     }
-    positions.push(found);
-    start = found + Math.max(1, query.length);
+  }
+  return { matches, regexError: undefined as string | undefined };
+}
+
+function currentMatch(state: EditorState) {
+  const { matches } = collectMatches(state);
+  if (!matches.length) {
+    return null;
   }
 
-  if (!positions.length) {
-    postMessage({ type: "findStatus", matchCount: 0, currentIndex: 0 });
+  const selection = state.selection.main;
+  return matches.find((match) => match.from === selection.from && match.to === selection.to)
+    ?? matches.find((match) => match.from >= selection.from)
+    ?? matches[0];
+}
+
+function updateFindStatus(state: EditorState) {
+  const { matches, regexError } = collectMatches(state);
+  if (!currentQuery || regexError || !matches.length) {
+    postMessage({ type: "findStatus", matchCount: 0, currentIndex: 0, regexError });
     return;
   }
 
-  const anchor = state.selection.main.from;
-  let currentIndex = positions.findIndex((position) => position === anchor);
+  const selection = state.selection.main;
+  let currentIndex = matches.findIndex((match) => match.from === selection.from && match.to === selection.to);
   if (currentIndex === -1) {
-    currentIndex = positions.findIndex((position) => position >= anchor);
+    currentIndex = matches.findIndex((match) => match.from >= selection.from);
   }
   if (currentIndex === -1) {
-    currentIndex = positions.length - 1;
+    currentIndex = matches.length - 1;
   }
 
   postMessage({
     type: "findStatus",
-    matchCount: positions.length,
+    matchCount: matches.length,
     currentIndex: currentIndex + 1
   });
 }
@@ -1048,6 +1086,28 @@ function applyFormattingCommand(command: string) {
       findPrevious(editor);
       updateFindStatus(editor.state);
       break;
+    case "replaceCurrent": {
+      const match = currentMatch(editor.state);
+      if (!match) {
+        updateFindStatus(editor.state);
+        break;
+      }
+      editor.dispatch({ selection: { anchor: match.from, head: match.to } });
+      replaceNext(editor);
+      updateFindStatus(editor.state);
+      break;
+    }
+    case "replaceAll": {
+      const replaceCount = collectMatches(editor.state).matches.length;
+      if (!replaceCount) {
+        updateFindStatus(editor.state);
+        break;
+      }
+      replaceAll(editor);
+      updateFindStatus(editor.state);
+      postMessage({ type: "replaceStatus", replaceCount });
+      break;
+    }
     default:
       log(`Unknown command: ${command}`);
   }
@@ -1908,18 +1968,18 @@ function setTheme(payload: ThemePayload) {
   });
 }
 
-function setFindQuery(query: string) {
-  currentQuery = query;
+function setFindQuery(payload: FindQueryPayload | string) {
+  const next = typeof payload === "string" ? { query: payload } : payload;
+  currentQuery = next.query;
+  currentReplacement = next.replacement ?? currentReplacement;
+  currentCaseSensitive = next.caseSensitive ?? currentCaseSensitive;
+  currentWholeWord = next.wholeWord ?? currentWholeWord;
+  currentUseRegex = next.useRegex ?? currentUseRegex;
   if (!editor) {
     return;
   }
   editor.dispatch({
-    effects: setSearchQuery.of(new SearchQuery({
-      search: query,
-      caseSensitive: false,
-      regexp: false,
-      literal: true
-    }))
+    effects: setSearchQuery.of(currentSearchQuery())
   });
   updateFindStatus(editor.state);
 }
@@ -1989,8 +2049,8 @@ window.clearlyLiveEditor = {
     setTheme(payload);
   },
 
-  setFindQuery(payload: { query: string }) {
-    setFindQuery(payload.query);
+  setFindQuery(payload: FindQueryPayload) {
+    setFindQuery(payload);
   },
 
   applyCommand(payload: { command: string }) {

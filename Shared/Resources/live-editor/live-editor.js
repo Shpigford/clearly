@@ -31324,6 +31324,10 @@
   var editor = null;
   var currentFilePath = "";
   var currentQuery = "";
+  var currentReplacement = "";
+  var currentCaseSensitive = false;
+  var currentWholeWord = false;
+  var currentUseRegex = false;
   var currentAppearance = "light";
   var currentFontSize = 16;
   var isApplyingHostUpdate = false;
@@ -31866,39 +31870,59 @@
     }
     return state.sliceDoc(state.doc.line(startLineNumber).from, state.doc.line(endLineNumber).to);
   }
-  function updateFindStatus(state) {
+  function currentSearchQuery() {
+    return new SearchQuery({
+      search: currentQuery,
+      replace: currentReplacement,
+      caseSensitive: currentCaseSensitive,
+      wholeWord: currentWholeWord,
+      regexp: currentUseRegex,
+      literal: !currentUseRegex
+    });
+  }
+  function collectMatches(state) {
     if (!currentQuery) {
-      postMessage({ type: "findStatus", matchCount: 0, currentIndex: 0 });
-      return;
+      return { matches: [], regexError: void 0 };
     }
-    const text2 = state.doc.toString();
-    const query = currentQuery.toLowerCase();
-    const lower = text2.toLowerCase();
-    const positions = [];
-    let start = 0;
-    while (start < lower.length) {
-      const found = lower.indexOf(query, start);
-      if (found === -1) {
-        break;
+    const query = currentSearchQuery();
+    if (!query.valid) {
+      return { matches: [], regexError: "Invalid regular expression" };
+    }
+    const cursor = query.getCursor(state);
+    const matches = [];
+    for (let result = cursor.next(); !result.done; result = cursor.next()) {
+      const match2 = result.value;
+      if (match2.to > match2.from) {
+        matches.push({ from: match2.from, to: match2.to });
       }
-      positions.push(found);
-      start = found + Math.max(1, query.length);
     }
-    if (!positions.length) {
-      postMessage({ type: "findStatus", matchCount: 0, currentIndex: 0 });
+    return { matches, regexError: void 0 };
+  }
+  function currentMatch(state) {
+    const { matches } = collectMatches(state);
+    if (!matches.length) {
+      return null;
+    }
+    const selection = state.selection.main;
+    return matches.find((match2) => match2.from === selection.from && match2.to === selection.to) ?? matches.find((match2) => match2.from >= selection.from) ?? matches[0];
+  }
+  function updateFindStatus(state) {
+    const { matches, regexError } = collectMatches(state);
+    if (!currentQuery || regexError || !matches.length) {
+      postMessage({ type: "findStatus", matchCount: 0, currentIndex: 0, regexError });
       return;
     }
-    const anchor = state.selection.main.from;
-    let currentIndex = positions.findIndex((position) => position === anchor);
+    const selection = state.selection.main;
+    let currentIndex = matches.findIndex((match2) => match2.from === selection.from && match2.to === selection.to);
     if (currentIndex === -1) {
-      currentIndex = positions.findIndex((position) => position >= anchor);
+      currentIndex = matches.findIndex((match2) => match2.from >= selection.from);
     }
     if (currentIndex === -1) {
-      currentIndex = positions.length - 1;
+      currentIndex = matches.length - 1;
     }
     postMessage({
       type: "findStatus",
-      matchCount: positions.length,
+      matchCount: matches.length,
       currentIndex: currentIndex + 1
     });
   }
@@ -32161,6 +32185,28 @@ $$`);
         findPrevious(editor);
         updateFindStatus(editor.state);
         break;
+      case "replaceCurrent": {
+        const match2 = currentMatch(editor.state);
+        if (!match2) {
+          updateFindStatus(editor.state);
+          break;
+        }
+        editor.dispatch({ selection: { anchor: match2.from, head: match2.to } });
+        replaceNext(editor);
+        updateFindStatus(editor.state);
+        break;
+      }
+      case "replaceAll": {
+        const replaceCount = collectMatches(editor.state).matches.length;
+        if (!replaceCount) {
+          updateFindStatus(editor.state);
+          break;
+        }
+        replaceAll(editor);
+        updateFindStatus(editor.state);
+        postMessage({ type: "replaceStatus", replaceCount });
+        break;
+      }
       default:
         log(`Unknown command: ${command2}`);
     }
@@ -32942,18 +32988,18 @@ $$`);
       effects: themeCompartment.reconfigure(livePreviewTheme(payload.appearance, payload.fontSize))
     });
   }
-  function setFindQuery(query) {
-    currentQuery = query;
+  function setFindQuery(payload) {
+    const next = typeof payload === "string" ? { query: payload } : payload;
+    currentQuery = next.query;
+    currentReplacement = next.replacement ?? currentReplacement;
+    currentCaseSensitive = next.caseSensitive ?? currentCaseSensitive;
+    currentWholeWord = next.wholeWord ?? currentWholeWord;
+    currentUseRegex = next.useRegex ?? currentUseRegex;
     if (!editor) {
       return;
     }
     editor.dispatch({
-      effects: setSearchQuery.of(new SearchQuery({
-        search: query,
-        caseSensitive: false,
-        regexp: false,
-        literal: true
-      }))
+      effects: setSearchQuery.of(currentSearchQuery())
     });
     updateFindStatus(editor.state);
   }
@@ -33012,7 +33058,7 @@ $$`);
       setTheme(payload);
     },
     setFindQuery(payload) {
-      setFindQuery(payload.query);
+      setFindQuery(payload);
     },
     applyCommand(payload) {
       applyFormattingCommand(payload.command);

@@ -138,6 +138,12 @@ struct EditorView: NSViewRepresentable {
         findState?.editorNavigateToPrevious = { [weak coordinator] in
             coordinator?.navigateToPreviousMatch()
         }
+        findState?.editorPerformReplace = { [weak coordinator] in
+            coordinator?.performReplaceCurrent()
+        }
+        findState?.editorPerformReplaceAll = { [weak coordinator] in
+            coordinator?.performReplaceAll()
+        }
 
         // Wire up outline scroll-to
         outlineState?.scrollToRange = { [weak coordinator] range in
@@ -387,6 +393,7 @@ struct EditorView: NSViewRepresentable {
 
         // Find state tracking
         var matchRanges: [NSRange] = []
+        var lastMatches: [TextMatch] = []
         private var currentMatchIdx = 0 // 0-based internal index
         private var findCancellables = Set<AnyCancellable>()
 
@@ -550,6 +557,23 @@ struct EditorView: NSViewRepresentable {
                         self.performFind()
                     } else {
                         self.clearFindHighlights()
+                    }
+                }
+                .store(in: &findCancellables)
+
+            // Re-run find whenever an option toggle changes. `@Published`
+            // emits in `willSet`, so the property hasn't been updated yet on
+            // this dispatch — bounce to the next runloop tick so `performFind`
+            // reads the new value.
+            Publishers.CombineLatest(state.$caseSensitive, state.$useRegex)
+                .dropFirst()
+                .sink { [weak self] _, _ in
+                    DispatchQueue.main.async {
+                        guard let self,
+                              let findState = self.findState,
+                              findState.isVisible,
+                              findState.activeMode == .edit else { return }
+                        self.performFind()
                     }
                 }
                 .store(in: &findCancellables)
@@ -784,12 +808,27 @@ struct EditorView: NSViewRepresentable {
         // MARK: - Find
 
         func performFind(query overrideQuery: String? = nil) {
-            guard let textView, let findState else { return }
+            guard let textView else { return }
+            let didRecompute = recomputeMatches(query: overrideQuery)
+            guard didRecompute else { return }
+            applyFindHighlights()
+            if let first = matchRanges.first {
+                textView.scrollRangeToVisible(first)
+            }
+        }
+
+        /// Recomputes matches against the current text view and updates state,
+        /// but does NOT paint highlights or scroll. Returns false if the query
+        /// was empty / errored (in which case state was already reset).
+        @discardableResult
+        private func recomputeMatches(query overrideQuery: String? = nil) -> Bool {
+            guard let textView, let findState else { return false }
             let query = overrideQuery ?? findState.query
             clearFindHighlights()
 
             guard !query.isEmpty else {
                 matchRanges = []
+                lastMatches = []
                 currentMatchIdx = 0
                 DispatchQueue.main.async { [weak self] in
                     guard let self,
@@ -798,28 +837,54 @@ struct EditorView: NSViewRepresentable {
                     findState.matchCount = 0
                     findState.currentIndex = 0
                     findState.resultsAreStale = false
+                    findState.regexError = nil
+                    findState.lastReplaceCount = nil
                 }
-                return
+                return false
             }
 
-            let ranges = TextMatcher.ranges(of: query, in: textView.string)
-            matchRanges = ranges
-            currentMatchIdx = ranges.isEmpty ? 0 : 0
+            let options = TextMatchOptions(
+                caseSensitive: findState.caseSensitive,
+                useRegex: findState.useRegex
+            )
 
-            applyFindHighlights()
+            let matches: [TextMatch]
+            do {
+                matches = try TextMatcher.matches(of: query, in: textView.string, options: options)
+            } catch let TextMatcherError.invalidRegex(message) {
+                matchRanges = []
+                lastMatches = []
+                currentMatchIdx = 0
+                DispatchQueue.main.async { [weak self] in
+                    guard let self,
+                          let findState = self.findState,
+                          findState.activeMode == .edit else { return }
+                    findState.matchCount = 0
+                    findState.currentIndex = 0
+                    findState.resultsAreStale = false
+                    findState.regexError = message
+                    findState.lastReplaceCount = nil
+                }
+                return false
+            } catch {
+                matches = []
+            }
+
+            matchRanges = matches.map(\.range)
+            lastMatches = matches
+            currentMatchIdx = 0
 
             DispatchQueue.main.async { [weak self] in
                 guard let self,
                       let findState = self.findState,
                       findState.activeMode == .edit else { return }
-                findState.matchCount = ranges.count
-                findState.currentIndex = ranges.isEmpty ? 0 : 1
+                findState.matchCount = matches.count
+                findState.currentIndex = matches.isEmpty ? 0 : 1
                 findState.resultsAreStale = false
+                findState.regexError = nil
+                findState.lastReplaceCount = nil
             }
-
-            if !ranges.isEmpty {
-                textView.scrollRangeToVisible(ranges[0])
-            }
+            return true
         }
 
         func navigateToNextMatch() {
@@ -880,7 +945,81 @@ struct EditorView: NSViewRepresentable {
             let fullRange = NSRange(location: 0, length: storage.length)
             layoutManager.removeTemporaryAttribute(.backgroundColor, forCharacterRange: fullRange)
             matchRanges = []
+            lastMatches = []
             currentMatchIdx = 0
+        }
+
+        // MARK: - Replace
+
+        func performReplaceCurrent() {
+            guard let textView, let findState,
+                  !lastMatches.isEmpty,
+                  currentMatchIdx < lastMatches.count else { return }
+            let match = lastMatches[currentMatchIdx]
+            let storage = textView.textStorage!
+            guard match.range.upperBound <= storage.length else { return }
+            let replacement = ReplaceEngine.substitution(for: match,
+                                                         in: textView.string,
+                                                         template: findState.replacementText,
+                                                         isRegex: findState.useRegex)
+            guard textView.shouldChangeText(in: match.range, replacementString: replacement) else { return }
+            let resumeLocation = match.range.location + (replacement as NSString).length
+            textView.replaceCharacters(in: match.range, with: replacement)
+            textView.didChangeText()
+            findState.lastReplaceCount = nil
+            // Silent rescan — advanceToMatchAtOrAfter handles the single
+            // applyFindHighlights + scroll, so we don't double-paint.
+            recomputeMatches()
+            advanceToMatchAtOrAfter(location: resumeLocation)
+        }
+
+        /// After a single-match replace, jump to the first remaining match at or
+        /// after `location`. Skips any new match the replacement string may have
+        /// introduced inside its own range, so consecutive Replace presses walk
+        /// forward instead of cycling on the same spot.
+        private func advanceToMatchAtOrAfter(location: Int) {
+            guard !lastMatches.isEmpty else {
+                DispatchQueue.main.async { [weak self] in
+                    guard let self, let findState = self.findState, findState.activeMode == .edit else { return }
+                    findState.currentIndex = 0
+                }
+                return
+            }
+            let nextIdx = lastMatches.firstIndex(where: { $0.range.location >= location }) ?? 0
+            currentMatchIdx = nextIdx
+            applyFindHighlights()
+            textView?.scrollRangeToVisible(matchRanges[currentMatchIdx])
+            let publishedIdx = currentMatchIdx + 1
+            DispatchQueue.main.async { [weak self] in
+                guard let self, let findState = self.findState, findState.activeMode == .edit else { return }
+                findState.currentIndex = publishedIdx
+            }
+        }
+
+        func performReplaceAll() {
+            guard let textView, let findState, !lastMatches.isEmpty else { return }
+            let oldText = textView.string
+            let nsOldText = oldText as NSString
+            let newText = ReplaceEngine.applyAll(matches: lastMatches,
+                                                 in: oldText,
+                                                 template: findState.replacementText,
+                                                 isRegex: findState.useRegex)
+            let fullRange = NSRange(location: 0, length: nsOldText.length)
+            guard textView.shouldChangeText(in: fullRange, replacementString: newText) else { return }
+            let replaceCount = lastMatches.count
+            textView.replaceCharacters(in: fullRange, with: newText)
+            textView.didChangeText()
+            DispatchQueue.main.async { [weak findState] in
+                findState?.lastReplaceCount = replaceCount
+            }
+            // Clear the "Replaced N occurrences" label after a beat so it
+            // doesn't linger across an unrelated session. If a later action
+            // already changed `lastReplaceCount`, leave that one alone.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) { [weak findState] in
+                if findState?.lastReplaceCount == replaceCount {
+                    findState?.lastReplaceCount = nil
+                }
+            }
         }
     }
 }
