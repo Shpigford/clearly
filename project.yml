@@ -42,6 +42,8 @@ targets:
           - "iOS/**"
       - path: Shared/Resources/mermaid.min.js
         buildPhase: resources
+      - path: Shared/Resources/svg-pan-zoom.min.js
+        buildPhase: resources
       - path: Shared/Resources/katex.min.js
         buildPhase: resources
       - path: Shared/Resources/katex.min.css
@@ -113,6 +115,8 @@ targets:
       - path: Clearly/AppIcon.icon
       - path: Shared/Resources/mermaid.min.js
         buildPhase: resources
+      - path: Shared/Resources/svg-pan-zoom.min.js
+        buildPhase: resources
       - path: Shared/Resources/katex.min.js
         buildPhase: resources
       - path: Shared/Resources/katex.min.css
@@ -155,6 +159,8 @@ targets:
     sources:
       - path: ClearlyQuickLook
       - path: Shared/Resources/mermaid.min.js
+        buildPhase: resources
+      - path: Shared/Resources/svg-pan-zoom.min.js
         buildPhase: resources
       - path: Shared/Resources/katex.min.js
         buildPhase: resources

@@ -340,6 +340,7 @@ struct PreviewView: NSViewRepresentable {
         \(MathSupport.scriptHTML(for: htmlBody))
         \(TableSupport.scriptHTML(for: htmlBody))
         \(MermaidSupport.scriptHTML)
+        \(MermaidLightboxSupport.scriptHTML(for: htmlBody))
         \(SyntaxHighlightSupport.scriptHTML(for: htmlBody))
         </html>
         """
