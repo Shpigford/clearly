@@ -111,7 +111,8 @@ enum Handlers {
                     relativePath: params.arguments?["relative_path"]?.stringValue ?? "",
                     content: params.arguments?["content"]?.stringValue ?? "",
                     mode: mode,
-                    vault: params.arguments?["vault"]?.stringValue
+                    vault: params.arguments?["vault"]?.stringValue,
+                    expectedContentHash: params.arguments?["expected_content_hash"]?.stringValue
                 )
                 return try await updateNote(args, vaults: vaults)
             }

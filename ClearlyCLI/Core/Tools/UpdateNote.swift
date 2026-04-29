@@ -13,6 +13,12 @@ struct UpdateNoteArgs: Codable {
     let content: String
     let mode: UpdateMode
     let vault: String?
+    /// Optional optimistic-concurrency guard. When provided, the tool
+    /// hashes the on-disk file before writing and rejects the call if the
+    /// hash doesn't match — protecting against the user (or another
+    /// agent) editing the file between the agent's last read and this
+    /// write. Omit to skip the check.
+    let expectedContentHash: String?
 }
 
 struct UpdateNoteResult: Codable {
@@ -44,7 +50,15 @@ func updateNote(_ args: UpdateNoteArgs, vaults: [LoadedVault]) async throws -> U
 
     let fileURL = try PathGuard.resolve(relativePath: args.relativePath, in: loaded.url)
 
-    let rawData = try Data(contentsOf: fileURL)
+    let rawData = try CoordinatedFileIO.read(at: fileURL)
+    let actualHash = sha256Hex(rawData)
+    if let expected = args.expectedContentHash, expected != actualHash {
+        throw ToolError.staleContent(
+            relativePath: args.relativePath,
+            expected: expected,
+            actual: actualHash
+        )
+    }
     guard let existing = String(data: rawData, encoding: .utf8) else {
         throw ToolError.invalidEncoding(args.relativePath)
     }
@@ -65,12 +79,11 @@ func updateNote(_ args: UpdateNoteArgs, vaults: [LoadedVault]) async throws -> U
     }
 
     let newData = Data(composed.utf8)
-    try newData.write(to: fileURL, options: .atomic)
+    try CoordinatedFileIO.write(newData, to: fileURL)
 
     try loaded.index.updateFile(at: args.relativePath)
 
-    let hash = SHA256.hash(data: newData)
-    let contentHash = hash.map { String(format: "%02x", $0) }.joined()
+    let contentHash = sha256Hex(newData)
 
     let attrs = try? FileManager.default.attributesOfItem(atPath: fileURL.path)
     let modifiedAt = (attrs?[.modificationDate] as? Date) ?? Date()
@@ -85,4 +98,8 @@ func updateNote(_ args: UpdateNoteArgs, vaults: [LoadedVault]) async throws -> U
         sizeBytes: newData.count,
         modifiedAt: iso.string(from: modifiedAt)
     )
+}
+
+private func sha256Hex(_ data: Data) -> String {
+    SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
 }

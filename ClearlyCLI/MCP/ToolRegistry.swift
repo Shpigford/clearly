@@ -352,7 +352,7 @@ enum ToolRegistry {
             ),
             Tool(
                 name: "update_note",
-                description: "Update an existing note. Mode 'replace' overwrites the entire file. Mode 'append' adds content to the end (with a leading newline if the file does not end in one). Mode 'prepend' inserts content after YAML frontmatter if present, or at the beginning of the file.",
+                description: "Update an existing note. Mode 'replace' overwrites the entire file. Mode 'append' adds content to the end (with a leading newline if the file does not end in one). Mode 'prepend' inserts content after YAML frontmatter if present, or at the beginning of the file. Pass `expected_content_hash` (the value `read_note` returned) to opt into optimistic concurrency: the call is rejected with `stale_content` if the file changed since you last read it.",
                 inputSchema: .object([
                     "type": .string("object"),
                     "additionalProperties": .bool(false),
@@ -373,6 +373,10 @@ enum ToolRegistry {
                         "vault": .object([
                             "type": .string("string"),
                             "description": .string("Optional vault name; required only when 'relative_path' is ambiguous across multiple loaded vaults.")
+                        ]),
+                        "expected_content_hash": .object([
+                            "type": .string("string"),
+                            "description": .string("Optional. SHA-256 hex digest of the on-disk content the agent last observed (typically from `read_note`). If provided and the on-disk hash differs at write time, the call is rejected with error `stale_content` so the agent can re-read and retry without clobbering a concurrent edit.")
                         ])
                     ]),
                     "required": .array([.string("relative_path"), .string("content"), .string("mode")])

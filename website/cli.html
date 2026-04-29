@@ -271,7 +271,9 @@ clearly create Notes/idea.md --content "..." --in-vault Work</code></pre>
                         <span class="px-2 py-0.5 rounded-full text-xs bg-amber-500/10 text-amber-300 ring-1 ring-inset ring-amber-500/20">write</span>
                     </header>
                     <p class="text-sm text-zinc-400 mb-3">Update an existing note in one of three modes. <code class="font-mono">replace</code> overwrites the whole file. <code class="font-mono">append</code> adds to the end. <code class="font-mono">prepend</code> inserts after the YAML frontmatter block (or at the top if there is none).</p>
-                    <pre class="rounded-md bg-black/40 p-4 text-xs font-mono text-zinc-300 overflow-x-auto"><code>clearly update &lt;path&gt; --mode replace|append|prepend (--content STR | --from-stdin) [--in-vault NAME]</code></pre>
+                    <pre class="rounded-md bg-black/40 p-4 text-xs font-mono text-zinc-300 overflow-x-auto"><code>clearly update &lt;path&gt; --mode replace|append|prepend (--content STR | --from-stdin) \
+                [--in-vault NAME] [--expected-content-hash &lt;sha256&gt;]</code></pre>
+                    <p class="mt-3 text-sm text-zinc-400"><code class="font-mono text-zinc-200">--expected-content-hash</code> opts into optimistic concurrency &mdash; the call returns exit 5 / <code class="font-mono">stale_content</code> if the on-disk file has changed since the supplied hash, so a script can re-read and retry without clobbering a concurrent edit.</p>
                 </article>
 
                 <article id="vaults" class="rounded-xl outline-1 -outline-offset-1 outline-white/10 bg-white/[0.02] p-6 md:p-8 scroll-mt-20">

@@ -715,7 +715,7 @@ final class WorkspaceManager {
 
         guard let url = doc.fileURL, doc.isDirty else { return true }
         do {
-            try doc.text.write(to: url, atomically: true, encoding: .utf8)
+            try CoordinatedFileIO.write(Data(doc.text.utf8), to: url)
             openDocuments[index].lastSavedText = doc.text
 
             let finalURL: URL
@@ -761,7 +761,7 @@ final class WorkspaceManager {
 
         do {
             let text = openDocuments[index].text
-            try text.write(to: url, atomically: true, encoding: .utf8)
+            try CoordinatedFileIO.write(Data(text.utf8), to: url)
             openDocuments[index].fileURL = url
             openDocuments[index].lastSavedText = text
             openDocuments[index].untitledNumber = nil

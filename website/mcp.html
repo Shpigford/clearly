@@ -252,8 +252,10 @@
                         <span class="px-2 py-0.5 rounded-full text-xs bg-amber-500/10 text-amber-300 ring-1 ring-inset ring-amber-500/20">write</span>
                     </header>
                     <p class="text-sm text-zinc-400 mb-3">Update an existing note. <code class="font-mono">replace</code> overwrites the whole file. <code class="font-mono">append</code> adds to the end. <code class="font-mono">prepend</code> inserts after the YAML frontmatter block (or at the top if there is none).</p>
+                    <p class="text-sm text-zinc-400 mb-3">Pass <code class="font-mono text-zinc-200">expected_content_hash</code> (the value <code class="font-mono">read_note</code> returned) to opt into optimistic concurrency &mdash; the call is rejected with <code class="font-mono">stale_content</code> if the file changed since you last read it. The editor's save path goes through the same coordinated I/O, so a user typing in the editor and an MCP write to the same note can no longer drop each other's edits.</p>
                     <h3 class="mt-3 text-xs font-mono tracking-wide uppercase text-zinc-500">Input</h3>
-                    <pre class="mt-2 rounded-md bg-black/40 p-4 text-xs font-mono text-zinc-300 overflow-x-auto"><code>{ relative_path: string, content: string, mode: "replace"|"append"|"prepend", vault?: string }</code></pre>
+                    <pre class="mt-2 rounded-md bg-black/40 p-4 text-xs font-mono text-zinc-300 overflow-x-auto"><code>{ relative_path: string, content: string, mode: "replace"|"append"|"prepend",
+  vault?: string, expected_content_hash?: string }</code></pre>
                 </article>
 
             </div>

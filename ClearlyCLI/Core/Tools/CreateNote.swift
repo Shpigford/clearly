@@ -44,7 +44,7 @@ func createNote(_ args: CreateNoteArgs, vaults: [LoadedVault]) async throws -> C
     try FileManager.default.createDirectory(at: parentDir, withIntermediateDirectories: true)
 
     let data = Data(args.content.utf8)
-    try data.write(to: fileURL, options: .atomic)
+    try CoordinatedFileIO.write(data, to: fileURL)
 
     try loaded.index.updateFile(at: args.relativePath)
 
