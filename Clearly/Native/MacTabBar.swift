@@ -13,8 +13,11 @@ struct MacTabBar: View {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 4) {
                     ForEach(workspace.openDocuments) { doc in
+                        let label = workspace.tabLabel(for: doc)
                         MacTabRow(
                             doc: doc,
+                            parentQualifier: label.parent,
+                            filename: label.filename,
                             isActive: doc.id == workspace.activeDocumentID,
                             isHovered: doc.id == workspace.hoveredTabID,
                             onSelect: { workspace.switchToDocument(doc.id) },
@@ -39,6 +42,8 @@ struct MacTabBar: View {
 
 private struct MacTabRow: View {
     let doc: OpenDocument
+    let parentQualifier: String?
+    let filename: String
     let isActive: Bool
     let isHovered: Bool
     let onSelect: () -> Void
@@ -52,10 +57,16 @@ private struct MacTabRow: View {
                     .fill(Color.secondary)
                     .frame(width: 6, height: 6)
             }
-            Text(doc.displayName)
-                .font(.subheadline)
-                .lineLimit(1)
-                .foregroundStyle(isActive ? .primary : .secondary)
+            HStack(spacing: 0) {
+                if let parent = parentQualifier {
+                    Text("\(parent)/")
+                        .foregroundStyle(.tertiary)
+                }
+                Text(filename)
+                    .foregroundStyle(isActive ? .primary : .secondary)
+            }
+            .font(.subheadline)
+            .lineLimit(1)
             if isHovered || isActive {
                 Button {
                     onClose()

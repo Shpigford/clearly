@@ -196,6 +196,50 @@ final class WorkspaceManager {
 
     // MARK: - Open Documents
 
+    /// Tab label parts for `doc`. Returns `(parent: nil, filename:)` when the
+    /// filename is unique among currently open tabs; otherwise returns the
+    /// shortest ancestor suffix that disambiguates the duplicate filename.
+    func tabLabel(for doc: OpenDocument) -> (parent: String?, filename: String) {
+        guard let url = doc.fileURL else { return (nil, doc.displayName) }
+        let filename = url.lastPathComponent
+        let duplicateURLs = openDocuments.compactMap { other -> URL? in
+            guard let otherURL = other.fileURL,
+                  otherURL.lastPathComponent.localizedCaseInsensitiveCompare(filename) == .orderedSame else {
+                return nil
+            }
+            return otherURL
+        }
+        guard duplicateURLs.count > 1 else { return (nil, filename) }
+
+        func parentComponents(for url: URL) -> [String] {
+            url.deletingLastPathComponent().standardizedFileURL.pathComponents.filter { $0 != "/" }
+        }
+
+        func suffixLabel(from components: [String], depth: Int) -> String {
+            components.suffix(min(depth, components.count)).joined(separator: "/")
+        }
+
+        let currentComponents = parentComponents(for: url)
+        let duplicateParentComponents = duplicateURLs.map(parentComponents)
+        let maxDepth = duplicateParentComponents.map(\.count).max() ?? 0
+
+        guard maxDepth > 0 else { return (nil, filename) }
+
+        for depth in 1...maxDepth {
+            let labels = duplicateParentComponents.map { suffixLabel(from: $0, depth: depth) }
+            let current = suffixLabel(from: currentComponents, depth: depth)
+            let matches = labels.filter {
+                $0.localizedCaseInsensitiveCompare(current) == .orderedSame
+            }
+            if !current.isEmpty, matches.count == 1 {
+                return (current, filename)
+            }
+        }
+
+        let parent = url.deletingLastPathComponent().standardizedFileURL.path
+        return (parent.isEmpty ? nil : parent, filename)
+    }
+
     @discardableResult
     func createUntitledDocument() -> Bool {
         guard saveFileBacked() else { return false }

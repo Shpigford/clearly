@@ -246,9 +246,16 @@ final class QuickSwitcherManager: NSObject {
             let recents = WorkspaceManager.shared.recentFiles
             items = recents.compactMap { url in
                 let filename = url.deletingPathExtension().lastPathComponent
+                let relativePath: String
+                if let vaultRoot = WorkspaceManager.shared.containingVaultRoot(for: url) {
+                    relativePath = VaultIndex.relativePath(of: url, from: vaultRoot)
+                } else {
+                    let parent = url.deletingLastPathComponent().lastPathComponent
+                    relativePath = parent.isEmpty ? url.lastPathComponent : "\(parent)/\(url.lastPathComponent)"
+                }
                 return QuickSwitcherItem(
                     filename: filename,
-                    relativePath: url.lastPathComponent,
+                    relativePath: relativePath,
                     fullURL: url,
                     score: 100,
                     matchedRanges: [],
