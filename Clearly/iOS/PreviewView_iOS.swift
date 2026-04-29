@@ -37,7 +37,7 @@ struct PreviewView_iOS: UIViewRepresentable {
     }
 
     private var contentKey: String {
-        "\(fontSize)|\(fontFamily)|\(hideFrontmatter)|\(markdown.hashValue)"
+        "\(fontSize)|\(fontFamily)|\(hideFrontmatter)|\(LocalImageSupport.fileURLKeyFragment(fileURL))|\(markdown.hashValue)"
     }
 
     func makeCoordinator() -> Coordinator {
@@ -49,6 +49,9 @@ struct PreviewView_iOS: UIViewRepresentable {
         config.setURLSchemeHandler(LocalImageSchemeHandler(), forURLScheme: LocalImageSupport.scheme)
         config.userContentController.add(context.coordinator, name: "linkClicked")
         config.userContentController.add(context.coordinator, name: "taskToggle")
+        config.userContentController.add(context.coordinator, name: "foldToggle")
+        config.userContentController.add(context.coordinator, name: "copyToClipboard")
+        config.userContentController.addUserScript(PreviewUserScripts.codeBlockChromeScript())
 
         let webView = WKWebView(frame: .zero, configuration: config)
         webView.navigationDelegate = context.coordinator
@@ -90,6 +93,8 @@ struct PreviewView_iOS: UIViewRepresentable {
     static func dismantleUIView(_ webView: WKWebView, coordinator: Coordinator) {
         webView.configuration.userContentController.removeScriptMessageHandler(forName: "linkClicked")
         webView.configuration.userContentController.removeScriptMessageHandler(forName: "taskToggle")
+        webView.configuration.userContentController.removeScriptMessageHandler(forName: "foldToggle")
+        webView.configuration.userContentController.removeScriptMessageHandler(forName: "copyToClipboard")
     }
 
     private func loadHTML(in webView: WKWebView, context: Context) {
@@ -229,6 +234,31 @@ struct PreviewView_iOS: UIViewRepresentable {
                 }
                 return
             }
+
+            if message.name == "foldToggle",
+               let body = message.body as? [String: Any],
+               let id = body["key"] as? String,
+               let folded = body["folded"] as? Bool,
+               let foldKey = FoldKey(stableID: id) {
+                // Folding doesn't change markdown; no reload to skip. The
+                // user script + applyPersistedFolds repaint on any future
+                // reload.
+                FoldStateStore.shared.setFolded(folded, key: foldKey, for: fileURL)
+                return
+            }
+
+            if message.name == "copyToClipboard", let text = message.body as? String {
+                UIPasteboard.general.string = text
+                return
+            }
+        }
+
+        func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+            let foldedIDs = FoldStateStore.shared.foldedKeyIDs(for: fileURL)
+            guard !foldedIDs.isEmpty,
+                  let data = try? JSONSerialization.data(withJSONObject: foldedIDs),
+                  let payload = String(data: data, encoding: .utf8) else { return }
+            webView.evaluateJavaScript("window.clearlyApplyFolds && window.clearlyApplyFolds(\(payload));")
         }
 
         private func resolvedLinkURL(for href: String) -> URL? {
