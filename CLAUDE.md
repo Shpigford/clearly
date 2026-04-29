@@ -39,6 +39,8 @@ xcodebuild -scheme Clearly -configuration Debug build   # Build from CLI
 
 Open in Xcode: `open Clearly.xcodeproj` (gitignored, so regenerate with xcodegen first).
 
+**Worktree-local DerivedData (Conductor / parallel workspaces).** When working in a Conductor worktree, always pass `-derivedDataPath ./.build/DerivedData` to `xcodebuild`. Without it, `xcodebuild` writes to the shared `~/Library/Developer/Xcode/DerivedData` and silently picks up products from a different worktree or the main repo, and `open` then launches a stale or wrong-source app. The `/verify` skill enforces this; do the same for any direct `xcodebuild` invocation. The launched bundle path under `.build/DerivedData/Build/Products/Debug/Clearly Dev.app` should always match the worktree you're editing — verify with `lsappinfo info -only bundlepath "Clearly Dev"` if in doubt.
+
 - Deployment target: macOS 15.0 (raised from 14.0 to enable SwiftUI API parity with iPad shell and ship with macOS 26 SDK); iOS 17.0
 - Swift 5.9 app / Swift 5 language mode for ClearlyCore (tools 6.0 so we can declare `.macOS(.v15)`). Xcode 26+ required to compile against the macOS 26 SDK so Liquid Glass lights up automatically on stock SwiftUI chrome.
 - Dependencies: `cmark-gfm` (GFM markdown → HTML), `Sparkle` (auto-updates, direct distribution only), `GRDB` (SQLite + FTS5), `MCP` (Model Context Protocol SDK) via Swift Package Manager
@@ -81,6 +83,10 @@ Open in Xcode: `open Clearly.xcodeproj` (gitignored, so regenerate with xcodegen
 **Don't add subviews to `_NSHostingView` with Auto Layout constraints.** SwiftUI's hosting view manages subview layout internally and will override your frames/constraints, causing the subview to fill the entire hosting view. The same applies to `NSSplitView`, which treats added subviews as panes. If you need an AppKit overlay on top of SwiftUI content, subclass the underlying AppKit view instead (e.g., `DraggableWKWebView` in `PreviewView.swift` overrides `mouseDown` to enable window dragging in the top region).
 
 **NSViewRepresentable binding gotcha**: SwiftUI can call `updateNSView` at any time — layout passes, state changes, etc. — not just in response to binding changes. When the user types, the text view's content changes immediately but the `@Binding` update is async. If `updateNSView` fires in between, it sees a mismatch and overwrites the text view with the stale binding value, causing the cursor to jump. A simple `isUpdating` boolean set inside the async block does NOT protect against this because SwiftUI defers the actual `updateNSView` call past the flag's lifetime. The fix is `pendingBindingUpdates` — a counter incremented synchronously in `textDidChange` and decremented in the async block. `updateNSView` skips text replacement while this counter is > 0. This pattern applies to any `NSViewRepresentable` that pushes changes from the AppKit side back to SwiftUI bindings asynchronously.
+
+**`@Published` emits in `willSet` — the property hasn't been written yet at sink-fire time.** A `.sink` on `state.$prop` runs *before* the assignment completes on the same thread. Reading `state.prop` synchronously inside the sink returns the OLD value, so any code that re-derives behavior from current state (e.g., `performFind()` reading `findState.caseSensitive`) sees stale options. Two safe patterns: (1) capture the new value from the closure parameter and pass it through, like the existing `state.$query.sink { newQuery in self.performFind(query: newQuery) }` in `EditorView.Coordinator`; or (2) `DispatchQueue.main.async` inside the sink so the property is written by the time the work runs. The CombineLatest subscription on the find option toggles uses pattern (2).
+
+**SwiftUI `.keyboardShortcut(letter, modifiers: [.command, .option])` does not dispatch on this macOS** even though the menu item displays the shortcut. `.command` alone and `[.command, .shift]` work fine; the option modifier on a letter silently fails. For ⌥⌘-letter shortcuts, follow the `injectHideToolbarIfNeeded` pattern in `ClearlyAppDelegate.applicationWillUpdate`: build an `NSMenuItem` with `keyEquivalent: "x"` + `keyEquivalentModifierMask = [.command, .option]`, target an `@objc` selector or post a notification, and let `MacRootView` observe. Don't use `.keyboardShortcut(... [.command, .option])` from a SwiftUI `Button` and assume it dispatches.
 
 ## Dual Distribution: Sparkle + App Store
 
@@ -147,6 +153,10 @@ Use these instead:
 ### `ClearlyUITextView` must stay on TextKit 1, not TextKit 2
 
 `Clearly/iOS/ClearlyUITextView.swift` calls `super.init(frame:textContainer:)` with a manually-constructed `NSTextStorage` → `NSLayoutManager` → `NSTextContainer` chain. Passing a non-nil `textContainer` is what forces TextKit 1 on iOS 16+; the default `UITextView(frame:)` defaults to TextKit 2, where `textView.textStorage` is effectively dead. Every path that reaches into `textStorage` — `MarkdownSyntaxHighlighter.highlightAll` / `highlightAround`, typing attributes, `NSTextStorageDelegate`, future save path in Phase 6 — depends on TextKit 1. Don't "simplify" the init to `super.init(frame:)` or use `UITextView(usingTextLayoutManager: true)`; highlighting will silently stop working with no crash.
+
+### iOS find-style highlights need an explicit background-color wipe before each paint
+
+TextKit 1 on iOS has no `removeTemporaryAttribute` API like macOS, so transient highlights (find matches, etc.) must live on `textStorage` via `addAttribute(.backgroundColor, ...)`. Re-running the syntax highlighter to "reset" backgrounds is NOT enough — `MarkdownSyntaxHighlighter.highlightAll` only *adds* attributes, it never removes them. So old find backgrounds from previous keystrokes persist into the next paint as orphaned yellow fragments. Always do `storage.removeAttribute(.backgroundColor, range: fullRange)` first, *then* re-run the highlighter (which repaints `==highlight==` markdown backgrounds), *then* paint your new find ranges. `EditorView_iOS.Coordinator.resetBackgroundsThenRehighlight` is the canonical helper.
 
 ### Save failures on iOS must not unmount the editor
 
