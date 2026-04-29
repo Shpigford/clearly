@@ -50,6 +50,21 @@ public enum CoordinatedFileIO {
         if let moveError { throw moveError }
     }
 
+    public static func copy(from src: URL, to dst: URL) throws {
+        var coordinatorError: NSError?
+        var copyError: Error?
+        NSFileCoordinator(filePresenter: nil).coordinate(
+            readingItemAt: src, options: .withoutChanges,
+            writingItemAt: dst, options: .forReplacing,
+            error: &coordinatorError
+        ) { resolvedSrc, resolvedDst in
+            do { try FileManager.default.copyItem(at: resolvedSrc, to: resolvedDst) }
+            catch { copyError = error }
+        }
+        if let coordinatorError { throw coordinatorError }
+        if let copyError { throw copyError }
+    }
+
     public static func delete(at url: URL) throws {
         var coordinatorError: NSError?
         var deleteError: Error?

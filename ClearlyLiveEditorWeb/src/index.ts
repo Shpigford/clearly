@@ -819,16 +819,30 @@ function toggleLinePrefix(view: EditorView, prefix: string, placeholder: string)
   const selection = view.state.selection.main;
   const selected = view.state.sliceDoc(selection.from, selection.to);
   if (!selected) {
+    const line = view.state.doc.lineAt(selection.from);
+    if (!line.text) {
+      view.dispatch({
+        changes: {
+          from: selection.from,
+          to: selection.to,
+          insert: `${prefix}${placeholder}`
+        },
+        selection: {
+          anchor: selection.from + prefix.length,
+          head: selection.from + prefix.length + placeholder.length
+        }
+      });
+      view.focus();
+      return;
+    }
+    if (line.text.startsWith(prefix)) {
+      view.focus();
+      return;
+    }
+    const cursorOffset = selection.from - line.from;
     view.dispatch({
-      changes: {
-        from: selection.from,
-        to: selection.to,
-        insert: `${prefix}${placeholder}`
-      },
-      selection: {
-        anchor: selection.from + prefix.length,
-        head: selection.from + prefix.length + placeholder.length
-      }
+      changes: { from: line.from, to: line.to, insert: `${prefix}${line.text}` },
+      selection: { anchor: line.from + prefix.length + cursorOffset }
     });
     view.focus();
     return;
@@ -836,7 +850,13 @@ function toggleLinePrefix(view: EditorView, prefix: string, placeholder: string)
 
   const range = selectedLineRange(view);
   const lines = view.state.sliceDoc(range.from, range.to).split("\n");
-  const result = lines.map((line) => (line ? `${prefix}${line}` : line)).join("\n");
+  const result = lines
+    .map((line) => {
+      if (!line) return line;
+      if (line.startsWith(prefix)) return line;
+      return `${prefix}${line}`;
+    })
+    .join("\n");
   view.dispatch({
     changes: { from: range.from, to: range.to, insert: result }
   });
@@ -847,10 +867,24 @@ function toggleNumberedList(view: EditorView) {
   const selection = view.state.selection.main;
   const selected = view.state.sliceDoc(selection.from, selection.to);
   if (!selected) {
-    const text = "1. list item";
+    const line = view.state.doc.lineAt(selection.from);
+    if (!line.text) {
+      const text = "1. list item";
+      view.dispatch({
+        changes: { from: selection.from, to: selection.to, insert: text },
+        selection: { anchor: selection.from + 3, head: selection.from + text.length }
+      });
+      view.focus();
+      return;
+    }
+    if (/^\d+\. /.test(line.text)) {
+      view.focus();
+      return;
+    }
+    const cursorOffset = selection.from - line.from;
     view.dispatch({
-      changes: { from: selection.from, to: selection.to, insert: text },
-      selection: { anchor: selection.from + 3, head: selection.from + text.length }
+      changes: { from: line.from, to: line.to, insert: `1. ${line.text}` },
+      selection: { anchor: line.from + 3 + cursorOffset }
     });
     view.focus();
     return;

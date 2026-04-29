@@ -98,7 +98,8 @@ struct ClaudeCLIAgentRunner: AgentRunner {
             // hand it the real user home so subscription auth works.
             let resolvedEnv = Self.environmentForSubprocess(
                 base: environment,
-                currentDirectory: process.currentDirectoryURL
+                currentDirectory: process.currentDirectoryURL,
+                binaryURL: binaryURL
             )
             process.environment = resolvedEnv
 
@@ -147,7 +148,8 @@ struct ClaudeCLIAgentRunner: AgentRunner {
     /// state inside Clearly's container or inherit Claude's own SDK mode flags.
     static func environmentForSubprocess(
         base: [String: String],
-        currentDirectory: URL? = nil
+        currentDirectory: URL? = nil,
+        binaryURL: URL? = nil
     ) -> [String: String] {
         var env = base
         for key in [
@@ -169,6 +171,18 @@ struct ClaudeCLIAgentRunner: AgentRunner {
         env["LOGNAME"] = user
         if let currentDirectory {
             env["PWD"] = currentDirectory.path
+        }
+        // npm-installed CLIs (Codex, Claude pre-Bun) ship as `#!/usr/bin/env node`
+        // scripts. Apps launched from the Dock inherit a minimal PATH
+        // (`/usr/bin:/bin:/usr/sbin:/sbin`) which doesn't include the node
+        // alongside the CLI in the same bin dir — so `env` fails to find
+        // `node`. Prepend the binary's parent dir so the shebang resolves.
+        if let binaryURL {
+            let binDir = binaryURL.deletingLastPathComponent().path
+            let existing = env["PATH"] ?? "/usr/bin:/bin:/usr/sbin:/sbin"
+            if !existing.split(separator: ":").contains(Substring(binDir)) {
+                env["PATH"] = "\(binDir):\(existing)"
+            }
         }
         return env
     }
