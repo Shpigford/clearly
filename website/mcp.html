@@ -124,6 +124,7 @@
                         <li><a class="text-zinc-300 hover:text-white" href="#get_frontmatter">get_frontmatter</a></li>
                         <li><a class="text-zinc-300 hover:text-white" href="#create_note">create_note</a></li>
                         <li><a class="text-zinc-300 hover:text-white" href="#update_note">update_note</a></li>
+                        <li><a class="text-zinc-300 hover:text-white" href="#move_note">move_note</a></li>
                     </ul>
                 </article>
             </div>
@@ -244,6 +245,19 @@
                     <p class="text-sm text-zinc-400 mb-3">Create a new note. Parent folders are created automatically. Returns a <code class="font-mono">note_exists</code> error if the path is already taken.</p>
                     <h3 class="mt-3 text-xs font-mono tracking-wide uppercase text-zinc-500">Input</h3>
                     <pre class="mt-2 rounded-md bg-black/40 p-4 text-xs font-mono text-zinc-300 overflow-x-auto"><code>{ relative_path: string, content: string, vault?: string }</code></pre>
+                </article>
+
+                <article id="move_note" class="rounded-xl outline-1 -outline-offset-1 outline-white/10 bg-white/[0.02] p-6 md:p-8 scroll-mt-20">
+                    <header class="mb-4 flex items-center gap-3">
+                        <h2 class="text-lg font-medium text-white font-mono">move_note</h2>
+                        <span class="px-2 py-0.5 rounded-full text-xs bg-amber-500/10 text-amber-300 ring-1 ring-inset ring-amber-500/20">write</span>
+                    </header>
+                    <p class="text-sm text-zinc-400 mb-3">Rename or move a note within a vault, rewriting every inbound <code class="font-mono">[[wiki-link]]</code> to point at the new path. Preserves heading anchors and aliases. Index <code class="font-mono">id</code> is preserved across the move &mdash; existing backlink relationships survive without re-resolution.</p>
+                    <h3 class="mt-3 text-xs font-mono tracking-wide uppercase text-zinc-500">Input</h3>
+                    <pre class="mt-2 rounded-md bg-black/40 p-4 text-xs font-mono text-zinc-300 overflow-x-auto"><code>{ from_path: string, to_path: string, vault?: string }</code></pre>
+                    <h3 class="mt-4 text-xs font-mono tracking-wide uppercase text-zinc-500">Output</h3>
+                    <pre class="mt-2 rounded-md bg-black/40 p-4 text-xs font-mono text-zinc-300 overflow-x-auto"><code>{ vault, from, to,
+  links_rewritten: [{ relative_path, count }] }</code></pre>
                 </article>
 
                 <article id="update_note" class="rounded-xl outline-1 -outline-offset-1 outline-white/10 bg-white/[0.02] p-6 md:p-8 scroll-mt-20">

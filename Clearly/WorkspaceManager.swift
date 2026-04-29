@@ -1095,15 +1095,7 @@ final class WorkspaceManager {
 
     func renameItem(at url: URL, to newName: String) -> URL? {
         let newURL = url.deletingLastPathComponent().appendingPathComponent(newName)
-        do {
-            try FileManager.default.moveItem(at: url, to: newURL)
-            rewriteMovedItemReferences(from: url, to: newURL)
-            DiagnosticLog.log("Renamed: \(url.lastPathComponent) → \(newName)")
-            return newURL
-        } catch {
-            DiagnosticLog.log("Failed to rename: \(error.localizedDescription)")
-            return nil
-        }
+        return performVaultMove(from: url, to: newURL, kind: "Renamed")
     }
 
     func moveItem(at sourceURL: URL, into folderURL: URL) -> URL? {
@@ -1114,13 +1106,46 @@ final class WorkspaceManager {
             return nil
         }
 
+        return performVaultMove(from: sourceURL, to: destURL, kind: "Moved")
+    }
+
+    /// Vault-aware move/rename. When the source falls under a managed
+    /// vault, every inbound `[[wiki-link]]` is rewritten to the new path
+    /// before the file moves, and the SQLite index is updated without
+    /// losing inbound link relationships. Outside any managed vault we
+    /// fall through to a plain `FileManager.moveItem`.
+    private func performVaultMove(from url: URL, to newURL: URL, kind: String) -> URL? {
+        if let (location, rootURL) = containingLocationAndRoot(for: url),
+           let index = vaultIndexes[location.id] {
+            let oldRelative = VaultIndex.relativePath(of: url, from: rootURL)
+            let newRelative = VaultIndex.relativePath(of: newURL, from: rootURL)
+            do {
+                try VaultMover.move(
+                    index: index,
+                    vaultRootURL: rootURL,
+                    oldRelativePath: oldRelative,
+                    newRelativePath: newRelative
+                )
+                rewriteMovedItemReferences(from: url, to: newURL)
+                DiagnosticLog.log("\(kind): \(url.lastPathComponent) → \(newURL.lastPathComponent)")
+                return newURL
+            } catch VaultMover.MoveError.sourceNotIndexed {
+                // File wasn't in the index yet (e.g. an untitled save that
+                // raced ahead of the watcher) — fall through to a plain
+                // move and let the watcher catch up.
+            } catch {
+                DiagnosticLog.log("Vault-aware \(kind.lowercased()) failed for \(url.lastPathComponent): \(error.localizedDescription)")
+                return nil
+            }
+        }
+
         do {
-            try FileManager.default.moveItem(at: sourceURL, to: destURL)
-            rewriteMovedItemReferences(from: sourceURL, to: destURL)
-            DiagnosticLog.log("Moved: \(sourceURL.lastPathComponent) → \(folderURL.lastPathComponent)/")
-            return destURL
+            try FileManager.default.moveItem(at: url, to: newURL)
+            rewriteMovedItemReferences(from: url, to: newURL)
+            DiagnosticLog.log("\(kind): \(url.lastPathComponent) → \(newURL.lastPathComponent)")
+            return newURL
         } catch {
-            DiagnosticLog.log("Failed to move: \(error.localizedDescription)")
+            DiagnosticLog.log("Failed to \(kind.lowercased()): \(error.localizedDescription)")
             return nil
         }
     }

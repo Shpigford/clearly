@@ -101,6 +101,16 @@ enum Handlers {
                 return try await createNote(args, vaults: vaults)
             }
 
+        case "move_note":
+            return await structuredCall {
+                let args = MoveNoteArgs(
+                    fromPath: params.arguments?["from_path"]?.stringValue ?? "",
+                    toPath: params.arguments?["to_path"]?.stringValue ?? "",
+                    vault: params.arguments?["vault"]?.stringValue
+                )
+                return try await moveNote(args, vaults: vaults)
+            }
+
         case "update_note":
             return await structuredCall {
                 guard let modeStr = params.arguments?["mode"]?.stringValue,

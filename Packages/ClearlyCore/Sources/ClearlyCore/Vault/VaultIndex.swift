@@ -293,6 +293,31 @@ public final class VaultIndex: @unchecked Sendable {
         }
     }
 
+    /// Move a file row from one vault-relative path to another, preserving
+    /// `id` (and therefore every inbound `links.target_file_id` row that
+    /// already pointed at it). Updates `path`, `filename`, the FTS row's
+    /// filename column, and re-resolves any unresolved link rows whose
+    /// `target_name` matches the new filename. Caller is responsible for
+    /// the actual filesystem move and for re-indexing source files whose
+    /// content was rewritten as part of the move.
+    public func moveFile(fromPath oldPath: String, toPath newPath: String) throws {
+        try dbPool.write { db in
+            guard let row = try Row.fetchOne(db, sql: "SELECT id FROM files WHERE path = ?", arguments: [oldPath]) else {
+                return
+            }
+            let id: Int64 = row["id"]
+            let newFilename = URL(fileURLWithPath: newPath).deletingPathExtension().lastPathComponent
+            try db.execute(sql: """
+                UPDATE files SET path = ?, filename = ? WHERE id = ?
+                """, arguments: [newPath, newFilename, id])
+            // files_fts mirrors filename; keep it in sync without re-tokenizing content.
+            try db.execute(sql: """
+                UPDATE files_fts SET filename = ? WHERE rowid = ?
+                """, arguments: [newFilename, id])
+            try self.resolveWikiLinkTargets(db: db)
+        }
+    }
+
     // MARK: Write — Full Index
 
     public func indexAllFiles(showHiddenFiles: Bool = false) {
@@ -521,10 +546,18 @@ public final class VaultIndex: @unchecked Sendable {
     }
 
     private func resolveWikiLinkTargets(db: Database) throws {
+        // Resolve `[[wiki-link]]` text in the source to a concrete file
+        // row. Tries, in order: bare filename match (the dominant short
+        // form), exact path match (`[[notes/foo.md]]`), and stripped
+        // path with an `.md` / `.markdown` extension appended (the form
+        // produced by `WikiLinkRewriter` after a vault-aware move).
         try db.execute(sql: """
             UPDATE links SET target_file_id = (
                 SELECT f.id FROM files f
                 WHERE LOWER(f.filename) = LOWER(links.target_name)
+                   OR LOWER(f.path) = LOWER(links.target_name)
+                   OR LOWER(f.path) = LOWER(links.target_name) || '.md'
+                   OR LOWER(f.path) = LOWER(links.target_name) || '.markdown'
                 LIMIT 1
             )
             """)

@@ -18,6 +18,7 @@ struct ClearlyCLI: AsyncParsableCommand {
             TagsCommand.self,
             CreateCommand.self,
             UpdateCommand.self,
+            MoveCommand.self,
             VaultsCommand.self,
             IndexCommand.self,
             StatusCommand.self,
