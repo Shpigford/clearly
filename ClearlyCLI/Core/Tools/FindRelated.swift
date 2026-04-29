@@ -56,7 +56,10 @@ func findRelated(_ args: FindRelatedArgs, vaults: [LoadedVault]) async throws ->
         throw ToolError.noteNotFound(args.relativePath)
     }
 
-    let sourceChunks = try sourceVault.index.chunkEmbeddings(forFileID: sourceFile.id)
+    let sourceChunks = try sourceVault.index.currentChunkEmbeddings(
+        forFileID: sourceFile.id,
+        modelVersion: EmbeddingService.MODEL_VERSION
+    )
     guard let queryVector = meanVector(of: sourceChunks.map(\.vector)) else {
         return FindRelatedResult(
             vault: sourceVault.url.lastPathComponent,

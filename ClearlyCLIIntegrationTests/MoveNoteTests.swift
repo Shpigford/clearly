@@ -123,6 +123,63 @@ final class MoveNoteTests: XCTestCase {
         )
     }
 
+    func testDestinationConflictDoesNotRewriteInboundLinks() async throws {
+        let index = harness.loadedVaults[0].index
+        let linkerURL = harness.vaultURL.appendingPathComponent("Notes/Linker.md")
+        let before = try String(contentsOf: linkerURL, encoding: .utf8)
+
+        do {
+            _ = try VaultMover.move(
+                index: index,
+                vaultRootURL: harness.vaultURL,
+                oldRelativePath: "Notes/Link Target.md",
+                newRelativePath: "Notes/Linker.md"
+            )
+            XCTFail("expected destination conflict")
+        } catch VaultMover.MoveError.destinationExists(let path) {
+            XCTAssertEqual(path, "Notes/Linker.md")
+        } catch {
+            XCTFail("unexpected error: \(error)")
+        }
+
+        let after = try String(contentsOf: linkerURL, encoding: .utf8)
+        XCTAssertEqual(after, before)
+        XCTAssertTrue(FileManager.default.fileExists(
+            atPath: harness.vaultURL.appendingPathComponent("Notes/Link Target.md").path
+        ))
+    }
+
+    func testSelfLinkIsReindexedAtDestination() async throws {
+        let index = harness.loadedVaults[0].index
+        let sourcePath = "Notes/Self Link.md"
+        let destPath = "Archived/Self Link.md"
+        let sourceURL = harness.vaultURL.appendingPathComponent(sourcePath)
+        try Data("See [[Self Link]] here.\n".utf8).write(to: sourceURL, options: .atomic)
+        _ = try index.updateFile(at: sourcePath)
+
+        let result = try await harness.callTool(
+            "move_note",
+            arguments: [
+                "from_path": .string(sourcePath),
+                "to_path": .string(destPath),
+            ],
+            as: Result.self
+        )
+
+        XCTAssertEqual(result.linksRewritten.first?.relativePath, destPath)
+
+        let destURL = harness.vaultURL.appendingPathComponent(destPath)
+        let content = try String(contentsOf: destURL, encoding: .utf8)
+        XCTAssertTrue(content.contains("[[Archived/Self Link]]"))
+
+        guard let moved = index.file(forRelativePath: destPath) else {
+            return XCTFail("moved file missing from index")
+        }
+        let outgoing = index.linksFrom(fileId: moved.id)
+        XCTAssertEqual(outgoing.map(\.targetName), ["Archived/Self Link"])
+        XCTAssertEqual(outgoing.first?.targetFileId, moved.id)
+    }
+
     func testMissingSourceErrors() async throws {
         let payload = try await harness.callToolExpectingError(
             "move_note",

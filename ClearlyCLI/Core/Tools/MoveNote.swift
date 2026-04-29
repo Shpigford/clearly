@@ -62,6 +62,8 @@ func moveNote(_ args: MoveNoteArgs, vaults: [LoadedVault]) async throws -> MoveN
         )
     } catch VaultMover.MoveError.sourceNotIndexed {
         throw ToolError.noteNotFound(args.fromPath)
+    } catch VaultMover.MoveError.destinationExists(_) {
+        throw ToolError.conflict(existingPath: args.toPath)
     }
 
     return MoveNoteResult(

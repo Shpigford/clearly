@@ -1318,6 +1318,37 @@ public final class VaultIndex: @unchecked Sendable {
         }
     }
 
+    /// Lookup current chunks for a file at `modelVersion`. Skips stale rows
+    /// whose stored content hash no longer matches the file row.
+    public func currentChunkEmbeddings(forFileID fileID: Int64, modelVersion: Int) throws -> [StoredChunkEmbedding] {
+        try dbPool.read { db in
+            let rows = try Row.fetchAll(db, sql: """
+                SELECT e.file_id, e.chunk_index, f.path, e.heading_path,
+                       e.chunk_text_offset, e.chunk_text_length, e.vector
+                FROM embeddings e
+                JOIN files f ON f.id = e.file_id
+                WHERE e.file_id = ?
+                  AND e.model_version = ?
+                  AND e.content_hash = f.content_hash
+                ORDER BY e.chunk_index
+                """, arguments: [fileID, modelVersion])
+            return rows.compactMap { row -> StoredChunkEmbedding? in
+                let blob: Data = row["vector"]
+                guard let vec = [Float].fromBlobData(blob) else { return nil }
+                let headingJSON: String = row["heading_path"]
+                return StoredChunkEmbedding(
+                    fileID: row["file_id"],
+                    chunkIndex: row["chunk_index"],
+                    path: row["path"],
+                    headingPath: Self.decodeHeadingPath(headingJSON),
+                    textOffset: row["chunk_text_offset"],
+                    textLength: row["chunk_text_length"],
+                    vector: vec
+                )
+            }
+        }
+    }
+
     /// Explicit invalidation — clears every chunk row + chunks_fts. Used when the embedder
     /// itself changes (e.g. dimension flip on a future swap) and you'd rather take the hit
     /// up-front than rely on `embeddingsMissingOrStale` to drip-detect.

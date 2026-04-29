@@ -151,6 +151,28 @@ final class FindRelatedTests: XCTestCase {
         XCTAssertTrue(result.results.isEmpty)
     }
 
+    func testReturnsEmptyResultsWhenSourceEmbeddingsAreStale() async throws {
+        let index = harness.loadedVaults[0].index
+        guard let source = index.file(forRelativePath: "Notes/Linker.md") else {
+            return XCTFail("source missing from fixture")
+        }
+
+        try seedChunk(index, file: source, vector: [1, 0])
+
+        let url = harness.vaultURL.appendingPathComponent("Notes/Linker.md")
+        try Data("# changed\n".utf8).write(to: url, options: .atomic)
+        _ = try index.updateFile(at: "Notes/Linker.md")
+
+        let result = try await harness.callTool(
+            "find_related",
+            arguments: ["relative_path": .string("Notes/Linker.md")],
+            as: Result.self
+        )
+        XCTAssertEqual(result.totalCount, 0)
+        XCTAssertEqual(result.returnedCount, 0)
+        XCTAssertTrue(result.results.isEmpty)
+    }
+
     func testMissingSourceErrors() async throws {
         let payload = try await harness.callToolExpectingError(
             "find_related",
