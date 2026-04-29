@@ -529,12 +529,15 @@ struct EditorView: NSViewRepresentable {
 
             state.$query
                 .removeDuplicates()
-                .sink { [weak self] _ in
+                .sink { [weak self] newQuery in
                     guard let self,
                           let findState = self.findState,
                           findState.isVisible,
                           findState.activeMode == .edit else { return }
-                    self.performFind()
+                    // `@Published` fires in willSet — `findState.query` still
+                    // reads the OLD value here. Pass `newQuery` explicitly so
+                    // performFind doesn't run a keystroke behind.
+                    self.performFind(query: newQuery)
                 }
                 .store(in: &findCancellables)
 
@@ -780,9 +783,9 @@ struct EditorView: NSViewRepresentable {
 
         // MARK: - Find
 
-        func performFind() {
+        func performFind(query overrideQuery: String? = nil) {
             guard let textView, let findState else { return }
-            let query = findState.query
+            let query = overrideQuery ?? findState.query
             clearFindHighlights()
 
             guard !query.isEmpty else {
@@ -855,8 +858,10 @@ struct EditorView: NSViewRepresentable {
             }
         }
 
-        // Temporary attributes live on the layout manager (not text storage) so
-        // they don't drift with edits and don't collide with `==highlight==`.
+        // Find highlights live on the layout manager via temporary attributes,
+        // not on text storage. This is Apple's recommended pattern for
+        // transient UI highlighting and means find painting never overwrites
+        // `==highlight==` markdown backgrounds (which DO live on storage).
         private func applyFindHighlights() {
             guard let textView, let layoutManager = textView.layoutManager else { return }
             let storage = textView.textStorage!

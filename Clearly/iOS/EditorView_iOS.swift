@@ -171,15 +171,17 @@ struct EditorView_iOS: UIViewRepresentable {
             }
         }
 
-        // UIKit's NSLayoutManager has no temporary-attribute API, so we use
-        // storage attributes but key removal on color value — that way
-        // `==highlight==` markdown backgrounds (a different color) survive
-        // when we wipe find highlights.
+        // UIKit's NSLayoutManager has no temporary-attribute API, so find
+        // highlights have to use storage attributes. To prevent find color
+        // from clobbering `==highlight==` markdown backgrounds, we re-run
+        // the syntax highlighter (which resets bg per paragraph) before
+        // every paint — and again on clear so dismissed find never leaves
+        // missing backgrounds behind.
         private func applyFindHighlights() {
             guard let textView else { return }
             let storage = textView.textStorage
+            rerunSyntaxHighlighter(on: storage)
             storage.beginEditing()
-            removeFindBackgrounds(in: storage)
             for (i, range) in matchRanges.enumerated() {
                 guard range.upperBound <= storage.length else { continue }
                 let color = (i == currentMatchIdx) ? Theme.findCurrentHighlightColor : Theme.findHighlightColor
@@ -190,26 +192,16 @@ struct EditorView_iOS: UIViewRepresentable {
 
         private func clearFindHighlights() {
             guard let textView else { return }
-            let storage = textView.textStorage
-            storage.beginEditing()
-            removeFindBackgrounds(in: storage)
-            storage.endEditing()
+            rerunSyntaxHighlighter(on: textView.textStorage)
             matchRanges = []
             currentMatchIdx = 0
         }
 
-        private func removeFindBackgrounds(in storage: NSTextStorage) {
-            let fullRange = NSRange(location: 0, length: storage.length)
-            var rangesToClear: [NSRange] = []
-            storage.enumerateAttribute(.backgroundColor, in: fullRange) { value, range, _ in
-                guard let color = value as? PlatformColor else { return }
-                if color == Theme.findHighlightColor || color == Theme.findCurrentHighlightColor {
-                    rangesToClear.append(range)
-                }
-            }
-            for range in rangesToClear {
-                storage.removeAttribute(.backgroundColor, range: range)
-            }
+        private func rerunSyntaxHighlighter(on storage: NSTextStorage) {
+            let wasHighlighting = isHighlighting
+            isHighlighting = true
+            highlighter.highlightAll(storage, caller: "find-rerun")
+            isHighlighting = wasHighlighting
         }
 
         private func scrollToRange(_ range: NSRange) {
