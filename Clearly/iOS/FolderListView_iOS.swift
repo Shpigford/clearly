@@ -23,9 +23,8 @@ struct FolderListView_iOS: View {
     @State private var pendingFolderParent: URL?
     @State private var operationError: String?
 
-    @State private var renameTarget: VaultFile?
-    @State private var renameDraft: String = ""
     @State private var deleteTarget: VaultFile?
+    @State private var moveTarget: VaultFile?
 
     var body: some View {
         @Bindable var session = session
@@ -78,14 +77,11 @@ struct FolderListView_iOS: View {
         } message: {
             Text("Name this folder. It will be created in \(newFolderLocationDescription).")
         }
-        .alert("Rename note", isPresented: renameAlertBinding) {
-            TextField("Name", text: $renameDraft)
-                .textInputAutocapitalization(.never)
-                .autocorrectionDisabled()
-            Button("Cancel", role: .cancel) { renameTarget = nil }
-            Button("Save") { commitRename() }
-        } message: {
-            Text("Enter a new name (extension preserved).")
+        .sheet(item: $moveTarget) { file in
+            FolderPickerSheet_iOS(movingFile: file) { destination in
+                performMove(file, to: destination)
+            }
+            .environment(session)
         }
         .confirmationDialog(
             deleteTarget.map { "Delete \u{201C}\($0.name)\u{201D}?" } ?? "",
@@ -139,8 +135,10 @@ struct FolderListView_iOS: View {
                                 navPath.append(file)
                                 session.markRecent(file)
                             },
-                            onRenameFile: { file in beginRename(file) },
+                            onRenameFile: { file, newName in performRename(file, to: newName) },
                             onDeleteFile: { file in deleteTarget = file },
+                            onMoveFile: { file in moveTarget = file },
+                            onDuplicateFile: { file in performDuplicate(file) },
                             onCreateFile: { folder in createFile(in: folder) },
                             onCreateFolder: { folder in beginCreateFolder(in: folder) }
                         )
@@ -292,14 +290,7 @@ struct FolderListView_iOS: View {
         return session.currentVault?.displayName ?? "the vault"
     }
 
-    // MARK: - Rename / delete
-
-    private var renameAlertBinding: Binding<Bool> {
-        Binding(
-            get: { renameTarget != nil },
-            set: { if !$0 { renameTarget = nil } }
-        )
-    }
+    // MARK: - Rename / move / duplicate / delete
 
     private var deleteConfirmBinding: Binding<Bool> {
         Binding(
@@ -308,18 +299,34 @@ struct FolderListView_iOS: View {
         )
     }
 
-    private func beginRename(_ file: VaultFile) {
-        renameDraft = (file.name as NSString).deletingPathExtension
-        renameTarget = file
-    }
-
-    private func commitRename() {
-        guard let target = renameTarget else { return }
-        let draft = renameDraft
-        renameTarget = nil
+    private func performRename(_ file: VaultFile, to newName: String) {
         Task {
             do {
-                try await session.renameFile(target, to: draft)
+                try await session.renameFile(file, to: newName)
+            } catch VaultSessionError.readFailed(let msg) {
+                operationError = msg
+            } catch {
+                operationError = error.localizedDescription
+            }
+        }
+    }
+
+    private func performMove(_ file: VaultFile, to destination: URL) {
+        Task {
+            do {
+                try await session.moveFile(file, to: destination)
+            } catch VaultSessionError.readFailed(let msg) {
+                operationError = msg
+            } catch {
+                operationError = error.localizedDescription
+            }
+        }
+    }
+
+    private func performDuplicate(_ file: VaultFile) {
+        Task {
+            do {
+                _ = try await session.duplicateFile(file)
             } catch VaultSessionError.readFailed(let msg) {
                 operationError = msg
             } catch {

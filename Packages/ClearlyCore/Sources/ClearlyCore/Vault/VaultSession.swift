@@ -554,6 +554,53 @@ public final class VaultSession {
         refresh()
     }
 
+    /// Move a file into a different folder, preserving its filename. No-ops when
+    /// the destination folder is already the file's parent. Throws if a file with
+    /// the same name already exists at the destination.
+    public func moveFile(_ file: VaultFile, to destinationFolder: URL) async throws {
+        let currentParent = file.url.deletingLastPathComponent().standardizedFileURL
+        let target = destinationFolder.standardizedFileURL
+        if currentParent == target { return }
+        let destURL = destinationFolder.appendingPathComponent(file.url.lastPathComponent)
+        if FileManager.default.fileExists(atPath: destURL.path) {
+            throw VaultSessionError.readFailed("a file with that name already exists in the destination folder")
+        }
+        let src = file.url
+        try await Task.detached(priority: .userInitiated) {
+            try CoordinatedFileIO.move(from: src, to: destURL)
+        }.value
+        dropFromNavigationPath(file.url)
+        dropFromRecents(file.url)
+        refresh()
+    }
+
+    /// Duplicate a file in the same folder using Finder's "<stem> 2", "<stem> 3"
+    /// naming convention. Probes incrementing names until a free slot is found
+    /// (capped at 1000 to avoid runaway loops).
+    @discardableResult
+    public func duplicateFile(_ file: VaultFile) async throws -> VaultFile {
+        let parent = file.url.deletingLastPathComponent()
+        let stem = (file.url.lastPathComponent as NSString).deletingPathExtension
+        let ext = file.url.pathExtension.isEmpty ? "md" : file.url.pathExtension
+        var candidate: URL?
+        for n in 2...1000 {
+            let url = parent.appendingPathComponent("\(stem) \(n).\(ext)")
+            if !FileManager.default.fileExists(atPath: url.path) {
+                candidate = url
+                break
+            }
+        }
+        guard let destURL = candidate else {
+            throw VaultSessionError.readFailed("could not find an unused duplicate name")
+        }
+        let src = file.url
+        try await Task.detached(priority: .userInitiated) {
+            try CoordinatedFileIO.copy(from: src, to: destURL)
+        }.value
+        refresh()
+        return VaultFile(url: destURL, name: destURL.lastPathComponent, modified: Date(), isPlaceholder: false)
+    }
+
     /// Delete a file from the vault. Prunes from `navigationPath` and recents.
     public func deleteFile(_ file: VaultFile) async throws {
         let url = file.url

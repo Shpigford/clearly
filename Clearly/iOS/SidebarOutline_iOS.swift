@@ -8,19 +8,28 @@ import ClearlyCore
 /// expansion state, files render as tappable leaf rows. Empty folders render
 /// as leaves so the disclosure indicator hides.
 ///
-/// Actions (open, rename, delete, create) are pushed back to the host view
-/// via callbacks so each platform can drive its own alert/confirmation chrome
-/// without the outline owning that state.
+/// File actions (open, rename, delete, move, duplicate) are pushed back to the
+/// host view via callbacks so each platform can drive its own sheet/dialog
+/// chrome without the outline owning that state. Rename is the exception —
+/// it edits inline within the row, so the outline owns just enough local
+/// state to swap a `Label` for a `TextField` and report the new name on
+/// commit.
 struct SidebarOutline_iOS: View {
     let nodes: [FileNode]
     let onSelectFile: (VaultFile) -> Void
-    let onRenameFile: (VaultFile) -> Void
+    let onRenameFile: (VaultFile, String) -> Void
     let onDeleteFile: (VaultFile) -> Void
+    let onMoveFile: (VaultFile) -> Void
+    let onDuplicateFile: (VaultFile) -> Void
     let onCreateFile: (URL) -> Void
     let onCreateFolder: (URL) -> Void
 
     @Environment(VaultSession.self) private var session
     @Environment(IOSExpansionState.self) private var expansion
+
+    @State private var renamingURL: URL?
+    @State private var renameDraft: String = ""
+    @FocusState private var renameFieldFocused: Bool
 
     var body: some View {
         ForEach(nodes) { node in
@@ -61,20 +70,29 @@ struct SidebarOutline_iOS: View {
         Label(node.name, systemImage: "folder")
     }
 
+    @ViewBuilder
     private func fileRow(_ node: FileNode) -> some View {
         let resolved = vaultFile(for: node)
+        if renamingURL == node.url {
+            renameRow(for: resolved)
+        } else {
+            displayRow(for: resolved, node: node)
+        }
+    }
+
+    private func displayRow(for file: VaultFile, node: FileNode) -> some View {
         let title = node.url.deletingPathExtension().lastPathComponent
         return Label(title, systemImage: "doc.text")
             .contentShape(Rectangle())
-            .onTapGesture { onSelectFile(resolved) }
+            .onTapGesture { onSelectFile(file) }
             .swipeActions(edge: .trailing, allowsFullSwipe: true) {
                 Button(role: .destructive) {
-                    onDeleteFile(resolved)
+                    onDeleteFile(file)
                 } label: {
                     Label("Delete", systemImage: "trash")
                 }
                 Button {
-                    onRenameFile(resolved)
+                    beginInlineRename(file)
                 } label: {
                     Label("Rename", systemImage: "pencil")
                 }
@@ -82,16 +100,49 @@ struct SidebarOutline_iOS: View {
             }
             .contextMenu {
                 Button {
-                    onRenameFile(resolved)
+                    beginInlineRename(file)
                 } label: {
                     Label("Rename", systemImage: "pencil")
                 }
+                Button {
+                    onMoveFile(file)
+                } label: {
+                    Label("Move\u{2026}", systemImage: "folder")
+                }
+                Button {
+                    onDuplicateFile(file)
+                } label: {
+                    Label("Duplicate", systemImage: "plus.square.on.square")
+                }
+                ShareLink(item: file.url)
+                Divider()
                 Button(role: .destructive) {
-                    onDeleteFile(resolved)
+                    onDeleteFile(file)
                 } label: {
                     Label("Delete", systemImage: "trash")
                 }
             }
+    }
+
+    private func renameRow(for file: VaultFile) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: "doc.text")
+                .foregroundStyle(.secondary)
+            TextField("Name", text: $renameDraft)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+                .submitLabel(.done)
+                .focused($renameFieldFocused)
+                .onSubmit { commitInlineRename(file) }
+        }
+        .onChange(of: renameFieldFocused) { _, isFocused in
+            // Commit on focus loss (tap outside, swipe away). Guard against
+            // late callbacks after the row already committed and cleared
+            // `renamingURL`.
+            if !isFocused, renamingURL == file.url {
+                commitInlineRename(file)
+            }
+        }
     }
 
     @ViewBuilder
@@ -106,6 +157,29 @@ struct SidebarOutline_iOS: View {
         } label: {
             Label("New Folder", systemImage: "folder.badge.plus")
         }
+    }
+
+    // MARK: - Inline rename
+
+    private func beginInlineRename(_ file: VaultFile) {
+        renameDraft = (file.name as NSString).deletingPathExtension
+        renamingURL = file.url
+        // Defer focus so the TextField has been laid out before the keyboard
+        // raises — without the dispatch the focus often loses to the row's
+        // tap gesture in compact layouts.
+        DispatchQueue.main.async {
+            renameFieldFocused = true
+        }
+    }
+
+    private func commitInlineRename(_ file: VaultFile) {
+        let draft = renameDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+        let original = (file.name as NSString).deletingPathExtension
+        renamingURL = nil
+        renameFieldFocused = false
+        renameDraft = ""
+        guard !draft.isEmpty, draft != original else { return }
+        onRenameFile(file, draft)
     }
 
     // MARK: - VaultFile lookup
