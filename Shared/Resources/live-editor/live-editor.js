@@ -15460,7 +15460,7 @@
   function topNodeAt(state, pos, side) {
     let topLang = state.facet(language), tree = syntaxTree(state).topNode;
     if (!topLang || topLang.allowsNesting) {
-      for (let node = tree; node; node = node.enter(pos, side, IterMode.ExcludeBuffers | IterMode.EnterBracketed))
+      for (let node = tree; node; node = node.enter(pos, side, IterMode.ExcludeBuffers))
         if (node.type.isTop)
           tree = node;
     }
@@ -16232,6 +16232,157 @@
     let first = node.firstChild, last = node.lastChild;
     return first && first.to < last.from ? { from: first.to, to: last.type.isError ? node.to : last.from } : null;
   }
+  function mapRange(range, mapping) {
+    let from = mapping.mapPos(range.from, 1), to = mapping.mapPos(range.to, -1);
+    return from >= to ? void 0 : { from, to };
+  }
+  var foldEffect = /* @__PURE__ */ StateEffect.define({ map: mapRange });
+  var unfoldEffect = /* @__PURE__ */ StateEffect.define({ map: mapRange });
+  var foldState = /* @__PURE__ */ StateField.define({
+    create() {
+      return Decoration.none;
+    },
+    update(folded, tr) {
+      if (tr.isUserEvent("delete"))
+        tr.changes.iterChangedRanges((fromA, toA) => folded = clearTouchedFolds(folded, fromA, toA));
+      folded = folded.map(tr.changes);
+      for (let e of tr.effects) {
+        if (e.is(foldEffect) && !foldExists(folded, e.value.from, e.value.to)) {
+          let { preparePlaceholder } = tr.state.facet(foldConfig);
+          let widget = !preparePlaceholder ? foldWidget : Decoration.replace({ widget: new PreparedFoldWidget(preparePlaceholder(tr.state, e.value)) });
+          folded = folded.update({ add: [widget.range(e.value.from, e.value.to)] });
+        } else if (e.is(unfoldEffect)) {
+          folded = folded.update({
+            filter: (from, to) => e.value.from != from || e.value.to != to,
+            filterFrom: e.value.from,
+            filterTo: e.value.to
+          });
+        }
+      }
+      if (tr.selection)
+        folded = clearTouchedFolds(folded, tr.selection.main.head);
+      return folded;
+    },
+    provide: (f) => EditorView.decorations.from(f),
+    toJSON(folded, state) {
+      let ranges = [];
+      folded.between(0, state.doc.length, (from, to) => {
+        ranges.push(from, to);
+      });
+      return ranges;
+    },
+    fromJSON(value) {
+      if (!Array.isArray(value) || value.length % 2)
+        throw new RangeError("Invalid JSON for fold state");
+      let ranges = [];
+      for (let i = 0; i < value.length; ) {
+        let from = value[i++], to = value[i++];
+        if (typeof from != "number" || typeof to != "number")
+          throw new RangeError("Invalid JSON for fold state");
+        ranges.push(foldWidget.range(from, to));
+      }
+      return Decoration.set(ranges, true);
+    }
+  });
+  function clearTouchedFolds(folded, from, to = from) {
+    let touched = false;
+    folded.between(from, to, (a, b) => {
+      if (a < to && b > from)
+        touched = true;
+    });
+    return !touched ? folded : folded.update({
+      filterFrom: from,
+      filterTo: to,
+      filter: (a, b) => a >= to || b <= from
+    });
+  }
+  function foldedRanges(state) {
+    return state.field(foldState, false) || RangeSet.empty;
+  }
+  function findFold(state, from, to) {
+    var _a3;
+    let found = null;
+    (_a3 = state.field(foldState, false)) === null || _a3 === void 0 ? void 0 : _a3.between(from, to, (from2, to2) => {
+      if (!found || found.from > from2)
+        found = { from: from2, to: to2 };
+    });
+    return found;
+  }
+  function foldExists(folded, from, to) {
+    let found = false;
+    folded.between(from, from, (a, b) => {
+      if (a == from && b == to)
+        found = true;
+    });
+    return found;
+  }
+  var defaultConfig = {
+    placeholderDOM: null,
+    preparePlaceholder: null,
+    placeholderText: "\u2026"
+  };
+  var foldConfig = /* @__PURE__ */ Facet.define({
+    combine(values2) {
+      return combineConfig(values2, defaultConfig);
+    }
+  });
+  function codeFolding(config2) {
+    let result = [foldState, baseTheme$12];
+    if (config2)
+      result.push(foldConfig.of(config2));
+    return result;
+  }
+  function widgetToDOM(view, prepared) {
+    let { state } = view, conf = state.facet(foldConfig);
+    let onclick = (event) => {
+      let line = view.lineBlockAt(view.posAtDOM(event.target));
+      let folded = findFold(view.state, line.from, line.to);
+      if (folded)
+        view.dispatch({ effects: unfoldEffect.of(folded) });
+      event.preventDefault();
+    };
+    if (conf.placeholderDOM)
+      return conf.placeholderDOM(view, onclick, prepared);
+    let element = document.createElement("span");
+    element.textContent = conf.placeholderText;
+    element.setAttribute("aria-label", state.phrase("folded code"));
+    element.title = state.phrase("unfold");
+    element.className = "cm-foldPlaceholder";
+    element.onclick = onclick;
+    return element;
+  }
+  var foldWidget = /* @__PURE__ */ Decoration.replace({ widget: /* @__PURE__ */ new class extends WidgetType {
+    toDOM(view) {
+      return widgetToDOM(view, null);
+    }
+  }() });
+  var PreparedFoldWidget = class extends WidgetType {
+    constructor(value) {
+      super();
+      this.value = value;
+    }
+    eq(other) {
+      return this.value == other.value;
+    }
+    toDOM(view) {
+      return widgetToDOM(view, this.value);
+    }
+  };
+  var baseTheme$12 = /* @__PURE__ */ EditorView.baseTheme({
+    ".cm-foldPlaceholder": {
+      backgroundColor: "#eee",
+      border: "1px solid #ddd",
+      color: "#888",
+      borderRadius: ".2em",
+      margin: "0 1px",
+      padding: "0 1px",
+      cursor: "pointer"
+    },
+    ".cm-foldGutter span": {
+      padding: "0 1px",
+      cursor: "pointer"
+    }
+  });
   var HighlightStyle = class _HighlightStyle {
     constructor(specs, options) {
       this.specs = specs;
@@ -16409,8 +16560,6 @@
     return { start: firstToken, matched: false };
   }
   function matchPlainBrackets(state, pos, dir, tree, tokenType, maxScanDistance, brackets) {
-    if (dir < 0 ? !pos : pos == state.doc.length)
-      return null;
     let startCh = dir < 0 ? state.sliceDoc(pos - 1, pos) : state.sliceDoc(pos, pos + 1);
     let bracket2 = brackets.indexOf(startCh);
     if (bracket2 < 0 || bracket2 % 2 == 0 != dir > 0)
@@ -32485,6 +32634,216 @@ $$`);
     },
     provide: (field) => EditorView.decorations.from(field)
   });
+  function stripInlineMarkdown(text2) {
+    let r = text2;
+    r = r.replace(/!\[([^\]]*)\]\([^)]+\)/g, "$1");
+    r = r.replace(/\[([^\]]+)\]\([^)]+\)/g, "$1");
+    r = r.replace(/(\*\*|__)(.+?)\1/g, "$2");
+    r = r.replace(new RegExp("(?<![\\w*])[*_](.+?)[*_](?![\\w*])", "g"), "$1");
+    r = r.replace(/~~(.+?)~~/g, "$1");
+    r = r.replace(/`([^`]+)`/g, "$1");
+    return r.trim();
+  }
+  function headingTitleFromText(rawHeadingLine) {
+    let r = rawHeadingLine.replace(/^#+\s*/, "");
+    r = r.replace(/\s+#+\s*$/, "");
+    return stripInlineMarkdown(r.trim());
+  }
+  function deriveFoldKeys(state) {
+    const result = /* @__PURE__ */ new Map();
+    const tree = syntaxTree(state);
+    const headingStack = [];
+    const counters = [];
+    let rootCounter = 0;
+    const root2 = tree.topNode;
+    let child = root2.firstChild;
+    while (child) {
+      const name2 = child.name;
+      const headingMatch = /^(?:ATXHeading|SetextHeading)([1-6])$/.exec(name2);
+      if (headingMatch) {
+        const level = parseInt(headingMatch[1], 10);
+        while (headingStack.length > 0 && headingStack[headingStack.length - 1].level >= level) {
+          headingStack.pop();
+          counters.pop();
+        }
+        const lineFrom = state.doc.lineAt(child.from).from;
+        const lineTo = state.doc.lineAt(child.from).to;
+        const lineText = state.doc.sliceString(lineFrom, lineTo);
+        headingStack.push({ level, title: headingTitleFromText(lineText) });
+        counters.push(0);
+      } else if (name2 === "FencedCode") {
+        let idx;
+        if (counters.length === 0) {
+          idx = rootCounter;
+          rootCounter += 1;
+        } else {
+          idx = counters[counters.length - 1];
+          counters[counters.length - 1] = idx + 1;
+        }
+        const key = {
+          headingPath: headingStack.map((h) => h.title),
+          indexUnderHeading: idx
+        };
+        result.set(child.from, JSON.stringify({ headingPath: key.headingPath, indexUnderHeading: key.indexUnderHeading }));
+      }
+      child = child.nextSibling;
+    }
+    return result;
+  }
+  function fencedCodeBodyRange(state, lineStart) {
+    const tree = syntaxTree(state);
+    const node = tree.resolveInner(lineStart, 1);
+    let cur = node;
+    while (cur) {
+      if (cur.name === "FencedCode") break;
+      cur = cur.parent;
+    }
+    if (!cur) return null;
+    const startLine = state.doc.lineAt(cur.from);
+    const endLine = state.doc.lineAt(cur.to);
+    if (endLine.number <= startLine.number) return null;
+    const from = startLine.to;
+    const to = state.doc.line(endLine.number).from;
+    if (to <= from) return null;
+    return { from, to };
+  }
+  var fencedFoldService = foldService.of((state, lineStart, lineEnd2) => {
+    const tree = syntaxTree(state);
+    const node = tree.resolveInner(lineStart, 1);
+    let cur = node;
+    while (cur) {
+      if (cur.name === "FencedCode") break;
+      cur = cur.parent;
+    }
+    if (!cur) return null;
+    if (state.doc.lineAt(cur.from).from !== lineStart) return null;
+    return fencedCodeBodyRange(state, lineStart);
+  });
+  var FoldChevronWidget = class extends WidgetType {
+    constructor(lineStart, initiallyFolded) {
+      super();
+      this.lineStart = lineStart;
+      this.initiallyFolded = initiallyFolded;
+    }
+    lineStart;
+    initiallyFolded;
+    eq(other) {
+      return this.lineStart === other.lineStart && this.initiallyFolded === other.initiallyFolded;
+    }
+    toDOM(view) {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "cm-fold-chevron";
+      btn.setAttribute("aria-label", this.initiallyFolded ? "Unfold code block" : "Fold code block");
+      btn.setAttribute("aria-expanded", this.initiallyFolded ? "false" : "true");
+      btn.innerHTML = '<svg width="14" height="14" viewBox="0 0 14 14"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.75" d="M3.5 5l3.5 3.5L10.5 5"></path></svg>';
+      if (this.initiallyFolded) btn.classList.add("is-folded");
+      btn.addEventListener("mousedown", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        toggleFoldAtLineStart(view, this.lineStart);
+      });
+      return btn;
+    }
+    ignoreEvent() {
+      return false;
+    }
+  };
+  function toggleFoldAtLineStart(view, lineStart) {
+    const range = fencedCodeBodyRange(view.state, lineStart);
+    if (!range) return;
+    const folded = foldedRanges(view.state);
+    let alreadyFolded = false;
+    folded.between(range.from, range.to, (from, to) => {
+      if (from <= range.from && to >= range.to) {
+        alreadyFolded = true;
+        return false;
+      }
+    });
+    const willBeFolded = !alreadyFolded;
+    view.dispatch({
+      effects: alreadyFolded ? unfoldEffect.of(range) : foldEffect.of(range)
+    });
+    const keys = deriveFoldKeys(view.state);
+    const key = keys.get(getEnclosingFencedFrom(view.state, lineStart));
+    if (key) {
+      postMessage({ type: "foldToggle", key, folded: willBeFolded });
+    }
+  }
+  function getEnclosingFencedFrom(state, lineStart) {
+    const tree = syntaxTree(state);
+    const node = tree.resolveInner(lineStart, 1);
+    let cur = node;
+    while (cur) {
+      if (cur.name === "FencedCode") return cur.from;
+      cur = cur.parent;
+    }
+    return -1;
+  }
+  var foldChevronDecorations = StateField.define({
+    create(state) {
+      return buildFoldChevronDecorations(state);
+    },
+    update(value, transaction) {
+      if (transaction.docChanged) {
+        return buildFoldChevronDecorations(transaction.state);
+      }
+      for (const effect of transaction.effects) {
+        if (effect.is(foldEffect) || effect.is(unfoldEffect)) {
+          return buildFoldChevronDecorations(transaction.state);
+        }
+      }
+      return value;
+    },
+    provide: (field) => EditorView.decorations.from(field)
+  });
+  function buildFoldChevronDecorations(state) {
+    const builder = new RangeSetBuilder();
+    const tree = syntaxTree(state);
+    const folded = foldedRanges(state);
+    let child = tree.topNode.firstChild;
+    while (child) {
+      if (child.name === "FencedCode") {
+        const lineStart = state.doc.lineAt(child.from).from;
+        const range = fencedCodeBodyRange(state, lineStart);
+        if (!range) {
+          child = child.nextSibling;
+          continue;
+        }
+        let isFolded = false;
+        folded.between(range.from, range.to, (from, to) => {
+          if (from <= range.from && to >= range.to) {
+            isFolded = true;
+            return false;
+          }
+        });
+        builder.add(lineStart, lineStart, Decoration.widget({
+          widget: new FoldChevronWidget(lineStart, isFolded),
+          side: -1
+        }));
+      }
+      child = child.nextSibling;
+    }
+    return builder.finish();
+  }
+  var codeFoldingExtension = codeFolding();
+  function applyFoldsByKeys(keys) {
+    if (!editor) return;
+    const lookup = new Set(keys);
+    const derived = deriveFoldKeys(editor.state);
+    const effects = [];
+    foldedRanges(editor.state).between(0, editor.state.doc.length, (from, to) => {
+      effects.push(unfoldEffect.of({ from, to }));
+    });
+    derived.forEach((key, fencedFrom) => {
+      if (lookup.has(key)) {
+        const lineStart = editor.state.doc.lineAt(fencedFrom).from;
+        const range = fencedCodeBodyRange(editor.state, lineStart);
+        if (range) effects.push(foldEffect.of(range));
+      }
+    });
+    if (effects.length) editor.dispatch({ effects });
+  }
   function livePreviewTheme(appearance, fontSize) {
     const isDark = appearance === "dark";
     const background = isDark ? "#323236" : "#FFFFFF";
@@ -32668,6 +33027,46 @@ $$`);
       ".cm-live-task-checkbox": {
         transform: "translateY(1px)",
         marginRight: "0.45rem"
+      },
+      ".cm-fold-chevron": {
+        display: "inline-flex",
+        alignItems: "center",
+        justifyContent: "center",
+        width: "20px",
+        height: "20px",
+        padding: "8px",
+        margin: "0 0.35rem 0 -0.6rem",
+        verticalAlign: "middle",
+        border: "none",
+        borderRadius: "5px",
+        background: buttonBackground,
+        color: muted,
+        cursor: "pointer",
+        opacity: "0.6",
+        transition: "opacity 0.15s ease, transform 0.15s ease",
+        // Position widget element relative to text baseline so it doesn't push the line down.
+        boxSizing: "content-box"
+      },
+      ".cm-fold-chevron:hover": {
+        opacity: "1",
+        background: buttonHover
+      },
+      ".cm-fold-chevron:active": {
+        background: buttonActive
+      },
+      ".cm-fold-chevron.is-folded": {
+        transform: "rotate(-90deg)",
+        opacity: "1"
+      },
+      ".cm-foldPlaceholder": {
+        fontFamily: '"SF Mono", SFMono-Regular, Menlo, monospace',
+        backgroundColor: preBackground,
+        color: muted,
+        padding: "0.25em 0.6em",
+        borderRadius: "5px",
+        cursor: "pointer",
+        fontSize: "0.85em",
+        margin: "0 0.15em"
       },
       ".cm-live-block": {
         display: "block",
@@ -32918,6 +33317,9 @@ $$`);
       ]),
       themeCompartment.of(livePreviewTheme(payload.appearance, payload.fontSize)),
       livePreviewCompartment.of(livePreviewDecorations),
+      codeFoldingExtension,
+      fencedFoldService,
+      foldChevronDecorations,
       EditorView.domEventHandlers({
         mousedown(event) {
           const target = event.target?.closest("[data-live-link-kind]");
@@ -33090,6 +33492,9 @@ $$`);
     },
     getDocument() {
       return editor?.state.doc.toString() ?? "";
+    },
+    applyFolds(payload) {
+      applyFoldsByKeys(payload.keys || []);
     }
   };
   postMessage({ type: "ready" });

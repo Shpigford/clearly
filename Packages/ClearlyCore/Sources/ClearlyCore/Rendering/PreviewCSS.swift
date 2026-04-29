@@ -331,6 +331,9 @@ public enum PreviewCSS {
 
         let exportStructural = forExport ? """
         .code-copy-btn { display: none !important; }
+        .code-fold-btn { display: none !important; }
+        .code-block-wrapper.is-folded > pre { display: block !important; }
+        .code-block-wrapper.is-folded > .code-fold-summary { display: none !important; }
         .table-copy-btn { display: none !important; }
         .sort-indicator { display: none !important; }
         thead { position: static !important; display: table-header-group; }
@@ -603,6 +606,104 @@ public enum PreviewCSS {
 
         .frontmatter .code-copy-btn {
             display: none;
+        }
+
+        .code-fold-btn {
+            position: absolute;
+            top: 6px;
+            right: 40px;
+            z-index: 1;
+            width: 28px;
+            height: 28px;
+            padding: 0;
+            margin: 0;
+            border: none;
+            border-radius: 6px;
+            background: var(--c-btn-bg);
+            color: var(--c-btn-fg);
+            cursor: pointer;
+            opacity: 0;
+            transition: opacity 0.15s ease, transform 0.15s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 14px;
+            line-height: 1;
+        }
+
+        .code-block-wrapper:hover .code-fold-btn,
+        .code-block-wrapper.is-folded .code-fold-btn {
+            opacity: 1;
+        }
+
+        .code-block-wrapper.is-folded .code-fold-btn {
+            transform: rotate(-90deg);
+        }
+
+        .code-fold-btn:hover {
+            background: var(--c-btn-bg-hover);
+        }
+
+        .code-fold-btn:active {
+            background: var(--c-btn-bg-active);
+        }
+
+        .code-fold-btn:focus-visible {
+            outline: 2px solid var(--c-link);
+            outline-offset: 2px;
+        }
+
+        .frontmatter .code-fold-btn {
+            display: none;
+        }
+
+        .code-block-wrapper.is-folded > pre {
+            display: none;
+        }
+
+        .code-block-wrapper.is-folded > .code-filename {
+            border-radius: 10px 10px 0 0;
+        }
+
+        .code-fold-summary {
+            display: none;
+            font-family: "SF Mono", SFMono-Regular, Menlo, monospace;
+            font-size: 0.8em;
+            padding: 1.125em 1.25em;
+            background-color: var(--c-pre-bg);
+            color: var(--c-pre-fg);
+            border-radius: 10px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            opacity: 0.85;
+            cursor: pointer;
+        }
+
+        .code-block-wrapper.is-folded > .code-fold-summary {
+            display: block;
+        }
+
+        .code-block-wrapper.is-folded > .code-filename + .code-fold-summary {
+            border-radius: 0 0 10px 10px;
+        }
+
+        .code-fold-lang {
+            display: inline-block;
+            padding: 0 0.5em;
+            margin-right: 0.5em;
+            border-radius: 4px;
+            background: var(--c-code-filename-bg);
+            color: var(--c-code-filename-fg);
+        }
+
+        .code-fold-firstline {
+            opacity: 0.85;
+        }
+
+        .code-fold-meta {
+            margin-left: 0.5em;
+            opacity: 0.65;
         }
 
         pre code {
@@ -1121,6 +1222,9 @@ public enum PreviewCSS {
                 print-color-adjust: exact;
             }
             .code-copy-btn { display: none !important; }
+            .code-fold-btn { display: none !important; }
+            .code-block-wrapper.is-folded > pre { display: block !important; }
+            .code-block-wrapper.is-folded > .code-fold-summary { display: none !important; }
             .table-copy-btn { display: none !important; }
             .sort-indicator { display: none !important; }
             thead { position: static !important; display: table-header-group; }

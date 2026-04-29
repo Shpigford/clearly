@@ -1,5 +1,13 @@
 import { defaultKeymap, history, historyKeymap, indentWithTab } from "@codemirror/commands";
 import { markdown } from "@codemirror/lang-markdown";
+import {
+  codeFolding,
+  foldEffect,
+  foldedRanges,
+  foldService,
+  syntaxTree,
+  unfoldEffect
+} from "@codemirror/language";
 import { EditorState, RangeSetBuilder, Compartment, StateEffect, StateField, type Extension } from "@codemirror/state";
 import {
   search,
@@ -34,6 +42,7 @@ declare global {
       insertText: (payload: { text: string }) => void;
       focus: () => void;
       getDocument: () => string;
+      applyFolds: (payload: { keys: string[] }) => void;
     };
     webkit?: {
       messageHandlers?: {
@@ -1444,6 +1453,250 @@ const livePreviewDecorations = StateField.define<DecorationSet>({
   provide: (field) => EditorView.decorations.from(field)
 });
 
+// --- Foldable code blocks --------------------------------------------------
+
+type FoldKeyData = { headingPath: string[]; indexUnderHeading: number };
+
+function stripInlineMarkdown(text: string): string {
+  let r = text;
+  r = r.replace(/!\[([^\]]*)\]\([^)]+\)/g, "$1");
+  r = r.replace(/\[([^\]]+)\]\([^)]+\)/g, "$1");
+  r = r.replace(/(\*\*|__)(.+?)\1/g, "$2");
+  r = r.replace(/(?<![\w*])[*_](.+?)[*_](?![\w*])/g, "$1");
+  r = r.replace(/~~(.+?)~~/g, "$1");
+  r = r.replace(/`([^`]+)`/g, "$1");
+  return r.trim();
+}
+
+function headingTitleFromText(rawHeadingLine: string): string {
+  // Strip leading hashes + space (ATX), trailing optional `#+` closing fence,
+  // then any trailing whitespace. Matches what cmark renders into a heading's
+  // textContent on the preview side.
+  let r = rawHeadingLine.replace(/^#+\s*/, "");
+  r = r.replace(/\s+#+\s*$/, "");
+  return stripInlineMarkdown(r.trim());
+}
+
+/// Walks the syntax tree once and returns, for each FencedCode node, the
+/// stable key string identical to what the preview's DOM walker produces.
+/// Only top-level nodes (direct children of Document) are considered, mirroring
+/// the DOM walker's body.firstElementChild iteration. Returns Map<startOffset, keyString>.
+function deriveFoldKeys(state: EditorState): Map<number, string> {
+  const result = new Map<number, string>();
+  const tree = syntaxTree(state);
+  const headingStack: { level: number; title: string }[] = [];
+  const counters: number[] = [];
+  let rootCounter = 0;
+
+  // Walk direct children of the Document root only.
+  const root = tree.topNode;
+  let child = root.firstChild;
+  while (child) {
+    const name = child.name;
+    const headingMatch = /^(?:ATXHeading|SetextHeading)([1-6])$/.exec(name);
+    if (headingMatch) {
+      const level = parseInt(headingMatch[1], 10);
+      while (headingStack.length > 0 && headingStack[headingStack.length - 1].level >= level) {
+        headingStack.pop();
+        counters.pop();
+      }
+      const lineFrom = state.doc.lineAt(child.from).from;
+      const lineTo = state.doc.lineAt(child.from).to;
+      const lineText = state.doc.sliceString(lineFrom, lineTo);
+      headingStack.push({ level, title: headingTitleFromText(lineText) });
+      counters.push(0);
+    } else if (name === "FencedCode") {
+      let idx;
+      if (counters.length === 0) {
+        idx = rootCounter;
+        rootCounter += 1;
+      } else {
+        idx = counters[counters.length - 1];
+        counters[counters.length - 1] = idx + 1;
+      }
+      const key: FoldKeyData = {
+        headingPath: headingStack.map((h) => h.title),
+        indexUnderHeading: idx
+      };
+      // Match Swift JSONEncoder.OutputFormatting.sortedKeys: alphabetical order.
+      result.set(child.from, JSON.stringify({ headingPath: key.headingPath, indexUnderHeading: key.indexUnderHeading }));
+    }
+    child = child.nextSibling;
+  }
+  return result;
+}
+
+/// Returns the body range of a FencedCode at `lineStart` — the text inside the
+/// fences but excluding the opening and closing fence lines themselves. This
+/// is the range that gets collapsed when folded.
+function fencedCodeBodyRange(state: EditorState, lineStart: number): { from: number; to: number } | null {
+  const tree = syntaxTree(state);
+  const node = tree.resolveInner(lineStart, 1);
+  let cur: typeof node | null = node;
+  while (cur) {
+    if (cur.name === "FencedCode") break;
+    cur = cur.parent;
+  }
+  if (!cur) return null;
+  const startLine = state.doc.lineAt(cur.from);
+  const endLine = state.doc.lineAt(cur.to);
+  if (endLine.number <= startLine.number) return null;
+  // Body = end of opening-fence line .. start of closing-fence line
+  const from = startLine.to;
+  const to = state.doc.line(endLine.number).from;
+  if (to <= from) return null;
+  return { from, to };
+}
+
+const fencedFoldService = foldService.of((state, lineStart, lineEnd) => {
+  // Only fold from the opening-fence line.
+  const tree = syntaxTree(state);
+  const node = tree.resolveInner(lineStart, 1);
+  let cur: typeof node | null = node;
+  while (cur) {
+    if (cur.name === "FencedCode") break;
+    cur = cur.parent;
+  }
+  if (!cur) return null;
+  if (state.doc.lineAt(cur.from).from !== lineStart) return null;
+  return fencedCodeBodyRange(state, lineStart);
+});
+
+class FoldChevronWidget extends WidgetType {
+  constructor(private readonly lineStart: number, private readonly initiallyFolded: boolean) {
+    super();
+  }
+  eq(other: FoldChevronWidget) {
+    return this.lineStart === other.lineStart && this.initiallyFolded === other.initiallyFolded;
+  }
+  toDOM(view: EditorView) {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "cm-fold-chevron";
+    btn.setAttribute("aria-label", this.initiallyFolded ? "Unfold code block" : "Fold code block");
+    btn.setAttribute("aria-expanded", this.initiallyFolded ? "false" : "true");
+    btn.innerHTML =
+      '<svg width="14" height="14" viewBox="0 0 14 14"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.75" d="M3.5 5l3.5 3.5L10.5 5"></path></svg>';
+    if (this.initiallyFolded) btn.classList.add("is-folded");
+    btn.addEventListener("mousedown", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      toggleFoldAtLineStart(view, this.lineStart);
+    });
+    return btn;
+  }
+  ignoreEvent() {
+    return false;
+  }
+}
+
+function toggleFoldAtLineStart(view: EditorView, lineStart: number) {
+  const range = fencedCodeBodyRange(view.state, lineStart);
+  if (!range) return;
+  const folded = foldedRanges(view.state);
+  let alreadyFolded = false;
+  folded.between(range.from, range.to, (from, to) => {
+    if (from <= range.from && to >= range.to) {
+      alreadyFolded = true;
+      return false;
+    }
+  });
+  const willBeFolded = !alreadyFolded;
+  view.dispatch({
+    effects: alreadyFolded ? unfoldEffect.of(range) : foldEffect.of(range)
+  });
+  // Notify native.
+  const keys = deriveFoldKeys(view.state);
+  const key = keys.get(getEnclosingFencedFrom(view.state, lineStart));
+  if (key) {
+    postMessage({ type: "foldToggle", key, folded: willBeFolded });
+  }
+}
+
+function getEnclosingFencedFrom(state: EditorState, lineStart: number): number {
+  const tree = syntaxTree(state);
+  const node = tree.resolveInner(lineStart, 1);
+  let cur: typeof node | null = node;
+  while (cur) {
+    if (cur.name === "FencedCode") return cur.from;
+    cur = cur.parent;
+  }
+  return -1;
+}
+
+const foldChevronDecorations = StateField.define<DecorationSet>({
+  create(state) {
+    return buildFoldChevronDecorations(state);
+  },
+  update(value, transaction) {
+    if (transaction.docChanged) {
+      return buildFoldChevronDecorations(transaction.state);
+    }
+    // Rebuild when fold state changes (effects from foldEffect/unfoldEffect)
+    for (const effect of transaction.effects) {
+      if (effect.is(foldEffect) || effect.is(unfoldEffect)) {
+        return buildFoldChevronDecorations(transaction.state);
+      }
+    }
+    return value;
+  },
+  provide: (field) => EditorView.decorations.from(field)
+});
+
+function buildFoldChevronDecorations(state: EditorState): DecorationSet {
+  const builder = new RangeSetBuilder<Decoration>();
+  const tree = syntaxTree(state);
+  const folded = foldedRanges(state);
+  // Only top-level fenced code blocks get chevrons, matching the preview's
+  // DOM walker which iterates direct children of <body>. Nested fenced codes
+  // (inside callouts, lists, blockquotes) don't get persisted fold keys, so
+  // showing a chevron for them would offer state that can't round-trip.
+  let child = tree.topNode.firstChild;
+  while (child) {
+    if (child.name === "FencedCode") {
+      const lineStart = state.doc.lineAt(child.from).from;
+      const range = fencedCodeBodyRange(state, lineStart);
+      if (!range) {
+        child = child.nextSibling;
+        continue;
+      }
+      let isFolded = false;
+      folded.between(range.from, range.to, (from, to) => {
+        if (from <= range.from && to >= range.to) {
+          isFolded = true;
+          return false;
+        }
+      });
+      builder.add(lineStart, lineStart, Decoration.widget({
+        widget: new FoldChevronWidget(lineStart, isFolded),
+        side: -1
+      }));
+    }
+    child = child.nextSibling;
+  }
+  return builder.finish();
+}
+
+const codeFoldingExtension = codeFolding();
+
+function applyFoldsByKeys(keys: string[]) {
+  if (!editor) return;
+  const lookup = new Set(keys);
+  const derived = deriveFoldKeys(editor.state);
+  const effects: StateEffect<unknown>[] = [];
+  foldedRanges(editor.state).between(0, editor.state.doc.length, (from, to) => {
+    effects.push(unfoldEffect.of({ from, to }));
+  });
+  derived.forEach((key, fencedFrom) => {
+    if (lookup.has(key)) {
+      const lineStart = editor!.state.doc.lineAt(fencedFrom).from;
+      const range = fencedCodeBodyRange(editor!.state, lineStart);
+      if (range) effects.push(foldEffect.of(range));
+    }
+  });
+  if (effects.length) editor.dispatch({ effects });
+}
+
 function livePreviewTheme(appearance: "light" | "dark", fontSize: number): Extension {
   const isDark = appearance === "dark";
   const background = isDark ? "#323236" : "#FFFFFF";
@@ -1630,6 +1883,46 @@ function livePreviewTheme(appearance: "light" | "dark", fontSize: number): Exten
     ".cm-live-task-checkbox": {
       transform: "translateY(1px)",
       marginRight: "0.45rem"
+    },
+    ".cm-fold-chevron": {
+      display: "inline-flex",
+      alignItems: "center",
+      justifyContent: "center",
+      width: "20px",
+      height: "20px",
+      padding: "8px",
+      margin: "0 0.35rem 0 -0.6rem",
+      verticalAlign: "middle",
+      border: "none",
+      borderRadius: "5px",
+      background: buttonBackground,
+      color: muted,
+      cursor: "pointer",
+      opacity: "0.6",
+      transition: "opacity 0.15s ease, transform 0.15s ease",
+      // Position widget element relative to text baseline so it doesn't push the line down.
+      boxSizing: "content-box"
+    },
+    ".cm-fold-chevron:hover": {
+      opacity: "1",
+      background: buttonHover
+    },
+    ".cm-fold-chevron:active": {
+      background: buttonActive
+    },
+    ".cm-fold-chevron.is-folded": {
+      transform: "rotate(-90deg)",
+      opacity: "1"
+    },
+    ".cm-foldPlaceholder": {
+      fontFamily: '"SF Mono", SFMono-Regular, Menlo, monospace',
+      backgroundColor: preBackground,
+      color: muted,
+      padding: "0.25em 0.6em",
+      borderRadius: "5px",
+      cursor: "pointer",
+      fontSize: "0.85em",
+      margin: "0 0.15em"
     },
     ".cm-live-block": {
       display: "block",
@@ -1886,6 +2179,9 @@ function createEditor(payload: MountPayload) {
     ]),
     themeCompartment.of(livePreviewTheme(payload.appearance, payload.fontSize)),
     livePreviewCompartment.of(livePreviewDecorations),
+    codeFoldingExtension,
+    fencedFoldService,
+    foldChevronDecorations,
     EditorView.domEventHandlers({
       mousedown(event) {
         const target = (event.target as HTMLElement | null)?.closest<HTMLElement>("[data-live-link-kind]");
@@ -2086,6 +2382,10 @@ window.clearlyLiveEditor = {
 
   getDocument() {
     return editor?.state.doc.toString() ?? "";
+  },
+
+  applyFolds(payload: { keys: string[] }) {
+    applyFoldsByKeys(payload.keys || []);
   }
 };
 
