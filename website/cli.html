@@ -165,12 +165,23 @@ clearly mcp tools --read-only</code></pre>
                     </header>
                     <p class="text-sm text-zinc-400 mb-3">Full-text search across loaded vaults. Streams NDJSON hits &mdash; one per line &mdash; ranked by BM25.</p>
                     <pre class="rounded-md bg-black/40 p-4 text-xs font-mono text-zinc-300 overflow-x-auto"><code>clearly search &lt;query&gt; [--limit N]</code></pre>
+                    <h3 class="mt-5 text-xs font-mono tracking-wide uppercase text-zinc-500">Operators</h3>
+                    <p class="mt-2 text-sm text-zinc-400">Inside the query string, narrow results without changing the schema:</p>
+                    <ul class="mt-2 space-y-1 text-sm text-zinc-400">
+                        <li><code class="font-mono text-zinc-200">tag:foo</code> &mdash; file must carry tag <code class="font-mono">foo</code> (case-insensitive). Repeat for AND.</li>
+                        <li><code class="font-mono text-zinc-200">path:notes/sub</code> &mdash; file's vault-relative path must start with this prefix (case-insensitive).</li>
+                    </ul>
                     <h3 class="mt-5 text-xs font-mono tracking-wide uppercase text-zinc-500">Output</h3>
                     <p class="mt-2 text-sm text-zinc-400">One JSON object per line: <code class="font-mono text-zinc-200">{vault, vault_path, relative_path, filename, matches_filename, excerpts:[{line_number, context_line}]}</code>.</p>
                     <h3 class="mt-5 text-xs font-mono tracking-wide uppercase text-zinc-500">Examples</h3>
                     <pre class="mt-2 rounded-md bg-black/40 p-4 text-xs font-mono text-zinc-300 overflow-x-auto"><code>clearly search pricing
 clearly search "API design" --limit 5 | head -1 | jq .
 clearly search rust --limit 20 | jq -r '.relative_path'
+
+# Operators
+clearly search "tag:work meeting"
+clearly search "path:journal/2026/ tag:idea"
+clearly search "tag:open"           # filter-only, no free text
 
 # Wrap NDJSON into a single array
 clearly search foo | jq -s '.'</code></pre>

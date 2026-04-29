@@ -151,6 +151,11 @@
                         <span class="px-2 py-0.5 rounded-full text-xs bg-blue-500/10 text-blue-300 ring-1 ring-inset ring-blue-500/20">read</span>
                     </header>
                     <p class="text-sm text-zinc-400 mb-3">Full-text search with BM25 ranking and stemming. Supports quoted phrases for exact match. Use this for keyword targets and proper nouns; use <a href="#semantic_search" class="text-zinc-200 hover:text-white">semantic_search</a> when the question is conceptual.</p>
+                    <p class="text-sm text-zinc-400 mb-3">Operators inside the query string narrow without a schema change:</p>
+                    <ul class="space-y-1 text-sm text-zinc-400 mb-3">
+                        <li><code class="font-mono text-zinc-200">tag:foo</code> &mdash; file must carry tag <code class="font-mono">foo</code> (case-insensitive). Repeat for AND.</li>
+                        <li><code class="font-mono text-zinc-200">path:notes/sub</code> &mdash; file's vault-relative path must start with this prefix.</li>
+                    </ul>
                     <h3 class="mt-3 text-xs font-mono tracking-wide uppercase text-zinc-500">Input</h3>
                     <pre class="mt-2 rounded-md bg-black/40 p-4 text-xs font-mono text-zinc-300 overflow-x-auto"><code>{ query: string, limit?: integer (default 20, max 100) }</code></pre>
                     <h3 class="mt-4 text-xs font-mono tracking-wide uppercase text-zinc-500">Output</h3>

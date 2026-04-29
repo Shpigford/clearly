@@ -19,6 +19,12 @@ struct SearchCommand: AsyncParsableCommand {
 
         Full reference: https://clearly.md/cli#search
 
+        Operators inside the query string narrow results without
+        changing the schema:
+
+          tag:foo            File must carry tag 'foo'. Repeat for AND.
+          path:notes/sub     File path must start with this prefix.
+
         EXAMPLES
           # Basic search
           clearly search pricing
@@ -29,7 +35,12 @@ struct SearchCommand: AsyncParsableCommand {
           # Pipeline: list paths of the top 20 matches
           clearly search rust --limit 20 | jq -r '.relative_path'
 
-          # Combine with --in-vault via read (search searches all vaults):
+          # Tag and path filters
+          clearly search "tag:work meeting"
+          clearly search "path:journal/2026/ tag:idea"
+          clearly search "tag:open"          # filter-only, no free text
+
+          # Combine with read (search searches all vaults):
           clearly search budget | jq -r '.relative_path' | xargs -I{} clearly read {}
         """
     )

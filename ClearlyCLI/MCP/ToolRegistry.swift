@@ -61,14 +61,14 @@ enum ToolRegistry {
             ),
             Tool(
                 name: "search_notes",
-                description: "Full-text search across all notes in Clearly. Searches \(vaults.count) vault(s): \(vaultDescription). Returns relevance-ranked results with context snippets. Uses BM25 ranking and stemming. Results include the vault path and relative file path — use standard file access to read full content.",
+                description: "Full-text search across all notes in Clearly. Searches \(vaults.count) vault(s): \(vaultDescription). Returns relevance-ranked results with context snippets. Uses BM25 ranking and stemming. Supports `tag:foo` (AND-combined, case-insensitive) and `path:notes/sub` operators inside the query string to narrow by tag or vault-relative path prefix. Results include the vault path and relative file path — use standard file access to read full content.",
                 inputSchema: .object([
                     "type": .string("object"),
                     "additionalProperties": .bool(false),
                     "properties": .object([
                         "query": .object([
                             "type": .string("string"),
-                            "description": .string("Search query. Supports quoted phrases for exact match.")
+                            "description": .string("Search query. Supports quoted phrases for exact match. Operators: `tag:work` filters to files carrying that tag (repeat for AND); `path:journal/2026/` filters by vault-relative path prefix. Filter-only queries (e.g. `tag:idea`) are valid and return every matching file.")
                         ]),
                         "limit": .object([
                             "type": .string("integer"),

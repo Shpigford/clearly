@@ -669,51 +669,85 @@ public final class VaultIndex: @unchecked Sendable {
     }
 
     public func searchFilesGrouped(query: String) -> [SearchFileGroup] {
-        guard !query.trimmingCharacters(in: .whitespaces).isEmpty else { return [] }
+        searchFilesGrouped(parsed: SearchQueryParser.parse(query))
+    }
 
-        // Parse quoted phrases and bare terms
-        let trimmed = query.trimmingCharacters(in: .whitespaces)
+    public func searchFilesGrouped(parsed: ParsedSearchQuery) -> [SearchFileGroup] {
+        let trimmed = parsed.ftsQuery.trimmingCharacters(in: .whitespaces)
         var ftsTerms: [String] = []
         var searchTerms: [String] = [] // plain terms for line matching
 
-        let quoteRegex = try! NSRegularExpression(pattern: #""([^"]+)""#)
-        let matches = quoteRegex.matches(in: trimmed, range: NSRange(trimmed.startIndex..., in: trimmed))
-        var coveredRanges = Set<Range<String.Index>>()
+        if !trimmed.isEmpty {
+            let quoteRegex = try! NSRegularExpression(pattern: #""([^"]+)""#)
+            let matches = quoteRegex.matches(in: trimmed, range: NSRange(trimmed.startIndex..., in: trimmed))
+            var coveredRanges = Set<Range<String.Index>>()
 
-        for match in matches {
-            if let range = Range(match.range(at: 1), in: trimmed) {
-                let phrase = String(trimmed[range])
-                ftsTerms.append("\"\(phrase.replacingOccurrences(of: "\"", with: "\"\""))\"")
-                searchTerms.append(phrase.lowercased())
-                coveredRanges.insert(Range(match.range, in: trimmed)!)
+            for match in matches {
+                if let range = Range(match.range(at: 1), in: trimmed) {
+                    let phrase = String(trimmed[range])
+                    ftsTerms.append("\"\(phrase.replacingOccurrences(of: "\"", with: "\"\""))\"")
+                    searchTerms.append(phrase.lowercased())
+                    coveredRanges.insert(Range(match.range, in: trimmed)!)
+                }
+            }
+
+            // Bare (unquoted) terms
+            var remaining = trimmed
+            for range in coveredRanges.sorted(by: { $0.lowerBound > $1.lowerBound }) {
+                remaining.removeSubrange(range)
+            }
+            for word in remaining.components(separatedBy: .whitespaces) where !word.isEmpty {
+                let escaped = word.replacingOccurrences(of: "\"", with: "\"\"")
+                ftsTerms.append("\"\(escaped)\"*")
+                searchTerms.append(word.lowercased())
             }
         }
 
-        // Bare (unquoted) terms
-        var remaining = trimmed
-        for range in coveredRanges.sorted(by: { $0.lowerBound > $1.lowerBound }) {
-            remaining.removeSubrange(range)
-        }
-        for word in remaining.components(separatedBy: .whitespaces) where !word.isEmpty {
-            let escaped = word.replacingOccurrences(of: "\"", with: "\"\"")
-            ftsTerms.append("\"\(escaped)\"*")
-            searchTerms.append(word.lowercased())
-        }
-
-        guard !ftsTerms.isEmpty else { return [] }
+        // Either FTS terms or structured filters must be present.
+        guard !ftsTerms.isEmpty || parsed.hasFilters else { return [] }
         let ftsQuery = ftsTerms.joined(separator: " ")
+        let pathLike = parsed.pathPrefix.map { Self.escapedPathPrefix($0) }
 
         do {
             return try dbPool.read { db in
-                // FTS5 content search
-                let contentRows = try Row.fetchAll(db, sql: """
-                    SELECT f.*, highlight(files_fts, 1, '<<', '>>') AS highlighted_content, bm25(files_fts) AS rank
-                    FROM files_fts
-                    JOIN files f ON f.id = files_fts.rowid
-                    WHERE files_fts MATCH ?
-                    ORDER BY bm25(files_fts)
-                    LIMIT 50
-                    """, arguments: [ftsQuery])
+                let contentRows: [Row]
+                if !ftsTerms.isEmpty {
+                    var sql = """
+                        SELECT f.*, highlight(files_fts, 1, '<<', '>>') AS highlighted_content, bm25(files_fts) AS rank
+                        FROM files_fts
+                        JOIN files f ON f.id = files_fts.rowid
+                        WHERE files_fts MATCH ?
+                        """
+                    var args: [DatabaseValueConvertible] = [ftsQuery]
+                    if !parsed.tagFilters.isEmpty {
+                        sql += " AND f.id IN (SELECT file_id FROM tags WHERE LOWER(tag) IN (\(Self.placeholders(parsed.tagFilters.count))) GROUP BY file_id HAVING COUNT(DISTINCT LOWER(tag)) = ?)"
+                        args.append(contentsOf: parsed.tagFilters as [DatabaseValueConvertible])
+                        args.append(parsed.tagFilters.count)
+                    }
+                    if let pathLike {
+                        sql += " AND LOWER(f.path) LIKE LOWER(?) ESCAPE '\\'"
+                        args.append(pathLike)
+                    }
+                    sql += " ORDER BY bm25(files_fts) LIMIT 50"
+                    contentRows = try Row.fetchAll(db, sql: sql, arguments: StatementArguments(args))
+                } else {
+                    // Filter-only query: enumerate every file that matches the
+                    // structured filters, no FTS pre-filter. Cap to 50 to
+                    // match the FTS branch.
+                    var sql = "SELECT f.* FROM files f WHERE 1=1"
+                    var args: [DatabaseValueConvertible] = []
+                    if !parsed.tagFilters.isEmpty {
+                        sql += " AND f.id IN (SELECT file_id FROM tags WHERE LOWER(tag) IN (\(Self.placeholders(parsed.tagFilters.count))) GROUP BY file_id HAVING COUNT(DISTINCT LOWER(tag)) = ?)"
+                        args.append(contentsOf: parsed.tagFilters as [DatabaseValueConvertible])
+                        args.append(parsed.tagFilters.count)
+                    }
+                    if let pathLike {
+                        sql += " AND LOWER(f.path) LIKE LOWER(?) ESCAPE '\\'"
+                        args.append(pathLike)
+                    }
+                    sql += " ORDER BY f.path LIMIT 50"
+                    contentRows = try Row.fetchAll(db, sql: sql, arguments: StatementArguments(args))
+                }
 
                 var resultsByFileId: [Int64: SearchFileGroup] = [:]
                 var orderedIds: [Int64] = []
@@ -752,15 +786,27 @@ public final class VaultIndex: @unchecked Sendable {
                     orderedIds.append(file.id)
                 }
 
-                // Filename-only matches (not already in content results)
+                // Filename-only matches (not already in content results).
+                // Honors structured filters so a tag:foo + raw query
+                // doesn't surface tag-less files via filename-LIKE.
                 let existingIds = Set(orderedIds)
                 for term in searchTerms {
-                    let likePattern = "%\(term)%"
-                    let nameRows = try Row.fetchAll(db, sql: """
-                        SELECT * FROM files
-                        WHERE LOWER(filename) LIKE LOWER(?)
-                        LIMIT 20
-                        """, arguments: [likePattern])
+                    var sql = """
+                        SELECT f.* FROM files f
+                        WHERE LOWER(f.filename) LIKE LOWER(?)
+                        """
+                    var args: [DatabaseValueConvertible] = ["%\(term)%"]
+                    if !parsed.tagFilters.isEmpty {
+                        sql += " AND f.id IN (SELECT file_id FROM tags WHERE LOWER(tag) IN (\(Self.placeholders(parsed.tagFilters.count))) GROUP BY file_id HAVING COUNT(DISTINCT LOWER(tag)) = ?)"
+                        args.append(contentsOf: parsed.tagFilters as [DatabaseValueConvertible])
+                        args.append(parsed.tagFilters.count)
+                    }
+                    if let pathLike {
+                        sql += " AND LOWER(f.path) LIKE LOWER(?) ESCAPE '\\'"
+                        args.append(pathLike)
+                    }
+                    sql += " LIMIT 20"
+                    let nameRows = try Row.fetchAll(db, sql: sql, arguments: StatementArguments(args))
                     for row in nameRows {
                         let file = Self.indexedFile(from: row)
                         guard !existingIds.contains(file.id) else { continue }
@@ -1413,6 +1459,21 @@ public final class VaultIndex: @unchecked Sendable {
 
     private static func fileModDate(_ url: URL) -> Date {
         (try? FileManager.default.attributesOfItem(atPath: url.path)[.modificationDate] as? Date) ?? Date()
+    }
+
+    private static func placeholders(_ count: Int) -> String {
+        Array(repeating: "?", count: count).joined(separator: ",")
+    }
+
+    /// Escape SQL LIKE wildcards in a user-supplied path prefix, then
+    /// append `%` so the prefix matches anything beneath it. Use with
+    /// `LIKE ... ESCAPE '\\'`.
+    private static func escapedPathPrefix(_ prefix: String) -> String {
+        let escaped = prefix
+            .replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "%", with: "\\%")
+            .replacingOccurrences(of: "_", with: "\\_")
+        return escaped + "%"
     }
 
     private static func truncatedHighlightedLine(_ line: String, visibleLimit: Int) -> String {
