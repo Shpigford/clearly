@@ -3,6 +3,20 @@
   <channel>
     <title>Clearly</title>
     <item>
+      <title>Version 2.10.0</title>
+      <sparkle:version>2.10.0</sparkle:version>
+      <sparkle:shortVersionString>2.10.0</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+      <pubDate>Wed, 29 Apr 2026 21:30:42 +0000</pubDate>
+      <description><![CDATA[<ul><li>Find + Replace across the editor, with stale-highlight fix</li><li>Fold and unfold code blocks in Preview and Live Preview</li><li>Hide Toolbar (⌥⌘T) for distraction-free writing</li><li>⌘P recents show their parent folder, and same-name tabs are disambiguated</li><li>New CLI/MCP capabilities: vault status, search operators, find_related, move_note, plus public docs</li><li>Pasting screenshots from the system clipboard now works reliably</li><li>Fixed a crash when removing a vault folder from the sidebar context menu</li><li>Better compatibility with the latest Claude CLI versions</li></ul>]]></description>
+      <enclosure
+        url="https://github.com/Shpigford/clearly/releases/download/v2.10.0/Clearly.dmg"
+        sparkle:edSignature="xkXDUzJYVqJOYLNzWF9R+voTvsjqfwN3tYregtLFiYJBnA7MjOuo3N1UUAXbBdhtJWbf7pDSySOgBgz4Bi+oAg=="
+        length="22424493"
+        type="application/octet-stream"
+      />
+    </item>
+    <item>
       <title>Version 2.9.0</title>
       <sparkle:version>2.9.0</sparkle:version>
       <sparkle:shortVersionString>2.9.0</sparkle:shortVersionString>
