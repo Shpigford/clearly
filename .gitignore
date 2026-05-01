@@ -12,4 +12,5 @@ __pycache__/
 ClearlyWYSIWYGWeb/node_modules/
 ClearlyWYSIWYGWeb/perf/dist/
 ClearlyWYSIWYGWeb/perf/fixtures/
+ClearlyWYSIWYGWeb/test/dist/
 Packages/ClearlyCore/Package.resolved
