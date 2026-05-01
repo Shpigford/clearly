@@ -59,6 +59,24 @@ final class WorkspaceManager {
     var isSidebarVisible: Bool = false
     var showHiddenFiles: Bool = false
 
+    // MARK: - Note list pane (3-pane layout)
+
+    /// The folder whose contents the Notes-style middle list pane is showing.
+    /// Falls back at render time to `locations.first?.url` when nil — we only
+    /// persist an explicit user pick. A path that's no longer inside any
+    /// known location is dropped on the next launch.
+    var selectedFolderURL: URL?
+
+    /// Folders the user has explicitly flipped *off* recursion for. Recursion
+    /// is on by default; storing only the exception set keeps the persisted
+    /// data small and matches the user's mental model ("most folders show
+    /// everything; this one doesn't").
+    var nonRecursiveFolders: Set<String> = []
+
+    /// Ordering for the 3-pane note list. Defaults to most-recently-modified
+    /// first, mirroring Notes.
+    var noteListSortOrder: NoteListSortOrder = .modifiedDesc
+
     // MARK: - Private
 
     private var fsStreams: [UUID: FSEventStreamRef] = [:]
@@ -93,6 +111,9 @@ final class WorkspaceManager {
     private static let hasEverAddedLocationKey = "hasEverAddedLocation"
     private static let hasDeliveredGettingStartedKey = "hasDeliveredGettingStarted"
     private static let pinnedBookmarksKey = "pinnedBookmarks"
+    private static let selectedFolderPathKey = "selectedFolderPath"
+    private static let nonRecursiveFoldersKey = "nonRecursiveFolders"
+    private static let noteListSortOrderKey = "noteListSortOrder"
     private static let wikiLinkPattern = try! NSRegularExpression(pattern: "\\[\\[[^\\]]*\\]\\]")
 
     /// Custom folder icons keyed by folder path (URL.path → SF Symbol name).
@@ -146,6 +167,12 @@ final class WorkspaceManager {
         restoreLocations()
         restoreRecents()
         restorePinnedFiles()
+        restoreSelectedFolder()
+        nonRecursiveFolders = Set(UserDefaults.standard.stringArray(forKey: Self.nonRecursiveFoldersKey) ?? [])
+        if let raw = UserDefaults.standard.string(forKey: Self.noteListSortOrderKey),
+           let order = NoteListSortOrder(rawValue: raw) {
+            noteListSortOrder = order
+        }
 
         // Backfill for users upgrading from before the welcome view
         if !locations.isEmpty && !UserDefaults.standard.bool(forKey: Self.hasEverAddedLocationKey) {
@@ -192,6 +219,38 @@ final class WorkspaceManager {
             loadTree(for: location.id, at: location.url)
         }
         reindexAllVaults()
+    }
+
+    // MARK: - Note list folder selection
+
+    /// Update which folder drives the 3-pane list pane and persist the choice.
+    /// Pass `nil` to clear (e.g. when removing the location it lived inside).
+    func setSelectedFolder(_ url: URL?) {
+        let standardized = url?.standardizedFileURL
+        guard selectedFolderURL?.standardizedFileURL != standardized else { return }
+        selectedFolderURL = standardized
+        if let path = standardized?.path {
+            UserDefaults.standard.set(path, forKey: Self.selectedFolderPathKey)
+        } else {
+            UserDefaults.standard.removeObject(forKey: Self.selectedFolderPathKey)
+        }
+    }
+
+    private func restoreSelectedFolder() {
+        guard let path = UserDefaults.standard.string(forKey: Self.selectedFolderPathKey) else { return }
+        let url = URL(fileURLWithPath: path).standardizedFileURL
+        // Only honor the persisted path if it still falls inside one of the
+        // currently-bookmarked locations. Otherwise drop it silently.
+        let target = url.path
+        let isInside = locations.contains { location in
+            let root = location.url.standardizedFileURL.path
+            return target == root || target.hasPrefix(root + "/")
+        }
+        if isInside {
+            selectedFolderURL = url
+        } else {
+            UserDefaults.standard.removeObject(forKey: Self.selectedFolderPathKey)
+        }
     }
 
     // MARK: - Open Documents
@@ -957,8 +1016,84 @@ final class WorkspaceManager {
         }
         removeDeletedItemReferences(at: location.url)
         pruneExpandedFolderPaths(under: location.url)
+        clearSelectedFolderIfInside(location.url)
         locations.removeAll { $0.id == location.id }
         persistLocations()
+    }
+
+    /// Returns true when notes should be listed recursively under `folder`
+    /// (the default). Returns false only when the user has explicitly
+    /// disabled recursion for this folder.
+    func isFolderRecursive(_ folder: URL) -> Bool {
+        !nonRecursiveFolders.contains(folder.standardizedFileURL.path)
+    }
+
+    func setFolderRecursive(_ recursive: Bool, for folder: URL) {
+        let path = folder.standardizedFileURL.path
+        if recursive {
+            guard nonRecursiveFolders.contains(path) else { return }
+            nonRecursiveFolders.remove(path)
+        } else {
+            guard !nonRecursiveFolders.contains(path) else { return }
+            nonRecursiveFolders.insert(path)
+        }
+        UserDefaults.standard.set(Array(nonRecursiveFolders), forKey: Self.nonRecursiveFoldersKey)
+    }
+
+    /// `⌘N` entry point. In 3-pane mode with a folder selected (or a vault
+    /// to fall back to), creates a real `untitled.md` inside that folder so
+    /// the new note lives where the user is currently scoped. Otherwise
+    /// behaves like the legacy "open a fresh untitled tab" path.
+    ///
+    /// Reads `layoutMode` straight from `UserDefaults` rather than capturing
+    /// `@AppStorage` projections — the keyboard shortcut can fire from a
+    /// stale toolbar binding before SwiftUI has refreshed the host view, so
+    /// the most-recent stored value is the only safe source of truth.
+    @discardableResult
+    func createNewNoteInActiveContext() -> Bool {
+        let modeRaw = UserDefaults.standard.string(forKey: "layoutMode") ?? "twoPane"
+        let isThreePane = modeRaw == "threePane"
+        if isThreePane,
+           let folder = selectedFolderURL ?? locations.first?.url {
+            return createUntitledFileInFolder(folder) != nil
+        }
+        return createUntitledDocument()
+    }
+
+    func setNoteListSortOrder(_ order: NoteListSortOrder) {
+        guard noteListSortOrder != order else { return }
+        noteListSortOrder = order
+        UserDefaults.standard.set(order.rawValue, forKey: Self.noteListSortOrderKey)
+    }
+
+    /// Resolve the `(VaultIndex, relative-folder-path)` pair for a folder
+    /// inside one of the user's bookmarked locations. Returns nil when the
+    /// folder lives outside every registered vault — the list pane treats
+    /// that as "no notes" rather than crashing.
+    func vaultIndexAndRelativePath(for folder: URL) -> (VaultIndex, String)? {
+        let target = folder.standardizedFileURL.path
+        for location in locations {
+            let root = location.url.standardizedFileURL.path
+            guard target == root || target.hasPrefix(root + "/") else { continue }
+            guard let index = vaultIndexes[location.id] else { return nil }
+            let relative: String
+            if target == root {
+                relative = ""
+            } else {
+                relative = String(target.dropFirst(root.count + 1)) // skip the slash
+            }
+            return (index, relative)
+        }
+        return nil
+    }
+
+    private func clearSelectedFolderIfInside(_ root: URL) {
+        guard let selected = selectedFolderURL?.standardizedFileURL else { return }
+        let rootPath = root.standardizedFileURL.path
+        let prefix = rootPath.hasSuffix("/") ? rootPath : rootPath + "/"
+        if selected.path == rootPath || selected.path.hasPrefix(prefix) {
+            setSelectedFolder(nil)
+        }
     }
 
     private func pruneExpandedFolderPaths(under url: URL) {

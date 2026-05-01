@@ -184,6 +184,9 @@ struct MacFolderSidebar: View {
                 isExpanded: locationExpandedBinding(location),
                 isWiki: location.isWiki
             )
+            .simultaneousGesture(TapGesture().onEnded {
+                workspace.setSelectedFolder(location.url)
+            })
             .contextMenu {
                 Button("New File", systemImage: "doc.badge.plus") {
                     createNewFile(in: location.url)
@@ -336,6 +339,7 @@ struct MacFolderSidebar: View {
         if node.isDirectory {
             let folderTint = workspace.folderColor(for: node.url).map(Color.init(nsColor:))
             let folderIcon = workspace.folderIcon(for: node.url) ?? "folder"
+            // Sidebar pill is intentionally off in both 2-pane and 3-pane modes; source-list highlight carries selection.
             SidebarRowLabel(
                 title: node.name,
                 systemImage: folderIcon,
@@ -345,6 +349,9 @@ struct MacFolderSidebar: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .contentShape(Rectangle())
             .listRowBackground(SelectionPill(tint: folderTint, isSelected: false))
+            .simultaneousGesture(TapGesture().onEnded {
+                workspace.setSelectedFolder(node.url)
+            })
             .contextMenu { folderContextMenu(url: node.url) }
             .popover(isPresented: popoverBinding(for: node.url), arrowEdge: .trailing) {
                 FolderCustomizerView(url: node.url, workspace: workspace)
@@ -778,8 +785,14 @@ private struct SidebarSystemHighlightDisabler: NSViewRepresentable {
 
     func updateNSView(_ nsView: NSView, context: Context) {
         DispatchQueue.main.async {
-            guard let window = nsView.window,
-                  let table = Self.findTableView(in: window.contentView) else { return }
+            // Scope the search to this view's own AppKit parent, not the
+            // whole window. In 3-pane mode the window contains TWO
+            // `NSTableView`s — the sidebar's and `MacNoteListView`'s — and a
+            // window-rooted depth-first search can return whichever AppKit
+            // wires up first, leaving the sidebar's source-list highlight
+            // alive. That manifests as bright-blue pills on stale sidebar
+            // rows when selection changes via the middle list.
+            guard let table = Self.findTableView(in: nsView.superview) else { return }
             if table.selectionHighlightStyle != .none {
                 table.selectionHighlightStyle = .none
             }

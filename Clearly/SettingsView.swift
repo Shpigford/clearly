@@ -20,6 +20,7 @@ struct SettingsView: View {
     @AppStorage("hideFrontmatterInPreview") private var hideFrontmatterInPreview = false
     @AppStorage("showMenuBarIcon") private var showMenuBarIcon = true
     @AppStorage("sidebarSize") private var sidebarSize: String = "medium"
+    @AppStorage(LayoutMode.storageKey) private var layoutMode: LayoutMode = .twoPane
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
@@ -92,6 +93,16 @@ struct SettingsView: View {
                 Text("Medium").tag("medium")
                 Text("Large").tag("large")
                 Text("X-Large").tag("xlarge")
+            }
+            VStack(alignment: .leading, spacing: 4) {
+                Picker("Layout", selection: $layoutMode) {
+                    Text("Two pane (sidebar + editor)").tag(LayoutMode.twoPane)
+                    Text("Three pane (Notes-style list)").tag(LayoutMode.threePane)
+                }
+                Text("Three pane mode adds a Notes-style list of files in the selected folder, between the sidebar and the editor. Toggle with ⌥⌘2 / ⌥⌘3.")
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
             Picker("Preview Font", selection: $previewFontFamily) {
                 Text("San Francisco").tag("sanFrancisco")

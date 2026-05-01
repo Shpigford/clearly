@@ -738,6 +738,14 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValid
             menuItem.state = (menuItem.representedObject as? String) == current ? .on : .off
             return true
         }
+        if menuItem.action == #selector(switchToEditorAction(_:)) {
+            menuItem.state = WorkspaceManager.shared.currentViewMode == .edit ? .on : .off
+            return true
+        }
+        if menuItem.action == #selector(switchToPreviewAction(_:)) {
+            menuItem.state = WorkspaceManager.shared.currentViewMode == .preview ? .on : .off
+            return true
+        }
         return true
     }
 
@@ -877,6 +885,7 @@ struct ClearlyApp: App {
     @NSApplicationDelegateAdaptor(ClearlyAppDelegate.self) var appDelegate
     @AppStorage("themePreference") private var themePreference = "system"
     @AppStorage("showMenuBarIcon") private var showMenuBarIcon = true
+    @AppStorage(LayoutMode.storageKey) private var layoutMode: LayoutMode = .twoPane
     @State private var scratchpadManager = ScratchpadManager.shared
     private let workspace = WorkspaceManager.shared
     #if canImport(Sparkle)
@@ -922,7 +931,7 @@ struct ClearlyApp: App {
             // Replace New/Open with our own
             CommandGroup(replacing: .newItem) {
                 Button("New Document") {
-                    workspace.createUntitledDocument()
+                    workspace.createNewNoteInActiveContext()
                 }
                 .keyboardShortcut("n", modifiers: .command)
 
@@ -989,6 +998,18 @@ struct ClearlyApp: App {
                 Button(workspace.showHiddenFiles ? "Hide Hidden Files" : "Show Hidden Files") {
                     workspace.toggleShowHiddenFiles()
                 }
+
+                Divider()
+
+                Button("Two-Pane Layout") {
+                    layoutMode = .twoPane
+                }
+                .keyboardShortcut("2", modifiers: [.command, .option])
+
+                Button("Three-Pane Layout") {
+                    layoutMode = .threePane
+                }
+                .keyboardShortcut("3", modifiers: [.command, .option])
             }
 
             CommandGroup(after: .textEditing) {
@@ -1194,28 +1215,6 @@ struct OutlineToggleCommand: View {
             outlineState?.toggle()
         }
         .keyboardShortcut("o", modifiers: [.command, .shift])
-    }
-}
-
-struct ViewModeCommands: View {
-    @FocusedValue(\.viewMode) var mode
-    @AppStorage("editorEngine") private var editorEngineRawValue = EditorEngine.classic.rawValue
-
-    private var editorEngine: EditorEngine {
-        EditorEngine.resolved(rawValue: editorEngineRawValue)
-    }
-
-    var body: some View {
-        Button(editorEngine == .livePreviewExperimental ? "Live Preview" : "Editor") {
-            mode?.wrappedValue = .edit
-        }
-        .keyboardShortcut("1", modifiers: .command)
-
-        Button("Preview") {
-            mode?.wrappedValue = .preview
-        }
-        .disabled(editorEngine == .livePreviewExperimental)
-        .keyboardShortcut("2", modifiers: .command)
     }
 }
 

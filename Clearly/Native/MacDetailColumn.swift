@@ -49,7 +49,7 @@ struct MacDetailToolbar: ToolbarContent {
         // Trailing: everything else, clustered on the far right.
         ToolbarItemGroup(placement: .primaryAction) {
             Button {
-                workspace.createUntitledDocument()
+                workspace.createNewNoteInActiveContext()
             } label: {
                 Label("New Note", systemImage: "square.and.pencil")
             }

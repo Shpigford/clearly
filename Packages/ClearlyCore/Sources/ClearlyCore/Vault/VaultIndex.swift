@@ -48,7 +48,10 @@ public struct LinkRecord {
 
 public final class VaultIndex: @unchecked Sendable {
 
-    private let dbPool: DatabasePool
+    /// Internal so same-module extensions (e.g. `VaultIndex+Summaries`) can
+    /// run additional read transactions. Not part of the public API — outside
+    /// callers should always go through the typed helper methods.
+    let dbPool: DatabasePool
     public let rootURL: URL
 
     private let embeddingSweepLock = NSLock()
