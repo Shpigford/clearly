@@ -1,42 +1,11 @@
 import Foundation
 
-enum EditorEngine: String, CaseIterable, Identifiable {
-    case classic
-    case livePreviewExperimental
-
-    var id: String { rawValue }
-
-    static var current: EditorEngine {
-        resolved(rawValue: UserDefaults.standard.string(forKey: "editorEngine") ?? "")
-    }
-
-    static var availableCases: [EditorEngine] {
-        EditorEngine.allCases
-    }
-
-    static func resolved(rawValue: String) -> EditorEngine {
-        EditorEngine(rawValue: rawValue) ?? .classic
-    }
-
-    var displayName: String {
-        switch self {
-        case .classic:
-            return "Classic"
-        case .livePreviewExperimental:
-            return "Live Preview (Experimental)"
-        }
-    }
-
-    var showsSeparatePreview: Bool {
-        self == .classic
-    }
-
-    var isAvailable: Bool {
-        true
-    }
-}
-
-enum LiveEditorCommand: String {
+/// Names every formatting command the host menu / toolbar can dispatch
+/// at the active editor. The values are forwarded as strings to the JS
+/// bridge in WYSIWYG mode (see `WYSIWYGCommandDispatcher`); in Edit mode
+/// they correspond to `ClearlyTextView` selectors picked by the menu's
+/// `selector:` argument.
+enum FormatCommand: String {
     case bold
     case italic
     case strikethrough
@@ -57,17 +26,58 @@ enum LiveEditorCommand: String {
 }
 
 extension Notification.Name {
-    static let liveEditorCommand = Notification.Name("ClearlyLiveEditorCommand")
+    static let wysiwygCommand = Notification.Name("ClearlyWYSIWYGCommand")
 }
 
-enum LiveEditorCommandDispatcher {
-    static var isActive: Bool {
-        EditorEngine.current == .livePreviewExperimental
+/// Off-by-default experimental gate for the Tiptap-based editable preview.
+/// When enabled, the second toolbar segment (Preview) loads the WYSIWYG
+/// editor instead of the static HTML preview, and ⌘B/⌘I/etc. dispatch
+/// through the JS bridge.
+///
+/// Stored in UserDefaults under `wysiwygExperimental`.
+enum WYSIWYGExperiment {
+    static let userDefaultsKey = "wysiwygExperimental"
+
+    static var isEnabled: Bool {
+        UserDefaults.standard.bool(forKey: userDefaultsKey)
     }
 
-    static func send(_ command: LiveEditorCommand) {
+    static func setEnabled(_ value: Bool) {
+        UserDefaults.standard.set(value, forKey: userDefaultsKey)
+    }
+
+    /// One-time migration from the previous "Live Preview (Experimental)"
+    /// editor engine setting. If the user opted into the CodeMirror live
+    /// preview in a prior build, carry that opt-in over to the new Tiptap
+    /// editable preview so the feature doesn't silently disappear.
+    static func migrateLegacyLivePreviewSettingIfNeeded() {
+        let defaults = UserDefaults.standard
+        // Don't override an explicit choice on the new key.
+        guard defaults.object(forKey: userDefaultsKey) == nil else {
+            defaults.removeObject(forKey: "editorEngine")
+            return
+        }
+        if defaults.string(forKey: "editorEngine") == "livePreviewExperimental" {
+            defaults.set(true, forKey: userDefaultsKey)
+        }
+        defaults.removeObject(forKey: "editorEngine")
+    }
+}
+
+enum WYSIWYGCommandDispatcher {
+    /// True when the editable-preview experiment is enabled AND the active
+    /// document is currently displayed in WYSIWYG view mode. Used by the
+    /// formatting toolbar / menu items to decide whether ⌘B/⌘I/etc. should
+    /// route into the Tiptap bridge instead of the AppKit NSTextView.
+    @MainActor
+    static var isActive: Bool {
+        guard WYSIWYGExperiment.isEnabled else { return false }
+        return WorkspaceManager.shared.currentViewMode == .wysiwyg
+    }
+
+    static func send(_ command: FormatCommand) {
         NotificationCenter.default.post(
-            name: .liveEditorCommand,
+            name: .wysiwygCommand,
             object: nil,
             userInfo: ["command": command.rawValue]
         )

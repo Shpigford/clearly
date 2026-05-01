@@ -4,7 +4,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const outFile = join(__dirname, "..", "Shared", "Resources", "live-editor", "live-editor.js");
+const outFile = join(__dirname, "..", "Shared", "Resources", "wysiwyg", "wysiwyg.js");
 mkdirSync(dirname(outFile), { recursive: true });
 
 const ctx = await esbuild.context({

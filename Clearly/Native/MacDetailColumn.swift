@@ -10,6 +10,14 @@ import ClearlyCore
 /// items against the middle-column divider on macOS 26 — attaching here
 /// lets them occupy the window's trailing toolbar slot, which is what
 /// Apple Notes does.
+/// True for view modes where formatting commands (bold, italic, insert link…)
+/// have a meaningful target — Edit (NSTextView selectors) and WYSIWYG (Tiptap
+/// commands via the JS bridge). Preview is read-only.
+@inline(__always)
+private func isFormattableMode(_ mode: ViewMode) -> Bool {
+    mode == .edit || mode == .wysiwyg
+}
+
 struct MacDetailToolbar: ToolbarContent {
     @Bindable var workspace: WorkspaceManager
     @ObservedObject var findState: FindState
@@ -17,33 +25,19 @@ struct MacDetailToolbar: ToolbarContent {
     @ObservedObject var backlinksState: BacklinksState
     @Bindable var wikiController: WikiOperationController
     @Binding var showFormatPopover: Bool
-    @AppStorage("editorEngine") private var editorEngineRawValue = EditorEngine.classic.rawValue
-
-    private var editorEngine: EditorEngine {
-        EditorEngine.resolved(rawValue: editorEngineRawValue)
-    }
+    @AppStorage(WYSIWYGExperiment.userDefaultsKey) private var wysiwygExperimentEnabled: Bool = false
 
     var body: some ToolbarContent {
         ToolbarItem(placement: .principal) {
-            if editorEngine == .livePreviewExperimental {
-                HStack(spacing: 6) {
-                    Image(systemName: "sparkles.rectangle.stack")
-                    Text("Live Preview")
-                }
-                .font(.system(size: 12, weight: .medium))
-                .foregroundStyle(.secondary)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 4)
-                .fixedSize()
-                .help("Live Preview")
-            } else {
-                Picker("Mode", selection: $workspace.currentViewMode) {
-                    Image(systemName: "pencil").tag(ViewMode.edit)
-                    Image(systemName: "eye").tag(ViewMode.preview)
-                }
-                .pickerStyle(.segmented)
-                .help("Editor / Preview (⌘1 / ⌘2)")
+            // Editable preview replaces the static preview when the toggle is
+            // on; UI is 2-segment in both cases so the user sees the same
+            // Edit/Preview model.
+            Picker("Mode", selection: $workspace.currentViewMode) {
+                Image(systemName: "pencil").tag(ViewMode.edit)
+                Image(systemName: "eye").tag(wysiwygExperimentEnabled ? ViewMode.wysiwyg : ViewMode.preview)
             }
+            .pickerStyle(.segmented)
+            .help("Editor / Preview (⌘1 / ⌘2)")
         }
 
         // Trailing: everything else, clustered on the far right.
@@ -62,7 +56,7 @@ struct MacDetailToolbar: ToolbarContent {
                 Label("Format", systemImage: "textformat")
             }
             .help("Format")
-            .disabled(workspace.activeDocumentID == nil || workspace.currentViewMode != .edit)
+            .disabled(workspace.activeDocumentID == nil || !isFormattableMode(workspace.currentViewMode))
             .popover(isPresented: $showFormatPopover, arrowEdge: .bottom) {
                 MacFormatPopover()
             }
@@ -73,7 +67,7 @@ struct MacDetailToolbar: ToolbarContent {
                 Label("Checklist", systemImage: "checklist")
             }
             .help("Insert checklist item")
-            .disabled(workspace.activeDocumentID == nil || workspace.currentViewMode != .edit)
+            .disabled(workspace.activeDocumentID == nil || !isFormattableMode(workspace.currentViewMode))
 
             Menu {
                 Button("Insert Link…") {
@@ -93,7 +87,7 @@ struct MacDetailToolbar: ToolbarContent {
             }
             .help("Insert link, image, table, or code")
             .menuIndicator(.hidden)
-            .disabled(workspace.activeDocumentID == nil || workspace.currentViewMode != .edit)
+            .disabled(workspace.activeDocumentID == nil || !isFormattableMode(workspace.currentViewMode))
 
             Menu {
                 if let url = workspace.currentFileURL {
@@ -229,13 +223,9 @@ struct MacDetailColumn: View {
 
     @AppStorage("editorFontSize") private var fontSize: Double = 16
     @AppStorage("previewFontFamily") private var previewFontFamily: String = "sanFrancisco"
-    @AppStorage("editorEngine") private var editorEngineRawValue = EditorEngine.classic.rawValue
+    @AppStorage(WYSIWYGExperiment.userDefaultsKey) private var wysiwygExperimentEnabled: Bool = false
     @AppStorage("contentWidth") private var contentWidth: String = "default"
     @AppStorage("showLineNumbers") private var showLineNumbers: Bool = false
-
-    private var editorEngine: EditorEngine {
-        EditorEngine.resolved(rawValue: editorEngineRawValue)
-    }
 
     var body: some View {
         HStack(spacing: 0) {
@@ -251,7 +241,7 @@ struct MacDetailColumn: View {
             if outlineState.isVisible {
                 OutlineView(
                     outlineState: outlineState,
-                    isEditorVisible: workspace.currentViewMode == .edit
+                    isEditorVisible: workspace.currentViewMode == .edit || workspace.currentViewMode == .wysiwyg
                 )
                     .frame(width: 240)
                     .transition(.move(edge: .trailing).combined(with: .opacity))
@@ -334,17 +324,17 @@ struct MacDetailColumn: View {
             positionSyncID = UUID().uuidString
             findState.dismiss()
             jumpToLineState.dismiss()
-            if editorEngine == .livePreviewExperimental {
-                workspace.currentViewMode = .edit
-            }
+            normalizeViewModeForExperiment()
             outlineState.parseHeadings(from: workspace.currentFileText)
             backlinksState.update(for: workspace.currentFileURL, using: workspace.activeVaultIndexes)
             setupFileWatcher()
             applyPendingWikiNavigationIfNeeded()
         }
         .onChange(of: workspace.currentViewMode) { oldMode, newMode in
-            if editorEngine == .livePreviewExperimental, newMode != .edit {
-                workspace.currentViewMode = .edit
+            // Coerce persisted / stale modes into the currently available
+            // second segment before SwiftUI can render neither pane.
+            if newMode == .wysiwyg && !wysiwygExperimentEnabled {
+                workspace.currentViewMode = .preview
                 return
             }
             if newMode != .edit {
@@ -361,9 +351,6 @@ struct MacDetailColumn: View {
             }
         }
         .onChange(of: workspace.currentFileText) { _, text in
-            if editorEngine == .livePreviewExperimental {
-                workspace.contentDidChange()
-            }
             fileWatcher.updateCurrentText(text)
             outlineState.parseHeadings(from: text)
         }
@@ -378,13 +365,12 @@ struct MacDetailColumn: View {
             let heading = notification.userInfo?["heading"] as? String
             navigateToWikiLink(target: target, heading: heading, destinationMode: .edit)
         }
-        .onChange(of: editorEngineRawValue) { _, _ in
-            if editorEngineRawValue != editorEngine.rawValue {
-                editorEngineRawValue = editorEngine.rawValue
-            }
-            if editorEngine == .livePreviewExperimental {
-                workspace.currentViewMode = .edit
-            }
+        .onChange(of: wysiwygExperimentEnabled) { _, enabled in
+            // Editable preview replaces the static preview entirely. When the
+            // toggle flips, swap the active mode so the picker selection
+            // tracks (toggle on with mode == .preview would otherwise leave
+            // the second segment unselected, since it now holds .wysiwyg).
+            normalizeViewModeForExperiment()
         }
         .modifier(FocusedValuesModifier(
             workspace: workspace,
@@ -428,17 +414,20 @@ struct MacDetailColumn: View {
     }
 
     private func handleAppear() {
-        if editorEngineRawValue != editorEngine.rawValue {
-            editorEngineRawValue = editorEngine.rawValue
-        }
-        if editorEngine == .livePreviewExperimental {
-            workspace.currentViewMode = .edit
-        }
+        normalizeViewModeForExperiment()
         outlineState.parseHeadings(from: workspace.currentFileText)
         backlinksState.update(for: workspace.currentFileURL, using: workspace.activeVaultIndexes)
         isFullscreen = NSApp.mainWindow?.styleMask.contains(.fullScreen) ?? false
         setupFileWatcher()
         warmAndReviewActiveVaultIfNeeded()
+    }
+
+    private func normalizeViewModeForExperiment() {
+        if wysiwygExperimentEnabled, workspace.currentViewMode == .preview {
+            workspace.currentViewMode = .wysiwyg
+        } else if !wysiwygExperimentEnabled, workspace.currentViewMode == .wysiwyg {
+            workspace.currentViewMode = .preview
+        }
     }
 
     private func handleTreeRevisionChanged() {
@@ -481,20 +470,14 @@ struct MacDetailColumn: View {
             }
 
             ZStack {
-                if editorEngine == .classic {
-                    editorPane
-                        .opacity(workspace.currentViewMode == .edit ? 1 : 0)
-                        .allowsHitTesting(workspace.currentViewMode == .edit)
-                    previewPane
-                        .opacity(workspace.currentViewMode == .preview ? 1 : 0)
-                        .allowsHitTesting(workspace.currentViewMode == .preview)
-                } else {
-                    liveEditorPane
-                    if workspace.currentFileText.isEmpty {
-                        LivePreviewEmptyState()
-                            .allowsHitTesting(false)
-                            .padding(.horizontal, 48)
-                    }
+                editorPane
+                    .opacity(workspace.currentViewMode == .edit ? 1 : 0)
+                    .allowsHitTesting(workspace.currentViewMode == .edit)
+                previewPane
+                    .opacity(workspace.currentViewMode == .preview ? 1 : 0)
+                    .allowsHitTesting(workspace.currentViewMode == .preview)
+                if wysiwygExperimentEnabled && workspace.currentViewMode == .wysiwyg {
+                    wysiwygPane
                 }
             }
             .layoutPriority(1)
@@ -540,20 +523,54 @@ struct MacDetailColumn: View {
         )
     }
 
-    private var liveEditorPane: some View {
-        LiveEditorView(
+    private var wysiwygPane: some View {
+        // Re-evaluate whenever the vault index revision bumps so the wiki
+        // autocomplete sees newly created / renamed / deleted files without
+        // requiring a doc switch.
+        _ = workspace.vaultIndexRevision
+        let wikiTargets: [WYSIWYGWikiTarget] = {
+            var seen = Set<String>()
+            var out: [WYSIWYGWikiTarget] = []
+            for index in workspace.activeVaultIndexes {
+                for file in index.allFiles() {
+                    let key = file.path
+                    if seen.insert(key).inserted {
+                        out.append(WYSIWYGWikiTarget(title: file.filename, path: file.path))
+                    }
+                }
+            }
+            return out
+        }()
+        let tagTargets: [WYSIWYGTagTarget] = {
+            var bucket: [String: Int] = [:]
+            for index in workspace.activeVaultIndexes {
+                for entry in index.allTags() {
+                    bucket[entry.tag, default: 0] += entry.count
+                }
+            }
+            return bucket
+                .map { WYSIWYGTagTarget(name: $0.key, count: $0.value) }
+                .sorted { lhs, rhs in
+                    if lhs.count != rhs.count { return lhs.count > rhs.count }
+                    return lhs.name.localizedCaseInsensitiveCompare(rhs.name) == .orderedAscending
+                }
+        }()
+        return WYSIWYGView(
             text: $workspace.currentFileText,
             fontSize: CGFloat(fontSize),
             fileURL: workspace.currentFileURL,
             documentID: workspace.activeDocumentID,
             documentEpoch: workspace.documentEpoch,
+            wikiTargets: wikiTargets,
+            tagTargets: tagTargets,
+            contentWidthEm: contentWidthEm,
             findState: findState,
             outlineState: outlineState,
             onMarkdownLinkClicked: { href in
                 openMarkdownLink(href)
             },
             onWikiLinkClicked: { target, heading in
-                navigateToWikiLink(target: target, heading: heading, destinationMode: .edit)
+                navigateToWikiLink(target: target, heading: heading, destinationMode: .wysiwyg)
             },
             onTagClicked: { tagName in
                 NotificationCenter.default.post(
@@ -602,6 +619,9 @@ struct MacDetailColumn: View {
                 NotificationCenter.default.post(
                     name: .init("ClearlyFilterByTag"), object: nil, userInfo: ["tag": tag]
                 )
+            },
+            onJumpToSource: { line in
+                scheduleWikiNavigation(lineNumber: line, destinationMode: .edit)
             },
             wikiFileNames: allWikiFileNames,
             contentWidthEm: contentWidthEm,
@@ -771,7 +791,7 @@ struct MacDetailColumn: View {
 
             guard workspace.openFile(at: fileURL) else { return }
 
-            let resolvedMode: ViewMode = editorEngine == .livePreviewExperimental ? .edit : destinationMode
+            let resolvedMode: ViewMode = destinationMode
             if let headingLine {
                 if workspace.currentFileURL == fileURL {
                     scheduleWikiNavigation(lineNumber: headingLine, destinationMode: resolvedMode)
@@ -868,29 +888,5 @@ private struct WikiSheetsModifier: ViewModifier {
                     )
                 }
             }
-    }
-}
-
-private struct LivePreviewEmptyState: View {
-    var body: some View {
-        VStack(spacing: 12) {
-            Image(systemName: "sparkles.rectangle.stack")
-                .font(.system(size: 28, weight: .medium))
-                .foregroundStyle(.secondary)
-
-            Text("Live Preview is active")
-                .font(.system(size: 18, weight: .semibold))
-
-            Text("Type or open a markdown note to test it. The active line stays editable as raw markdown, and completed constructs render once the caret moves away.")
-                .font(.system(size: 13))
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
-                .frame(maxWidth: 420)
-
-            Text("Try: `# Heading`, `**bold**`, `- [ ] task`")
-                .font(.system(size: 12, weight: .medium, design: .monospaced))
-                .foregroundStyle(.tertiary)
-        }
-        .padding(.vertical, 24)
     }
 }

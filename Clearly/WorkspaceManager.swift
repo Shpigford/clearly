@@ -30,6 +30,14 @@ final class WorkspaceManager {
     var currentViewMode: ViewMode = .edit
     var currentConflictOutcome: ConflictResolver.Outcome?
 
+    /// View mode that newly-created untitled documents land in. Always Edit
+    /// — empty notes don't have anything to preview yet, so dropping the
+    /// user into a rendered/editable-preview surface would feel weird.
+    /// Existing files keep their persisted view mode (autosaved per-doc).
+    static var defaultViewModeForNewDocument: ViewMode {
+        .edit
+    }
+
     /// The vault that contains the active file, if any. Drives wiki-chrome
     /// visibility (log sidebar, lint dashboard, Wiki menu) — these only appear
     /// when the user is viewing a file from a wiki vault. Returns nil when no
@@ -249,7 +257,8 @@ final class WorkspaceManager {
             fileURL: nil,
             text: "",
             lastSavedText: "",
-            untitledNumber: nextUntitledNumber
+            untitledNumber: nextUntitledNumber,
+            viewMode: WorkspaceManager.defaultViewModeForNewDocument
         )
         nextUntitledNumber += 1
         openDocuments.append(doc)
@@ -492,7 +501,7 @@ final class WorkspaceManager {
             // Bump the live editor epoch before mutating text so stale callbacks from
             // the previously loaded file cannot overwrite the newly opened content.
             documentEpoch += 1
-            LiveEditorSession.update(documentID: openDocuments[idx].id, epoch: documentEpoch)
+            WYSIWYGSession.update(documentID: openDocuments[idx].id, epoch: documentEpoch)
             // Replace the active tab's content in place
             openDocuments[idx].fileURL = url
             openDocuments[idx].text = text
@@ -589,7 +598,7 @@ final class WorkspaceManager {
         // Bump epoch so any docChanged messages already in-flight from before
         // this host-driven replacement are rejected by the coordinator's epoch guard.
         documentEpoch += 1
-        LiveEditorSession.update(documentID: activeDocumentID, epoch: documentEpoch)
+        WYSIWYGSession.update(documentID: activeDocumentID, epoch: documentEpoch)
         currentFileText = newText
         lastSavedText = newText
         isDirty = false
@@ -1994,7 +2003,7 @@ final class WorkspaceManager {
             if openDocuments.isEmpty {
                 documentEpoch += 1
                 activeDocumentID = nil
-                LiveEditorSession.update(documentID: nil, epoch: documentEpoch)
+                WYSIWYGSession.update(documentID: nil, epoch: documentEpoch)
                 currentFileURL = nil
                 currentFileText = ""
                 lastSavedText = ""
@@ -2052,7 +2061,7 @@ final class WorkspaceManager {
         guard let idx = activeDocumentIndex else { return }
         let doc = openDocuments[idx]
         documentEpoch += 1
-        LiveEditorSession.update(documentID: doc.id, epoch: documentEpoch)
+        WYSIWYGSession.update(documentID: doc.id, epoch: documentEpoch)
         currentFileURL = doc.fileURL
         currentFileText = doc.text
         lastSavedText = doc.lastSavedText
@@ -2067,7 +2076,7 @@ final class WorkspaceManager {
     /// Set the given document as active and sync stored properties.
     private func activateDocument(_ doc: OpenDocument) {
         documentEpoch += 1
-        LiveEditorSession.update(documentID: doc.id, epoch: documentEpoch)
+        WYSIWYGSession.update(documentID: doc.id, epoch: documentEpoch)
         activeDocumentID = doc.id
         currentFileURL = doc.fileURL
         currentFileText = doc.text

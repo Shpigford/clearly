@@ -40,7 +40,7 @@ public final class FindState: ObservableObject {
 
     public var navigateToNext: (() -> Void)? {
         switch activeMode {
-        case .edit:
+        case .edit, .wysiwyg:
             editorNavigateToNext
         case .preview:
             previewNavigateToNext
@@ -49,7 +49,7 @@ public final class FindState: ObservableObject {
 
     public var navigateToPrevious: (() -> Void)? {
         switch activeMode {
-        case .edit:
+        case .edit, .wysiwyg:
             editorNavigateToPrevious
         case .preview:
             previewNavigateToPrevious

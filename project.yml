@@ -65,7 +65,7 @@ targets:
       - path: Shared/Resources/recipes
         buildPhase: resources
         type: folder
-      - path: Shared/Resources/live-editor
+      - path: Shared/Resources/wysiwyg
         buildPhase: resources
         type: folder
     dependencies:
