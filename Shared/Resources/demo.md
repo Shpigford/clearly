@@ -286,7 +286,7 @@ sequenceDiagram
 
 ![Clearly Screenshot](https://raw.githubusercontent.com/Shpigford/clearly/main/website/screenshot.jpg)
 
-*Click any image in preview mode to view it in a lightbox!*
+*Click any image to view it in a lightbox!*
 
 ---
 

@@ -68,7 +68,7 @@ struct MacFormatPopover: View {
         .help(help)
     }
 
-    private func send(_ command: LiveEditorCommand, _ selector: Selector) {
+    private func send(_ command: FormatCommand, _ selector: Selector) {
         performFormattingCommand(command, selector: selector)
         // Keep popover open so users can apply multiple formats in sequence.
     }

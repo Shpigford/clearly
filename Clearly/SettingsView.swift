@@ -13,11 +13,11 @@ struct SettingsView: View {
     #endif
     @AppStorage("editorFontSize") private var fontSize: Double = 12
     @AppStorage("previewFontFamily") private var previewFontFamily = "sanFrancisco"
-    @AppStorage("editorEngine") private var editorEngine = EditorEngine.classic.rawValue
     @AppStorage("themePreference") private var themePreference = "system"
     @AppStorage("launchBehavior") private var launchBehavior = "lastFile"
     @AppStorage("contentWidth") private var contentWidth = "off"
     @AppStorage("hideFrontmatterInPreview") private var hideFrontmatterInPreview = false
+    @AppStorage(WYSIWYGExperiment.userDefaultsKey) private var wysiwygExperimentEnabled: Bool = false
     @AppStorage("showMenuBarIcon") private var showMenuBarIcon = true
     @AppStorage("sidebarSize") private var sidebarSize: String = "medium"
     @Environment(\.dismiss) private var dismiss
@@ -65,11 +65,7 @@ struct SettingsView: View {
 
     private var generalSettings: some View {
         Form {
-            Picker("Editor", selection: $editorEngine) {
-                ForEach(EditorEngine.availableCases) { engine in
-                    Text(engine.displayName).tag(engine.rawValue)
-                }
-            }
+            Toggle("Editable preview (experimental)", isOn: $wysiwygExperimentEnabled)
             Picker("Appearance", selection: $themePreference) {
                 Text("System").tag("system")
                 Text("Light").tag("light")
@@ -121,12 +117,6 @@ struct SettingsView: View {
                 }
         }
         .formStyle(.grouped)
-        .onAppear {
-            let resolved = EditorEngine.resolved(rawValue: editorEngine)
-            if editorEngine != resolved.rawValue {
-                editorEngine = resolved.rawValue
-            }
-        }
     }
 
     // MARK: - Command Line Settings

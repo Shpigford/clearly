@@ -2,6 +2,7 @@ import Foundation
 
 public enum ViewMode: String, CaseIterable {
     case edit
+    case wysiwyg
     case preview
 }
 

@@ -9,5 +9,8 @@ build/
 .env
 .context/
 __pycache__/
-ClearlyLiveEditorWeb/node_modules/
+ClearlyWYSIWYGWeb/node_modules/
+ClearlyWYSIWYGWeb/perf/dist/
+ClearlyWYSIWYGWeb/perf/fixtures/
+ClearlyWYSIWYGWeb/test/dist/
 Packages/ClearlyCore/Package.resolved

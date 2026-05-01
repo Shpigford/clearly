@@ -101,6 +101,8 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValid
     func applicationDidFinishLaunching(_ notification: Notification) {
         Self.shared = self
 
+        WYSIWYGExperiment.migrateLegacyLivePreviewSettingIfNeeded()
+
         // A normal Launch Services open activates the app and opens a document window.
         // Login-item launch stays inactive with no document windows, so collapse to
         // menubar-only only in that state instead of guessing from parent PID.
@@ -622,8 +624,15 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValid
     }
 
     private func applyRequestedViewMode(_ requestedMode: ViewMode) {
-        let resolvedMode: ViewMode = EditorEngine.current == .livePreviewExperimental ? .edit : requestedMode
-        WorkspaceManager.shared.currentViewMode = resolvedMode
+        // Honor the editable-preview experiment: Preview shortcut maps to
+        // .wysiwyg when enabled, .preview otherwise.
+        let resolved: ViewMode
+        if requestedMode == .preview && WYSIWYGExperiment.isEnabled {
+            resolved = .wysiwyg
+        } else {
+            resolved = requestedMode
+        }
+        WorkspaceManager.shared.currentViewMode = resolved
     }
 
     @objc private func toggleOutlineAction(_ sender: Any?) {
@@ -1199,22 +1208,20 @@ struct OutlineToggleCommand: View {
 
 struct ViewModeCommands: View {
     @FocusedValue(\.viewMode) var mode
-    @AppStorage("editorEngine") private var editorEngineRawValue = EditorEngine.classic.rawValue
-
-    private var editorEngine: EditorEngine {
-        EditorEngine.resolved(rawValue: editorEngineRawValue)
-    }
+    @AppStorage(WYSIWYGExperiment.userDefaultsKey) private var wysiwygExperimentEnabled: Bool = false
 
     var body: some View {
-        Button(editorEngine == .livePreviewExperimental ? "Live Preview" : "Editor") {
+        Button("Editor") {
             mode?.wrappedValue = .edit
         }
         .keyboardShortcut("1", modifiers: .command)
 
+        // The editable-preview experiment swaps which mode the Preview
+        // shortcut targets. Same label, same keystroke — the toggle is
+        // the only thing that changes which mode mounts.
         Button("Preview") {
-            mode?.wrappedValue = .preview
+            mode?.wrappedValue = wysiwygExperimentEnabled ? .wysiwyg : .preview
         }
-        .disabled(editorEngine == .livePreviewExperimental)
         .keyboardShortcut("2", modifiers: .command)
     }
 }
@@ -1279,9 +1286,9 @@ struct FontSizeCommands: View {
 }
 
 @MainActor
-func performFormattingCommand(_ command: LiveEditorCommand, selector: Selector) {
-    if LiveEditorCommandDispatcher.isActive {
-        LiveEditorCommandDispatcher.send(command)
+func performFormattingCommand(_ command: FormatCommand, selector: Selector) {
+    if WYSIWYGCommandDispatcher.isActive {
+        WYSIWYGCommandDispatcher.send(command)
     } else {
         NSApp.sendAction(selector, to: nil, from: nil)
     }

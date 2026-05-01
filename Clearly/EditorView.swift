@@ -130,25 +130,7 @@ struct EditorView: NSViewRepresentable {
             }
         }
 
-        // Wire up find navigation
-        let coordinator = context.coordinator
-        findState?.editorNavigateToNext = { [weak coordinator] in
-            coordinator?.navigateToNextMatch()
-        }
-        findState?.editorNavigateToPrevious = { [weak coordinator] in
-            coordinator?.navigateToPreviousMatch()
-        }
-        findState?.editorPerformReplace = { [weak coordinator] in
-            coordinator?.performReplaceCurrent()
-        }
-        findState?.editorPerformReplaceAll = { [weak coordinator] in
-            coordinator?.performReplaceAll()
-        }
-
-        // Wire up outline scroll-to
-        outlineState?.scrollToRange = { [weak coordinator] range in
-            coordinator?.scrollToHeading(range)
-        }
+        context.coordinator.bindEditorIntegrations(findState: findState, outlineState: outlineState)
 
         // Observe scroll position for sync
         scrollView.contentView.postsBoundsChangedNotifications = true
@@ -230,6 +212,10 @@ struct EditorView: NSViewRepresentable {
 
         // Keep coordinator's parent fresh so the binding never goes stale
         context.coordinator.parent = self
+
+        if mode == .edit {
+            context.coordinator.bindEditorIntegrations(findState: findState, outlineState: outlineState)
+        }
 
         // Toggle line number gutter visibility
         if let gutter {
@@ -399,6 +385,28 @@ struct EditorView: NSViewRepresentable {
 
         init(_ parent: EditorView) {
             self.parent = parent
+        }
+
+        func bindEditorIntegrations(findState: FindState?, outlineState: OutlineState?) {
+            self.findState = findState
+            self.outlineState = outlineState
+
+            findState?.editorNavigateToNext = { [weak self] in
+                self?.navigateToNextMatch()
+            }
+            findState?.editorNavigateToPrevious = { [weak self] in
+                self?.navigateToPreviousMatch()
+            }
+            findState?.editorPerformReplace = { [weak self] in
+                self?.performReplaceCurrent()
+            }
+            findState?.editorPerformReplaceAll = { [weak self] in
+                self?.performReplaceAll()
+            }
+
+            outlineState?.scrollToRange = { [weak self] range in
+                self?.scrollToHeading(range)
+            }
         }
 
         func scrollToHeading(_ range: NSRange) {
