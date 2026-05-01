@@ -142,17 +142,23 @@ struct WYSIWYGView: NSViewRepresentable {
         let webView = WYSIWYGWebView(frame: .zero, configuration: config)
         webView.navigationDelegate = context.coordinator
         webView.underPageBackgroundColor = Theme.backgroundColor
-        WYSIWYGSession.update(documentID: documentID, epoch: documentEpoch)
         context.coordinator.attach(webView: webView, findState: findState, outlineState: outlineState)
         loadEditorPage(in: webView)
         return webView
     }
 
+    // `WYSIWYGSession` is updated authoritatively by `WorkspaceManager` on
+    // every document switch (createUntitledDocument, switchToDocument,
+    // restoreActiveDocument, etc.). Mirroring it here would let SwiftUI's
+    // teardown call `updateNSView` once more with this view's stale
+    // `documentID`/`documentEpoch` after the user has already activated a
+    // new document — clobbering the session and letting in-flight async
+    // `getDocument` callbacks pass their epoch guard and write the previous
+    // note's content into the new doc's binding (#313).
     func updateNSView(_ webView: WYSIWYGWebView, context: Context) {
         DiagnosticLog.log("WYSIWYGView.updateNSView: \(text.count) chars")
         context.coordinator.parent = self
         webView.underPageBackgroundColor = Theme.backgroundColor
-        WYSIWYGSession.update(documentID: documentID, epoch: documentEpoch)
         context.coordinator.attach(webView: webView, findState: findState, outlineState: outlineState)
         context.coordinator.syncFromSwiftIfNeeded()
     }
