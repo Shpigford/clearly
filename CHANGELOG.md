@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+## [2.11.0] - 2026-05-01
+- Experimental WYSIWYG preview — type directly in the rendered view. Enable it in Settings.
+
 ## [2.10.0] - 2026-04-29
 - Find + Replace across the editor, with stale-highlight fix
 - Fold and unfold code blocks in Preview and Live Preview
