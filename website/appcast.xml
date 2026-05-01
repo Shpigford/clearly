@@ -3,6 +3,20 @@
   <channel>
     <title>Clearly</title>
     <item>
+      <title>Version 2.11.1</title>
+      <sparkle:version>2.11.1</sparkle:version>
+      <sparkle:shortVersionString>2.11.1</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+      <pubDate>Fri, 01 May 2026 18:55:37 +0000</pubDate>
+      <description><![CDATA[<ul><li>New notes (⌘N) start blank instead of carrying over the previous note's content in the editable preview</li></ul>]]></description>
+      <enclosure
+        url="https://github.com/Shpigford/clearly/releases/download/v2.11.1/Clearly.dmg"
+        sparkle:edSignature="DzyPVsTJLH/ZKnUCCGYSmMraQYmoRSAdx1ZjQVafvtpc+KWBuYt/owNpUV4dVYtIoYo0Ra6WE2SgmekQXhroDQ=="
+        length="22441632"
+        type="application/octet-stream"
+      />
+    </item>
+    <item>
       <title>Version 2.11.0</title>
       <sparkle:version>2.11.0</sparkle:version>
       <sparkle:shortVersionString>2.11.0</sparkle:shortVersionString>
