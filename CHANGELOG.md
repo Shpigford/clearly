@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+## [2.11.1] - 2026-05-01
+- New notes (⌘N) start blank instead of carrying over the previous note's content in the editable preview
+
 ## [2.11.0] - 2026-05-01
 - Experimental WYSIWYG preview — type directly in the rendered view. Enable it in Settings.
 
