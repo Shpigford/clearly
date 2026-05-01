@@ -201,21 +201,33 @@ struct MacNoteListView: View {
             return
         }
 
+        // Snapshot every input that gates assignment. The previous folder-
+        // equality check missed sort/recursion changes — toggling sort
+        // while a query was in flight could flash rows from the old order.
         let recursive = workspace.isFolderRecursive(folder)
         let sort = workspace.noteListSortOrder
         isLoading = summaries.isEmpty
         defer { isLoading = false }
 
-        let result = await Task.detached(priority: .userInitiated) {
+        // Run the SQL off the main thread, but tie its cancellation to the
+        // parent's task scope. `.task(id: reloadKey)` cancels this whole
+        // function when `reloadToken` bumps, so any in-flight detached
+        // query gets cancelled too instead of running to completion and
+        // racing against the new query for the assignment slot.
+        let detached = Task.detached(priority: .userInitiated) {
             index.summaries(folderRelativePath: relativePath, recursive: recursive, sort: sort)
-        }.value
-
-        // Drop the result if the user has changed something while we were
-        // querying — `task(id:)` will already be re-running with the new
-        // inputs, so writing here would just flash stale rows.
-        if folder == effectiveFolder {
-            summaries = result
         }
+        let result = await withTaskCancellationHandler {
+            await detached.value
+        } onCancel: {
+            detached.cancel()
+        }
+
+        // After the await `Task.isCancelled` is the only honest signal —
+        // the awaited value still arrives even when cancelled because
+        // `index.summaries` doesn't itself check for cancellation.
+        guard !Task.isCancelled else { return }
+        summaries = result
     }
 }
 
