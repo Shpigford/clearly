@@ -23,6 +23,7 @@ struct MacNoteListView: View {
     @State private var summaries: [NoteSummary] = []
     @State private var isLoading = false
     @State private var reloadToken = 0
+    @State private var pendingFSBump: Task<Void, Never>? = nil
 
     var body: some View {
         VStack(spacing: 0) {
@@ -32,17 +33,35 @@ struct MacNoteListView: View {
         }
         .frame(minWidth: 240)
         .task(id: reloadKey) { await reload() }
+        // User-driven changes reload immediately so the UI feels snappy.
         .onChange(of: workspace.selectedFolderURL) { _, _ in bump() }
-        .onChange(of: workspace.treeRevision) { _, _ in bump() }
-        .onChange(of: workspace.vaultIndexRevision) { _, _ in bump() }
         .onChange(of: workspace.locations.map(\.id)) { _, _ in bump() }
         .onChange(of: workspace.noteListSortOrder) { _, _ in bump() }
         .onChange(of: workspace.nonRecursiveFolders) { _, _ in bump() }
+        // Filesystem revisions tick on every autosave + every reindex pass —
+        // debounce them so a burst of writes coalesces into one reload
+        // instead of N full SQL queries running back-to-back.
+        .onChange(of: workspace.treeRevision) { _, _ in debouncedBump() }
+        .onChange(of: workspace.vaultIndexRevision) { _, _ in debouncedBump() }
+        .onDisappear { pendingFSBump?.cancel() }
     }
 
     private var reloadKey: Int { reloadToken }
 
-    private func bump() { reloadToken &+= 1 }
+    private func bump() {
+        pendingFSBump?.cancel()
+        pendingFSBump = nil
+        reloadToken &+= 1
+    }
+
+    private func debouncedBump() {
+        pendingFSBump?.cancel()
+        pendingFSBump = Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(300))
+            guard !Task.isCancelled else { return }
+            reloadToken &+= 1
+        }
+    }
 
     // MARK: - Header
 
