@@ -1,4 +1,5 @@
 import { Editor } from "@tiptap/core";
+import { history } from "@tiptap/pm/history";
 import { joinFrontmatter, splitFrontmatter } from "./frontmatter";
 import { SourcePreservation } from "./preservation";
 import { clearlyExtensions } from "./extensions";
@@ -190,6 +191,32 @@ function attachClickDelegate(root: HTMLElement): void {
   );
 }
 
+// `setContent("", { contentType: "markdown" })` is a silent no-op: the
+// markdown extension parses "" to `{ type: "doc", content: [] }`, which
+// violates ProseMirror's `block+` schema, and the resulting `replaceWith`
+// leaves the editor unchanged. `clearContent()` uses `tr.delete()` instead,
+// which auto-fills with an empty paragraph. Use it for the empty case so a
+// new untitled document doesn't display the previous note's content (#313).
+function replaceEditorBody(body: string): void {
+  if (!editor) return;
+  if (body.length === 0) {
+    editor.commands.clearContent();
+  } else {
+    editor.commands.setContent(body, { contentType: "markdown" });
+  }
+}
+
+// Tiptap 3 / ProseMirror have no command to clear undo history, so reset
+// the plugin instance instead. `unregisterPlugin("history")` filters by key
+// prefix `history$` (the key PM's `history()` plugin always uses); the
+// fresh `history()` registers under the same key, keeping UndoRedo's
+// `Mod-Z` shortcut wired without extra plumbing.
+function resetUndoHistory(): void {
+  if (!editor) return;
+  editor.unregisterPlugin("history");
+  editor.registerPlugin(history());
+}
+
 function ensureMounted(initialMarkdown: string, epoch: number, appearance: "light" | "dark", fontSize: number): void {
   const root = document.getElementById("editor");
   if (!root) throw new Error("missing #editor root");
@@ -199,7 +226,7 @@ function ensureMounted(initialMarkdown: string, epoch: number, appearance: "ligh
   if (editor) {
     withSuppressedUpdates(() => {
       preservation?.beginExternalReplace(split.body);
-      editor!.commands.setContent(split.body, { contentType: "markdown" });
+      replaceEditorBody(split.body);
       // Tiptap's setContent leaves the selection covering the whole inserted
       // range (Selection.atStart-of-replaced-range to atEnd). Collapse to the
       // start so switching INTO WYSIWYG mode doesn't show the whole doc as
@@ -207,6 +234,7 @@ function ensureMounted(initialMarkdown: string, epoch: number, appearance: "ligh
       editor!.commands.setTextSelection(0);
       if (preservation) preservation.attach(editor!);
     });
+    resetUndoHistory();
     pendingEpoch = epoch;
     return;
   }
@@ -275,10 +303,11 @@ window.clearlyWYSIWYG = {
     storedFrontmatter = split.frontmatter;
     withSuppressedUpdates(() => {
       preservation?.beginExternalReplace(split.body);
-      editor!.commands.setContent(split.body, { contentType: "markdown" });
+      replaceEditorBody(split.body);
       editor!.commands.setTextSelection(0);
       if (preservation) preservation.attach(editor!);
     });
+    resetUndoHistory();
   },
   setTheme({ appearance, fontSize }) {
     applyAppearance(appearance, fontSize);

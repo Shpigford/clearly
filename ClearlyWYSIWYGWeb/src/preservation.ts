@@ -37,6 +37,8 @@ interface BlockSnapshot {
   json: string; // canonicalized JSON of the PM child at mount time
 }
 
+type UpdateHandler = (event: { transaction: any }) => void;
+
 export class SourcePreservation {
   private originalBody: string;
   private tokens: MarkedToken[] = [];
@@ -48,6 +50,10 @@ export class SourcePreservation {
   // Used only when not aligned (global dirty bit).
   private globalDirty = false;
   private ignoreNextUpdate = false;
+  // Held so we can detach on re-attach. `editor.on("update", fn)` registers
+  // a fresh listener each call without removing prior ones — without this,
+  // every doc switch would leak a listener that fires on every keystroke.
+  private updateHandler: UpdateHandler | null = null;
 
   constructor(body: string) {
     this.originalBody = body;
@@ -57,6 +63,10 @@ export class SourcePreservation {
   // PM child with a preserveId, then snapshot JSON. Must be called after
   // the editor finishes mounting.
   attach(editor: Editor): void {
+    if (this.updateHandler) {
+      editor.off("update", this.updateHandler);
+      this.updateHandler = null;
+    }
     const manager = (editor as any).markdown;
     const marked = manager?.instance;
     if (manager && marked && typeof marked.lexer === "function") {
@@ -105,14 +115,15 @@ export class SourcePreservation {
       });
     }
 
-    editor.on("update", ({ transaction }) => {
+    this.updateHandler = ({ transaction }) => {
       if (this.ignoreNextUpdate) {
         this.ignoreNextUpdate = false;
         return;
       }
       if (transaction.getMeta("preservation:internal")) return;
       this.globalDirty = true;
-    });
+    };
+    editor.on("update", this.updateHandler);
   }
 
   // Re-initialize state for a new source body. Must be followed by attach().
