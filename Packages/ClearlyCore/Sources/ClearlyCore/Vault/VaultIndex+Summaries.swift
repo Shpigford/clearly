@@ -7,6 +7,17 @@ import GRDB
 /// in one read transaction.
 extension VaultIndex {
 
+    /// Hard cap on the number of rows the middle list pane will pull from
+    /// the index. Bounds the SQL fetch, the FTS5 substring chunk, and the
+    /// per-row `extractTitleAndPreview` parse — all of which are O(N) in
+    /// folder size. For folders larger than this, modified-* sort is
+    /// exactly correct (the N most-recent are in the result); title-* sort
+    /// is approximately correct (it's the title-sort of the N
+    /// filename-alphabetically-first notes, which matches the visible
+    /// title order for the overwhelming majority of vaults where filename
+    /// and H1 title agree).
+    public static let summariesLimit = 1000
+
     /// - Parameters:
     ///   - folderRelativePath: Path of the target folder relative to the
     ///     vault root. Pass `""` (or `"/"`) to query the root itself.
@@ -136,6 +147,7 @@ extension VaultIndex {
             JOIN files_fts ON files_fts.rowid = f.id
             \(whereClause)
             \(orderClause)
+            LIMIT \(VaultIndex.summariesLimit)
             """
 
         return (sql, StatementArguments(args))
