@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+## [2.12.0] - 2026-05-01
+- Fixed runaway memory and CPU usage when indexing large vaults
+- Adding a folder that's already inside (or contains) an existing vault is now blocked
+
 ## [2.11.1] - 2026-05-01
 - New notes (⌘N) start blank instead of carrying over the previous note's content in the editable preview
 
