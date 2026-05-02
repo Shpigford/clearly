@@ -322,6 +322,8 @@ public final class VaultIndex: @unchecked Sendable {
 
     public func indexAllFiles(showHiddenFiles: Bool = false) {
         let markdownFiles = collectMarkdownFiles(under: rootURL, showHiddenFiles: showHiddenFiles)
+        let totalFiles = markdownFiles.count
+        DiagnosticLog.log("Index sweep start: \(totalFiles) files, rss=\(MemoryUsage.residentMB())MB")
 
         do {
             try dbPool.write { db in
@@ -336,8 +338,21 @@ public final class VaultIndex: @unchecked Sendable {
                 }
 
                 var processedPaths = Set<String>()
+                var iterated = 0
+                // Log progress every 5s (plus the first 5 files), not every 100 files.
+                // Incremental FSEvent reindexes scan all files but skip most via hash
+                // check in milliseconds — every-100-files emits dozens of useless lines
+                // per FSEvent burst. Time-throttling keeps initial-sweep telemetry
+                // (slow per-file work) without the steady-state noise.
+                var lastLogAt = Date().timeIntervalSinceReferenceDate
 
                 for fileURL in markdownFiles {
+                    iterated += 1
+                    let nowTS = Date().timeIntervalSinceReferenceDate
+                    if iterated <= 5 || nowTS - lastLogAt >= 5.0 {
+                        DiagnosticLog.log("Index sweep progress: \(iterated)/\(totalFiles), rss=\(MemoryUsage.residentMB())MB")
+                        lastLogAt = nowTS
+                    }
                     let relativePath = Self.relativePath(of: fileURL, from: rootURL)
 
                     guard Limits.isOpenableSize(fileURL) else {
@@ -409,6 +424,8 @@ public final class VaultIndex: @unchecked Sendable {
 
                 try self.resolveWikiLinkTargets(db: db)
             }
+            DiagnosticLog.log("Index sweep complete: \(totalFiles) files, rss=\(MemoryUsage.residentMB())MB")
+            DiagnosticLog.trimIfNeeded()
         } catch {
             DiagnosticLog.log("VaultIndex: indexAllFiles failed — \(error.localizedDescription)")
         }
@@ -1388,6 +1405,7 @@ public final class VaultIndex: @unchecked Sendable {
             do {
                 let stale = try self.embeddingsMissingOrStale(modelVersion: modelVersion)
                 if stale.isEmpty { return }
+                DiagnosticLog.log("Embedding sweep start: \(stale.count) notes, rss=\(MemoryUsage.residentMB())MB")
 
                 let service: EmbeddingService
                 do {
@@ -1399,70 +1417,80 @@ public final class VaultIndex: @unchecked Sendable {
 
                 var processed = 0
                 var totalChunks = 0
+                var attempted = 0
                 for target in stale {
                     if Task.isCancelled { return }
-                    let fileURL = self.rootURL.appendingPathComponent(target.path)
-                    guard Limits.isOpenableSize(fileURL) else {
-                        DiagnosticLog.log("VaultIndex embed: skipping oversized file \(fileURL.lastPathComponent)")
-                        continue
-                    }
-                    guard let data = try? Data(contentsOf: fileURL),
-                          let content = String(data: data, encoding: .utf8) else { continue }
-
-                    // Chunk first; embed each chunk separately so long notes don't dilute
-                    // their signal in a single mean-pooled vector. Title + heading-path
-                    // prepended via `embedText` per the contextual-retrieval pattern.
-                    let filename = (target.path as NSString).lastPathComponent
-                    let chunks = MarkdownChunker.chunk(source: content, filename: filename)
-                    if chunks.isEmpty {
-                        // Empty / frontmatter-only note. Clear any prior chunks for this file
-                        // so a previously-non-empty note doesn't keep stale rows around.
-                        try? self.upsertChunkEmbeddings(
-                            fileID: target.fileID,
-                            contentHash: target.contentHash,
-                            chunks: [],
-                            modelVersion: modelVersion
-                        )
-                        continue
-                    }
-
-                    do {
-                        var inputs: [ChunkEmbeddingInput] = []
-                        inputs.reserveCapacity(chunks.count)
-                        for chunk in chunks {
-                            do {
-                                let vector = try service.embed(chunk.embedText)
-                                inputs.append(ChunkEmbeddingInput(
-                                    chunkIndex: chunk.index,
-                                    textOffset: chunk.textOffset,
-                                    textLength: chunk.textLength,
-                                    headingPath: chunk.headingPath,
-                                    body: chunk.body,
-                                    vector: vector
-                                ))
-                            } catch EmbeddingError.emptyText {
-                                continue
-                            }
+                    // autoreleasepool drains Foundation-bridged temporaries (Data, CFString,
+                    // NLContextualEmbeddingResult, the per-call [Double] accumulator inside
+                    // EmbeddingService.embed) every iteration instead of letting them
+                    // accumulate for the lifetime of this Task.detached.
+                    autoreleasepool {
+                        attempted += 1
+                        let fileURL = self.rootURL.appendingPathComponent(target.path)
+                        guard Limits.isOpenableSize(fileURL) else {
+                            DiagnosticLog.log("VaultIndex embed: skipping oversized file \(fileURL.lastPathComponent)")
+                            return
                         }
-                        // Atomically replace this file's chunks. Skip the upsert if every
-                        // chunk failed to embed — leaves the prior state in place rather
-                        // than blanking the file out on a transient embed failure.
-                        guard !inputs.isEmpty else { continue }
-                        try self.upsertChunkEmbeddings(
-                            fileID: target.fileID,
-                            contentHash: target.contentHash,
-                            chunks: inputs,
-                            modelVersion: modelVersion
-                        )
-                        processed += 1
-                        totalChunks += inputs.count
-                    } catch {
-                        DiagnosticLog.log("Embedding failed for \(target.path): \(error.localizedDescription)")
+                        guard let data = try? Data(contentsOf: fileURL),
+                              let content = String(data: data, encoding: .utf8) else { return }
+
+                        // Chunk first; embed each chunk separately so long notes don't dilute
+                        // their signal in a single mean-pooled vector. Title + heading-path
+                        // prepended via `embedText` per the contextual-retrieval pattern.
+                        let filename = (target.path as NSString).lastPathComponent
+                        let chunks = MarkdownChunker.chunk(source: content, filename: filename)
+                        if chunks.isEmpty {
+                            // Empty / frontmatter-only note. Clear any prior chunks for this file
+                            // so a previously-non-empty note doesn't keep stale rows around.
+                            try? self.upsertChunkEmbeddings(
+                                fileID: target.fileID,
+                                contentHash: target.contentHash,
+                                chunks: [],
+                                modelVersion: modelVersion
+                            )
+                            return
+                        }
+
+                        do {
+                            var inputs: [ChunkEmbeddingInput] = []
+                            inputs.reserveCapacity(chunks.count)
+                            for chunk in chunks {
+                                do {
+                                    let vector = try service.embed(chunk.embedText)
+                                    inputs.append(ChunkEmbeddingInput(
+                                        chunkIndex: chunk.index,
+                                        textOffset: chunk.textOffset,
+                                        textLength: chunk.textLength,
+                                        headingPath: chunk.headingPath,
+                                        body: chunk.body,
+                                        vector: vector
+                                    ))
+                                } catch EmbeddingError.emptyText {
+                                    continue
+                                }
+                            }
+                            // Atomically replace this file's chunks. Skip the upsert if every
+                            // chunk failed to embed — leaves the prior state in place rather
+                            // than blanking the file out on a transient embed failure.
+                            guard !inputs.isEmpty else { return }
+                            try self.upsertChunkEmbeddings(
+                                fileID: target.fileID,
+                                contentHash: target.contentHash,
+                                chunks: inputs,
+                                modelVersion: modelVersion
+                            )
+                            processed += 1
+                            totalChunks += inputs.count
+                        } catch {
+                            DiagnosticLog.log("Embedding failed for \(target.path): \(error.localizedDescription)")
+                        }
+                    }
+                    if attempted <= 5 || attempted % 100 == 0 {
+                        DiagnosticLog.log("Embedding sweep progress: \(attempted)/\(stale.count), rss=\(MemoryUsage.residentMB())MB")
                     }
                 }
-                if processed > 0 {
-                    DiagnosticLog.log("Embedding sweep complete: \(processed)/\(stale.count) notes, \(totalChunks) chunks")
-                }
+                DiagnosticLog.log("Embedding sweep complete: \(processed)/\(stale.count) notes, \(totalChunks) chunks, rss=\(MemoryUsage.residentMB())MB")
+                DiagnosticLog.trimIfNeeded()
             } catch {
                 DiagnosticLog.log("Embedding sweep failed: \(error.localizedDescription)")
             }
