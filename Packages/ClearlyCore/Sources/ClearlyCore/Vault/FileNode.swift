@@ -31,7 +31,19 @@ public struct FileNode: Identifiable, Hashable {
 
     /// Build a file tree from a directory URL, filtering to markdown files.
     /// Skips hardcoded heavy directories and respects `.gitignore` rules.
-    public static func buildTree(at url: URL, showHiddenFiles: Bool = false, ignoreRules: IgnoreRules? = nil) -> [FileNode] {
+    ///
+    /// Pass `isCancelled` to abort an in-flight walk when a newer build supersedes
+    /// it. Without this, a stack of FSEvent-driven `loadTree` calls would each run
+    /// to completion in parallel even after their results would be discarded —
+    /// which on broad trees (e.g. ~/Documents) can pin multiple cores and grow RSS
+    /// monotonically. See issue #311.
+    public static func buildTree(
+        at url: URL,
+        showHiddenFiles: Bool = false,
+        ignoreRules: IgnoreRules? = nil,
+        isCancelled: () -> Bool = { false }
+    ) -> [FileNode] {
+        if isCancelled() { return [] }
         let fm = FileManager.default
         let options: FileManager.DirectoryEnumerationOptions = showHiddenFiles ? [] : [.skipsHiddenFiles]
         guard let contents = try? fm.contentsOfDirectory(
@@ -46,20 +58,30 @@ public struct FileNode: Identifiable, Hashable {
         var files: [FileNode] = []
 
         for itemURL in contents {
-            let isDir = (try? itemURL.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory ?? false
-            let name = itemURL.lastPathComponent
-            let hidden = name.hasPrefix(".")
+            if isCancelled() { return [] }
+            // autoreleasepool drains URL/CFString temporaries every iteration so a
+            // broad walk doesn't grow the working set monotonically while running.
+            autoreleasepool {
+                let isDir = (try? itemURL.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory ?? false
+                let name = itemURL.lastPathComponent
+                let hidden = name.hasPrefix(".")
 
-            if isDir {
-                if rules.shouldIgnore(url: itemURL, isDirectory: true) { continue }
-                var childRules = rules
-                childRules.loadNestedGitignore(at: itemURL)
-                let children = buildTree(at: itemURL, showHiddenFiles: showHiddenFiles, ignoreRules: childRules)
-                folders.append(FileNode(name: name, url: itemURL, isHidden: hidden, children: children))
-            } else {
-                if rules.shouldIgnore(url: itemURL, isDirectory: false) { continue }
-                if markdownExtensions.contains(itemURL.pathExtension.lowercased()) {
-                    files.append(FileNode(name: name, url: itemURL, isHidden: hidden, children: nil))
+                if isDir {
+                    if rules.shouldIgnore(url: itemURL, isDirectory: true) { return }
+                    var childRules = rules
+                    childRules.loadNestedGitignore(at: itemURL)
+                    let children = buildTree(
+                        at: itemURL,
+                        showHiddenFiles: showHiddenFiles,
+                        ignoreRules: childRules,
+                        isCancelled: isCancelled
+                    )
+                    folders.append(FileNode(name: name, url: itemURL, isHidden: hidden, children: children))
+                } else {
+                    if rules.shouldIgnore(url: itemURL, isDirectory: false) { return }
+                    if markdownExtensions.contains(itemURL.pathExtension.lowercased()) {
+                        files.append(FileNode(name: name, url: itemURL, isHidden: hidden, children: nil))
+                    }
                 }
             }
         }
