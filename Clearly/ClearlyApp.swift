@@ -274,11 +274,9 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValid
             FileManager.default.fileExists(atPath: url.path, isDirectory: &isDir)
             if isDir.boolValue {
                 openedDirectory = true
-                if !workspace.locations.contains(where: { $0.url == url }) {
-                    let shouldShowGettingStarted = workspace.isFirstRun
-                    if workspace.addLocation(url: url), shouldShowGettingStarted {
-                        workspace.handleFirstLocationIfNeeded(folderURL: url)
-                    }
+                let shouldShowGettingStarted = workspace.isFirstRun
+                if workspace.tryAddLocation(url: url), shouldShowGettingStarted {
+                    workspace.handleFirstLocationIfNeeded(folderURL: url)
                 }
             } else {
                 openedFile = workspace.openFileInNewTab(at: url) || openedFile

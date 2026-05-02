@@ -92,10 +92,9 @@ struct WelcomeView: View {
         panel.prompt = "Add Folder"
 
         guard panel.runModal() == .OK, let url = panel.url else { return }
-        guard !workspace.locations.contains(where: { $0.url == url }) else { return }
 
         let shouldShowGettingStarted = workspace.isFirstRun
-        guard workspace.addLocation(url: url) else { return }
+        guard workspace.tryAddLocation(url: url) else { return }
         if shouldShowGettingStarted {
             workspace.handleFirstLocationIfNeeded(folderURL: url)
         }

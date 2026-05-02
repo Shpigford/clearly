@@ -121,6 +121,7 @@ enum WikiSeeder {
             UserDefaults.standard.set(true, forKey: "sidebarVisible")
             return
         }
+        guard workspace.validateCanAddLocation(url: url) else { return }
 
         do {
             try seed(at: url)

@@ -4,6 +4,44 @@ import AppKit
 import CoreServices
 import UniformTypeIdentifiers
 
+/// Caps concurrent `FileNode.buildTree` walks across the whole process. With one
+/// FSEventStream per vault, a single global event (Spotlight reindex, Time
+/// Machine snapshot, iCloud burst) can fire every stream within milliseconds.
+/// Per-location cancellation already prevents stacked walks of the same tree;
+/// this prevents N parallel walks across N vaults from saturating cores during
+/// those bursts. Cancelled waiters wake briefly when their slot opens, see
+/// `Task.isCancelled`, and bail — slot leakage is bounded.
+private actor TreeBuildLimiter {
+    static let shared = TreeBuildLimiter(maxConcurrent: 2)
+
+    private let maxConcurrent: Int
+    private var inFlight: Int = 0
+    private var waiters: [CheckedContinuation<Void, Never>] = []
+
+    init(maxConcurrent: Int) {
+        self.maxConcurrent = maxConcurrent
+    }
+
+    func acquire() async {
+        if inFlight < maxConcurrent {
+            inFlight += 1
+            return
+        }
+        await withCheckedContinuation { (cont: CheckedContinuation<Void, Never>) in
+            waiters.append(cont)
+        }
+    }
+
+    func release() {
+        if let next = waiters.first {
+            waiters.removeFirst()
+            next.resume()
+        } else {
+            inFlight = max(0, inFlight - 1)
+        }
+    }
+}
+
 /// Central state manager for file navigation: locations, recents, and current file.
 @Observable
 final class WorkspaceManager {
@@ -73,6 +111,7 @@ final class WorkspaceManager {
     @ObservationIgnored private var vaultIndexes: [UUID: VaultIndex] = [:]
     @ObservationIgnored private var refreshWork: [UUID: DispatchWorkItem] = [:]
     @ObservationIgnored private var treeBuildGeneration: [UUID: Int] = [:]
+    @ObservationIgnored private var treeBuildTasks: [UUID: Task<Void, Never>] = [:]
     private var autoSaveWork: DispatchWorkItem?
     private var lastSavedText: String = ""
     private var accessedURLs: Set<URL> = []
@@ -176,6 +215,7 @@ final class WorkspaceManager {
     deinit {
         autoSaveWork?.cancel()
         refreshWork.values.forEach { $0.cancel() }
+        treeBuildTasks.values.forEach { $0.cancel() }
         for index in vaultIndexes.values { index.close() }
         vaultIndexes.removeAll()
         stopAllFSStreams()
@@ -866,10 +906,24 @@ final class WorkspaceManager {
         let generation = nextTreeBuildGeneration(for: locationID)
         let showHidden = showHiddenFiles
 
-        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            let tree = FileNode.buildTree(at: url, showHiddenFiles: showHidden)
+        // Cancel any in-flight walk for this location before starting a new one.
+        // The generation counter alone only blocks stale assignment on main; without
+        // task cancellation, stacked-up FSEvent bursts each run a full recursive
+        // FileNode.buildTree to completion in parallel, pinning cores and growing
+        // RSS monotonically on broad trees. See issue #311.
+        treeBuildTasks[locationID]?.cancel()
+
+        let task = Task.detached(priority: .userInitiated) { [weak self] in
+            await TreeBuildLimiter.shared.acquire()
+            let tree = FileNode.buildTree(
+                at: url,
+                showHiddenFiles: showHidden,
+                isCancelled: { Task.isCancelled }
+            )
+            await TreeBuildLimiter.shared.release()
+            if Task.isCancelled { return }
             let kind = VaultKind.detect(at: url)
-            DispatchQueue.main.async {
+            await MainActor.run { [weak self] in
                 guard let self,
                       self.treeBuildGeneration[locationID] == generation,
                       let idx = self.locations.firstIndex(where: { $0.id == locationID }) else { return }
@@ -881,9 +935,85 @@ final class WorkspaceManager {
                 }
             }
         }
+        treeBuildTasks[locationID] = task
     }
 
     // MARK: - Locations
+
+    enum VaultConflict {
+        case duplicate(URL)
+        case insideExisting(URL)
+        case containsExisting(URL)
+    }
+
+    /// Returns the existing-vault conflict for `url`, or nil if it can be added cleanly.
+    /// Resolves symlinks because Desktop/Documents/etc. may resolve through different
+    /// roots depending on the entry point (Files panel vs. drag-drop vs. URL scheme).
+    /// Compares case-insensitively when either volume reports it doesn't support
+    /// case-sensitive names (default APFS) so `~/Desktop` and `~/desktop` aren't
+    /// treated as separate vaults on the same disk.
+    func vaultConflict(for url: URL) -> VaultConflict? {
+        let candidate = url.standardizedFileURL.resolvingSymlinksInPath()
+        let candidateCaseSensitive = Self.volumeIsCaseSensitive(candidate)
+        for loc in locations {
+            let other = loc.url.standardizedFileURL.resolvingSymlinksInPath()
+            let otherCaseSensitive = Self.volumeIsCaseSensitive(other)
+            // Conservative: if EITHER volume is case-insensitive, compare insensitively.
+            // False positives (refuse a legitimately distinct case-only-different folder)
+            // are recoverable; false negatives (silently double-add) are not.
+            let caseSensitive = candidateCaseSensitive && otherCaseSensitive
+            let candidatePath = caseSensitive ? candidate.path : candidate.path.lowercased()
+            let otherPath = caseSensitive ? other.path : other.path.lowercased()
+            if otherPath == candidatePath { return .duplicate(loc.url) }
+            if candidatePath.hasPrefix(otherPath + "/") { return .insideExisting(loc.url) }
+            if otherPath.hasPrefix(candidatePath + "/") { return .containsExisting(loc.url) }
+        }
+        return nil
+    }
+
+    private static func volumeIsCaseSensitive(_ url: URL) -> Bool {
+        // Defaults to false (case-insensitive) when the key is unavailable. That's
+        // the safer assumption — see vaultConflict's "conservative" comment.
+        (try? url.resourceValues(forKeys: [.volumeSupportsCaseSensitiveNamesKey]))?
+            .volumeSupportsCaseSensitiveNames ?? false
+    }
+
+    /// Interactive add: surfaces an `NSAlert` on conflict instead of silently failing.
+    /// Use this from any user-initiated add path (open panel, drag-drop, URL handler).
+    /// Programmatic adds where the caller knows the path is fresh (e.g. WikiSeeding)
+    /// can call `addLocation` directly.
+    @discardableResult
+    func tryAddLocation(url: URL) -> Bool {
+        guard validateCanAddLocation(url: url) else { return false }
+        return addLocation(url: url)
+    }
+
+    @discardableResult
+    func validateCanAddLocation(url: URL) -> Bool {
+        if let conflict = vaultConflict(for: url) {
+            presentVaultConflictAlert(picked: url, conflict: conflict)
+            return false
+        }
+        return true
+    }
+
+    private func presentVaultConflictAlert(picked: URL, conflict: VaultConflict) {
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "OK")
+        switch conflict {
+        case .duplicate:
+            alert.messageText = "“\(picked.lastPathComponent)” is already in your sidebar."
+            alert.informativeText = "This folder is already added as a vault."
+        case .insideExisting(let existing):
+            alert.messageText = "“\(picked.lastPathComponent)” is already covered."
+            alert.informativeText = "“\(existing.lastPathComponent)” is in your sidebar and includes “\(picked.lastPathComponent)”. To work with just this folder, remove the parent first."
+        case .containsExisting(let existing):
+            alert.messageText = "“\(picked.lastPathComponent)” contains an existing vault."
+            alert.informativeText = "“\(existing.lastPathComponent)” is already in your sidebar. Remove it first, or pick a different folder."
+        }
+        alert.runModal()
+    }
 
     @discardableResult
     func addLocation(url: URL) -> Bool {
@@ -957,6 +1087,8 @@ final class WorkspaceManager {
     func removeLocation(_ location: BookmarkedLocation) {
         stopFSStream(for: location.id)
         treeBuildGeneration.removeValue(forKey: location.id)
+        treeBuildTasks[location.id]?.cancel()
+        treeBuildTasks.removeValue(forKey: location.id)
         vaultIndexes[location.id]?.close()
         vaultIndexes.removeValue(forKey: location.id)
         vaultIndexRevision += 1
@@ -1528,10 +1660,8 @@ final class WorkspaceManager {
         FileManager.default.fileExists(atPath: url.path, isDirectory: &isDir)
 
         if isDir.boolValue {
-            // Don't add duplicate locations
-            guard !locations.contains(where: { $0.url == url }) else { return }
             let shouldShowGettingStarted = isFirstRun
-            guard addLocation(url: url) else { return }
+            guard tryAddLocation(url: url) else { return }
             if shouldShowGettingStarted {
                 handleFirstLocationIfNeeded(folderURL: url)
             }
@@ -1709,6 +1839,19 @@ final class WorkspaceManager {
               let stored = try? JSONDecoder().decode([StoredBookmark].self, from: data) else { return }
 
         var didMutateStoredBookmarks = false
+
+        // Resolve URLs first so we can sort by path-length ascending. Otherwise
+        // restore order is whatever the user added them in, and a bookmark file
+        // pre-dating nested-vault rejection could have e.g. [blogs, Desktop] —
+        // restoring in that order would silently drop Desktop because it
+        // contains the already-restored blogs. Shorter paths win.
+        struct Resolved {
+            let bookmark: StoredBookmark
+            let url: URL
+            let bookmarkData: Data
+            let didRefreshStale: Bool
+        }
+        var resolved: [Resolved] = []
         for bookmark in stored {
             var isStale = false
             guard let url = try? URL(
@@ -1720,23 +1863,51 @@ final class WorkspaceManager {
                 didMutateStoredBookmarks = true
                 continue
             }
-
             var bookmarkData = bookmark.bookmarkData
+            var didRefreshStale = false
             if isStale {
                 if let refreshed = try? url.bookmarkData(options: .withSecurityScope, includingResourceValuesForKeys: nil, relativeTo: nil) {
                     bookmarkData = refreshed
-                    didMutateStoredBookmarks = true
+                    didRefreshStale = true
                 }
             }
+            resolved.append(Resolved(
+                bookmark: bookmark,
+                url: url,
+                bookmarkData: bookmarkData,
+                didRefreshStale: didRefreshStale
+            ))
+        }
+        resolved.sort { $0.url.path.count < $1.url.path.count }
+
+        for entry in resolved {
+            let url = entry.url
+            let bookmarkData = entry.bookmarkData
+            if entry.didRefreshStale { didMutateStoredBookmarks = true }
 
             guard url.startAccessingSecurityScopedResource() else {
+                didMutateStoredBookmarks = true
+                continue
+            }
+
+            // Silently drop nested bookmarks left over from before nested-vault
+            // rejection landed. Don't alert the user on launch; just log and skip.
+            if let conflict = vaultConflict(for: url) {
+                let kind: String
+                switch conflict {
+                case .duplicate: kind = "duplicate"
+                case .insideExisting: kind = "inside existing"
+                case .containsExisting: kind = "contains existing"
+                }
+                DiagnosticLog.log("Restore: skipping nested bookmark \(url.lastPathComponent) — \(kind)")
+                url.stopAccessingSecurityScopedResource()
                 didMutateStoredBookmarks = true
                 continue
             }
             accessedURLs.insert(url)
 
             let location = BookmarkedLocation(
-                id: bookmark.id,
+                id: entry.bookmark.id,
                 url: url,
                 bookmarkData: bookmarkData,
                 fileTree: [],
@@ -1745,7 +1916,7 @@ final class WorkspaceManager {
             locations.append(location)
             startFSStream(for: location)
             openVaultIndex(for: location)
-            loadTree(for: bookmark.id, at: url)
+            loadTree(for: entry.bookmark.id, at: url)
         }
 
         if didMutateStoredBookmarks {
@@ -1969,6 +2140,8 @@ final class WorkspaceManager {
         refreshWork[locationID]?.cancel()
         refreshWork.removeValue(forKey: locationID)
         treeBuildGeneration.removeValue(forKey: locationID)
+        treeBuildTasks[locationID]?.cancel()
+        treeBuildTasks.removeValue(forKey: locationID)
         guard let stream = fsStreams.removeValue(forKey: locationID) else { return }
         FSEventStreamStop(stream)
         FSEventStreamInvalidate(stream)
