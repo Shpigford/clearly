@@ -3,6 +3,20 @@
   <channel>
     <title>Clearly</title>
     <item>
+      <title>Version 2.12.0</title>
+      <sparkle:version>2.12.0</sparkle:version>
+      <sparkle:shortVersionString>2.12.0</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+      <pubDate>Sat, 02 May 2026 01:51:01 +0000</pubDate>
+      <description><![CDATA[<ul><li>Fixed runaway memory and CPU usage when indexing large vaults</li><li>Adding a folder that's already inside (or contains) an existing vault is now blocked</li></ul>]]></description>
+      <enclosure
+        url="https://github.com/Shpigford/clearly/releases/download/v2.12.0/Clearly.dmg"
+        sparkle:edSignature="n8oEXlX0a8Lmlb9AT71otGUX266ZLD+UkcV4y1zaTl5zKWxGncj20gvuBNSRrKEgiE3WVSqIvC/2+4VgzcioAg=="
+        length="22484771"
+        type="application/octet-stream"
+      />
+    </item>
+    <item>
       <title>Version 2.11.1</title>
       <sparkle:version>2.11.1</sparkle:version>
       <sparkle:shortVersionString>2.11.1</sparkle:shortVersionString>
