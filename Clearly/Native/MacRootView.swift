@@ -66,7 +66,7 @@ struct MacRootView: View {
         }
         .navigationTitle(windowTitle)
         .navigationDocument(workspace.currentFileURL ?? URL(fileURLWithPath: "/"))
-        .onChange(of: selectedFileURL) { _, newURL in
+        .onChange(of: selectedFileURL) { oldURL, newURL in
             guard let url = newURL else { return }
             guard workspace.currentFileURL != url else { return }
             let isCmdClick: Bool = {
@@ -75,10 +75,14 @@ struct MacRootView: View {
             }()
             lastSidebarClickModifiers = []
             lastSidebarClickTime = nil
-            if isCmdClick {
-                workspace.openFileInNewTab(at: url)
-            } else {
-                workspace.openFile(at: url)
+            let succeeded = isCmdClick
+                ? workspace.openFileInNewTab(at: url)
+                : workspace.openFile(at: url)
+            if !succeeded {
+                // User cancelled the unsaved-changes prompt. The selection
+                // already moved in the binding — revert it so the sidebar
+                // doesn't lie about which file is open.
+                DispatchQueue.main.async { selectedFileURL = oldURL }
             }
         }
         .onChange(of: workspace.currentFileURL) { _, newURL in
