@@ -43,6 +43,7 @@ struct MacFolderSidebar: View {
     @Binding var selectedFileURL: URL?
 
     @State private var customizingFolderURL: URL?
+    @State private var customizingVaultURL: URL?
     @State private var cachedTags: [(tag: String, count: Int)] = []
     @AppStorage("sidebarTagsExpanded") private var isTagsExpanded = true
     @AppStorage("sidebarPinnedExpanded") private var isPinnedExpanded = true
@@ -171,7 +172,10 @@ struct MacFolderSidebar: View {
     // MARK: - Location section
 
     private func locationSection(_ location: BookmarkedLocation) -> some View {
-        Section {
+        let defaultIcon = location.isWiki ? "book.closed" : "folder"
+        let resolvedIcon = workspace.vaultIcon(for: location.url) ?? defaultIcon
+        let resolvedTint = workspace.vaultColor(for: location.url).map(Color.init(nsColor:))
+        return Section {
             if !workspace.isLocationCollapsed(location.id.uuidString) {
                 ForEach(topLevelNodes(in: location.fileTree)) { node in
                     outlineNode(node)
@@ -180,9 +184,10 @@ struct MacFolderSidebar: View {
         } header: {
             collapsibleHeader(
                 title: location.name,
-                systemImage: location.isWiki ? "book.closed" : "folder",
+                systemImage: resolvedIcon,
                 isExpanded: locationExpandedBinding(location),
-                isWiki: location.isWiki
+                isWiki: location.isWiki,
+                iconTint: resolvedTint
             )
             .contextMenu {
                 Button("New File", systemImage: "doc.badge.plus") {
@@ -190,6 +195,10 @@ struct MacFolderSidebar: View {
                 }
                 Button("New Folder…", systemImage: "folder.badge.plus") {
                     promptForNewFolder(in: location.url)
+                }
+                Divider()
+                Button("Customize…", systemImage: "paintpalette") {
+                    customizingVaultURL = location.url
                 }
                 Divider()
                 Button("Reveal in Finder", systemImage: "folder") {
@@ -205,6 +214,9 @@ struct MacFolderSidebar: View {
                 Button("Remove from List", systemImage: "minus.circle", role: .destructive) {
                     removeLocation(location)
                 }
+            }
+            .popover(isPresented: vaultPopoverBinding(for: location.url), arrowEdge: .trailing) {
+                VaultCustomizerView(url: location.url, workspace: workspace)
             }
             .dropDestination(for: URL.self) { urls, _ in
                 workspace.handleSidebarDrop(urls: urls, into: location.url)
@@ -291,8 +303,8 @@ struct MacFolderSidebar: View {
     /// hover so the sidebar reads as quiet chrome until the user reaches for
     /// it. The entire row is the hit target. 16pt trailing padding clears
     /// the sidebar's overlay scrollbar when present.
-    private func collapsibleHeader(title: String, systemImage: String, isExpanded: Binding<Bool>, isWiki: Bool = false) -> some View {
-        CollapsibleSectionHeader(title: title, systemImage: systemImage, isExpanded: isExpanded, isWiki: isWiki)
+    private func collapsibleHeader(title: String, systemImage: String, isExpanded: Binding<Bool>, isWiki: Bool = false, iconTint: Color? = nil) -> some View {
+        CollapsibleSectionHeader(title: title, systemImage: systemImage, isExpanded: isExpanded, isWiki: isWiki, iconTint: iconTint)
     }
 
     // MARK: - Tags section
@@ -520,6 +532,13 @@ struct MacFolderSidebar: View {
         Binding(
             get: { customizingFolderURL == url },
             set: { if !$0 { customizingFolderURL = nil } }
+        )
+    }
+
+    private func vaultPopoverBinding(for url: URL) -> Binding<Bool> {
+        Binding(
+            get: { customizingVaultURL == url },
+            set: { if !$0 { customizingVaultURL = nil } }
         )
     }
 }
@@ -806,6 +825,7 @@ private struct CollapsibleSectionHeader: View {
     let systemImage: String
     @Binding var isExpanded: Bool
     var isWiki: Bool = false
+    var iconTint: Color? = nil
     @State private var isHovering = false
 
     var body: some View {
@@ -814,6 +834,7 @@ private struct CollapsibleSectionHeader: View {
         } label: {
             HStack(spacing: 4) {
                 Image(systemName: systemImage)
+                    .foregroundStyle(iconTint ?? .primary)
                 Text(title)
                 if isWiki {
                     Text("WIKI")
@@ -982,6 +1003,43 @@ private struct FolderCustomizerView: View {
                     workspace.setFolderColor(color, for: url.path)
                 } else {
                     workspace.removeFolderColor(for: url.path)
+                }
+            }
+        )
+    }
+}
+
+/// Mirrors `FolderCustomizerView` for vault root rows.
+private struct VaultCustomizerView: View {
+    let url: URL
+    let workspace: WorkspaceManager
+
+    @State private var state: IconPickerState
+
+    init(url: URL, workspace: WorkspaceManager) {
+        self.url = url
+        self.workspace = workspace
+        _state = State(wrappedValue: IconPickerState(
+            icon: workspace.vaultIcons[url.path],
+            color: workspace.vaultColors[url.path]
+        ))
+    }
+
+    var body: some View {
+        IconPickerView(
+            state: state,
+            onSelectIcon: { icon in
+                if let icon {
+                    workspace.setVaultIcon(icon, for: url.path)
+                } else {
+                    workspace.removeVaultIcon(for: url.path)
+                }
+            },
+            onSelectColor: { color in
+                if let color {
+                    workspace.setVaultColor(color, for: url.path)
+                } else {
+                    workspace.removeVaultColor(for: url.path)
                 }
             }
         )
