@@ -17,7 +17,8 @@ enum VaultChatCoordinator {
             chat.hide()
             return
         }
-        guard let vaultURL = workspace.activeLocation?.url else {
+        let vaultURL = workspace.activeLocation?.url ?? workspace.locations.first?.url
+        guard let vaultURL else {
             presentError("Open a vault to start chatting.")
             return
         }
