@@ -3,6 +3,20 @@
   <channel>
     <title>Clearly</title>
     <item>
+      <title>Version 2.13.0</title>
+      <sparkle:version>2.13.0</sparkle:version>
+      <sparkle:shortVersionString>2.13.0</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+      <pubDate>Mon, 04 May 2026 14:14:41 +0000</pubDate>
+      <description><![CDATA[<ul><li>Customize each vault folder's icon and tint color in the sidebar</li><li>Optional status bar shows live word and character counts</li><li>Rename files and folders inline from the sidebar context menu</li><li>Delete files and folders directly from the sidebar context menu</li><li>Recents drops files that no longer exist on disk at launch and on app activation</li><li>Confirm before discarding unsaved changes when navigating to another note</li><li>Last-used view mode (Editor / Preview) is now remembered across notes and launches</li><li>Removed the floating formatting toolbar from the experimental WYSIWYG mode</li><li>Removed the experimental LLM Wiki feature (vault chat remains)</li></ul>]]></description>
+      <enclosure
+        url="https://github.com/Shpigford/clearly/releases/download/v2.13.0/Clearly.dmg"
+        sparkle:edSignature="+FmA7KzTy8Amh8SX0xT1JPjbwhb2w/2jfXWZTflJogaLTJA4k/ytPDdPSwTyB4hNlPC4PRQ3pfaxFrjM9sK3BQ=="
+        length="22153752"
+        type="application/octet-stream"
+      />
+    </item>
+    <item>
       <title>Version 2.12.0</title>
       <sparkle:version>2.12.0</sparkle:version>
       <sparkle:shortVersionString>2.12.0</sparkle:shortVersionString>
