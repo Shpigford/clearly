@@ -70,9 +70,22 @@ final class WorkspaceManager {
 
     var currentFileURL: URL?
     var currentFileText: String = ""
-    var isDirty: Bool = false
     var currentViewMode: ViewMode = WorkspaceManager.defaultViewModeForOpenedFile
     var currentConflictOutcome: ConflictResolver.Outcome?
+
+    /// The currently-active open document, if any. Source of truth for
+    /// dirty/clean state — see `isDirty`.
+    var activeDocument: OpenDocument? {
+        guard let idx = activeDocumentIndex else { return nil }
+        return openDocuments[idx]
+    }
+
+    /// True when the active document has unsaved changes.
+    /// Computed from `OpenDocument.isDirty` (text != lastSavedText). No
+    /// parallel shadow state — single source of truth lives on the doc itself.
+    var isDirty: Bool {
+        activeDocument?.isDirty ?? false
+    }
 
     /// UserDefaults key for the user's last-used view mode (issue #318).
     /// Written only at explicit user-intent sites (Picker, ⌘1/⌘2, View menu);
@@ -152,7 +165,6 @@ final class WorkspaceManager {
     @ObservationIgnored private var treeBuildGeneration: [UUID: Int] = [:]
     @ObservationIgnored private var treeBuildTasks: [UUID: Task<Void, Never>] = [:]
     private var autoSaveWork: DispatchWorkItem?
-    private var lastSavedText: String = ""
     private var accessedURLs: Set<URL> = []
     private var hasPreparedInitialDocuments = false
 
@@ -337,8 +349,7 @@ final class WorkspaceManager {
 
     @discardableResult
     func createUntitledDocument() -> Bool {
-        guard saveFileBacked() else { return false }
-        snapshotActiveDocument()
+        guard confirmNavigationAwayFromActiveDoc() else { return false }
         let doc = OpenDocument(
             id: UUID(),
             fileURL: nil,
@@ -410,8 +421,7 @@ final class WorkspaceManager {
 
     @discardableResult
     func createDocumentWithContent(_ content: String) -> Bool {
-        guard saveFileBacked() else { return false }
-        snapshotActiveDocument()
+        guard confirmNavigationAwayFromActiveDoc() else { return false }
         let doc = OpenDocument(
             id: UUID(),
             fileURL: nil,
@@ -431,8 +441,10 @@ final class WorkspaceManager {
     func switchToDocument(_ id: UUID) -> Bool {
         guard id != activeDocumentID else { return true }
         guard openDocuments.contains(where: { $0.id == id }) else { return false }
-        guard saveFileBacked() else { return false }
-        snapshotActiveDocument()
+        guard confirmNavigationAwayFromActiveDoc() else { return false }
+        // Helper may have removed the previously-active untitled tab on Discard;
+        // the target id is unrelated and still resolves correctly.
+        guard openDocuments.contains(where: { $0.id == id }) else { return false }
         activeDocumentID = id
         restoreActiveDocument()
         return true
@@ -544,6 +556,70 @@ final class WorkspaceManager {
         return true
     }
 
+    // MARK: - Navigation Guard
+
+    /// Returns true if it's safe to navigate away from the currently active document.
+    ///
+    /// - File-backed dirty: silent-saves; on save failure shows an alert and returns false.
+    /// - Untitled dirty: presents Save/Don't Save/Cancel sheet. On Save, runs the save
+    ///   panel; cancellation of either the prompt or the save panel returns false.
+    /// - Clean / no active doc: returns true immediately.
+    ///
+    /// - Parameter removeUntitledOnDiscard: When true (default), an untitled-dirty
+    ///   active doc is removed from `openDocuments` on Discard. Pass false from
+    ///   callers that intend to replace the active tab's content in place
+    ///   (e.g. `openFile`) so the tab survives and can be reused.
+    @discardableResult
+    private func confirmNavigationAwayFromActiveDoc(removeUntitledOnDiscard: Bool = true) -> Bool {
+        snapshotActiveDocument()
+        guard let idx = activeDocumentIndex else { return true }
+        let doc = openDocuments[idx]
+
+        switch NavigationGuard.decide(for: doc) {
+        case .proceed:
+            return true
+        case .silentSave:
+            if !saveDocument(at: idx, treatCancelAsFailure: false) {
+                presentSaveFailureAlert(for: doc)
+                return false
+            }
+            return true
+        case .promptUser:
+            switch promptToSaveChanges(for: doc) {
+            case .save:
+                return saveDocument(at: idx, treatCancelAsFailure: true)
+            case .discard:
+                if removeUntitledOnDiscard {
+                    discardChanges(to: doc.id)
+                } else {
+                    resetUntitledToEmptyInPlace(at: idx)
+                }
+                return true
+            case .cancel:
+                return false
+            }
+        }
+    }
+
+    /// Resets an untitled doc to empty in place, leaving the tab so a caller
+    /// can fill it with new content. Used by `openFile`'s in-place replace path.
+    private func resetUntitledToEmptyInPlace(at idx: Int) {
+        openDocuments[idx].text = ""
+        openDocuments[idx].lastSavedText = ""
+        if activeDocumentID == openDocuments[idx].id {
+            currentFileText = ""
+        }
+    }
+
+    private func presentSaveFailureAlert(for doc: OpenDocument) {
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = "Couldn't save “\(doc.displayName)”."
+        alert.informativeText = "Your changes are still in the editor. Try again or check disk / iCloud status."
+        alert.addButton(withTitle: "OK")
+        alert.runModal()
+    }
+
     // MARK: - Open File
 
     /// Opens a file by replacing the active tab's content (no new tab created).
@@ -554,8 +630,10 @@ final class WorkspaceManager {
             return switchToDocument(existing.id)
         }
 
-        // Save current file-backed document before switching
-        guard saveFileBacked() else { return false }
+        // Save (or prompt about) the active doc before swapping its content.
+        // `removeUntitledOnDiscard: false` keeps an untitled tab around so it
+        // can be re-used as the slot for the new file (preserves tab order).
+        guard confirmNavigationAwayFromActiveDoc(removeUntitledOnDiscard: false) else { return false }
 
         guard Limits.isOpenableSize(url) else {
             DiagnosticLog.log("Refusing to open oversized file: \(url.lastPathComponent)")
@@ -571,19 +649,6 @@ final class WorkspaceManager {
         }
 
         if let idx = activeDocumentIndex {
-            // If the active document is dirty and untitled, prompt before replacing
-            snapshotActiveDocument()
-            let activeDoc = openDocuments[idx]
-            if activeDoc.isDirty && activeDoc.isUntitled {
-                switch promptToSaveChanges(for: activeDoc) {
-                case .save:
-                    guard saveDocument(at: idx, treatCancelAsFailure: true) else { return false }
-                case .discard:
-                    break
-                case .cancel:
-                    return false
-                }
-            }
             // Replacing the active tab's file is a host-driven same-document revision.
             // Bump the live editor epoch before mutating text so stale callbacks from
             // the previously loaded file cannot overwrite the newly opened content.
@@ -598,8 +663,6 @@ final class WorkspaceManager {
             openDocuments[idx].viewMode = WorkspaceManager.defaultViewModeForOpenedFile
             currentFileURL = url
             currentFileText = text
-            lastSavedText = text
-            isDirty = false
             currentViewMode = openDocuments[idx].viewMode
             currentConflictOutcome = nil
             refreshConflictOutcomeForActiveDocument()
@@ -633,7 +696,7 @@ final class WorkspaceManager {
             return switchToDocument(existing.id)
         }
 
-        guard saveFileBacked() else { return false }
+        guard confirmNavigationAwayFromActiveDoc() else { return false }
 
         guard Limits.isOpenableSize(url) else {
             DiagnosticLog.log("Refusing to open oversized file: \(url.lastPathComponent)")
@@ -646,8 +709,6 @@ final class WorkspaceManager {
             DiagnosticLog.log("Failed to read file: \(url.lastPathComponent)")
             return false
         }
-
-        snapshotActiveDocument()
 
         let doc = OpenDocument(
             id: UUID(),
@@ -673,8 +734,8 @@ final class WorkspaceManager {
     /// Called when the editor binding updates currentFileText.
     /// Does NOT set currentFileText — the binding already did that.
     func contentDidChange() {
-        isDirty = currentFileText != lastSavedText
-        // Sync text to the open document
+        // Sync text to the active doc — this is what `isDirty` (computed)
+        // will read on its next access.
         if let idx = activeDocumentIndex {
             openDocuments[idx].text = currentFileText
         }
@@ -691,8 +752,6 @@ final class WorkspaceManager {
         documentEpoch += 1
         WYSIWYGSession.update(documentID: activeDocumentID, epoch: documentEpoch)
         currentFileText = newText
-        lastSavedText = newText
-        isDirty = false
         if let idx = activeDocumentIndex {
             openDocuments[idx].text = newText
             openDocuments[idx].lastSavedText = newText
@@ -784,8 +843,6 @@ final class WorkspaceManager {
                 if activeDocumentIndex == openDocumentIndex {
                     currentFileURL = fileURL
                     currentFileText = updatedContent
-                    lastSavedText = updatedContent
-                    isDirty = false
                 }
             }
 
@@ -836,8 +893,6 @@ final class WorkspaceManager {
             if activeDocumentIndex == index {
                 currentFileURL = finalURL
                 currentFileText = doc.text
-                lastSavedText = doc.text
-                isDirty = false
                 if finalURL != url {
                     persistLastOpenFile(finalURL)
                 }
@@ -869,8 +924,6 @@ final class WorkspaceManager {
             if activeDocumentIndex == index {
                 currentFileURL = url
                 currentFileText = text
-                lastSavedText = text
-                isDirty = false
                 persistLastOpenFile(url)
             }
 
@@ -1684,8 +1737,6 @@ final class WorkspaceManager {
             openDocuments[index].lastSavedText = doc.text
             if activeDocumentIndex == index {
                 currentFileText = doc.text
-                lastSavedText = doc.text
-                isDirty = false
             }
             return true
         } catch {
@@ -2374,8 +2425,6 @@ final class WorkspaceManager {
                 WYSIWYGSession.update(documentID: nil, epoch: documentEpoch)
                 currentFileURL = nil
                 currentFileText = ""
-                lastSavedText = ""
-                isDirty = false
             } else {
                 let nextIndex = min(idx, openDocuments.count - 1)
                 activeDocumentID = openDocuments[nextIndex].id
@@ -2399,12 +2448,12 @@ final class WorkspaceManager {
         }
     }
 
-    /// Save current stored properties back into the openDocuments array.
+    /// Flushes the live editor buffer into the active document. `lastSavedText`
+    /// stays untouched — it's owned by save/load paths, not the live editor.
     private func snapshotActiveDocument() {
         guard let idx = activeDocumentIndex else { return }
         flushActiveEditorBuffer()
         openDocuments[idx].text = currentFileText
-        openDocuments[idx].lastSavedText = lastSavedText
         openDocuments[idx].viewMode = currentViewMode
     }
 
@@ -2432,8 +2481,6 @@ final class WorkspaceManager {
         WYSIWYGSession.update(documentID: doc.id, epoch: documentEpoch)
         currentFileURL = doc.fileURL
         currentFileText = doc.text
-        lastSavedText = doc.lastSavedText
-        isDirty = doc.isDirty
         currentViewMode = doc.viewMode
         currentConflictOutcome = doc.conflictOutcome
         if doc.fileURL != nil {
@@ -2448,8 +2495,6 @@ final class WorkspaceManager {
         activeDocumentID = doc.id
         currentFileURL = doc.fileURL
         currentFileText = doc.text
-        lastSavedText = doc.lastSavedText
-        isDirty = doc.isDirty
         currentViewMode = doc.viewMode
         currentConflictOutcome = doc.conflictOutcome
         if doc.fileURL != nil {
@@ -2582,8 +2627,14 @@ final class WorkspaceManager {
             return .save
         case .alertSecondButtonReturn:
             return .cancel
-        default:
+        case .alertThirdButtonReturn:
             return .discard
+        default:
+            // Abort / unexpected response (e.g. AppKit refusing to nest
+            // runModal inside a SwiftUI binding-update cycle — see #327).
+            // Treat as Cancel so user data is never silently discarded.
+            DiagnosticLog.log("promptToSaveChanges: modal aborted, treating as Cancel")
+            return .cancel
         }
     }
 
