@@ -10,7 +10,6 @@
   },
   "dependencies": {
     "@tiptap/core": "3.22.5",
-    "@tiptap/extension-bubble-menu": "3.22.5",
     "@tiptap/extension-code-block-lowlight": "^3.22.5",
     "@tiptap/extension-image": "3.22.5",
     "@tiptap/extension-table": "3.22.5",

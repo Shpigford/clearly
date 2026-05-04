@@ -31,7 +31,6 @@ import { findPlugin } from "./find";
 import { SlashMenu } from "./extensions/slash-menu";
 import { WikiCompletion } from "./extensions/wiki-completion";
 import { TagCompletion } from "./extensions/tag-completion";
-import { BubbleMenu } from "./extensions/bubble";
 
 const Find = Extension.create({
   name: "clearlyFind",
@@ -75,6 +74,5 @@ export const clearlyExtensions = [
   SlashMenu,
   WikiCompletion,
   TagCompletion,
-  BubbleMenu,
   PreserveBlockId,
 ];
