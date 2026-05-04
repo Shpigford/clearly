@@ -24,6 +24,7 @@ struct FolderListView_iOS: View {
     @State private var operationError: String?
 
     @State private var deleteTarget: VaultFile?
+    @State private var folderDeleteTarget: URL?
     @State private var moveTarget: VaultFile?
 
     var body: some View {
@@ -93,6 +94,16 @@ struct FolderListView_iOS: View {
         } message: {
             Text("This can't be undone from within Clearly.")
         }
+        .confirmationDialog(
+            folderDeleteTarget.map { "Delete \u{201C}\($0.lastPathComponent)\u{201D}?" } ?? "",
+            isPresented: folderDeleteConfirmBinding,
+            titleVisibility: .visible
+        ) {
+            Button("Delete", role: .destructive) { commitFolderDelete() }
+            Button("Cancel", role: .cancel) { folderDeleteTarget = nil }
+        } message: {
+            Text("This deletes the folder and everything inside it. This can't be undone from within Clearly.")
+        }
         .alert(
             "Something went wrong",
             isPresented: Binding(
@@ -140,7 +151,8 @@ struct FolderListView_iOS: View {
                             onMoveFile: { file in moveTarget = file },
                             onDuplicateFile: { file in performDuplicate(file) },
                             onCreateFile: { folder in createFile(in: folder) },
-                            onCreateFolder: { folder in beginCreateFolder(in: folder) }
+                            onCreateFolder: { folder in beginCreateFolder(in: folder) },
+                            onDeleteFolder: { folder in folderDeleteTarget = folder }
                         )
                     } header: {
                         Text(session.currentVault?.displayName ?? "Vault")
@@ -299,6 +311,13 @@ struct FolderListView_iOS: View {
         )
     }
 
+    private var folderDeleteConfirmBinding: Binding<Bool> {
+        Binding(
+            get: { folderDeleteTarget != nil },
+            set: { if !$0 { folderDeleteTarget = nil } }
+        )
+    }
+
     private func performRename(_ file: VaultFile, to newName: String) {
         Task {
             do {
@@ -341,6 +360,18 @@ struct FolderListView_iOS: View {
         Task {
             do {
                 try await session.deleteFile(target)
+            } catch {
+                operationError = error.localizedDescription
+            }
+        }
+    }
+
+    private func commitFolderDelete() {
+        guard let target = folderDeleteTarget else { return }
+        folderDeleteTarget = nil
+        Task {
+            do {
+                try await session.deleteFolder(at: target)
             } catch {
                 operationError = error.localizedDescription
             }

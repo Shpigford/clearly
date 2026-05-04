@@ -23,6 +23,7 @@ struct SidebarOutline_iOS: View {
     let onDuplicateFile: (VaultFile) -> Void
     let onCreateFile: (URL) -> Void
     let onCreateFolder: (URL) -> Void
+    let onDeleteFolder: (URL) -> Void
 
     @Environment(VaultSession.self) private var session
     @Environment(IOSExpansionState.self) private var expansion
@@ -156,6 +157,12 @@ struct SidebarOutline_iOS: View {
             onCreateFolder(folderURL)
         } label: {
             Label("New Folder", systemImage: "folder.badge.plus")
+        }
+        Divider()
+        Button(role: .destructive) {
+            onDeleteFolder(folderURL)
+        } label: {
+            Label("Delete", systemImage: "trash")
         }
     }
 

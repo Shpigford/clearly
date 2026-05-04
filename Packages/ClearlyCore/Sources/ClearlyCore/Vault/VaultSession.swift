@@ -612,6 +612,18 @@ public final class VaultSession {
         refresh()
     }
 
+    /// Delete a folder and everything inside it. Prunes any descendant files
+    /// from `navigationPath` and recents so the editor doesn't try to reopen
+    /// a vanished file when the user navigates back.
+    public func deleteFolder(at url: URL) async throws {
+        try await Task.detached(priority: .userInitiated) {
+            try CoordinatedFileIO.delete(at: url)
+        }.value
+        dropSubtreeFromNavigationPath(url)
+        dropSubtreeFromRecents(url)
+        refresh()
+    }
+
     /// Files tagged with `tag` (case-insensitive). Returns an empty array when no
     /// index is attached. Maps each `IndexedFile` back to a `VaultFile` from the
     /// watcher's current list, falling back to a provisional record constructed
@@ -643,6 +655,26 @@ public final class VaultSession {
         let target = url.standardizedFileURL
         recentFiles.removeAll { $0.url.standardizedFileURL == target }
         persistRecents()
+    }
+
+    private func dropSubtreeFromNavigationPath(_ folderURL: URL) {
+        let prefix = folderURL.standardizedFileURL.path + "/"
+        navigationPath.removeAll { entry in
+            let entryPath = entry.url.standardizedFileURL.path
+            return entryPath == folderURL.standardizedFileURL.path || entryPath.hasPrefix(prefix)
+        }
+    }
+
+    private func dropSubtreeFromRecents(_ folderURL: URL) {
+        let prefix = folderURL.standardizedFileURL.path + "/"
+        let before = recentFiles.count
+        recentFiles.removeAll { file in
+            let filePath = file.url.standardizedFileURL.path
+            return filePath == folderURL.standardizedFileURL.path || filePath.hasPrefix(prefix)
+        }
+        if recentFiles.count != before {
+            persistRecents()
+        }
     }
 
     // MARK: - Recent files

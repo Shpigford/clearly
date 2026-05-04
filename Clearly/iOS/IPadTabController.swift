@@ -201,11 +201,20 @@ public final class IPadTabController {
     }
 
     private func closeTab(id: UUID, discardUnsavedChanges: Bool) {
-        guard let idx = tabs.firstIndex(where: { $0.id == id }) else { return }
-        let tab = tabs[idx]
-        Task { await tab.session.close(discardUnsavedChanges: discardUnsavedChanges) }
-        tabs.remove(at: idx)
+        Task { await closeTabAndWait(id: id, discardUnsavedChanges: discardUnsavedChanges) }
+    }
 
+    @discardableResult
+    private func closeTabAndWait(id: UUID, discardUnsavedChanges: Bool, allowAutoRename: Bool = true) async -> Bool {
+        guard let idx = tabs.firstIndex(where: { $0.id == id }) else { return true }
+        let tab = tabs[idx]
+        if discardUnsavedChanges {
+            await tab.session.close(discardUnsavedChanges: true, allowAutoRename: allowAutoRename)
+        } else {
+            guard await tab.session.flush(allowAutoRename: allowAutoRename) else { return false }
+            await tab.session.close(discardUnsavedChanges: true, allowAutoRename: allowAutoRename)
+        }
+        tabs.remove(at: idx)
         if activeTabID == id {
             // Activate neighbor: next if present, otherwise previous, otherwise nil.
             if idx < tabs.count {
@@ -217,17 +226,65 @@ public final class IPadTabController {
             }
         }
         persist()
+        return true
     }
 
     public func closeTabs(matching file: VaultFile) {
+        for id in tabIDs(matching: file) {
+            closeTab(id: id, discardUnsavedChanges: true)
+        }
+    }
+
+    @discardableResult
+    public func closeTabsForDeletion(matching file: VaultFile) async -> Bool {
+        for id in tabIDs(matching: file) {
+            guard await closeTabAndWait(id: id, discardUnsavedChanges: false, allowAutoRename: false) else {
+                return false
+            }
+        }
+        return true
+    }
+
+    /// Close every tab whose file lives inside `folderURL` (or is `folderURL`
+    /// itself). Used when the user trashes a folder from the sidebar — any
+    /// tabs pointing at files under that subtree must close so the editor
+    /// doesn't keep a vanished file mounted.
+    public func closeTabs(inSubtree folderURL: URL) {
+        for id in tabIDs(inSubtree: folderURL) {
+            closeTab(id: id, discardUnsavedChanges: true)
+        }
+    }
+
+    @discardableResult
+    public func closeTabsForDeletion(inSubtree folderURL: URL) async -> Bool {
+        for id in tabIDs(inSubtree: folderURL) {
+            guard await closeTabAndWait(id: id, discardUnsavedChanges: false, allowAutoRename: false) else {
+                return false
+            }
+        }
+        return true
+    }
+
+    private func tabIDs(matching file: VaultFile) -> [UUID] {
         let target = file.url.standardizedFileURL
-        let ids = tabs.filter { tab in
+        return tabs.filter { tab in
             if tab.file.url.standardizedFileURL == target { return true }
             return tab.session.file?.url.standardizedFileURL == target
         }.map(\.id)
-        for id in ids {
-            closeTab(id: id, discardUnsavedChanges: true)
+    }
+
+    private func tabIDs(inSubtree folderURL: URL) -> [UUID] {
+        let rootPath = folderURL.standardizedFileURL.path
+        let prefix = rootPath + "/"
+        func isInside(_ url: URL) -> Bool {
+            let path = url.standardizedFileURL.path
+            return path == rootPath || path.hasPrefix(prefix)
         }
+        return tabs.filter { tab in
+            if isInside(tab.file.url) { return true }
+            if let sessionURL = tab.session.file?.url, isInside(sessionURL) { return true }
+            return false
+        }.map(\.id)
     }
 
     public func activate(id: UUID) {
