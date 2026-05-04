@@ -178,6 +178,66 @@ Known iCloud deadlock (research risk #3). `FileManager.default.evictUbiquitousIt
 
 `NSFileVersion.unresolvedConflictVersionsOfItem(at:)` is populated by iCloud's `bird` daemon regardless of whether your process registered a presenter. `WorkspaceManager.refreshConflictOutcomeForActiveDocument()` on Mac passes `presenter: nil` to `ConflictResolver.resolveIfNeeded(at:presenter:)` and still detects conflicts correctly — `FileWatcher`'s dispatch-source change events are enough to decide when to re-run the resolver. iOS keeps a per-document presenter because it also wants in-place remote-change refresh callbacks, which are a separate need from version queries. Don't migrate the Mac to presenters "to enable conflicts" — conflicts already work.
 
+## Testing
+
+Clearly is open source. Tests are how we keep contributors from regressing each other. **Add tests for new logic in `ClearlyCore` and every new MCP tool/CLI behavior. Don't try to test UI — verify it.**
+
+### Commands
+
+- `swift test --package-path Packages/ClearlyCore` — run all `ClearlyCore` unit tests (fast, no Xcode).
+- `swift test --package-path Packages/ClearlyCore --filter ClearlyCoreTests.MarkdownTOCTests` — one suite.
+- `swift test --package-path Packages/ClearlyCore --filter testBuildTreeMergesWatcherFilesMissingFromDisk` — one test.
+- `xcodebuild -scheme ClearlyCLIIntegrationTests -derivedDataPath ./.build/DerivedData -destination 'platform=macOS' test` — run the MCP integration suite. Same worktree-local DerivedData rule as the build.
+
+### Where tests live
+
+- `Packages/ClearlyCore/Tests/ClearlyCoreTests/` — unit tests for everything in the package: rendering, vault index, FTS5, search/replace, wiki agent, embeddings. Fixtures under `Tests/ClearlyCoreTests/Fixtures/`.
+- `ClearlyCLIIntegrationTests/` — XCTest target that exercises the real MCP server through a paired in-memory transport. Use `TestVaultHarness` (copies `FixtureVault/` into a per-test temp dir, isolates AppSupport state) — one per `setUp()`. This is the right home for any new MCP tool or end-to-end CLI behavior.
+- No tests for `Clearly/`, `Clearly/iOS/`, `ClearlyQuickLook/`. UI code is verified by running the app via `/verify`.
+
+### What to test (and what not to)
+
+- **Test new logic in `ClearlyCore`.** Anything pure-input/pure-output: parsers, renderers, indexing, query parsing, sync/conflict logic, wiki ops. Regressions here are silent and break contributors first.
+- **Test every new MCP tool.** Add an integration test in `ClearlyCLIIntegrationTests/` that drives the tool through `TestVaultHarness.client` end-to-end. Tool contracts are the public API of `ClearlyCLI` — they need real coverage.
+- **Don't test SwiftUI views, `NSTextView`/`UITextView` wrappers, WKWebView preview rendering, AppKit menu wiring, or `NSViewRepresentable` lifecycles.** Apple's UI frameworks don't unit-test cleanly and snapshot/UI-test infra costs more than it returns at our scale. Verify by using the feature.
+- **Don't test the framework.** A test that constructs a value and asserts the initializer stored its arguments is testing Swift, not Clearly.
+- **Don't add a test that needs network, real iCloud, real AppSupport, or the user's home directory.** Use the per-test temp dir pattern (`FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)` + `defer { try? FileManager.default.removeItem(at:) }`).
+
+### TDD
+
+Write the test alongside the change, not after, **for ClearlyCore logic and MCP tools**. Don't TDD the editor, preview, sidebar, or any AppKit/SwiftUI surface — those iterate through Xcode previews and `/verify`.
+
+### Style
+
+- Prefer **Swift Testing** (`@Test`, `#expect`) for new tests. Existing XCTest suites stay — don't rewrite working tests.
+- Either framework is fine; mix freely in the same target. UI tests would need XCTest, but we don't have any and aren't planning to.
+- Descriptive names: `buildTreeMergesWatcherFilesMissingFromDisk`, not `test1`.
+- One test owns one concern. Each test sets up its own fixtures and tears them down — no shared state across cases. `TestVaultHarness` follows the same rule for integration tests.
+
+### Examples
+
+```swift
+// GOOD — tests a real invariant in our code
+@Test func buildTreeMergesWatcherFilesMissingFromDisk() throws {
+    let rootURL = FileManager.default.temporaryDirectory
+        .appendingPathComponent(UUID().uuidString, isDirectory: true)
+    try FileManager.default.createDirectory(at: rootURL, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: rootURL) }
+
+    let remoteFile = VaultFile(url: rootURL.appendingPathComponent("Projects/Remote.md"),
+                               name: "Remote.md", modified: nil, isPlaceholder: true)
+    let tree = FileNode.buildTree(at: rootURL, including: [remoteFile])
+
+    #expect(tree.first?.children?.map(\.name) == ["Remote.md"])
+}
+
+// BAD — tests Swift, not us
+@Test func vaultFileStoresName() {
+    let f = VaultFile(url: URL(fileURLWithPath: "/x.md"), name: "x.md", modified: nil, isPlaceholder: false)
+    #expect(f.name == "x.md")
+}
+```
+
 ## iOS development
 
 The iOS app is a second target (`Clearly-iOS` in `project.yml`) that shares most business logic with Mac through the `ClearlyCore` Swift package at `Packages/ClearlyCore/`.
