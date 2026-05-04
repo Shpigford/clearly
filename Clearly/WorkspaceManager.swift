@@ -2101,16 +2101,47 @@ final class WorkspaceManager {
                 if isStale {
                     shouldPersist = true
                 }
-                if !hasActiveAccess(to: url), url.startAccessingSecurityScopedResource() {
+                var hasAccess = hasActiveAccess(to: url)
+                if !hasAccess, url.startAccessingSecurityScopedResource() {
                     accessedURLs.insert(url)
+                    hasAccess = true
                 }
-                urls.append(url)
+                // Only treat a missing file as "deleted" when we actually have
+                // access — fileExists returns false for both gone-from-disk
+                // and we-can't-reach-it-due-to-sandbox. Keep the entry on
+                // no-access so a transient scope failure can't silently nuke
+                // recents.
+                if hasAccess && !FileManager.default.fileExists(atPath: url.path) {
+                    shouldPersist = true
+                } else {
+                    urls.append(url)
+                }
             } else {
                 shouldPersist = true
             }
         }
         recentFiles = urls
         if shouldPersist || urls.count != bookmarks.count {
+            persistRecents()
+        }
+    }
+
+    func pruneMissingRecents() {
+        // Build kept[] without mutating recentFiles in place — @Observable
+        // would fire a setter on every call otherwise, re-rendering the
+        // sidebar every time the app becomes active.
+        var kept: [URL] = []
+        kept.reserveCapacity(recentFiles.count)
+        var droppedAny = false
+        for url in recentFiles {
+            if hasActiveAccess(to: url) && !FileManager.default.fileExists(atPath: url.path) {
+                droppedAny = true
+            } else {
+                kept.append(url)
+            }
+        }
+        if droppedAny {
+            recentFiles = kept
             persistRecents()
         }
     }
