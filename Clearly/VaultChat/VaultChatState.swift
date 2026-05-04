@@ -21,11 +21,11 @@ import Foundation
 /// active vault.
 @Observable
 @MainActor
-final class WikiChatState {
+final class VaultChatState {
     private(set) var vaultRoot: URL?
     private(set) var isPinned: Bool = false
     var contextID = UUID()
-    var messages: [WikiChatMessage] = []
+    var messages: [VaultChatMessage] = []
     var draft: String = ""
     var isSending: Bool = false
     var sendError: String?
@@ -47,7 +47,7 @@ final class WikiChatState {
         isSending = false
     }
 
-    /// Auto-bind path used by `WikiAgentCoordinator.startChat` and active-vault
+    /// Auto-bind path used by `VaultChatCoordinator.startChat` and active-vault
     /// change notifications. Skipped while the user has a pinned selection so
     /// switching sidebar focus doesn't silently change chat's target.
     func bind(to vaultRoot: URL) {
@@ -78,14 +78,14 @@ final class WikiChatState {
         return self.contextID == contextID && Self.sameFileURL(currentRoot, vaultRoot)
     }
 
-    func appendUser(_ text: String) -> WikiChatMessage {
-        let message = WikiChatMessage(role: .user, text: text)
+    func appendUser(_ text: String) -> VaultChatMessage {
+        let message = VaultChatMessage(role: .user, text: text)
         messages.append(message)
         return message
     }
 
-    func appendAssistant(_ text: String) -> WikiChatMessage {
-        let message = WikiChatMessage(role: .assistant, text: text)
+    func appendAssistant(_ text: String) -> VaultChatMessage {
+        let message = VaultChatMessage(role: .assistant, text: text)
         messages.append(message)
         return message
     }
@@ -96,7 +96,7 @@ final class WikiChatState {
     }
 }
 
-struct WikiChatMessage: Identifiable, Equatable {
+struct VaultChatMessage: Identifiable, Equatable {
     let id: UUID
     let role: Role
     let text: String

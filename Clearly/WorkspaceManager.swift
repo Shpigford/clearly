@@ -121,17 +121,11 @@ final class WorkspaceManager {
         return mode
     }
 
-    /// The vault that contains the active file, if any. Drives wiki-chrome
-    /// visibility (log sidebar, lint dashboard, Wiki menu) — these only appear
-    /// when the user is viewing a file from a wiki vault. Returns nil when no
+    /// The vault that contains the active file, if any. Returns nil when no
     /// file is open, or the open file lives outside any registered vault.
     var activeLocation: BookmarkedLocation? {
         guard let url = currentFileURL else { return nil }
         return location(containing: url)
-    }
-
-    var activeVaultIsWiki: Bool {
-        activeLocation?.isWiki ?? false
     }
 
     // MARK: - Open Documents
@@ -1037,8 +1031,6 @@ final class WorkspaceManager {
 
     /// Interactive add: surfaces an `NSAlert` on conflict instead of silently failing.
     /// Use this from any user-initiated add path (open panel, drag-drop, URL handler).
-    /// Programmatic adds where the caller knows the path is fresh (e.g. WikiSeeding)
-    /// can call `addLocation` directly.
     @discardableResult
     func tryAddLocation(url: URL) -> Bool {
         guard validateCanAddLocation(url: url) else { return false }

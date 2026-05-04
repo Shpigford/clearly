@@ -14,11 +14,9 @@ extension Notification.Name {
     static let highlightTextInEditor = Notification.Name("highlightTextInEditor")
     static let highlightTextInPreview = Notification.Name("highlightTextInPreview")
 
-    // Wiki (LLM) commands — published by Wiki menu items and observed by the
-    // WikiAgentCoordinator.
-    static let wikiCapture = Notification.Name("wikiCapture")
-    static let wikiChat = Notification.Name("wikiChat")
-    static let wikiToggleLogSidebar = Notification.Name("wikiToggleLogSidebar")
+    // Chat command — published by the Chat menu/toolbar button and
+    // observed by VaultChatCoordinator.
+    static let vaultChat = Notification.Name("vaultChat")
 }
 
 // MARK: - Focused values
@@ -55,10 +53,6 @@ struct JumpToLineStateKey: FocusedValueKey {
     typealias Value = JumpToLineState
 }
 
-struct ActiveVaultIsWikiKey: FocusedValueKey {
-    typealias Value = Bool
-}
-
 extension FocusedValues {
     var viewMode: Binding<ViewMode>? {
         get { self[ViewModeKey.self] }
@@ -88,10 +82,6 @@ extension FocusedValues {
         get { self[JumpToLineStateKey.self] }
         set { self[JumpToLineStateKey.self] = newValue }
     }
-    var activeVaultIsWiki: Bool? {
-        get { self[ActiveVaultIsWikiKey.self] }
-        set { self[ActiveVaultIsWikiKey.self] = newValue }
-    }
 }
 
 struct FocusedValuesModifier: ViewModifier {
@@ -110,6 +100,5 @@ struct FocusedValuesModifier: ViewModifier {
             .focusedSceneValue(\.outlineState, outlineState)
             .focusedSceneValue(\.backlinksState, backlinksState)
             .focusedSceneValue(\.jumpToLineState, jumpToLineState)
-            .focusedSceneValue(\.activeVaultIsWiki, workspace.activeVaultIsWiki)
     }
 }

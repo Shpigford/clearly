@@ -949,12 +949,6 @@ struct ClearlyApp: App {
                 }
                 .keyboardShortcut("o", modifiers: .command)
 
-                Divider()
-
-                Button("New LLM Wiki…") {
-                    WikiSeeder.createNewWiki(using: workspace)
-                }
-
                 Menu("Open Recent") {
                     ForEach(workspace.recentFiles, id: \.self) { url in
                         Button(url.deletingPathExtension().lastPathComponent) {
@@ -1007,8 +1001,8 @@ struct ClearlyApp: App {
             CommandGroup(after: .textEditing) {
                 FindCommand()
             }
-            CommandMenu("AI") {
-                WikiCommands(workspace: workspace)
+            CommandMenu("Chat") {
+                ChatCommands(workspace: workspace)
             }
             CommandGroup(replacing: .help) {
                 Button("Clearly Help") {
@@ -1230,44 +1224,18 @@ struct ViewModeCommands: View {
     }
 }
 
-// MARK: - AI Commands
+// MARK: - Chat Commands
 //
-// The "AI" menu surfaces every AI-powered action: Chat (works against any
-// vault), Capture and Toggle Log Sidebar (wiki-vault-only and disabled
-// otherwise), and "New LLM Wiki…" for creating a new wiki vault. Struct
-// name stays `WikiCommands` for git-blame continuity; the user-facing menu
-// label is "AI".
-struct WikiCommands: View {
-    @FocusedValue(\.activeVaultIsWiki) var isWiki
+// The "Chat" menu hosts a single Chat command bound to ⌃⌘A. Posts
+// `.vaultChat` so `MacDetailColumn` can toggle the chat panel.
+struct ChatCommands: View {
     var workspace: WorkspaceManager
 
-    private var enabled: Bool { isWiki ?? false }
-
     var body: some View {
-        Button("New LLM Wiki…") {
-            WikiSeeder.createNewWiki(using: workspace)
-        }
-
-        Divider()
-
-        Button("Capture") {
-            NotificationCenter.default.post(name: .wikiCapture, object: nil)
-        }
-        .keyboardShortcut("i", modifiers: [.command, .control])
-        .disabled(!enabled)
-
         Button("Chat") {
-            NotificationCenter.default.post(name: .wikiChat, object: nil)
+            NotificationCenter.default.post(name: .vaultChat, object: nil)
         }
         .keyboardShortcut("a", modifiers: [.command, .control])
-
-        Divider()
-
-        Button("Toggle Log Sidebar") {
-            NotificationCenter.default.post(name: .wikiToggleLogSidebar, object: nil)
-        }
-        .keyboardShortcut("t", modifiers: [.command, .control])
-        .disabled(!enabled)
     }
 }
 

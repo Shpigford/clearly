@@ -3,7 +3,7 @@ import os
 import ClearlyCore
 
 /// Spawns the user's locally-installed `claude` CLI to answer a prompt. This
-/// is Wiki mode's primary agent path — for Claude Pro / Max / Team users it
+/// is the primary chat agent path — for Claude Pro / Max / Team users it
 /// reuses the subscription they already pay for. The binary keeps its own
 /// OAuth token in Keychain; Clearly never touches it.
 ///
@@ -18,8 +18,7 @@ import ClearlyCore
 /// limits to those three; the agent CANNOT call Bash, Edit, Write, etc.). Verified empirically.
 ///
 /// We deliberately do NOT pass `--mcp-config`. Chat handles retrieval
-/// in-process via `VaultChatRetriever` (RAG); Capture/Review use just the
-/// built-in Read/Grep/Glob tools.
+/// in-process via `VaultChatRetriever` (RAG).
 ///
 /// Prompt is fed via stdin so we don't blow ARG_MAX on long sources.
 struct ClaudeCLIAgentRunner: AgentRunner {
@@ -105,7 +104,7 @@ struct ClaudeCLIAgentRunner: AgentRunner {
     /// True if the `claude` CLI at `binaryURL` recognises
     /// `--exclude-dynamic-system-prompt-sections`. The flag landed in
     /// `@anthropic-ai/claude-code@2.1.98`; older builds reject the unknown
-    /// option and exit status 1, breaking Wiki Chat + Capture (issue #289).
+    /// option and exit status 1, breaking Chat (issue #289).
     /// Result is cached per absolute path for the lifetime of the process —
     /// the probe runs at most once per binary path per app launch.
     ///

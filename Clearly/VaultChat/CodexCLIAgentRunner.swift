@@ -14,7 +14,7 @@ import ClearlyCore
 ///   `item.*`, `turn.completed`). We only read `turn.completed` for usage.
 /// - `--skip-git-repo-check` lets it run outside a git repo (most vaults).
 /// - `--sandbox read-only` allows shell commands but blocks writes — fine
-///   for wiki recipes because writes are funneled through `WikiOperationApplier`.
+///   for chat because the agent only completes over inlined context.
 /// - `--ephemeral` keeps the call stateless (no on-disk session history).
 /// - `--output-last-message <file>` writes the final assistant text cleanly
 ///   to a file, sparing us from parsing it out of the JSONL stream.
