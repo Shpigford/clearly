@@ -28,6 +28,11 @@ enum UserDefaultsMigrator {
 
     private static let migratedFlagKey = "didMigrateFromContainer_2_6_1"
 
+    private static let renamedKeys: [(old: String, new: String)] = [
+        ("wikiAgentRunner", "vaultChatRunner"),
+        ("wikiChatPanelWidth", "vaultChatPanelWidth"),
+    ]
+
     /// Keys to copy from the old container plist into the standard plist.
     /// Includes every primitive pref, every `@AppStorage` key in the app,
     /// and every bookmark-blob key the workspace persists.
@@ -54,9 +59,8 @@ enum UserDefaultsMigrator {
         "sidebarTagsExpanded",
         "sidebarPinnedExpanded",
         "sidebarRecentsExpanded",
-        "wikiAgentRunner",
-        "wikiAgentModel",
-        "wikiChatPanelWidth",
+        "vaultChatRunner",
+        "vaultChatPanelWidth",
         // Editor / detail toggles persisted outside @AppStorage
         "continuousSpellCheckingEnabled",
         "grammarCheckingEnabled",
@@ -75,6 +79,13 @@ enum UserDefaultsMigrator {
     /// Run the migration if it hasn't run yet. Idempotent. Cheap when
     /// already migrated (single bool read).
     static func runIfNeeded() {
+        let renamedCopied = migrateRenamedKeys(
+            from: UserDefaults.standard.dictionaryRepresentation()
+        )
+        if renamedCopied > 0 {
+            DiagnosticLog.log("UserDefaultsMigrator: copied \(renamedCopied) renamed keys")
+        }
+
         guard !UserDefaults.standard.bool(forKey: migratedFlagKey) else {
             return
         }
@@ -95,7 +106,19 @@ enum UserDefaultsMigrator {
             UserDefaults.standard.set(value, forKey: key)
             copied += 1
         }
-        DiagnosticLog.log("UserDefaultsMigrator: copied \(copied) of \(migratableKeys.count) keys from v2.5.0 container")
+        copied += migrateRenamedKeys(from: containerPlist)
+        DiagnosticLog.log("UserDefaultsMigrator: copied \(copied) of \(migratableKeys.count + renamedKeys.count) keys from v2.5.0 container")
+    }
+
+    private static func migrateRenamedKeys(from source: [String: Any]) -> Int {
+        var copied = 0
+        for (oldKey, newKey) in renamedKeys {
+            guard UserDefaults.standard.object(forKey: newKey) == nil,
+                  let value = source[oldKey] else { continue }
+            UserDefaults.standard.set(value, forKey: newKey)
+            copied += 1
+        }
+        return copied
     }
 
     /// Reads the v2.5.0 sandboxed prefs file directly off disk via the

@@ -8,37 +8,37 @@ final class RecipeTests: XCTestCase {
     func testParsesMinimalRecipe() throws {
         let source = """
         ---
-        name: Ingest
-        description: Summarise a source
-        kind: capture
-        tool_allowlist: [search_notes, propose_operation]
-        expected_output: wiki_operation
+        name: Ask
+        description: Answer over a vault
+        kind: chat
+        tool_allowlist: [search_notes]
+        expected_output: markdown
         ---
-        Source: {{input}}
+        Question: {{input}}
         Vault: {{vault_state}}
         """
         let recipe = try RecipeParser.parse(source)
-        XCTAssertEqual(recipe.name, "Ingest")
-        XCTAssertEqual(recipe.description, "Summarise a source")
-        XCTAssertEqual(recipe.kind, .capture)
-        XCTAssertEqual(recipe.toolAllowlist, ["search_notes", "propose_operation"])
-        XCTAssertEqual(recipe.expectedOutput, "wiki_operation")
+        XCTAssertEqual(recipe.name, "Ask")
+        XCTAssertEqual(recipe.description, "Answer over a vault")
+        XCTAssertEqual(recipe.kind, .chat)
+        XCTAssertEqual(recipe.toolAllowlist, ["search_notes"])
+        XCTAssertEqual(recipe.expectedOutput, "markdown")
         XCTAssertTrue(recipe.prompt.contains("{{input}}"))
     }
 
     func testParsesBlockListAllowlist() throws {
         let source = """
         ---
-        name: Lint
-        kind: review
+        name: Ask
+        kind: chat
         tool_allowlist:
           - search_notes
-          - list_orphans
+          - find_related
         ---
         Body {{input}}
         """
         let recipe = try RecipeParser.parse(source)
-        XCTAssertEqual(recipe.toolAllowlist, ["search_notes", "list_orphans"])
+        XCTAssertEqual(recipe.toolAllowlist, ["search_notes", "find_related"])
     }
 
     func testRejectsMissingFrontmatter() {
@@ -51,7 +51,7 @@ final class RecipeTests: XCTestCase {
     func testRejectsMissingName() {
         let source = """
         ---
-        kind: capture
+        kind: chat
         ---
         {{input}}
         """
@@ -79,7 +79,7 @@ final class RecipeTests: XCTestCase {
         let source = """
         ---
         name: X
-        kind: capture
+        kind: chat
         ---
         My key is {{api_key}}
         """
@@ -92,7 +92,7 @@ final class RecipeTests: XCTestCase {
         let source = """
         ---
         name: X
-        kind: capture
+        kind: chat
         ---
         Here is {{some_other_token}}
         """
@@ -118,7 +118,7 @@ final class RecipeTests: XCTestCase {
         let recipe = try RecipeParser.parse("""
         ---
         name: X
-        kind: capture
+        kind: chat
         ---
         q={{input}} s={{vault_state}}
         """)
@@ -130,7 +130,7 @@ final class RecipeTests: XCTestCase {
         let recipe = try RecipeParser.parse("""
         ---
         name: X
-        kind: capture
+        kind: chat
         ---
         q={{ input }} s={{ vault_state }}
         """)
@@ -143,7 +143,7 @@ final class RecipeTests: XCTestCase {
     func testEngineReturnsNilWhenRecipeMissing() throws {
         let vault = try makeTempDir()
         defer { try? FileManager.default.removeItem(at: vault) }
-        XCTAssertNil(try RecipeEngine.loadFromVault(.capture, vaultRoot: vault))
+        XCTAssertNil(try RecipeEngine.loadFromVault(.chat, vaultRoot: vault))
     }
 
     func testEngineLoadsVaultRecipe() throws {
@@ -154,14 +154,14 @@ final class RecipeTests: XCTestCase {
         try """
         ---
         name: Custom
-        kind: capture
+        kind: chat
         ---
         Body {{input}}
         """.write(
-            to: recipesDir.appendingPathComponent("capture.md"),
+            to: recipesDir.appendingPathComponent("chat.md"),
             atomically: true, encoding: .utf8
         )
-        let recipe = try RecipeEngine.loadFromVault(.capture, vaultRoot: vault)
+        let recipe = try RecipeEngine.loadFromVault(.chat, vaultRoot: vault)
         XCTAssertEqual(recipe?.name, "Custom")
     }
 

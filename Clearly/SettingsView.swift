@@ -39,9 +39,9 @@ struct SettingsView: View {
                     Label("Command Line", systemImage: "terminal")
                 }
 
-            WikiSettingsTab()
+            ChatSettingsTab()
                 .tabItem {
-                    Label("Wiki", systemImage: "sparkles")
+                    Label("Chat", systemImage: "bubble.left.and.bubble.right")
                 }
 
             aboutView
@@ -660,10 +660,10 @@ private struct SyncSettingsTab: View {
     }
 }
 
-// MARK: - Wiki Settings Tab
+// MARK: - Chat Settings Tab
 
-private struct WikiSettingsTab: View {
-    @AppStorage("wikiAgentRunner") private var runner = "auto"
+private struct ChatSettingsTab: View {
+    @AppStorage("vaultChatRunner") private var runner = "auto"
     @State private var claudePath: String?
     @State private var codexPath: String?
 
@@ -675,7 +675,7 @@ private struct WikiSettingsTab: View {
                     Text("Claude Code").tag("claude")
                     Text("Codex").tag("codex")
                 }
-                Text("Auto picks Claude Code if installed, otherwise Codex. Both runners use read-only file tools — they propose changes, you review the diff.")
+                Text("Auto picks Claude Code if installed, otherwise Codex. Vault chat runs read-only against your notes.")
                     .font(.caption)
                     .foregroundStyle(.tertiary)
             }

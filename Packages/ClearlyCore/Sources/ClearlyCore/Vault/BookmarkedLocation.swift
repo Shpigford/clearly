@@ -19,8 +19,6 @@ public struct BookmarkedLocation: Identifiable {
     }
 
     public var name: String { url.lastPathComponent }
-
-    public var isWiki: Bool { kind.isWiki }
 }
 
 // MARK: - Persistence (Codable wrapper for UserDefaults)

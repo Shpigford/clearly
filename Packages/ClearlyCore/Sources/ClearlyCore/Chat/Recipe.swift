@@ -1,13 +1,19 @@
 import Foundation
 
-/// A named prompt-template + metadata that drives one of the Wiki mode
-/// commands (Capture / Chat / Review). Recipes are plain markdown with YAML
-/// frontmatter; users can edit them in place by opening the file in the
-/// editor — no app-side schema migrations.
+/// Kind of recipe. Today only `chat` exists; the enum is here to keep the
+/// frontmatter `kind:` validation working and to leave room for future
+/// recipes (e.g. on-demand summarize).
+public enum RecipeKind: String, Codable, Sendable, CaseIterable {
+    case chat
+}
+
+/// A named prompt-template + metadata for a chat recipe. Recipes are plain
+/// markdown with YAML frontmatter; users can edit them in place by opening
+/// the file in the editor — no app-side schema migrations.
 public struct Recipe: Equatable, Sendable {
     public let name: String
     public let description: String
-    public let kind: OperationKind
+    public let kind: RecipeKind
     public let toolAllowlist: [String]
     public let expectedOutput: String
     public let prompt: String
@@ -15,7 +21,7 @@ public struct Recipe: Equatable, Sendable {
     public init(
         name: String,
         description: String,
-        kind: OperationKind,
+        kind: RecipeKind,
         toolAllowlist: [String],
         expectedOutput: String,
         prompt: String
@@ -41,9 +47,6 @@ public enum RecipeError: Error, Equatable, Sendable {
 
 public enum RecipeParser {
 
-    /// Permitted substitution tokens. Any `{{...}}` reference outside this set
-    /// is rejected at parse time so a recipe can't probe for env vars, API
-    /// keys, or arbitrary host state (per design decision #4 in the plan).
     public static let allowedTokens: Set<String> = ["input", "vault_state"]
 
     public static func parse(_ markdown: String) throws -> Recipe {
@@ -59,7 +62,7 @@ public enum RecipeParser {
         guard let rawKind = fields["kind"], !rawKind.isEmpty else {
             throw RecipeError.missingField("kind")
         }
-        guard let kind = OperationKind(rawValue: rawKind) else {
+        guard let kind = RecipeKind(rawValue: rawKind) else {
             throw RecipeError.unknownKind(rawKind)
         }
         let toolAllowlist = parseList(fields["tool_allowlist"])
@@ -78,10 +81,6 @@ public enum RecipeParser {
         )
     }
 
-    /// Interpolate `{{input}}` and `{{vault_state}}` with the provided values.
-    /// Any other `{{token}}` still present in the prompt after parse-time
-    /// validation would have already thrown, so unknownToken here would be a
-    /// programmer error.
     public static func interpolate(
         _ recipe: Recipe,
         input: String,
@@ -109,9 +108,6 @@ public enum RecipeParser {
 
     private static func parseList(_ raw: String?) -> [String] {
         guard let raw = raw, !raw.isEmpty else { return [] }
-        // Support both inline `[a, b, c]` and block-list formats. The
-        // FrontmatterSupport.Block joins multi-line block-list values with
-        // newlines; inline lists arrive as a single `[...]` value.
         let stripped = raw
             .replacingOccurrences(of: "[", with: "")
             .replacingOccurrences(of: "]", with: "")
@@ -129,10 +125,6 @@ public enum RecipeParser {
         for match in matches {
             guard let tokenRange = Range(match.range(at: 1), in: prompt) else { continue }
             let token = String(prompt[tokenRange])
-            // Secret check runs first so recipes that try to splice in an
-            // `{{api_key}}` get a clear, on-topic error instead of a generic
-            // "unknown token". Segment-based so innocuous words like
-            // "some_other_token" don't trip it.
             if looksLikeSecretName(token) {
                 throw RecipeError.secretReference(token: token)
             }

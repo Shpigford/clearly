@@ -23,7 +23,6 @@ struct MacDetailToolbar: ToolbarContent {
     @ObservedObject var findState: FindState
     @ObservedObject var outlineState: OutlineState
     @ObservedObject var backlinksState: BacklinksState
-    @Bindable var wikiController: WikiOperationController
     @Binding var showFormatPopover: Bool
     @AppStorage(WYSIWYGExperiment.userDefaultsKey) private var wysiwygExperimentEnabled: Bool = false
 
@@ -150,49 +149,14 @@ struct MacDetailToolbar: ToolbarContent {
             }
         }
 
-        // Visual break so the chat/wiki cluster renders as its own Liquid
-        // Glass pill on macOS 26+, mirroring the centered editor/preview
-        // group. Always present so the chat button sits in a consistent
-        // position whether or not the vault is a wiki.
+        // Visual break so the chat button renders as its own Liquid Glass
+        // pill on macOS 26+, mirroring the centered editor/preview group.
         if #available(macOS 26.0, *) {
             ToolbarSpacer(.fixed, placement: .primaryAction)
         }
         ToolbarItemGroup(placement: .primaryAction) {
-            // Pending-operation badge and Capture stay wiki-only — they
-            // depend on the wiki marker scheme and review log. Chat is
-            // available in any vault.
-            if workspace.activeVaultIsWiki {
-                if wikiController.hasPendingOperation {
-                    let count = wikiController.pendingOperation?.changes.count ?? 0
-                    let label = wikiController.pendingOperationLabel
-                    Button {
-                        wikiController.presentPending()
-                    } label: {
-                        Image(systemName: "sparkles")
-                            .overlay(alignment: .topTrailing) {
-                                Text("\(count)")
-                                    .font(.system(size: 9, weight: .bold))
-                                    .monospacedDigit()
-                                    .foregroundStyle(.white)
-                                    .padding(.horizontal, 4)
-                                    .padding(.vertical, 1)
-                                    .background(Capsule().fill(Color.accentColor))
-                                    .offset(x: 8, y: -6)
-                            }
-                    }
-                    .help("\(label) ready · \(count) change\(count == 1 ? "" : "s")")
-                }
-
-                Button {
-                    NotificationCenter.default.post(name: .wikiCapture, object: nil)
-                } label: {
-                    Label("Capture", systemImage: "tray.and.arrow.down")
-                }
-                .help("Capture into this wiki (⌃⌘I)")
-            }
-
             Button {
-                NotificationCenter.default.post(name: .wikiChat, object: nil)
+                NotificationCenter.default.post(name: .vaultChat, object: nil)
             } label: {
                 Label("Chat", systemImage: "bubble.left.and.bubble.right")
             }
@@ -216,10 +180,7 @@ struct MacDetailColumn: View {
     @ObservedObject var outlineState: OutlineState
     @ObservedObject var backlinksState: BacklinksState
     @ObservedObject var jumpToLineState: JumpToLineState
-    @Bindable var wikiController: WikiOperationController
-    @Bindable var wikiChat: WikiChatState
-    @Bindable var wikiLog: WikiLogState
-    @Bindable var wikiCapture: WikiCaptureState
+    @Bindable var vaultChat: VaultChatState
     @Binding var positionSyncID: String
     @Binding var showFormatPopover: Bool
 
@@ -253,53 +214,28 @@ struct MacDetailColumn: View {
                     .transition(.move(edge: .trailing).combined(with: .opacity))
             }
 
-            if wikiChat.isVisible {
-                WikiChatView(
-                    chat: wikiChat,
+            if vaultChat.isVisible {
+                VaultChatView(
+                    chat: vaultChat,
                     locations: workspace.locations,
                     send: { text in
-                        WikiAgentCoordinator.sendChatMessage(text, workspace: workspace, chat: wikiChat)
+                        VaultChatCoordinator.sendChatMessage(text, workspace: workspace, chat: vaultChat)
                     },
                     openWikiLink: { target in
-                        if let url = resolveWikiLink(target, in: wikiChat.vaultRoot) {
+                        if let url = resolveWikiLink(target, in: vaultChat.vaultRoot) {
                             workspace.openFile(at: url)
                         }
                     }
                 )
                 .transition(.move(edge: .trailing).combined(with: .opacity))
             }
-
-            if wikiLog.isVisible {
-                Divider()
-                WikiLogSidebar(
-                    state: wikiLog,
-                    controller: wikiController,
-                    vaultRoot: workspace.activeLocation?.url,
-                    openPath: { relativePath in
-                        guard let vaultURL = workspace.activeLocation?.url else { return }
-                        let fileURL = vaultURL.appendingPathComponent(relativePath)
-                        if FileManager.default.fileExists(atPath: fileURL.path) {
-                            workspace.openFile(at: fileURL)
-                        }
-                    },
-                    openLog: {
-                        guard let vaultURL = workspace.activeLocation?.url else { return }
-                        workspace.openFile(at: vaultURL.appendingPathComponent(WikiLogWriter.filename))
-                    }
-                )
-                .transition(.move(edge: .trailing).combined(with: .opacity))
-            }
         }
         .animation(Theme.Motion.smooth, value: outlineState.isVisible)
-        .animation(Theme.Motion.smooth, value: wikiChat.isVisible)
-        .animation(Theme.Motion.smooth, value: wikiLog.isVisible)
+        .animation(Theme.Motion.smooth, value: vaultChat.isVisible)
         .navigationTitle(documentTitle)
         .onAppear(perform: handleAppear)
         .onChange(of: workspace.activeLocation?.id) { _, _ in
             handleActiveVaultChanged()
-        }
-        .onChange(of: workspace.treeRevision) { _, _ in
-            handleTreeRevisionChanged()
         }
         .onReceive(NotificationCenter.default.publisher(for: NSWindow.didEnterFullScreenNotification)) { _ in
             isFullscreen = true
@@ -385,38 +321,10 @@ struct MacDetailColumn: View {
             backlinksState: backlinksState,
             jumpToLineState: jumpToLineState
         ))
-        .modifier(WikiSheetsModifier(
+        .modifier(VaultChatNotificationObserversModifier(
             workspace: workspace,
-            wikiController: wikiController,
-            wikiCapture: wikiCapture,
-            onOperationApplied: handleOperationApplied
+            vaultChat: vaultChat
         ))
-        .overlay(alignment: .bottom) {
-            WikiRecipeProgressOverlay(controller: wikiController)
-                .animation(Theme.Motion.smooth, value: wikiController.isRunningRecipe)
-        }
-        .modifier(WikiNotificationObserversModifier(
-            workspace: workspace,
-            wikiController: wikiController,
-            wikiChat: wikiChat,
-            wikiLog: wikiLog,
-            wikiCapture: wikiCapture
-        ))
-    }
-
-    private func handleOperationApplied(_ operation: WikiOperation, vaultURL: URL) {
-        DiagnosticLog.log("Applied WikiOperation: \(operation.kind.rawValue) — \(operation.title), \(operation.changes.count) changes")
-        // Append to log.md so the vault's own history tracks this operation.
-        // Not part of the atomic apply — a log-write failure is surfaced but
-        // doesn't roll back the already-committed changes.
-        do {
-            try WikiLogWriter.appendOperation(operation, to: vaultURL)
-        } catch {
-            DiagnosticLog.log("WikiLogWriter: append failed — \(error)")
-        }
-        if wikiLog.isVisible {
-            wikiLog.reload(vaultRoot: vaultURL)
-        }
     }
 
     private func handleAppear() {
@@ -425,7 +333,6 @@ struct MacDetailColumn: View {
         backlinksState.update(for: workspace.currentFileURL, using: workspace.activeVaultIndexes)
         isFullscreen = NSApp.mainWindow?.styleMask.contains(.fullScreen) ?? false
         setupFileWatcher()
-        warmAndReviewActiveVaultIfNeeded()
     }
 
     private func normalizeViewModeForExperiment() {
@@ -434,13 +341,6 @@ struct MacDetailColumn: View {
         } else if !wysiwygExperimentEnabled, workspace.currentViewMode == .wysiwyg {
             workspace.currentViewMode = .preview
         }
-    }
-
-    private func handleTreeRevisionChanged() {
-        if wikiLog.isVisible, workspace.activeVaultIsWiki {
-            wikiLog.reload(vaultRoot: workspace.activeLocation?.url)
-        }
-        warmAndReviewActiveVaultIfNeeded()
     }
 
     // MARK: - Empty state
@@ -659,34 +559,20 @@ struct MacDetailColumn: View {
     // MARK: - Helpers
 
     private func handleActiveVaultChanged() {
-        // Wiki-only state (review proposals, log sidebar) follows the
-        // wiki-vault rule: present only when the active vault is a wiki.
-        let wikiVaultURL = workspace.activeVaultIsWiki ? workspace.activeLocation?.url : nil
-        wikiController.clearPendingReviewIfVaultChanged(to: wikiVaultURL)
-        wikiLog.reload(vaultRoot: wikiVaultURL)
-        if wikiVaultURL == nil {
-            wikiLog.hide()
-        }
-
         // Chat works in any vault. Auto-rebind to the new active vault — but
         // bind(to:) no-ops when the user has pinned a specific vault via the
         // picker, so the pinned target survives sidebar focus changes. When
         // there's no active vault at all (workspace empty), drop chat
         // entirely.
         if let activeURL = workspace.activeLocation?.url {
-            wikiChat.bind(to: activeURL)
+            vaultChat.bind(to: activeURL)
+            if vaultChat.isVisible {
+                VaultChatCoordinator.warmForActiveVaultIfPossible(workspace: workspace)
+            }
         } else {
-            wikiChat.reset()
-            wikiChat.hide()
+            vaultChat.reset()
+            vaultChat.hide()
         }
-
-        warmAndReviewActiveVaultIfNeeded()
-    }
-
-    private func warmAndReviewActiveVaultIfNeeded() {
-        WikiAgentCoordinator.warmForActiveVaultIfPossible(workspace: workspace)
-        WikiAgentCoordinator.runReviewIfStale(workspace: workspace, controller: wikiController)
-        WikiAgentCoordinator.runIntegrationIfNeeded(workspace: workspace, controller: wikiController)
     }
 
     private func setupFileWatcher() {
@@ -840,59 +726,15 @@ struct MacDetailColumn: View {
 }
 
 /// Extracted modifier so MacDetailColumn.body stays inside SwiftUI's
-/// type-checker budget. Handles every NotificationCenter-driven Wiki action
-/// (Capture / Chat / Review / Toggle Log Sidebar).
-private struct WikiNotificationObserversModifier: ViewModifier {
+/// type-checker budget. Handles the Chat menu/toolbar notification.
+private struct VaultChatNotificationObserversModifier: ViewModifier {
     @Bindable var workspace: WorkspaceManager
-    @Bindable var wikiController: WikiOperationController
-    @Bindable var wikiChat: WikiChatState
-    @Bindable var wikiLog: WikiLogState
-    @Bindable var wikiCapture: WikiCaptureState
+    @Bindable var vaultChat: VaultChatState
 
     func body(content: Content) -> some View {
         content
-            .onReceive(NotificationCenter.default.publisher(for: .wikiCapture)) { _ in
-                WikiAgentCoordinator.startCapture(workspace: workspace, capture: wikiCapture)
-            }
-            .onReceive(NotificationCenter.default.publisher(for: .wikiChat)) { _ in
-                WikiAgentCoordinator.startChat(workspace: workspace, chat: wikiChat)
-            }
-            .onReceive(NotificationCenter.default.publisher(for: .wikiToggleLogSidebar)) { _ in
-                withAnimation(Theme.Motion.smooth) {
-                    wikiLog.toggle(vaultRoot: workspace.activeLocation?.url)
-                }
-            }
-    }
-}
-
-private struct WikiSheetsModifier: ViewModifier {
-    @Bindable var workspace: WorkspaceManager
-    @Bindable var wikiController: WikiOperationController
-    @Bindable var wikiCapture: WikiCaptureState
-    let onOperationApplied: (WikiOperation, URL) -> Void
-
-    func body(content: Content) -> some View {
-        content
-            .sheet(isPresented: Binding(
-                get: { wikiController.isPresenting },
-                set: { if !$0 { wikiController.dismiss() } }
-            )) {
-                WikiDiffSheet(
-                    controller: wikiController,
-                    onApplied: onOperationApplied
-                )
-            }
-            .sheet(isPresented: Binding(
-                get: { wikiCapture.isVisible },
-                set: { if !$0 { wikiCapture.dismiss() } }
-            )) {
-                WikiCaptureSheet(state: wikiCapture) { text in
-                    WikiAgentCoordinator.submitCapture(
-                        text,
-                        workspace: workspace,
-                        controller: wikiController
-                    )
-                }
+            .onReceive(NotificationCenter.default.publisher(for: .vaultChat)) { _ in
+                VaultChatCoordinator.startChat(workspace: workspace, chat: vaultChat)
             }
     }
 }

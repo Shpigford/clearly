@@ -172,8 +172,7 @@ struct MacFolderSidebar: View {
     // MARK: - Location section
 
     private func locationSection(_ location: BookmarkedLocation) -> some View {
-        let defaultIcon = location.isWiki ? "book.closed" : "folder"
-        let resolvedIcon = workspace.vaultIcon(for: location.url) ?? defaultIcon
+        let resolvedIcon = workspace.vaultIcon(for: location.url) ?? "folder"
         let resolvedTint = workspace.vaultColor(for: location.url).map(Color.init(nsColor:))
         return Section {
             if !workspace.isLocationCollapsed(location.id.uuidString) {
@@ -186,7 +185,6 @@ struct MacFolderSidebar: View {
                 title: location.name,
                 systemImage: resolvedIcon,
                 isExpanded: locationExpandedBinding(location),
-                isWiki: location.isWiki,
                 iconTint: resolvedTint
             )
             .contextMenu {
@@ -205,11 +203,6 @@ struct MacFolderSidebar: View {
                     NSWorkspace.shared.activateFileViewerSelecting([location.url])
                 }
                 Button("Copy Path") { CopyActions.copyFilePath(location.url) }
-                if !location.isWiki {
-                    Button("Convert to LLM Wiki…", systemImage: "book.closed") {
-                        convertToWiki(location)
-                    }
-                }
                 Divider()
                 Button("Remove from List", systemImage: "minus.circle", role: .destructive) {
                     removeLocation(location)
@@ -221,41 +214,6 @@ struct MacFolderSidebar: View {
             .dropDestination(for: URL.self) { urls, _ in
                 workspace.handleSidebarDrop(urls: urls, into: location.url)
             }
-        }
-    }
-
-    private func convertToWiki(_ location: BookmarkedLocation) {
-        let confirm = NSAlert()
-        confirm.messageText = "Convert \"\(location.name)\" to an LLM Wiki?"
-        confirm.informativeText = """
-        Clearly will add these files to the folder:
-
-        • AGENTS.md (schema & conventions)
-        • index.md (table of contents)
-        • log.md (operation history)
-        • raw/ (source material)
-        • .clearly/recipes/ (Capture / Chat / Review prompts)
-
-        None of your existing files will be touched. To revert, just delete \
-        AGENTS.md, index.md, and log.md.
-        """
-        confirm.alertStyle = .informational
-        confirm.addButton(withTitle: "Convert")
-        confirm.addButton(withTitle: "Cancel")
-        guard confirm.runModal() == .alertFirstButtonReturn else { return }
-
-        do {
-            try WikiSeeder.seed(at: location.url)
-            // loadTree will re-detect the marker files via FSEvents; nudge it
-            // immediately so the UI updates without waiting for the 300ms
-            // debounce.
-            workspace.refreshTree(for: location.id)
-        } catch {
-            let alert = NSAlert()
-            alert.messageText = "Couldn't seed wiki files"
-            alert.informativeText = error.localizedDescription
-            alert.alertStyle = .warning
-            alert.runModal()
         }
     }
 
@@ -303,8 +261,8 @@ struct MacFolderSidebar: View {
     /// hover so the sidebar reads as quiet chrome until the user reaches for
     /// it. The entire row is the hit target. 16pt trailing padding clears
     /// the sidebar's overlay scrollbar when present.
-    private func collapsibleHeader(title: String, systemImage: String, isExpanded: Binding<Bool>, isWiki: Bool = false, iconTint: Color? = nil) -> some View {
-        CollapsibleSectionHeader(title: title, systemImage: systemImage, isExpanded: isExpanded, isWiki: isWiki, iconTint: iconTint)
+    private func collapsibleHeader(title: String, systemImage: String, isExpanded: Binding<Bool>, iconTint: Color? = nil) -> some View {
+        CollapsibleSectionHeader(title: title, systemImage: systemImage, isExpanded: isExpanded, iconTint: iconTint)
     }
 
     // MARK: - Tags section
@@ -875,7 +833,6 @@ private struct CollapsibleSectionHeader: View {
     let title: String
     let systemImage: String
     @Binding var isExpanded: Bool
-    var isWiki: Bool = false
     var iconTint: Color? = nil
     @State private var isHovering = false
 
@@ -887,17 +844,6 @@ private struct CollapsibleSectionHeader: View {
                 Image(systemName: systemImage)
                     .foregroundStyle(iconTint ?? .primary)
                 Text(title)
-                if isWiki {
-                    Text("WIKI")
-                        .font(.system(size: 9, weight: .semibold))
-                        .foregroundStyle(.secondary)
-                        .padding(.horizontal, 4)
-                        .padding(.vertical, 1)
-                        .background(
-                            RoundedRectangle(cornerRadius: 3)
-                                .fill(Color.secondary.opacity(0.15))
-                        )
-                }
                 Spacer()
                 Image(systemName: "chevron.right")
                     .font(.system(size: 9, weight: .semibold))

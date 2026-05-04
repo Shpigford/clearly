@@ -4,9 +4,10 @@ import ClearlyCore
 /// Tracks Claude Code's prompt cache TTL and opportunistically fires a
 /// background no-op call to keep the 100K-token system prompt hot. First call
 /// after app launch costs ~30s; subsequent calls within ~5 minutes are fast
-/// because Claude Code reuses its cached system prompt. We warm the moment
-/// the user opens the Capture flow so the 30s overlaps with URL typing time,
-/// and short-circuit if we know the cache is already warm.
+/// because Claude Code reuses its cached system prompt. We warm when the
+/// chat panel opens (and on active-vault changes while the panel is visible)
+/// so the 30s overlaps with the user typing their first message; users who
+/// never open chat never trigger the warmup.
 enum AgentWarmer {
     /// Matches Claude's prompt-cache 5-minute ephemeral TTL. We're a little
     /// conservative (4 minutes) to avoid racing the server-side eviction.

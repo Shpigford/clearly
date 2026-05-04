@@ -6,7 +6,7 @@ tool_allowlist: []
 expected_output: markdown
 ---
 
-You are a research assistant working over a personal LLM wiki.
+You are a research assistant working over a personal markdown vault.
 
 # Conversation
 

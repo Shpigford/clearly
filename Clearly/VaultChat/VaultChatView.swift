@@ -5,14 +5,14 @@ import ClearlyCore
 /// field at the bottom. Read-only RAG over the chat-bound vault — no filing,
 /// no writes, just citations back to source notes via [[wiki-link]] so users
 /// can jump from the answer to the underlying note.
-struct WikiChatView: View {
-    @Bindable var chat: WikiChatState
+struct VaultChatView: View {
+    @Bindable var chat: VaultChatState
     let locations: [BookmarkedLocation]
     let send: (String) -> Void
     let openWikiLink: (String) -> Void
 
     @FocusState private var inputFocused: Bool
-    @AppStorage("wikiChatPanelWidth") private var panelWidth: Double = 380
+    @AppStorage("vaultChatPanelWidth") private var panelWidth: Double = 380
     @Environment(\.colorScheme) private var colorScheme
 
     private static let minPanelWidth: Double = 280
@@ -155,7 +155,7 @@ struct WikiChatView: View {
                         emptyState
                     } else {
                         ForEach(chat.messages) { message in
-                            WikiChatBubble(message: message)
+                            VaultChatBubble(message: message)
                                 .id(message.id)
                         }
                     }
@@ -250,8 +250,8 @@ struct WikiChatView: View {
 
 // MARK: - Bubble
 
-private struct WikiChatBubble: View {
-    let message: WikiChatMessage
+private struct VaultChatBubble: View {
+    let message: VaultChatMessage
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
