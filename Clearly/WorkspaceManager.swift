@@ -134,6 +134,8 @@ final class WorkspaceManager {
     private static let launchBehaviorKey = "launchBehavior"
     private static let folderIconsKey = "folderIcons"
     private static let folderColorsKey = "folderColors"
+    private static let vaultIconsKey = "vaultIcons"
+    private static let vaultColorsKey = "vaultColors"
     private static let expandedFolderPathsKey = "expandedFolderPaths"
     private static let collapsedLocationIDsKey = "collapsedLocationIDs"
     private static let showHiddenFilesKey = "showHiddenFiles"
@@ -146,6 +148,10 @@ final class WorkspaceManager {
     var folderIcons: [String: String] = [:]
     /// Custom folder colors keyed by folder path (URL.path → color name).
     var folderColors: [String: String] = [:]
+    /// Custom vault icons keyed by vault root path (URL.path → SF Symbol name).
+    var vaultIcons: [String: String] = [:]
+    /// Custom vault colors keyed by vault root path (URL.path → color name).
+    var vaultColors: [String: String] = [:]
     /// Expanded folder paths (URL.path). Presence = expanded; absence = collapsed.
     var expandedFolderPaths: Set<String> = []
     /// Collapsed vault section IDs (BookmarkedLocation.id.uuidString). Presence = collapsed; absence = expanded (default).
@@ -188,6 +194,8 @@ final class WorkspaceManager {
         showHiddenFiles = UserDefaults.standard.bool(forKey: Self.showHiddenFilesKey)
         folderIcons = UserDefaults.standard.dictionary(forKey: Self.folderIconsKey) as? [String: String] ?? [:]
         folderColors = UserDefaults.standard.dictionary(forKey: Self.folderColorsKey) as? [String: String] ?? [:]
+        vaultIcons = UserDefaults.standard.dictionary(forKey: Self.vaultIconsKey) as? [String: String] ?? [:]
+        vaultColors = UserDefaults.standard.dictionary(forKey: Self.vaultColorsKey) as? [String: String] ?? [:]
         expandedFolderPaths = Set(UserDefaults.standard.stringArray(forKey: Self.expandedFolderPathsKey) ?? [])
         collapsedLocationIDs = Set(UserDefaults.standard.stringArray(forKey: Self.collapsedLocationIDsKey) ?? [])
         restoreLocations()
@@ -1098,6 +1106,12 @@ final class WorkspaceManager {
         }
         removeDeletedItemReferences(at: location.url)
         pruneExpandedFolderPaths(under: location.url)
+        if vaultIcons.removeValue(forKey: location.url.path) != nil {
+            UserDefaults.standard.set(vaultIcons, forKey: Self.vaultIconsKey)
+        }
+        if vaultColors.removeValue(forKey: location.url.path) != nil {
+            UserDefaults.standard.set(vaultColors, forKey: Self.vaultColorsKey)
+        }
         locations.removeAll { $0.id == location.id }
         persistLocations()
     }
@@ -1696,6 +1710,28 @@ final class WorkspaceManager {
         UserDefaults.standard.set(folderColors, forKey: Self.folderColorsKey)
     }
 
+    // MARK: - Vault Icons & Colors
+
+    func setVaultIcon(_ iconName: String, for vaultPath: String) {
+        vaultIcons[vaultPath] = iconName
+        UserDefaults.standard.set(vaultIcons, forKey: Self.vaultIconsKey)
+    }
+
+    func removeVaultIcon(for vaultPath: String) {
+        vaultIcons.removeValue(forKey: vaultPath)
+        UserDefaults.standard.set(vaultIcons, forKey: Self.vaultIconsKey)
+    }
+
+    func setVaultColor(_ colorName: String, for vaultPath: String) {
+        vaultColors[vaultPath] = colorName
+        UserDefaults.standard.set(vaultColors, forKey: Self.vaultColorsKey)
+    }
+
+    func removeVaultColor(for vaultPath: String) {
+        vaultColors.removeValue(forKey: vaultPath)
+        UserDefaults.standard.set(vaultColors, forKey: Self.vaultColorsKey)
+    }
+
     // MARK: - Folder Expansion
 
     func isFolderExpanded(_ url: URL) -> Bool {
@@ -1739,6 +1775,17 @@ final class WorkspaceManager {
     /// Direct folder icon lookup (no ancestor walk). Returns nil if unset.
     func folderIcon(for url: URL) -> String? {
         folderIcons[url.path]
+    }
+
+    /// Direct vault color lookup. Returns nil if unset.
+    func vaultColor(for url: URL) -> NSColor? {
+        guard let name = vaultColors[url.path] else { return nil }
+        return Theme.folderColor(named: name)
+    }
+
+    /// Direct vault icon lookup. Returns nil if unset.
+    func vaultIcon(for url: URL) -> String? {
+        vaultIcons[url.path]
     }
 
     /// Walks ancestors of `url` up to — and including — the containing vault
