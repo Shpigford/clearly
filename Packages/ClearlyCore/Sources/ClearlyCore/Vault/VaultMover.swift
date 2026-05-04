@@ -60,7 +60,7 @@ public enum VaultMover {
         let sourceURL = vaultRootURL.appendingPathComponent(oldRelativePath)
         let destURL = vaultRootURL.appendingPathComponent(newRelativePath)
         if !skipFilesystemMove {
-            if FileManager.default.fileExists(atPath: destURL.path) {
+            if destinationExistsForDistinctItem(sourceURL: sourceURL, destURL: destURL) {
                 throw MoveError.destinationExists(newRelativePath)
             }
             try FileManager.default.createDirectory(
@@ -115,5 +115,19 @@ public enum VaultMover {
         }
 
         return Outcome(linksRewritten: rewrites)
+    }
+
+    private static func destinationExistsForDistinctItem(sourceURL: URL, destURL: URL) -> Bool {
+        guard FileManager.default.fileExists(atPath: destURL.path) else { return false }
+        let sourcePath = sourceURL.standardizedFileURL.path
+        let destPath = destURL.standardizedFileURL.path
+        if sourcePath == destPath { return false }
+        if volumeIsCaseSensitive(sourceURL) { return true }
+        return sourcePath.caseInsensitiveCompare(destPath) != .orderedSame
+    }
+
+    private static func volumeIsCaseSensitive(_ url: URL) -> Bool {
+        (try? url.resourceValues(forKeys: [.volumeSupportsCaseSensitiveNamesKey]))?
+            .volumeSupportsCaseSensitiveNames ?? false
     }
 }

@@ -49,6 +49,16 @@ struct MacFolderSidebar: View {
     @AppStorage("sidebarPinnedExpanded") private var isPinnedExpanded = true
     @AppStorage("sidebarRecentsExpanded") private var isRecentsExpanded = true
 
+    // Inline rename state. `renamingURL` drives the row swap in `outlineRow`;
+    // `renameError` non-nil shows a popover anchored to the field and keeps
+    // the field open until the user fixes the name or hits Esc.
+    @State private var renamingURL: URL?
+    @State private var renamingIsDirectory: Bool = false
+    @State private var renameDraft: String = ""
+    @FocusState private var renameFieldFocused: Bool
+    @State private var renameError: String?
+    @State private var returnKeyMonitor: Any?
+
     var body: some View {
         List(selection: $selectedFileURL) {
             if !workspace.pinnedFiles.isEmpty {
@@ -81,7 +91,13 @@ struct MacFolderSidebar: View {
         .transaction { $0.disablesAnimations = true }
         .toolbar { sidebarToolbar }
         .background(SidebarSystemHighlightDisabler())
-        .onAppear { refreshTags() }
+        .onAppear {
+            refreshTags()
+            installReturnKeyMonitor()
+        }
+        .onDisappear {
+            removeReturnKeyMonitor()
+        }
         .onChange(of: workspace.vaultIndexRevision) { _, _ in refreshTags() }
     }
 
@@ -306,44 +322,93 @@ struct MacFolderSidebar: View {
         if node.isDirectory {
             let folderTint = workspace.folderColor(for: node.url).map(Color.init(nsColor:))
             let folderIcon = workspace.folderIcon(for: node.url) ?? "folder"
-            SidebarRowLabel(
-                title: node.name,
-                systemImage: folderIcon,
-                iconTint: folderTint,
-                isSelected: false
-            )
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .contentShape(Rectangle())
-            .listRowBackground(SelectionPill(tint: folderTint, isSelected: false))
-            .contextMenu { folderContextMenu(url: node.url) }
-            .popover(isPresented: popoverBinding(for: node.url), arrowEdge: .trailing) {
-                FolderCustomizerView(url: node.url, workspace: workspace)
-            }
-            .draggable(node.url) {
-                DragRowPreview(title: node.name, systemImage: folderIcon, iconTint: folderTint)
-            }
-            .dropDestination(for: URL.self) { urls, _ in
-                workspace.handleSidebarDrop(urls: urls, into: node.url)
+            if renamingURL == node.url {
+                renameField(systemImage: folderIcon, iconTint: folderTint)
+                    .listRowBackground(SelectionPill(tint: folderTint, isSelected: false))
+            } else {
+                SidebarRowLabel(
+                    title: node.name,
+                    systemImage: folderIcon,
+                    iconTint: folderTint,
+                    isSelected: false
+                )
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
+                .listRowBackground(SelectionPill(tint: folderTint, isSelected: false))
+                .contextMenu { folderContextMenu(url: node.url) }
+                .popover(isPresented: popoverBinding(for: node.url), arrowEdge: .trailing) {
+                    FolderCustomizerView(url: node.url, workspace: workspace)
+                }
+                .draggable(node.url) {
+                    DragRowPreview(title: node.name, systemImage: folderIcon, iconTint: folderTint)
+                }
+                .dropDestination(for: URL.self) { urls, _ in
+                    workspace.handleSidebarDrop(urls: urls, into: node.url)
+                }
             }
         } else {
             let rowTint = tintColor(for: node.url)
             let isSelected = selectedFileURL == node.url
             let fileTitle = node.url.deletingPathExtension().lastPathComponent
-            SidebarRowLabel(
-                title: fileTitle,
-                systemImage: "doc.text",
-                iconTint: rowTint,
-                isSelected: isSelected
-            )
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .contentShape(Rectangle())
-            .tag(node.url)
-            .listRowBackground(SelectionPill(tint: rowTint, isSelected: isSelected))
-            .contextMenu { fileContextMenu(url: node.url) }
-            .draggable(node.url) {
-                DragRowPreview(title: fileTitle, systemImage: "doc.text", iconTint: rowTint)
+            if renamingURL == node.url {
+                renameField(systemImage: "doc.text", iconTint: rowTint)
+                    .tag(node.url)
+                    .listRowBackground(SelectionPill(tint: rowTint, isSelected: isSelected))
+            } else {
+                SidebarRowLabel(
+                    title: fileTitle,
+                    systemImage: "doc.text",
+                    iconTint: rowTint,
+                    isSelected: isSelected
+                )
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
+                .tag(node.url)
+                .listRowBackground(SelectionPill(tint: rowTint, isSelected: isSelected))
+                .contextMenu { fileContextMenu(url: node.url) }
+                .draggable(node.url) {
+                    DragRowPreview(title: fileTitle, systemImage: "doc.text", iconTint: rowTint)
+                }
+                .background(SidebarRenameTargetProbe(url: node.url))
             }
         }
+    }
+
+    /// Inline-rename TextField. Mirrors `SidebarRowLabel`'s icon+text layout
+    /// so the row doesn't visually reflow when entering edit mode. Bound to
+    /// `renameDraft`; commits on Return / focus loss, cancels on Esc, and
+    /// surfaces validation errors via a popover anchored to the field.
+    @ViewBuilder
+    private func renameField(systemImage: String, iconTint: Color?) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: systemImage)
+                .foregroundStyle(iconTint.map { AnyShapeStyle($0) } ?? AnyShapeStyle(.secondary))
+            TextField("", text: $renameDraft)
+                .textFieldStyle(.roundedBorder)
+                .focused($renameFieldFocused)
+                .onSubmit { tryCommitRename() }
+                .onKeyPress(.escape) {
+                    cancelInlineRename()
+                    return .handled
+                }
+                .onChange(of: renameFieldFocused) { _, focused in
+                    if !focused, renamingURL != nil { tryCommitRename() }
+                }
+                .popover(isPresented: renameErrorBinding, arrowEdge: .trailing) {
+                    Text(renameError ?? "")
+                        .font(.callout)
+                        .padding(8)
+                        .frame(minWidth: 180, maxWidth: 260, alignment: .leading)
+                }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var renameErrorBinding: Binding<Bool> {
+        Binding(
+            get: { renameError != nil && renamingURL != nil },
+            set: { if !$0 { renameError = nil } }
+        )
     }
 
     // MARK: - Context menus
@@ -357,6 +422,9 @@ struct MacFolderSidebar: View {
             promptForNewFolder(in: url)
         }
         Divider()
+        Button("Rename", systemImage: "pencil") {
+            beginInlineRename(url: url, isDirectory: true)
+        }
         Button("Customize…", systemImage: "paintpalette") {
             customizingFolderURL = url
         }
@@ -445,6 +513,10 @@ struct MacFolderSidebar: View {
             workspace.openFileInNewTab(at: url)
         }
         Divider()
+        Button("Rename", systemImage: "pencil") {
+            beginInlineRename(url: url, isDirectory: false)
+        }
+        Divider()
         Button("Reveal in Finder", systemImage: "folder") {
             NSWorkspace.shared.activateFileViewerSelecting([url])
         }
@@ -503,6 +575,159 @@ struct MacFolderSidebar: View {
             failure.addButton(withTitle: "OK")
             failure.runModal()
         }
+    }
+
+    // MARK: - Inline rename
+
+    /// Enter rename mode for a row. Files edit the stem only (extension is
+    /// reattached on commit, mirroring Finder with extensions hidden);
+    /// folders edit the full last-path-component since they have no extension.
+    private func beginInlineRename(url: URL, isDirectory: Bool) {
+        let lastComponent = url.lastPathComponent
+        renameDraft = isDirectory
+            ? lastComponent
+            : (lastComponent as NSString).deletingPathExtension
+        renamingIsDirectory = isDirectory
+        renameError = nil
+        renamingURL = url
+        DispatchQueue.main.async { renameFieldFocused = true }
+    }
+
+    /// Exit rename mode without applying the draft. Order matters: clear
+    /// `renamingURL` before unfocusing so `.onChange(renameFieldFocused)`
+    /// in `renameField` doesn't fall through into a commit attempt.
+    private func cancelInlineRename() {
+        renamingURL = nil
+        renameDraft = ""
+        renameError = nil
+        renamingIsDirectory = false
+        renameFieldFocused = false
+    }
+
+    /// Validate, then call `WorkspaceManager.renameItem`. On validation
+    /// failure, sets `renameError` (popover shows) and re-focuses the field
+    /// so the user can keep typing. On success, propagates the new URL to
+    /// the active selection so the renamed file stays selected.
+    private func tryCommitRename() {
+        guard let url = renamingURL else { return }
+        let trimmed = renameDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+        let isDirectory = renamingIsDirectory
+        let originalStem = isDirectory
+            ? url.lastPathComponent
+            : (url.lastPathComponent as NSString).deletingPathExtension
+
+        if trimmed == originalStem {
+            cancelInlineRename()
+            return
+        }
+
+        if let error = validateRenameStem(trimmed, isDirectory: isDirectory, originalURL: url) {
+            renameError = error
+            DispatchQueue.main.async { renameFieldFocused = true }
+            return
+        }
+
+        let newName: String
+        if isDirectory {
+            newName = trimmed
+        } else {
+            let ext = (url.lastPathComponent as NSString).pathExtension
+            newName = ext.isEmpty ? trimmed : "\(trimmed).\(ext)"
+        }
+
+        if let newURL = workspace.renameItem(at: url, to: newName) {
+            if selectedFileURL == url { selectedFileURL = newURL }
+            cancelInlineRename()
+        } else {
+            renameError = "Couldn\u{2019}t rename. Check permissions or try again."
+            DispatchQueue.main.async { renameFieldFocused = true }
+        }
+    }
+
+    /// Reject `:` even though APFS allows it — Finder substitutes `:`/`/` at
+    /// the UI layer, which would be more surprising than rejection in a
+    /// notes app. `/` and NUL are the only filesystem-illegal chars; the
+    /// 255-byte cap is the macOS userspace limit (NAME_MAX), measured in
+    /// UTF-8 bytes so 4-byte emoji count correctly.
+    private func validateRenameStem(_ stem: String, isDirectory: Bool, originalURL: URL) -> String? {
+        if stem.isEmpty { return "Name can\u{2019}t be empty." }
+        let illegal: Set<Character> = ["/", ":", "\0"]
+        if let bad = stem.first(where: { illegal.contains($0) }) {
+            return "Name can\u{2019}t contain \u{201C}\(bad)\u{201D}."
+        }
+        let parent = originalURL.deletingLastPathComponent()
+        let candidate: String
+        if isDirectory {
+            candidate = stem
+        } else {
+            let ext = (originalURL.lastPathComponent as NSString).pathExtension
+            candidate = ext.isEmpty ? stem : "\(stem).\(ext)"
+        }
+        if candidate.utf8.count > 255 { return "Name is too long." }
+        let candidateURL = parent.appendingPathComponent(candidate)
+        // Allow case-only renames on case-insensitive APFS — `fileExists`
+        // returns true for the original URL even after a case-flip rename.
+        if isSameRenameTarget(candidateURL, originalURL: originalURL) {
+            return nil
+        }
+        if FileManager.default.fileExists(atPath: candidateURL.path) {
+            return "An item named \u{201C}\(candidate)\u{201D} already exists."
+        }
+        return nil
+    }
+
+    private func isSameRenameTarget(_ candidateURL: URL, originalURL: URL) -> Bool {
+        let candidatePath = candidateURL.standardizedFileURL.path
+        let originalPath = originalURL.standardizedFileURL.path
+        if candidatePath == originalPath { return true }
+        if volumeIsCaseSensitive(originalURL) { return false }
+        return candidatePath.caseInsensitiveCompare(originalPath) == .orderedSame
+    }
+
+    private func volumeIsCaseSensitive(_ url: URL) -> Bool {
+        (try? url.resourceValues(forKeys: [.volumeSupportsCaseSensitiveNamesKey]))?
+            .volumeSupportsCaseSensitiveNames ?? false
+    }
+
+    // MARK: - Return key
+
+    /// Bind Return-on-selected-outline-file to enter rename, matching Finder.
+    /// The AppKit row probe keeps Pinned/Recents duplicates from opening a
+    /// rename field elsewhere in the tree.
+    private func installReturnKeyMonitor() {
+        guard returnKeyMonitor == nil else { return }
+        returnKeyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+            // 36 = Return, 76 = numpad Enter.
+            guard event.keyCode == 36 || event.keyCode == 76 else { return event }
+            guard renamingURL == nil,
+                  let url = selectedFileURL,
+                  selectedOutlineRenameTarget() == url else { return event }
+            beginInlineRename(url: url, isDirectory: false)
+            return nil
+        }
+    }
+
+    private func removeReturnKeyMonitor() {
+        if let monitor = returnKeyMonitor {
+            NSEvent.removeMonitor(monitor)
+            returnKeyMonitor = nil
+        }
+    }
+
+    private func selectedOutlineRenameTarget() -> URL? {
+        var responder: NSResponder? = NSApp.keyWindow?.firstResponder
+        while let current = responder {
+            if let outline = current as? NSOutlineView {
+                let row = outline.selectedRow
+                guard row >= 0,
+                      let rowView = outline.rowView(atRow: row, makeIfNecessary: false) else {
+                    return nil
+                }
+                return SidebarRenameTargetProbe.url(in: rowView)
+            }
+            responder = current.nextResponder
+        }
+        return nil
     }
 
     // MARK: - Toolbar
@@ -697,6 +922,38 @@ private struct RecentRowLabel: View {
                 .foregroundStyle(isSelected ? AnyShapeStyle(.tint) : AnyShapeStyle(.secondary))
         }
         .font(.system(size: size.primaryFontSize))
+    }
+}
+
+// MARK: - Rename target probe
+
+private struct SidebarRenameTargetProbe: NSViewRepresentable {
+    let url: URL
+
+    func makeNSView(context: Context) -> ProbeView {
+        let view = ProbeView()
+        view.url = url
+        return view
+    }
+
+    func updateNSView(_ nsView: ProbeView, context: Context) {
+        nsView.url = url
+    }
+
+    static func url(in view: NSView) -> URL? {
+        if let probe = view as? ProbeView {
+            return probe.url
+        }
+        for subview in view.subviews {
+            if let found = url(in: subview) {
+                return found
+            }
+        }
+        return nil
+    }
+
+    final class ProbeView: NSView {
+        var url: URL?
     }
 }
 

@@ -1327,6 +1327,7 @@ final class WorkspaceManager {
                     newRelativePath: newRelative
                 )
                 rewriteMovedItemReferences(from: url, to: newURL)
+                refreshTreesAfterMove(sourceURL: url, destURL: newURL)
                 DiagnosticLog.log("\(kind): \(url.lastPathComponent) → \(newURL.lastPathComponent)")
                 return newURL
             } catch VaultMover.MoveError.sourceNotIndexed {
@@ -1342,11 +1343,31 @@ final class WorkspaceManager {
         do {
             try FileManager.default.moveItem(at: url, to: newURL)
             rewriteMovedItemReferences(from: url, to: newURL)
+            refreshTreesAfterMove(sourceURL: url, destURL: newURL)
             DiagnosticLog.log("\(kind): \(url.lastPathComponent) → \(newURL.lastPathComponent)")
             return newURL
         } catch {
             DiagnosticLog.log("Failed to \(kind.lowercased()): \(error.localizedDescription)")
             return nil
+        }
+    }
+
+    /// Force an immediate sidebar tree reload for any vault touched by a move.
+    /// Without this, the sidebar shows the old name for ~1s while the file
+    /// watcher coalesces and `refreshTree`'s 300ms debounce ticks down. Covers
+    /// rename (same vault), cross-vault move (both source and dest), and
+    /// move-out-of-any-vault (source only) — `containingLocationAndRoot`
+    /// returns nil for non-vault paths, so duplicates collapse cleanly.
+    private func refreshTreesAfterMove(sourceURL: URL, destURL: URL) {
+        var seen = Set<UUID>()
+        for url in [sourceURL, destURL] {
+            guard let (location, _) = containingLocationAndRoot(for: url),
+                  seen.insert(location.id).inserted else { continue }
+            loadTree(
+                for: location.id,
+                at: location.url,
+                reindex: vaultIndexes[location.id]
+            )
         }
     }
 
