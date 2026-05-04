@@ -15,6 +15,7 @@ struct EditorView: NSViewRepresentable {
     var extraTopInset: CGFloat = 0
     var showLineNumbers: Bool = false
     var jumpToLineState: JumpToLineState?
+    var statusBarState: StatusBarState?
     var needsTrafficLightClearance: Bool = false
     var contentWidthEm: CGFloat? = nil
     @Environment(\.colorScheme) private var colorScheme
@@ -427,6 +428,8 @@ struct EditorView: NSViewRepresentable {
             } else {
                 SelectionBridge.setSelection(nil, for: parent.positionSyncID)
             }
+
+            parent.statusBarState?.updateSelection(range, in: textView.string)
         }
 
         @objc func handleScrollToLine(_ notification: Notification) {

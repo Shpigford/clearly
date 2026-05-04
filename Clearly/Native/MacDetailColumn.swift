@@ -180,6 +180,7 @@ struct MacDetailColumn: View {
     @ObservedObject var outlineState: OutlineState
     @ObservedObject var backlinksState: BacklinksState
     @ObservedObject var jumpToLineState: JumpToLineState
+    @ObservedObject var statusBarState: StatusBarState
     @Bindable var vaultChat: VaultChatState
     @Binding var positionSyncID: String
     @Binding var showFormatPopover: Bool
@@ -256,6 +257,11 @@ struct MacDetailColumn: View {
         .onReceive(NotificationCenter.default.publisher(for: .init("ClearlyToggleLineNumbers"))) { _ in
             showLineNumbers.toggle()
         }
+        .onReceive(NotificationCenter.default.publisher(for: .init("ClearlyToggleStatusBar"))) { _ in
+            withAnimation(Theme.Motion.smooth) {
+                statusBarState.toggle()
+            }
+        }
         .onReceive(NotificationCenter.default.publisher(for: .init("ClearlyJumpToLine"))) { _ in
             guard workspace.currentViewMode == .edit else { return }
             withAnimation(Theme.Motion.smooth) {
@@ -269,6 +275,8 @@ struct MacDetailColumn: View {
             normalizeViewModeForExperiment()
             outlineState.parseHeadings(from: workspace.currentFileText)
             backlinksState.update(for: workspace.currentFileURL, using: workspace.activeVaultIndexes)
+            statusBarState.resetSelection()
+            statusBarState.updateText(workspace.currentFileText)
             setupFileWatcher()
             applyPendingWikiNavigationIfNeeded()
         }
@@ -295,6 +303,7 @@ struct MacDetailColumn: View {
         .onChange(of: workspace.currentFileText) { _, text in
             fileWatcher.updateCurrentText(text)
             outlineState.parseHeadings(from: text)
+            statusBarState.updateText(text)
         }
         .onChange(of: workspace.currentFileURL) { _, _ in
             setupFileWatcher()
@@ -331,6 +340,7 @@ struct MacDetailColumn: View {
         normalizeViewModeForExperiment()
         outlineState.parseHeadings(from: workspace.currentFileText)
         backlinksState.update(for: workspace.currentFileURL, using: workspace.activeVaultIndexes)
+        statusBarState.updateText(workspace.currentFileText)
         isFullscreen = NSApp.mainWindow?.styleMask.contains(.fullScreen) ?? false
         setupFileWatcher()
     }
@@ -405,11 +415,18 @@ struct MacDetailColumn: View {
                 .frame(maxHeight: 200)
                 .transition(.move(edge: .bottom).combined(with: .opacity))
             }
+
+            if statusBarState.isVisible {
+                Divider()
+                StatusBarView(state: statusBarState)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
         }
         .animation(Theme.Motion.smooth, value: workspace.currentViewMode)
         .animation(Theme.Motion.smooth, value: findState.isVisible)
         .animation(Theme.Motion.smooth, value: jumpToLineState.isVisible)
         .animation(Theme.Motion.smooth, value: backlinksState.isVisible)
+        .animation(Theme.Motion.smooth, value: statusBarState.isVisible)
     }
 
     private var editorPane: some View {
@@ -424,6 +441,7 @@ struct MacDetailColumn: View {
             extraTopInset: 0,
             showLineNumbers: showLineNumbers,
             jumpToLineState: jumpToLineState,
+            statusBarState: statusBarState,
             needsTrafficLightClearance: false,
             contentWidthEm: contentWidthEm
         )
