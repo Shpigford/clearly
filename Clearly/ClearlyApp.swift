@@ -631,6 +631,7 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValid
             resolved = requestedMode
         }
         WorkspaceManager.shared.currentViewMode = resolved
+        WorkspaceManager.persistViewModePreference(resolved)
     }
 
     @objc private func toggleOutlineAction(_ sender: Any?) {

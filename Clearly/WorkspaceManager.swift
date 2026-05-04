@@ -71,15 +71,54 @@ final class WorkspaceManager {
     var currentFileURL: URL?
     var currentFileText: String = ""
     var isDirty: Bool = false
-    var currentViewMode: ViewMode = .edit
+    var currentViewMode: ViewMode = WorkspaceManager.defaultViewModeForOpenedFile
     var currentConflictOutcome: ConflictResolver.Outcome?
 
-    /// View mode that newly-created untitled documents land in. Always Edit
-    /// — empty notes don't have anything to preview yet, so dropping the
-    /// user into a rendered/editable-preview surface would feel weird.
-    /// Existing files keep their persisted view mode (autosaved per-doc).
+    /// UserDefaults key for the user's last-used view mode (issue #318).
+    /// Written only at explicit user-intent sites (Picker, ⌘1/⌘2, View menu);
+    /// never from internal coercions or per-tab restore.
+    static let viewModePreferenceKey = "defaultViewMode"
+
+    static func persistViewModePreference(_ mode: ViewMode) {
+        UserDefaults.standard.set(mode.rawValue, forKey: viewModePreferenceKey)
+    }
+
+    /// View mode for a newly-created untitled (empty) document. Honors the
+    /// user's last-used mode, but a read-only `.preview` of an empty buffer
+    /// is useless and `.wysiwyg` only renders when the experiment is on —
+    /// both fall back to `.edit`.
     static var defaultViewModeForNewDocument: ViewMode {
-        .edit
+        let stored = storedViewModePreference()
+        switch stored {
+        case .edit:
+            return .edit
+        case .wysiwyg:
+            return WYSIWYGExperiment.isEnabled ? .wysiwyg : .edit
+        case .preview:
+            return .edit
+        }
+    }
+
+    /// View mode for opening or re-opening an existing file. Honors the
+    /// user's last-used mode, coercing stale `.wysiwyg` to `.preview` if
+    /// the experiment has since been turned off.
+    static var defaultViewModeForOpenedFile: ViewMode {
+        let stored = storedViewModePreference()
+        if stored == .preview && WYSIWYGExperiment.isEnabled {
+            return .wysiwyg
+        }
+        if stored == .wysiwyg && !WYSIWYGExperiment.isEnabled {
+            return .preview
+        }
+        return stored
+    }
+
+    private static func storedViewModePreference() -> ViewMode {
+        guard let raw = UserDefaults.standard.string(forKey: viewModePreferenceKey),
+              let mode = ViewMode(rawValue: raw) else {
+            return .edit
+        }
+        return mode
     }
 
     /// The vault that contains the active file, if any. Drives wiki-chrome
@@ -562,10 +601,12 @@ final class WorkspaceManager {
             openDocuments[idx].lastSavedText = text
             openDocuments[idx].untitledNumber = nil
             openDocuments[idx].conflictOutcome = nil
+            openDocuments[idx].viewMode = WorkspaceManager.defaultViewModeForOpenedFile
             currentFileURL = url
             currentFileText = text
             lastSavedText = text
             isDirty = false
+            currentViewMode = openDocuments[idx].viewMode
             currentConflictOutcome = nil
             refreshConflictOutcomeForActiveDocument()
         } else {
@@ -575,7 +616,8 @@ final class WorkspaceManager {
                 fileURL: url,
                 text: text,
                 lastSavedText: text,
-                untitledNumber: nil
+                untitledNumber: nil,
+                viewMode: WorkspaceManager.defaultViewModeForOpenedFile
             )
             openDocuments.append(doc)
             activateDocument(doc)
@@ -618,7 +660,8 @@ final class WorkspaceManager {
             fileURL: url,
             text: text,
             lastSavedText: text,
-            untitledNumber: nil
+            untitledNumber: nil,
+            viewMode: WorkspaceManager.defaultViewModeForOpenedFile
         )
         openDocuments.append(doc)
         activateDocument(doc)

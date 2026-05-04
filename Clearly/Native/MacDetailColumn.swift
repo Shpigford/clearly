@@ -32,7 +32,13 @@ struct MacDetailToolbar: ToolbarContent {
             // Editable preview replaces the static preview when the toggle is
             // on; UI is 2-segment in both cases so the user sees the same
             // Edit/Preview model.
-            Picker("Mode", selection: $workspace.currentViewMode) {
+            Picker("Mode", selection: Binding(
+                get: { workspace.currentViewMode },
+                set: { newValue in
+                    workspace.currentViewMode = newValue
+                    WorkspaceManager.persistViewModePreference(newValue)
+                }
+            )) {
                 Image(systemName: "pencil").tag(ViewMode.edit)
                 Image(systemName: "eye").tag(wysiwygExperimentEnabled ? ViewMode.wysiwyg : ViewMode.preview)
             }
