@@ -75,14 +75,21 @@ struct MacRootView: View {
             }()
             lastSidebarClickModifiers = []
             lastSidebarClickTime = nil
-            let succeeded = isCmdClick
-                ? workspace.openFileInNewTab(at: url)
-                : workspace.openFile(at: url)
-            if !succeeded {
-                // User cancelled the unsaved-changes prompt. The selection
-                // already moved in the binding — revert it so the sidebar
-                // doesn't lie about which file is open.
-                DispatchQueue.main.async { selectedFileURL = oldURL }
+            // Defer to the next runloop tick. `openFile` may present an
+            // NSAlert sheet (unsaved-changes prompt), and AppKit aborts a
+            // modal session if you start it inside a SwiftUI binding-update
+            // cycle — the alert flashes invisibly and `runModal()` returns
+            // .abort, which previously silently discarded the user's edits.
+            // See issue #327.
+            DispatchQueue.main.async {
+                let succeeded = isCmdClick
+                    ? workspace.openFileInNewTab(at: url)
+                    : workspace.openFile(at: url)
+                if !succeeded {
+                    // User cancelled (or modal failed). Revert the sidebar
+                    // selection so the highlight doesn't lie.
+                    selectedFileURL = oldURL
+                }
             }
         }
         .onChange(of: workspace.currentFileURL) { _, newURL in

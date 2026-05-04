@@ -2606,8 +2606,14 @@ final class WorkspaceManager {
             return .save
         case .alertSecondButtonReturn:
             return .cancel
-        default:
+        case .alertThirdButtonReturn:
             return .discard
+        default:
+            // Abort / unexpected response (e.g. AppKit refusing to nest
+            // runModal inside a SwiftUI binding-update cycle — see #327).
+            // Treat as Cancel so user data is never silently discarded.
+            DiagnosticLog.log("promptToSaveChanges: modal aborted, treating as Cancel")
+            return .cancel
         }
     }
 
