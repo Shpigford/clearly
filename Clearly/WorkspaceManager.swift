@@ -42,6 +42,12 @@ private actor TreeBuildLimiter {
     }
 }
 
+enum DeleteItemResult {
+    case deleted
+    case cancelled
+    case failed
+}
+
 /// Central state manager for file navigation: locations, recents, and current file.
 @Observable
 final class WorkspaceManager {
@@ -1474,15 +1480,16 @@ final class WorkspaceManager {
         alert.runModal()
     }
 
-    func deleteItem(at url: URL) -> Bool {
+    func deleteItem(at url: URL) -> DeleteItemResult {
+        guard closeOpenDocumentsBeforeDeleting(at: url) else { return .cancelled }
         do {
             try FileManager.default.trashItem(at: url, resultingItemURL: nil)
             removeDeletedItemReferences(at: url)
             DiagnosticLog.log("Trashed: \(url.lastPathComponent)")
-            return true
+            return .deleted
         } catch {
             DiagnosticLog.log("Failed to trash: \(error.localizedDescription)")
-            return false
+            return .failed
         }
     }
 
@@ -1560,6 +1567,60 @@ final class WorkspaceManager {
         pinnedFiles.removeAll { isSameOrDescendant($0, of: url) }
         if pinnedFiles.count != previousPinnedCount {
             persistPinnedFiles()
+        }
+    }
+
+    private func closeOpenDocumentsBeforeDeleting(at url: URL) -> Bool {
+        let affectedDocumentIDs = openDocuments.compactMap { document -> UUID? in
+            guard let fileURL = document.fileURL, isSameOrDescendant(fileURL, of: url) else { return nil }
+            return document.id
+        }
+        for documentID in affectedDocumentIDs {
+            guard closeDocumentBeforeDeleting(documentID) else { return false }
+        }
+        return true
+    }
+
+    private func closeDocumentBeforeDeleting(_ id: UUID) -> Bool {
+        guard openDocuments.contains(where: { $0.id == id }) else { return true }
+        let wasCurrent = (id == activeDocumentID)
+        if wasCurrent {
+            snapshotActiveDocument()
+        }
+
+        guard let currentIndex = openDocuments.firstIndex(where: { $0.id == id }) else { return true }
+        let doc = openDocuments[currentIndex]
+        if doc.isDirty {
+            let disposition: DirtyDocumentDisposition = wasCurrent ? .save : promptToSaveChanges(for: doc)
+            switch disposition {
+            case .save:
+                guard saveDocumentBeforeDeleting(at: currentIndex) else { return false }
+            case .discard:
+                break
+            case .cancel:
+                return false
+            }
+        }
+
+        removeDocument(id)
+        return true
+    }
+
+    private func saveDocumentBeforeDeleting(at index: Int) -> Bool {
+        let doc = openDocuments[index]
+        guard let url = doc.fileURL, doc.isDirty else { return true }
+        do {
+            try CoordinatedFileIO.write(Data(doc.text.utf8), to: url)
+            openDocuments[index].lastSavedText = doc.text
+            if activeDocumentIndex == index {
+                currentFileText = doc.text
+                lastSavedText = doc.text
+                isDirty = false
+            }
+            return true
+        } catch {
+            DiagnosticLog.log("Failed to save before delete: \(error.localizedDescription)")
+            return false
         }
     }
 

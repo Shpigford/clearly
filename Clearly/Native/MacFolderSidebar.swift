@@ -399,6 +399,10 @@ struct MacFolderSidebar: View {
         if let root = workspace.containingVaultRoot(for: url) {
             Button("Copy Relative Path") { CopyActions.copyRelativePath(url, vaultRoot: root) }
         }
+        Divider()
+        Button("Delete", systemImage: "trash", role: .destructive) {
+            deleteWithConfirmation(url: url, isDirectory: true)
+        }
     }
 
     private func createNewFile(in folder: URL) {
@@ -481,6 +485,53 @@ struct MacFolderSidebar: View {
         }
         if let target = workspace.wikiLinkTarget(for: url) {
             Button("Copy Wiki Link") { CopyActions.copyWikiLink(target) }
+        }
+        Divider()
+        Button("Delete", systemImage: "trash", role: .destructive) {
+            deleteWithConfirmation(url: url, isDirectory: false)
+        }
+    }
+
+    private func deleteWithConfirmation(url: URL, isDirectory: Bool) {
+        let name = url.lastPathComponent
+        let alert = NSAlert()
+        alert.messageText = isDirectory
+            ? "Move \u{201C}\(name)\u{201D} and all its contents to Trash?"
+            : "Move \u{201C}\(name)\u{201D} to Trash?"
+        alert.informativeText = "You can recover it from the Trash."
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "Delete")
+        alert.addButton(withTitle: "Cancel")
+
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+
+        let previousSelection = selectedFileURL
+        var clearedSelection = false
+        if let selected = selectedFileURL {
+            let rootPath = url.standardizedFileURL.path
+            let selectedPath = selected.standardizedFileURL.path
+            if selectedPath == rootPath || selectedPath.hasPrefix(rootPath + "/") {
+                selectedFileURL = nil
+                clearedSelection = true
+            }
+        }
+
+        switch workspace.deleteItem(at: url) {
+        case .deleted:
+            break
+        case .cancelled:
+            if clearedSelection, selectedFileURL == nil {
+                selectedFileURL = previousSelection
+            }
+        case .failed:
+            if clearedSelection, selectedFileURL == nil {
+                selectedFileURL = previousSelection
+            }
+            let failure = NSAlert()
+            failure.messageText = "Couldn\u{2019}t move \u{201C}\(name)\u{201D} to Trash"
+            failure.alertStyle = .warning
+            failure.addButton(withTitle: "OK")
+            failure.runModal()
         }
     }
 
