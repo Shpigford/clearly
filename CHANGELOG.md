@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+## [2.13.0] - 2026-05-04
+- Customize each vault folder's icon and tint color in the sidebar
+- Optional status bar shows live word and character counts
+- Rename files and folders inline from the sidebar context menu
+- Delete files and folders directly from the sidebar context menu
+- Recents drops files that no longer exist on disk at launch and on app activation
+- Confirm before discarding unsaved changes when navigating to another note
+- Last-used view mode (Editor / Preview) is now remembered across notes and launches
+- Removed the floating formatting toolbar from the experimental WYSIWYG mode
+- Removed the experimental LLM Wiki feature (vault chat remains)
+
 ## [2.12.0] - 2026-05-01
 - Fixed runaway memory and CPU usage when indexing large vaults
 - Adding a folder that's already inside (or contains) an existing vault is now blocked
