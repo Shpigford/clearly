@@ -57,6 +57,7 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValid
     private var isOpeningSettingsFromMenuBar = false
 
     private let toolbarMenuItemTag = 7287
+    private let statusBarMenuItemTag = 7288
 
     private var isToolbarHidden: Bool {
         get { UserDefaults.standard.bool(forKey: "toolbarHidden") }
@@ -365,6 +366,14 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValid
         injectGlobalSearchIfNeeded()
         injectExportPrintIfNeeded()
         applyToolbarVisibility()
+        refreshStatusBarMenuTitle()
+    }
+
+    private func refreshStatusBarMenuTitle() {
+        guard let item = NSApp.mainMenu?.item(withTitle: "View")?.submenu?
+            .items.first(where: { $0.tag == statusBarMenuItemTag }) else { return }
+        let desired = isStatusBarVisible ? "Hide Word Counts" : "Show Word Counts"
+        if item.title != desired { item.title = desired }
     }
 
     private func injectGlobalSearchIfNeeded() {
@@ -587,6 +596,11 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValid
         let lineNumbersItem = NSMenuItem(title: "Line Numbers", action: #selector(toggleLineNumbersAction(_:)), keyEquivalent: "")
         lineNumbersItem.target = self
 
+        let statusBarTitle = isStatusBarVisible ? "Hide Word Counts" : "Show Word Counts"
+        let statusBarItem = NSMenuItem(title: statusBarTitle, action: #selector(toggleStatusBarAction(_:)), keyEquivalent: "")
+        statusBarItem.target = self
+        statusBarItem.tag = statusBarMenuItemTag
+
         let editorItem = NSMenuItem(title: "Editor", action: #selector(switchToEditorAction(_:)), keyEquivalent: "1")
         editorItem.keyEquivalentModifierMask = [.command]
         editorItem.target = self
@@ -600,6 +614,7 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValid
         viewMenu.insertItem(outlineItem, at: insertIndex); insertIndex += 1
         viewMenu.insertItem(backlinksItem, at: insertIndex); insertIndex += 1
         viewMenu.insertItem(lineNumbersItem, at: insertIndex); insertIndex += 1
+        viewMenu.insertItem(statusBarItem, at: insertIndex); insertIndex += 1
         viewMenu.insertItem(.separator(), at: insertIndex); insertIndex += 1
         viewMenu.insertItem(editorItem, at: insertIndex); insertIndex += 1
         viewMenu.insertItem(previewItem, at: insertIndex); insertIndex += 1
@@ -649,6 +664,17 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValid
 
     @objc private func toggleLineNumbersAction(_ sender: Any?) {
         NotificationCenter.default.post(name: .init("ClearlyToggleLineNumbers"), object: nil)
+    }
+
+    private var isStatusBarVisible: Bool {
+        UserDefaults.standard.bool(forKey: StatusBarState.userDefaultsKey)
+    }
+
+    @objc private func toggleStatusBarAction(_ sender: Any?) {
+        // Persistence is owned by StatusBarState (via the notification
+        // observer in MacDetailColumn). The menu title refreshes on the
+        // next applicationWillUpdate tick.
+        NotificationCenter.default.post(name: .init("ClearlyToggleStatusBar"), object: nil)
     }
 
     @objc private func setPreviewFontAction(_ sender: NSMenuItem) {

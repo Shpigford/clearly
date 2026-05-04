@@ -18,6 +18,7 @@ struct MacRootView: View {
     @StateObject private var outlineState = OutlineState()
     @StateObject private var backlinksState = BacklinksState()
     @StateObject private var jumpToLineState = JumpToLineState()
+    @StateObject private var statusBarState = StatusBarState()
     @State private var vaultChat = VaultChatState()
 
     var body: some View {
@@ -49,6 +50,7 @@ struct MacRootView: View {
                     outlineState: outlineState,
                     backlinksState: backlinksState,
                     jumpToLineState: jumpToLineState,
+                    statusBarState: statusBarState,
                     vaultChat: vaultChat,
                     positionSyncID: $positionSyncID,
                     showFormatPopover: $showFormatPopover
