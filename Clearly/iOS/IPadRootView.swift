@@ -23,6 +23,7 @@ struct IPadRootView: View {
     @State private var folderTree: [FileNode] = []
 
     @State private var deleteTarget: VaultFile?
+    @State private var folderDeleteTarget: URL?
     @State private var moveTarget: VaultFile?
     @State private var operationError: String?
 
@@ -85,6 +86,16 @@ struct IPadRootView: View {
             Button("Cancel", role: .cancel) { deleteTarget = nil }
         } message: {
             Text("This can't be undone from within Clearly.")
+        }
+        .confirmationDialog(
+            folderDeleteTarget.map { "Delete \u{201C}\($0.lastPathComponent)\u{201D}?" } ?? "",
+            isPresented: folderDeleteConfirmBinding,
+            titleVisibility: .visible
+        ) {
+            Button("Delete", role: .destructive) { commitFolderDelete() }
+            Button("Cancel", role: .cancel) { folderDeleteTarget = nil }
+        } message: {
+            Text("This deletes the folder and everything inside it. This can't be undone from within Clearly.")
         }
         .alert("New Folder", isPresented: $isCreatingFolder) {
             TextField("Name", text: $newFolderDraft)
@@ -161,7 +172,8 @@ struct IPadRootView: View {
                     onMoveFile: { file in moveTarget = file },
                     onDuplicateFile: { file in performDuplicate(file) },
                     onCreateFile: { folder in createFile(in: folder) },
-                    onCreateFolder: { folder in beginCreateFolder(in: folder) }
+                    onCreateFolder: { folder in beginCreateFolder(in: folder) },
+                    onDeleteFolder: { folder in folderDeleteTarget = folder }
                 )
             } header: {
                 Text(session.currentVault?.displayName ?? "Vault")
@@ -251,6 +263,15 @@ struct IPadRootView: View {
         )
     }
 
+    private var folderDeleteConfirmBinding: Binding<Bool> {
+        Binding(
+            get: { folderDeleteTarget != nil },
+            set: { newValue in
+                if !newValue { folderDeleteTarget = nil }
+            }
+        )
+    }
+
     private func performRename(_ file: VaultFile, to newName: String) {
         Task {
             do {
@@ -292,10 +313,27 @@ struct IPadRootView: View {
         deleteTarget = nil
         Task {
             do {
-                try await session.deleteFile(target)
-                await MainActor.run {
-                    controller.closeTabs(matching: target)
+                guard await controller.closeTabsForDeletion(matching: target) else {
+                    operationError = "Couldn't save changes before deleting."
+                    return
                 }
+                try await session.deleteFile(target)
+            } catch {
+                operationError = error.localizedDescription
+            }
+        }
+    }
+
+    private func commitFolderDelete() {
+        guard let target = folderDeleteTarget else { return }
+        folderDeleteTarget = nil
+        Task {
+            do {
+                guard await controller.closeTabsForDeletion(inSubtree: target) else {
+                    operationError = "Couldn't save changes before deleting."
+                    return
+                }
+                try await session.deleteFolder(at: target)
             } catch {
                 operationError = error.localizedDescription
             }

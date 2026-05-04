@@ -44,7 +44,8 @@ public final class IOSDocumentSession {
     // MARK: - Lifecycle
 
     public func open(_ file: VaultFile, via vault: VaultSession) async {
-        await close()
+        guard await flush() else { return }
+        await close(discardUnsavedChanges: true)
 
         self.vault = vault
         self.file = file
@@ -77,12 +78,15 @@ public final class IOSDocumentSession {
         }
     }
 
-    public func close(discardUnsavedChanges: Bool = false) async {
+    @discardableResult
+    public func close(discardUnsavedChanges: Bool = false, allowAutoRename: Bool = true) async -> Bool {
+        let didFlush: Bool
         if discardUnsavedChanges {
             autosaveTask?.cancel()
             autosaveTask = nil
+            didFlush = true
         } else {
-            await flush()
+            didFlush = await flush(allowAutoRename: allowAutoRename)
         }
         detachPresenter()
         autosaveTask?.cancel()
@@ -94,6 +98,7 @@ public final class IOSDocumentSession {
         wasDeletedRemotely = false
         errorMessage = nil
         isLoading = false
+        return didFlush
     }
 
     /// Called by the UI after the user has viewed the diff sheet and tapped "Done".
@@ -104,11 +109,12 @@ public final class IOSDocumentSession {
 
     // MARK: - Save path
 
-    public func flush() async {
+    @discardableResult
+    public func flush(allowAutoRename: Bool = true) async -> Bool {
         autosaveTask?.cancel()
         autosaveTask = nil
-        guard let file, isDirty else { return }
-        await performSave(text: text, url: file.url)
+        guard let file, isDirty else { return true }
+        return await performSave(text: text, url: file.url, allowAutoRename: allowAutoRename)
     }
 
     private func scheduleAutosave() {
@@ -122,7 +128,8 @@ public final class IOSDocumentSession {
         }
     }
 
-    private func performSave(text: String, url: URL) async {
+    @discardableResult
+    private func performSave(text: String, url: URL, allowAutoRename: Bool = true) async -> Bool {
         isOwnWriteInFlight = true
         defer { isOwnWriteInFlight = false }
         let data = Data(text.utf8)
@@ -132,7 +139,10 @@ public final class IOSDocumentSession {
                 try CoordinatedFileIO.write(data, to: url, presenter: capturedPresenter)
             }.value
             lastSavedText = text
-            await autoRenameIfApplicable(text: text)
+            if allowAutoRename {
+                await autoRenameIfApplicable(text: text)
+            }
+            return true
         } catch {
             // Don't clobber `errorMessage` here — that slot drives the
             // load-failure full-screen view, and a save failure must not
@@ -141,6 +151,7 @@ public final class IOSDocumentSession {
             // the nav-title bullet stays lit and the next autosave (or
             // the scene-phase flush) will retry the write.
             DiagnosticLog.log("IOSDocumentSession save failed for \(url.lastPathComponent): \(error.localizedDescription)")
+            return false
         }
     }
 
