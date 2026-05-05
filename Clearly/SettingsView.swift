@@ -66,6 +66,7 @@ struct SettingsView: View {
     private var generalSettings: some View {
         Form {
             Toggle("Editable preview (experimental)", isOn: $wysiwygExperimentEnabled)
+                .help("Edit directly in the rendered preview. Complex markdown (footnotes, math, raw HTML) may be reformatted on save.")
             Picker("Appearance", selection: $themePreference) {
                 Text("System").tag("system")
                 Text("Light").tag("light")

@@ -20193,6 +20193,16 @@ ${indentedChild}`;
   }
 
   // src/preservation.ts
+  function postFallback(reason, info = {}) {
+    try {
+      window.webkit?.messageHandlers?.wysiwyg?.postMessage({
+        type: "preservationFallback",
+        reason,
+        ...info
+      });
+    } catch {
+    }
+  }
   var SourcePreservation = class {
     originalBody;
     tokens = [];
@@ -20230,7 +20240,12 @@ ${indentedChild}`;
         }
       }
       const doc3 = editor2.state.doc;
-      this.aligned = doc3.childCount === this.blockTokenIndex.length;
+      const documentChildCount = doc3.childCount;
+      const blockTokenCount = this.blockTokenIndex.length;
+      this.aligned = documentChildCount === blockTokenCount;
+      if (!this.aligned) {
+        postFallback("child-count-mismatch", { documentChildCount, blockTokenCount });
+      }
       let allBlockSafe = this.aligned;
       if (this.aligned) {
         doc3.forEach((child) => {
@@ -20239,6 +20254,9 @@ ${indentedChild}`;
             allBlockSafe = false;
           }
         });
+      }
+      if (this.aligned && !allBlockSafe) {
+        postFallback("non-block-safe-node", { documentChildCount, blockTokenCount });
       }
       this.aligned = allBlockSafe;
       if (this.aligned) {
@@ -20263,6 +20281,9 @@ ${indentedChild}`;
           return;
         }
         if (transaction.getMeta("preservation:internal")) return;
+        if (!this.aligned && !this.globalDirty) {
+          postFallback("global-dirty");
+        }
         this.globalDirty = true;
       };
       editor2.on("update", this.updateHandler);
@@ -20283,50 +20304,48 @@ ${indentedChild}`;
         return editor2.getMarkdown();
       }
       const manager = editor2.markdown;
-      const pmById = /* @__PURE__ */ new Map();
-      const newChildren = [];
-      const seenIds = /* @__PURE__ */ new Set();
+      const out = [];
+      let prevPreservedId = null;
+      let prevWasNew = false;
       editor2.state.doc.forEach((child) => {
         const id = child.attrs?.preserveId;
-        if (typeof id === "number" && !seenIds.has(id)) {
-          pmById.set(id, child);
-          seenIds.add(id);
-        } else {
-          const isEmptyParagraph = child.type.name === "paragraph" && child.content.size === 0;
-          if (!isEmptyParagraph) {
-            newChildren.push(child);
+        const isPreserved = typeof id === "number";
+        const isEmptyParagraph = child.type.name === "paragraph" && child.content.size === 0;
+        if (!isPreserved && isEmptyParagraph) return;
+        if (out.length > 0) {
+          const adjacent = isPreserved && prevPreservedId !== null && !prevWasNew && id === prevPreservedId + 1;
+          if (adjacent) {
+            const prevBlockTokIdx = this.blockTokenIndex[prevPreservedId];
+            const thisBlockTokIdx = this.blockTokenIndex[id];
+            if (prevBlockTokIdx + 1 === thisBlockTokIdx) {
+            } else if (this.tokens[prevBlockTokIdx + 1]?.type === "space") {
+              out.push(this.tokens[prevBlockTokIdx + 1].raw);
+            } else {
+              ensureBlockSeparator(out);
+            }
+          } else {
+            ensureBlockSeparator(out);
           }
         }
-      });
-      const out = [];
-      let blockId = 0;
-      for (let i = 0; i < this.tokens.length; i++) {
-        const tok = this.tokens[i];
-        if (tok.type === "space") {
-          const nextBlockExists = pmById.has(blockId);
-          if (nextBlockExists) out.push(tok.raw);
-          continue;
-        }
-        const child = pmById.get(blockId);
-        if (child) {
+        if (isPreserved) {
+          const blockTokIdx = this.blockTokenIndex[id];
+          const tok = blockTokIdx != null ? this.tokens[blockTokIdx] : null;
           const currentJson = jsonFingerprint(child.toJSON());
-          const snap = this.snapshots[blockId]?.json;
-          if (currentJson === snap) {
+          const snap = this.snapshots[id]?.json;
+          if (tok && currentJson === snap) {
             out.push(tok.raw);
           } else {
-            out.push(renderChild(manager, child));
+            const rendered = renderChild(manager, child);
+            out.push(matchTrailingNewlines(rendered, tok?.raw ?? ""));
           }
+          prevPreservedId = id;
+          prevWasNew = false;
+        } else {
+          const rendered = renderChild(manager, child);
+          out.push(rendered.endsWith("\n") ? rendered : rendered + "\n");
+          prevWasNew = true;
         }
-        blockId++;
-      }
-      for (const child of newChildren) {
-        if (out.length > 0 && !out[out.length - 1].endsWith("\n\n")) {
-          const last = out[out.length - 1];
-          if (last.endsWith("\n")) out.push("\n");
-          else out.push("\n\n");
-        }
-        out.push(renderChild(manager, child));
-      }
+      });
       return out.join("");
     }
   };
@@ -20335,6 +20354,27 @@ ${indentedChild}`;
       if (key === "preserveId") return void 0;
       return value;
     });
+  }
+  function ensureBlockSeparator(out) {
+    if (out.length === 0) return;
+    const last = out[out.length - 1];
+    if (last.endsWith("\n\n")) return;
+    if (last.endsWith("\n")) out.push("\n");
+    else out.push("\n\n");
+  }
+  function matchTrailingNewlines(rendered, raw) {
+    const renderedTrail = countTrailingNewlines(rendered);
+    const rawTrail = countTrailingNewlines(raw);
+    if (renderedTrail === rawTrail) return rendered;
+    if (renderedTrail < rawTrail) {
+      return rendered + "\n".repeat(rawTrail - renderedTrail);
+    }
+    return rendered.slice(0, rendered.length - (renderedTrail - rawTrail));
+  }
+  function countTrailingNewlines(s) {
+    let n = 0;
+    for (let i = s.length - 1; i >= 0 && s[i] === "\n"; i--) n++;
+    return n;
   }
   function renderChild(manager, child) {
     if (!manager || typeof manager.serialize !== "function") return "";
@@ -46469,6 +46509,12 @@ ${code}`;
     applyCommand({ command: command2 }) {
       if (!editor) return;
       switch (command2) {
+        case "undo":
+          editor.commands.undo();
+          return;
+        case "redo":
+          editor.commands.redo();
+          return;
         case "findNext":
           navigateMatch(editor.view, "next");
           return;

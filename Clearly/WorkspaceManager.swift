@@ -161,6 +161,11 @@ final class WorkspaceManager {
 
     private var fsStreams: [UUID: FSEventStreamRef] = [:]
     @ObservationIgnored private var vaultIndexes: [UUID: VaultIndex] = [:]
+    /// Live reference to the source editor's text view, set by EditorView when
+    /// it mounts. Lets non-editor surfaces (WYSIWYG flush, checkbox toggle)
+    /// register undo entries on the editor's undoManager so ⌘Z reverts the
+    /// change after switching back to edit mode.
+    @ObservationIgnored weak var activeEditorTextView: ClearlyTextView?
     @ObservationIgnored private var refreshWork: [UUID: DispatchWorkItem] = [:]
     @ObservationIgnored private var treeBuildGeneration: [UUID: Int] = [:]
     @ObservationIgnored private var treeBuildTasks: [UUID: Task<Void, Never>] = [:]
@@ -730,6 +735,33 @@ final class WorkspaceManager {
     }
 
     // MARK: - Text Changes
+
+    /// Apply a text change that originated outside the source editor (WYSIWYG
+    /// flush, checkbox toggle) and route it through the editor's NSTextView so
+    /// its undoManager records a single ⌘Z-able entry — and a redo entry on
+    /// the way back. Uses `textView.replaceCharacters` (not `textStorage`)
+    /// because only the textView path triggers NSTextView's auto-undo
+    /// registration; modifying textStorage directly skips it and breaks redo.
+    func applyExternalText(_ newText: String, actionName: String) {
+        guard currentFileText != newText else { return }
+        if let textView = activeEditorTextView {
+            let storageLength = textView.textStorage?.length ?? (textView.string as NSString).length
+            let fullRange = NSRange(location: 0, length: storageLength)
+            if textView.shouldChangeText(in: fullRange, replacementString: newText) {
+                textView.replaceCharacters(in: fullRange, with: newText)
+                textView.didChangeText()
+                textView.undoManager?.setActionName(actionName)
+            }
+        }
+        // Mirror the new text into the binding source so observers (autosave,
+        // status bar, WYSIWYG sync) see it synchronously. The textView's own
+        // textDidChange will commit the same value 150ms later — that's a
+        // no-op redundancy, not a correctness issue.
+        if currentFileText != newText {
+            currentFileText = newText
+            contentDidChange()
+        }
+    }
 
     /// Called when the editor binding updates currentFileText.
     /// Does NOT set currentFileText — the binding already did that.

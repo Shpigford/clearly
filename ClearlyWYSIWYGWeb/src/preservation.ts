@@ -32,6 +32,22 @@ interface MarkedToken {
   raw: string;
 }
 
+// Forensic-only ping to the host when block-level alignment fails or
+// degrades. Lets `DiagnosticLog` show which markdown constructs trigger
+// fallback (issue #340 follow-up) without surfacing anything to the user.
+function postFallback(reason: string, info: Record<string, unknown> = {}): void {
+  try {
+    (window as unknown as { webkit?: { messageHandlers?: { wysiwyg?: { postMessage: (m: Record<string, unknown>) => void } } } })
+      .webkit?.messageHandlers?.wysiwyg?.postMessage({
+        type: "preservationFallback",
+        reason,
+        ...info,
+      });
+  } catch {
+    // dev harness — ignore
+  }
+}
+
 interface BlockSnapshot {
   raw: string;
   json: string; // canonicalized JSON of the PM child at mount time
@@ -79,7 +95,12 @@ export class SourcePreservation {
     }
 
     const doc = editor.state.doc;
-    this.aligned = doc.childCount === this.blockTokenIndex.length;
+    const documentChildCount = doc.childCount;
+    const blockTokenCount = this.blockTokenIndex.length;
+    this.aligned = documentChildCount === blockTokenCount;
+    if (!this.aligned) {
+      postFallback("child-count-mismatch", { documentChildCount, blockTokenCount });
+    }
 
     // Up-front validation: every top-level child must accept the preserveId
     // attribute. Tiptap's markdown parser occasionally emits stray nodes at
@@ -95,6 +116,9 @@ export class SourcePreservation {
           allBlockSafe = false;
         }
       });
+    }
+    if (this.aligned && !allBlockSafe) {
+      postFallback("non-block-safe-node", { documentChildCount, blockTokenCount });
     }
     this.aligned = allBlockSafe;
 
@@ -121,6 +145,13 @@ export class SourcePreservation {
         return;
       }
       if (transaction.getMeta("preservation:internal")) return;
+      if (!this.aligned && !this.globalDirty) {
+        // Aligned-mode never reached on this document, and the user just
+        // made the first edit — switching from "emit body verbatim" to
+        // "render whole doc through @tiptap/markdown" is the formatting-
+        // drift moment. Log so we can see which docs trigger it.
+        postFallback("global-dirty");
+      }
       this.globalDirty = true;
     };
     editor.on("update", this.updateHandler);
@@ -144,63 +175,87 @@ export class SourcePreservation {
       return editor.getMarkdown();
     }
 
-    // Aligned mode: walk tokens; emit raw for clean blocks, rendered for
-    // dirty ones, raw for space tokens. Insertions appended at end;
-    // deletions skip both block and the immediately-preceding space token.
+    // Aligned mode: walk the PM doc in tree order so that blocks the user
+    // inserted via WYSIWYG land at their actual position, not appended at the
+    // end. For each preserved child, emit its original raw bytes when its
+    // JSON still matches the snapshot, otherwise re-render via @tiptap/markdown.
+    // For new children (no preserveId), emit rendered output at this position.
+    // Between two preserved children that are adjacent in original order, we
+    // re-emit the original space token to preserve whitespace fidelity;
+    // everywhere else falls back to a "\n\n" separator.
     const manager = (editor as any).markdown;
-    const pmById = new Map<number, any>();
-    const newChildren: any[] = [];
-    const seenIds = new Set<number>();
+    const out: string[] = [];
+    let prevPreservedId: number | null = null;
+    let prevWasNew = false;
+
     editor.state.doc.forEach((child) => {
       const id = child.attrs?.preserveId;
-      if (typeof id === "number" && !seenIds.has(id)) {
-        pmById.set(id, child);
-        seenIds.add(id);
-      } else {
-        // Skip empty placeholder paragraphs PM may auto-append (happens when
-        // the last source block is an atom like htmlBlock or image — PM needs
-        // a trailing editable paragraph for cursor placement). The user
-        // didn't author this, so don't emit it.
-        const isEmptyParagraph =
-          child.type.name === "paragraph" &&
-          child.content.size === 0;
-        if (!isEmptyParagraph) {
-          newChildren.push(child);
+      const isPreserved = typeof id === "number";
+      const isEmptyParagraph =
+        child.type.name === "paragraph" &&
+        child.content.size === 0;
+      // Skip PM-auto-added empty trailing paragraphs (the user didn't author
+      // them — PM needs a trailing editable paragraph after atom blocks like
+      // htmlBlock or image).
+      if (!isPreserved && isEmptyParagraph) return;
+
+      if (out.length > 0) {
+        const adjacent =
+          isPreserved &&
+          prevPreservedId !== null &&
+          !prevWasNew &&
+          id === prevPreservedId + 1;
+        if (adjacent) {
+          // The two preserved blocks sit next to each other in the original
+          // token list. Either (a) directly adjacent with no space token
+          // between them — emit nothing extra, the prev block's raw already
+          // ended where it needed; or (b) a space token sits between them —
+          // re-emit it verbatim to preserve original whitespace.
+          const prevBlockTokIdx = this.blockTokenIndex[prevPreservedId];
+          const thisBlockTokIdx = this.blockTokenIndex[id as number];
+          if (prevBlockTokIdx + 1 === thisBlockTokIdx) {
+            // Directly adjacent — no separator.
+          } else if (this.tokens[prevBlockTokIdx + 1]?.type === "space") {
+            out.push(this.tokens[prevBlockTokIdx + 1].raw);
+          } else {
+            ensureBlockSeparator(out);
+          }
+        } else {
+          ensureBlockSeparator(out);
         }
       }
-    });
 
-    const out: string[] = [];
-    let blockId = 0;
-    for (let i = 0; i < this.tokens.length; i++) {
-      const tok = this.tokens[i];
-      if (tok.type === "space") {
-        const nextBlockExists = pmById.has(blockId);
-        if (nextBlockExists) out.push(tok.raw);
-        continue;
-      }
-      const child = pmById.get(blockId);
-      if (child) {
+      if (isPreserved) {
+        const blockTokIdx = this.blockTokenIndex[id as number];
+        const tok = blockTokIdx != null ? this.tokens[blockTokIdx] : null;
         const currentJson = jsonFingerprint(child.toJSON());
-        const snap = this.snapshots[blockId]?.json;
-        if (currentJson === snap) {
+        const snap = this.snapshots[id as number]?.json;
+        if (tok && currentJson === snap) {
           out.push(tok.raw);
         } else {
-          out.push(renderChild(manager, child));
+          // Tiptap's serializer doesn't always emit trailing newlines that
+          // match the original token's raw bytes. The space tokens we emit
+          // between blocks assume each block ends exactly the way its raw
+          // ended; if the rendered output is missing a trailing \n, the
+          // following space token collapses the boundary and we fuse two
+          // blocks into one (e.g. `- [x] task### Heading`). Normalize the
+          // rendered tail to match the original.
+          const rendered = renderChild(manager, child);
+          out.push(matchTrailingNewlines(rendered, tok?.raw ?? ""));
         }
+        prevPreservedId = id as number;
+        prevWasNew = false;
+      } else {
+        // New child — render and ensure a trailing newline so the next
+        // separator behaves consistently.
+        const rendered = renderChild(manager, child);
+        out.push(rendered.endsWith("\n") ? rendered : rendered + "\n");
+        prevWasNew = true;
+        // Keep prevPreservedId so the next preserved child can still test
+        // adjacency (which will fail because prevWasNew=true) and fall back
+        // to the default separator.
       }
-      blockId++;
-    }
-
-    // Append new children at end with a default \n\n separator if needed.
-    for (const child of newChildren) {
-      if (out.length > 0 && !out[out.length - 1].endsWith("\n\n")) {
-        const last = out[out.length - 1];
-        if (last.endsWith("\n")) out.push("\n");
-        else out.push("\n\n");
-      }
-      out.push(renderChild(manager, child));
-    }
+    });
 
     return out.join("");
   }
@@ -213,6 +268,33 @@ function jsonFingerprint(json: any): string {
     if (key === "preserveId") return undefined;
     return value;
   });
+}
+
+function ensureBlockSeparator(out: string[]): void {
+  if (out.length === 0) return;
+  const last = out[out.length - 1];
+  if (last.endsWith("\n\n")) return;
+  if (last.endsWith("\n")) out.push("\n");
+  else out.push("\n\n");
+}
+
+// Pad or trim trailing "\n" on `rendered` so its trailing-newline count
+// matches the original `raw`. Lets the surrounding space tokens reproduce
+// the source's whitespace structure even when a block is re-rendered.
+function matchTrailingNewlines(rendered: string, raw: string): string {
+  const renderedTrail = countTrailingNewlines(rendered);
+  const rawTrail = countTrailingNewlines(raw);
+  if (renderedTrail === rawTrail) return rendered;
+  if (renderedTrail < rawTrail) {
+    return rendered + "\n".repeat(rawTrail - renderedTrail);
+  }
+  return rendered.slice(0, rendered.length - (renderedTrail - rawTrail));
+}
+
+function countTrailingNewlines(s: string): number {
+  let n = 0;
+  for (let i = s.length - 1; i >= 0 && s[i] === "\n"; i--) n++;
+  return n;
 }
 
 function renderChild(manager: any, child: any): string {

@@ -118,6 +118,7 @@ struct EditorView: NSViewRepresentable {
         context.coordinator.gutterView = gutter
 
         context.coordinator.textView = textView
+        WorkspaceManager.shared.activeEditorTextView = textView
         context.coordinator.findState = findState
         context.coordinator.outlineState = outlineState
         if let findState {
@@ -203,6 +204,10 @@ struct EditorView: NSViewRepresentable {
 
     static func dismantleNSView(_ container: NSView, coordinator: Coordinator) {
         NotificationCenter.default.removeObserver(coordinator)
+        if let textView = coordinator.textView,
+           WorkspaceManager.shared.activeEditorTextView === textView {
+            WorkspaceManager.shared.activeEditorTextView = nil
+        }
         DiagnosticLog.log("dismantleNSView: EditorView torn down")
     }
 

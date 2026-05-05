@@ -343,9 +343,16 @@ window.clearlyWYSIWYG = {
   },
   applyCommand({ command }) {
     if (!editor) return;
-    // Find / replace commands don't go through chain — they manipulate the
-    // find plugin state directly.
+    // Find / replace + history commands don't go through chain — they
+    // manipulate plugin state directly. Undo/redo route here because the host
+    // intercepts ⌘Z before keyDown reaches WKWebContentView (issue #340).
     switch (command) {
+      case "undo":
+        editor.commands.undo();
+        return;
+      case "redo":
+        editor.commands.redo();
+        return;
       case "findNext":
         findNavigate(editor.view, "next");
         return;

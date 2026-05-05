@@ -625,7 +625,7 @@ struct MacDetailColumn: View {
                 .replacingOccurrences(of: "+ [x]", with: "+ [ ]")
                 .replacingOccurrences(of: "+ [X]", with: "+ [ ]")
         }
-        workspace.currentFileText = lines.joined(separator: "\n")
+        workspace.applyExternalText(lines.joined(separator: "\n"), actionName: "Toggle Task")
     }
 
     private func resolveWikiLink(_ target: String, in vaultRoot: URL?) -> URL? {

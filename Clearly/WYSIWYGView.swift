@@ -164,8 +164,13 @@ struct WYSIWYGView: NSViewRepresentable {
     }
 
     static func dismantleNSView(_ webView: WYSIWYGWebView, coordinator: Coordinator) {
+        // Flush BEFORE marking dismantled so the session's pending undo lands
+        // on the editor's stack — switching mode unmounts WYSIWYG, and ⌘Z
+        // after the switch is the user's only recovery if a save fires next.
+        coordinator.flushSessionUndo()
         coordinator.isDismantled = true
         coordinator.removePasteMonitor()
+        coordinator.removeUndoMonitor()
         NotificationCenter.default.removeObserver(coordinator)
         webView.configuration.userContentController.removeScriptMessageHandler(forName: "wysiwyg")
     }
@@ -213,6 +218,17 @@ struct WYSIWYGView: NSViewRepresentable {
         /// outer WKWebView.becomeFirstResponder override doesn't see Cmd+V
         /// directly — WKWebContentView (private) is the actual first-responder.
         private var pasteEventMonitor: Any?
+        /// Mirror of the paste monitor for ⌘Z / ⌘⇧Z. macOS dispatches these as
+        /// menu key-equivalents before delivering keyDown to the focused view,
+        /// so the system Edit menu eats them and Tiptap's Mod-z keymap never
+        /// fires. We intercept and route to Tiptap's commands.undo/redo.
+        private var undoEventMonitor: Any?
+        /// Source-text snapshot captured on the first docChanged after the
+        /// view mounts. When the view dismantles (mode switch / window close),
+        /// one undo entry registers on the editor's NSTextView so ⌘Z reverts
+        /// the WYSIWYG visit's changes once the user is back in edit mode.
+        /// Inside preview, Tiptap's own history handles ⌘Z directly.
+        private var sessionStartText: String?
 
         init(parent: WYSIWYGView) {
             self.parent = parent
@@ -220,12 +236,20 @@ struct WYSIWYGView: NSViewRepresentable {
 
         deinit {
             removePasteMonitor()
+            removeUndoMonitor()
         }
 
         func removePasteMonitor() {
             if let monitor = pasteEventMonitor {
                 NSEvent.removeMonitor(monitor)
                 pasteEventMonitor = nil
+            }
+        }
+
+        func removeUndoMonitor() {
+            if let monitor = undoEventMonitor {
+                NSEvent.removeMonitor(monitor)
+                undoEventMonitor = nil
             }
         }
 
@@ -326,6 +350,40 @@ struct WYSIWYGView: NSViewRepresentable {
                     }
                     return event
                 }
+
+                // ⌘Z / ⌘⇧Z: macOS dispatches these as menu key-equivalents and
+                // the system Edit menu's Undo eats them before keyDown reaches
+                // WKWebContentView, so Tiptap's Mod-z keymap never fires.
+                // Intercept here when the WKWebView owns first-responder and
+                // route to Tiptap's history via the JS bridge.
+                undoEventMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+                    guard let self,
+                          !self.isDismantled,
+                          self.isReady,
+                          event.charactersIgnoringModifiers?.lowercased() == "z",
+                          let webView = self.webView,
+                          webView.window?.isKeyWindow == true else {
+                        return event
+                    }
+                    // Use .contains rather than `mods == .command` so caps lock
+                    // / numeric pad / function bits don't cause the equality
+                    // check to silently miss real ⌘Z / ⌘⇧Z presses. Reject
+                    // ⌘⌥Z and ⌘⌃Z so we don't shadow other shortcuts.
+                    let mods = event.modifierFlags
+                    guard mods.contains(.command),
+                          !mods.contains(.option),
+                          !mods.contains(.control) else {
+                        return event
+                    }
+                    guard let fr = webView.window?.firstResponder as? NSView,
+                          fr.isDescendant(of: webView) else {
+                        return event
+                    }
+                    let command = mods.contains(.shift) ? "redo" : "undo"
+                    DiagnosticLog.log("WYSIWYG: routing ⌘Z/⌘⇧Z → \(command)")
+                    self.call(function: "applyCommand", payload: ["command": command])
+                    return nil
+                }
             }
         }
 
@@ -384,12 +442,13 @@ struct WYSIWYGView: NSViewRepresentable {
             parent.findState?.activeMode = .wysiwyg
             guard isReady else { return }
 
-            // Detect document switches so the synchronous flush path doesn't
-            // deliver the previous document's lastSyncedText before the first
-            // docChanged from the new document arrives.
-            if parent.documentID != lastKnownDocumentID {
+            // Detect document switches so document-scoped state from the
+            // previous tab does not leak into the next one.
+            let didChangeDocument = parent.documentID != lastKnownDocumentID
+            if didChangeDocument {
                 lastKnownDocumentID = parent.documentID
                 hasReceivedDocChanged = false
+                sessionStartText = nil
             }
 
             let appearance = parent.colorScheme == .dark ? "dark" : "light"
@@ -408,7 +467,7 @@ struct WYSIWYGView: NSViewRepresentable {
 
             applyContentWidthIfNeeded()
 
-            if parent.text != lastSyncedText {
+            if didChangeDocument || parent.text != lastSyncedText {
                 lastSyncedText = parent.text
                 call(function: "setDocument", payload: ["markdown": parent.text, "epoch": parent.documentEpoch])
             }
@@ -571,6 +630,9 @@ struct WYSIWYGView: NSViewRepresentable {
 
             let apply = { [weak self] in
                 guard let self, !self.isDismantled else { return }
+                if self.sessionStartText == nil {
+                    self.sessionStartText = self.parent.text
+                }
                 self.parent.text = markdown
                 if markDirty {
                     WorkspaceManager.shared.contentDidChange()
@@ -582,6 +644,25 @@ struct WYSIWYGView: NSViewRepresentable {
             } else {
                 DispatchQueue.main.async(execute: apply)
             }
+        }
+
+        /// Register one undo entry on the editor's NSTextView covering this
+        /// WYSIWYG visit so ⌘Z reverts everything once the user is back in
+        /// edit mode. Called from `dismantleNSView` — the WYSIWYG view is
+        /// only unmounted on mode switch / window close, so one entry per
+        /// visit is the natural granularity.
+        func flushSessionUndo() {
+            guard let startText = sessionStartText else { return }
+            sessionStartText = nil
+            let endText = parent.text
+            guard startText != endText else { return }
+            guard let textView = WorkspaceManager.shared.activeEditorTextView,
+                  let undoManager = textView.undoManager else { return }
+            let actionName = "WYSIWYG Edit"
+            undoManager.registerUndo(withTarget: WorkspaceManager.shared) { workspace in
+                workspace.applyExternalText(startText, actionName: actionName)
+            }
+            undoManager.setActionName(actionName)
         }
 
         private func mountEditor() {
@@ -628,6 +709,15 @@ struct WYSIWYGView: NSViewRepresentable {
                       let markdown = body["markdown"] as? String else { return }
                 hasReceivedDocChanged = true
                 applyEditorMarkdown(markdown, markDirty: true)
+
+            case "preservationFallback":
+                let reason = body["reason"] as? String ?? "unknown"
+                let docCount = body["documentChildCount"] as? Int
+                let blockCount = body["blockTokenCount"] as? Int
+                let counts = (docCount != nil || blockCount != nil)
+                    ? " docChildren=\(docCount.map(String.init) ?? "?") blockTokens=\(blockCount.map(String.init) ?? "?")"
+                    : ""
+                DiagnosticLog.log("WYSIWYG preservation fallback: \(reason)\(counts)")
 
             case "findStatus":
                 guard WYSIWYGSession.matches(documentID: parent.documentID),
