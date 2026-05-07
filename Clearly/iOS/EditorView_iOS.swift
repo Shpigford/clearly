@@ -70,6 +70,20 @@ struct EditorView_iOS: UIViewRepresentable {
         private var matchRanges: [NSRange] = []
         private var lastMatches: [TextMatch] = []
         private var currentMatchIdx: Int = 0
+        private var paintedFindRanges: [NSRange] = []
+        private var pendingFindWork: DispatchWorkItem?
+        private var findGeneration = 0
+
+        private static let findDebounceDelay: TimeInterval = 0.18
+        private static let maxPaintedFindHighlights = 600
+        private static let leadingPaintedFindHighlights = 120
+        private static let currentPaintedFindHighlightRadius = 120
+        private static let maxFindRehighlightParagraphs = 160
+
+        private enum FindComputationResult {
+            case matches([TextMatch])
+            case invalidRegex(String)
+        }
 
         init(parent: EditorView_iOS) {
             self.parent = parent
@@ -99,6 +113,7 @@ struct EditorView_iOS: UIViewRepresentable {
                 state?.editorPerformReplaceAll = { [weak self] in self?.performReplaceAll() }
             }
             guard let state else {
+                pendingFindWork?.cancel()
                 if lastFindVisible {
                     clearFindHighlights()
                     lastFindVisible = false
@@ -107,6 +122,7 @@ struct EditorView_iOS: UIViewRepresentable {
                 return
             }
             if !state.isVisible {
+                pendingFindWork?.cancel()
                 if lastFindVisible {
                     clearFindHighlights()
                 }
@@ -122,16 +138,99 @@ struct EditorView_iOS: UIViewRepresentable {
                 lastFindVisible = true
                 lastFindQuery = state.query
                 lastFindOptions = currentOptions
-                performFind(for: state)
+                scheduleFind(for: state)
             }
         }
 
         private func performFind(for state: FindState) {
+            scheduleFind(for: state, debounce: false)
+        }
+
+        private func scheduleFind(for state: FindState, debounce: Bool = true) {
             guard let textView else { return }
-            guard recomputeMatches(for: state) else { return }
-            applyFindHighlights()
-            if let first = matchRanges.first {
-                textView.scrollRangeToVisible(first)
+            pendingFindWork?.cancel()
+            findGeneration += 1
+            let generation = findGeneration
+            let query = state.query
+            let options = TextMatchOptions(
+                caseSensitive: state.caseSensitive,
+                useRegex: state.useRegex
+            )
+            let text = textView.text ?? ""
+
+            guard !query.isEmpty else {
+                matchRanges = []
+                lastMatches = []
+                currentMatchIdx = 0
+                clearFindHighlights()
+                state.matchCount = 0
+                state.currentIndex = 0
+                state.resultsAreStale = false
+                state.regexError = nil
+                state.lastReplaceCount = nil
+                return
+            }
+
+            state.resultsAreStale = true
+            state.regexError = nil
+            state.lastReplaceCount = nil
+
+            let work = DispatchWorkItem { [weak self, weak state] in
+                Task.detached(priority: .userInitiated) {
+                    let result: FindComputationResult
+                    do {
+                        result = .matches(try TextMatcher.matches(of: query, in: text, options: options))
+                    } catch let TextMatcherError.invalidRegex(message) {
+                        result = .invalidRegex(message)
+                    } catch {
+                        result = .matches([])
+                    }
+
+                    await MainActor.run { [weak self, weak state] in
+                        guard let self, let state else { return }
+                        self.applyFindComputationResult(result, for: state, generation: generation)
+                    }
+                }
+            }
+            pendingFindWork = work
+            if debounce {
+                DispatchQueue.main.asyncAfter(deadline: .now() + Self.findDebounceDelay, execute: work)
+            } else {
+                DispatchQueue.main.async(execute: work)
+            }
+        }
+
+        private func applyFindComputationResult(
+            _ result: FindComputationResult,
+            for state: FindState,
+            generation: Int
+        ) {
+            guard generation == findGeneration, state.isVisible, state.activeMode == .edit else { return }
+            switch result {
+            case .invalidRegex(let message):
+                matchRanges = []
+                lastMatches = []
+                currentMatchIdx = 0
+                clearFindHighlights()
+                state.matchCount = 0
+                state.currentIndex = 0
+                state.resultsAreStale = false
+                state.regexError = message
+                state.lastReplaceCount = nil
+
+            case .matches(let matches):
+                matchRanges = matches.map(\.range)
+                lastMatches = matches
+                currentMatchIdx = 0
+                applyFindHighlights()
+                if let first = matchRanges.first {
+                    textView?.scrollRangeToVisible(first)
+                }
+                state.matchCount = matches.count
+                state.currentIndex = matches.isEmpty ? 0 : 1
+                state.resultsAreStale = false
+                state.regexError = nil
+                state.lastReplaceCount = nil
             }
         }
 
@@ -224,35 +323,88 @@ struct EditorView_iOS: UIViewRepresentable {
         private func applyFindHighlights() {
             guard let textView else { return }
             let storage = textView.textStorage
-            resetBackgroundsThenRehighlight(storage: storage)
+            resetFindBackgrounds(in: paintedFindRanges, storage: storage)
+            let rangesToPaint = paintedFindHighlightRanges()
             storage.beginEditing()
-            for (i, range) in matchRanges.enumerated() {
+            for (i, range) in rangesToPaint {
                 guard range.upperBound <= storage.length else { continue }
                 let color = (i == currentMatchIdx) ? Theme.findCurrentHighlightColor : Theme.findHighlightColor
                 storage.addAttribute(.backgroundColor, value: color, range: range)
             }
             storage.endEditing()
+            paintedFindRanges = rangesToPaint.map(\.range)
         }
 
         private func clearFindHighlights() {
             guard let textView else { return }
-            resetBackgroundsThenRehighlight(storage: textView.textStorage)
+            findGeneration += 1
+            pendingFindWork?.cancel()
+            resetFindBackgrounds(in: paintedFindRanges, storage: textView.textStorage)
+            paintedFindRanges = []
             matchRanges = []
             lastMatches = []
             currentMatchIdx = 0
         }
 
-        /// Wipe every `.backgroundColor` attribute, then re-run the syntax
-        /// highlighter so `==highlight==` markdown backgrounds get repainted.
-        /// Without the explicit wipe, find paints from previous queries (e.g.
-        /// the partial matches on each keystroke) stay attached to text storage
-        /// since the highlighter only adds attributes, never clears them.
-        private func resetBackgroundsThenRehighlight(storage: NSTextStorage) {
-            let fullRange = NSRange(location: 0, length: storage.length)
+        private func paintedFindHighlightRanges() -> [(index: Int, range: NSRange)] {
+            guard matchRanges.count > Self.maxPaintedFindHighlights else {
+                return matchRanges.enumerated().map { ($0.offset, $0.element) }
+            }
+
+            var indexes = Set<Int>()
+            let leadingCount = min(Self.leadingPaintedFindHighlights, matchRanges.count)
+            indexes.formUnion(0..<leadingCount)
+
+            let lower = max(0, currentMatchIdx - Self.currentPaintedFindHighlightRadius)
+            let upper = min(matchRanges.count - 1, currentMatchIdx + Self.currentPaintedFindHighlightRadius)
+            indexes.formUnion(lower...upper)
+            indexes.insert(currentMatchIdx)
+
+            return indexes.sorted().map { ($0, matchRanges[$0]) }
+        }
+
+        /// Remove old find paints only where we put them. Repainting the entire
+        /// document for every find keystroke is the expensive path on large
+        /// books; this keeps normal markdown `==highlight==` backgrounds intact
+        /// by re-highlighting just the touched paragraphs.
+        private func resetFindBackgrounds(in ranges: [NSRange], storage: NSTextStorage) {
+            let validRanges = ranges.compactMap { clampedRange($0, upperBound: storage.length) }
+            guard !validRanges.isEmpty else { return }
             storage.beginEditing()
-            storage.removeAttribute(.backgroundColor, range: fullRange)
+            for range in validRanges {
+                storage.removeAttribute(.backgroundColor, range: range)
+            }
             storage.endEditing()
-            rerunSyntaxHighlighter(on: storage)
+
+            let paragraphRanges = uniqueParagraphRanges(for: validRanges, in: storage.string)
+            for paragraphRange in paragraphRanges.prefix(Self.maxFindRehighlightParagraphs) {
+                highlighter.highlightAround(
+                    storage,
+                    editedRange: paragraphRange,
+                    replacementLength: paragraphRange.length,
+                    caller: "find-clear"
+                )
+            }
+        }
+
+        private func uniqueParagraphRanges(for ranges: [NSRange], in text: String) -> [NSRange] {
+            let nsText = text as NSString
+            var seen = Set<String>()
+            var paragraphs: [NSRange] = []
+            for range in ranges {
+                let paragraph = nsText.paragraphRange(for: range)
+                let key = "\(paragraph.location):\(paragraph.length)"
+                guard seen.insert(key).inserted else { continue }
+                paragraphs.append(paragraph)
+            }
+            return paragraphs
+        }
+
+        private func clampedRange(_ range: NSRange, upperBound: Int) -> NSRange? {
+            guard range.location != NSNotFound, range.location < upperBound else { return nil }
+            let length = min(range.length, upperBound - range.location)
+            guard length > 0 else { return nil }
+            return NSRange(location: range.location, length: length)
         }
 
         // MARK: - Replace
@@ -349,13 +501,6 @@ struct EditorView_iOS: UIViewRepresentable {
             }
             ctv.text = restoredText
             ctv.delegate?.textViewDidChange?(ctv)
-        }
-
-        private func rerunSyntaxHighlighter(on storage: NSTextStorage) {
-            let wasHighlighting = isHighlighting
-            isHighlighting = true
-            highlighter.highlightAll(storage, caller: "find-rerun")
-            isHighlighting = wasHighlighting
         }
 
         private func scrollToRange(_ range: NSRange) {

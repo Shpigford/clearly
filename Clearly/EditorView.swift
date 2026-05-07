@@ -388,6 +388,19 @@ struct EditorView: NSViewRepresentable {
         var lastMatches: [TextMatch] = []
         private var currentMatchIdx = 0 // 0-based internal index
         private var findCancellables = Set<AnyCancellable>()
+        private var paintedFindRanges: [NSRange] = []
+        private var pendingFindWork: DispatchWorkItem?
+        private var findGeneration = 0
+
+        private static let findDebounceDelay: TimeInterval = 0.18
+        private static let maxPaintedFindHighlights = 600
+        private static let leadingPaintedFindHighlights = 120
+        private static let currentPaintedFindHighlightRadius = 120
+
+        private enum FindComputationResult {
+            case matches([TextMatch])
+            case invalidRegex(String)
+        }
 
         init(_ parent: EditorView) {
             self.parent = parent
@@ -560,7 +573,7 @@ struct EditorView: NSViewRepresentable {
                     // `@Published` fires in willSet — `findState.query` still
                     // reads the OLD value here. Pass `newQuery` explicitly so
                     // performFind doesn't run a keystroke behind.
-                    self.performFind(query: newQuery)
+                    self.scheduleFind(query: newQuery)
                 }
                 .store(in: &findCancellables)
 
@@ -570,7 +583,7 @@ struct EditorView: NSViewRepresentable {
                     guard let self else { return }
                     if visible {
                         guard self.findState?.activeMode == .edit else { return }
-                        self.performFind()
+                        self.scheduleFind(debounce: false)
                     } else {
                         self.clearFindHighlights()
                     }
@@ -586,10 +599,10 @@ struct EditorView: NSViewRepresentable {
                 .sink { [weak self] _, _ in
                     DispatchQueue.main.async {
                         guard let self,
-                              let findState = self.findState,
-                              findState.isVisible,
-                              findState.activeMode == .edit else { return }
-                        self.performFind()
+                               let findState = self.findState,
+                               findState.isVisible,
+                               findState.activeMode == .edit else { return }
+                        self.scheduleFind(debounce: false)
                     }
                 }
                 .store(in: &findCancellables)
@@ -824,12 +837,92 @@ struct EditorView: NSViewRepresentable {
         // MARK: - Find
 
         func performFind(query overrideQuery: String? = nil) {
+            scheduleFind(query: overrideQuery, debounce: false)
+        }
+
+        private func scheduleFind(query overrideQuery: String? = nil, debounce: Bool = true) {
             guard let textView else { return }
-            let didRecompute = recomputeMatches(query: overrideQuery)
-            guard didRecompute else { return }
-            applyFindHighlights()
-            if let first = matchRanges.first {
-                textView.scrollRangeToVisible(first)
+            pendingFindWork?.cancel()
+            findGeneration += 1
+            let generation = findGeneration
+            let query = overrideQuery ?? findState?.query ?? ""
+            let options = TextMatchOptions(
+                caseSensitive: findState?.caseSensitive ?? false,
+                useRegex: findState?.useRegex ?? false
+            )
+            let text = textView.string
+
+            guard !query.isEmpty else {
+                matchRanges = []
+                lastMatches = []
+                currentMatchIdx = 0
+                clearFindHighlights()
+                findState?.matchCount = 0
+                findState?.currentIndex = 0
+                findState?.resultsAreStale = false
+                findState?.regexError = nil
+                findState?.lastReplaceCount = nil
+                return
+            }
+
+            findState?.resultsAreStale = true
+            findState?.regexError = nil
+            findState?.lastReplaceCount = nil
+
+            let work = DispatchWorkItem { [weak self] in
+                Task.detached(priority: .userInitiated) {
+                    let result: FindComputationResult
+                    do {
+                        result = .matches(try TextMatcher.matches(of: query, in: text, options: options))
+                    } catch let TextMatcherError.invalidRegex(message) {
+                        result = .invalidRegex(message)
+                    } catch {
+                        result = .matches([])
+                    }
+
+                    await MainActor.run { [weak self] in
+                        self?.applyFindComputationResult(result, generation: generation)
+                    }
+                }
+            }
+            pendingFindWork = work
+            if debounce {
+                DispatchQueue.main.asyncAfter(deadline: .now() + Self.findDebounceDelay, execute: work)
+            } else {
+                DispatchQueue.main.async(execute: work)
+            }
+        }
+
+        private func applyFindComputationResult(_ result: FindComputationResult, generation: Int) {
+            guard generation == findGeneration,
+                  let findState,
+                  findState.isVisible,
+                  findState.activeMode == .edit else { return }
+            switch result {
+            case .invalidRegex(let message):
+                matchRanges = []
+                lastMatches = []
+                currentMatchIdx = 0
+                clearFindHighlights()
+                findState.matchCount = 0
+                findState.currentIndex = 0
+                findState.resultsAreStale = false
+                findState.regexError = message
+                findState.lastReplaceCount = nil
+
+            case .matches(let matches):
+                matchRanges = matches.map(\.range)
+                lastMatches = matches
+                currentMatchIdx = 0
+                applyFindHighlights()
+                if let first = matchRanges.first {
+                    textView?.scrollRangeToVisible(first)
+                }
+                findState.matchCount = matches.count
+                findState.currentIndex = matches.isEmpty ? 0 : 1
+                findState.resultsAreStale = false
+                findState.regexError = nil
+                findState.lastReplaceCount = nil
             }
         }
 
@@ -946,23 +1039,51 @@ struct EditorView: NSViewRepresentable {
         private func applyFindHighlights() {
             guard let textView, let layoutManager = textView.layoutManager else { return }
             let storage = textView.textStorage!
-            let fullRange = NSRange(location: 0, length: storage.length)
-            layoutManager.removeTemporaryAttribute(.backgroundColor, forCharacterRange: fullRange)
-            for (i, range) in matchRanges.enumerated() {
+            for range in paintedFindRanges {
+                guard range.location < storage.length else { continue }
+                let clamped = NSRange(location: range.location, length: min(range.length, storage.length - range.location))
+                layoutManager.removeTemporaryAttribute(.backgroundColor, forCharacterRange: clamped)
+            }
+            let rangesToPaint = paintedFindHighlightRanges()
+            for (i, range) in rangesToPaint {
                 guard range.upperBound <= storage.length else { continue }
                 let color = (i == currentMatchIdx) ? Theme.findCurrentHighlightColor : Theme.findHighlightColor
                 layoutManager.addTemporaryAttribute(.backgroundColor, value: color, forCharacterRange: range)
             }
+            paintedFindRanges = rangesToPaint.map(\.range)
         }
 
         func clearFindHighlights() {
             guard let textView, let layoutManager = textView.layoutManager else { return }
+            findGeneration += 1
+            pendingFindWork?.cancel()
             let storage = textView.textStorage!
-            let fullRange = NSRange(location: 0, length: storage.length)
-            layoutManager.removeTemporaryAttribute(.backgroundColor, forCharacterRange: fullRange)
+            for range in paintedFindRanges {
+                guard range.location < storage.length else { continue }
+                let clamped = NSRange(location: range.location, length: min(range.length, storage.length - range.location))
+                layoutManager.removeTemporaryAttribute(.backgroundColor, forCharacterRange: clamped)
+            }
+            paintedFindRanges = []
             matchRanges = []
             lastMatches = []
             currentMatchIdx = 0
+        }
+
+        private func paintedFindHighlightRanges() -> [(index: Int, range: NSRange)] {
+            guard matchRanges.count > Self.maxPaintedFindHighlights else {
+                return matchRanges.enumerated().map { ($0.offset, $0.element) }
+            }
+
+            var indexes = Set<Int>()
+            let leadingCount = min(Self.leadingPaintedFindHighlights, matchRanges.count)
+            indexes.formUnion(0..<leadingCount)
+
+            let lower = max(0, currentMatchIdx - Self.currentPaintedFindHighlightRadius)
+            let upper = min(matchRanges.count - 1, currentMatchIdx + Self.currentPaintedFindHighlightRadius)
+            indexes.formUnion(lower...upper)
+            indexes.insert(currentMatchIdx)
+
+            return indexes.sorted().map { ($0, matchRanges[$0]) }
         }
 
         // MARK: - Replace
