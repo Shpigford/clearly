@@ -13,8 +13,8 @@ struct ClearlyApp_iOS: App {
                 .environment(vaultSession)
                 .environment(expansionState)
                 .task {
-                    #if DEBUG && targetEnvironment(simulator)
-                    if attachSimulatorFixtureVaultIfAvailable() {
+                    #if DEBUG
+                    if attachDebugFixtureVaultIfAvailable() {
                         return
                     }
                     #endif
@@ -26,11 +26,11 @@ struct ClearlyApp_iOS: App {
         }
     }
 
-    #if DEBUG && targetEnvironment(simulator)
+    #if DEBUG
     @MainActor
-    private func attachSimulatorFixtureVaultIfAvailable() -> Bool {
+    private func attachDebugFixtureVaultIfAvailable() -> Bool {
         guard let bundledFixture = Bundle.main.resourceURL?
-            .appendingPathComponent("SimFixtureVault", isDirectory: true),
+            .appendingPathComponent("DebugFixtureVault", isDirectory: true),
             FileManager.default.fileExists(atPath: bundledFixture.path) else {
             return false
         }
@@ -43,7 +43,7 @@ struct ClearlyApp_iOS: App {
             guard !contents.isEmpty else { return false }
 
             let documents = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-            let writableFixture = documents.appendingPathComponent("SimFixtureVault", isDirectory: true)
+            let writableFixture = documents.appendingPathComponent("DebugFixtureVault", isDirectory: true)
             if FileManager.default.fileExists(atPath: writableFixture.path) {
                 try FileManager.default.removeItem(at: writableFixture)
             }
@@ -51,7 +51,7 @@ struct ClearlyApp_iOS: App {
             vaultSession.attach(VaultLocation(kind: .local, url: writableFixture))
             return true
         } catch {
-            DiagnosticLog.log("iOS simulator fixture vault failed: \(error.localizedDescription)")
+            DiagnosticLog.log("iOS debug fixture vault failed: \(error.localizedDescription)")
             return false
         }
     }

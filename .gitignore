@@ -15,4 +15,4 @@ ClearlyWYSIWYGWeb/perf/fixtures/
 ClearlyWYSIWYGWeb/test/dist/
 Packages/ClearlyCore/Package.resolved
 tmp/
-simfixture/
+debugfixture/
