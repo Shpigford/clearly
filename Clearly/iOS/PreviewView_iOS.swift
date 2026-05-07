@@ -91,6 +91,7 @@ struct PreviewView_iOS: UIViewRepresentable {
     }
 
     static func dismantleUIView(_ webView: WKWebView, coordinator: Coordinator) {
+        coordinator.renderTask?.cancel()
         webView.configuration.userContentController.removeScriptMessageHandler(forName: "linkClicked")
         webView.configuration.userContentController.removeScriptMessageHandler(forName: "taskToggle")
         webView.configuration.userContentController.removeScriptMessageHandler(forName: "foldToggle")
@@ -98,11 +99,64 @@ struct PreviewView_iOS: UIViewRepresentable {
     }
 
     private func loadHTML(in webView: WKWebView, context: Context) {
-        context.coordinator.lastContentKey = contentKey
+        let key = contentKey
+        let baseURL = fileURL?.deletingLastPathComponent() ?? MermaidSupport.resourceBaseURL
+        context.coordinator.lastContentKey = key
+        context.coordinator.renderTask?.cancel()
+
+        if markdown.utf8.count >= Limits.asyncPreviewRenderLength {
+            let markdown = markdown
+            let fileURL = fileURL
+            let fontSize = fontSize
+            let fontFamily = fontFamily
+            let hideFrontmatter = hideFrontmatter
+            let coordinator = context.coordinator
+            coordinator.renderTask = Task { @MainActor [weak webView] in
+                do {
+                    let html = try await Task.detached(priority: .userInitiated) {
+                        try Task.checkCancellation()
+                        return Self.renderHTMLDocument(
+                            markdown: markdown,
+                            fileURL: fileURL,
+                            fontSize: fontSize,
+                            fontFamily: fontFamily,
+                            hideFrontmatter: hideFrontmatter
+                        )
+                    }.value
+                    guard !Task.isCancelled,
+                          coordinator.lastContentKey == key,
+                          let webView else { return }
+                    webView.loadHTMLString(html, baseURL: baseURL)
+                } catch is CancellationError {
+                    return
+                } catch {
+                    DiagnosticLog.log("iOS preview async render failed: \(error)")
+                }
+            }
+            return
+        }
+
+        let html = Self.renderHTMLDocument(
+            markdown: markdown,
+            fileURL: fileURL,
+            fontSize: fontSize,
+            fontFamily: fontFamily,
+            hideFrontmatter: hideFrontmatter
+        )
+        webView.loadHTMLString(html, baseURL: baseURL)
+    }
+
+    private static func renderHTMLDocument(
+        markdown: String,
+        fileURL: URL?,
+        fontSize: CGFloat,
+        fontFamily: String,
+        hideFrontmatter: Bool
+    ) -> String {
         let rawBody = MarkdownRenderer.renderHTML(markdown, appLinkURLs: true, includeFrontmatter: !hideFrontmatter)
         let htmlBody = LocalImageSupport.resolveImageSources(in: rawBody, relativeTo: fileURL)
 
-        let html = """
+        return """
         <!DOCTYPE html>
         <html>
         <head>
@@ -205,12 +259,12 @@ struct PreviewView_iOS: UIViewRepresentable {
         \(SyntaxHighlightSupport.scriptHTML(for: htmlBody))
         </html>
         """
-        webView.loadHTMLString(html, baseURL: fileURL?.deletingLastPathComponent() ?? MermaidSupport.resourceBaseURL)
     }
 
     final class Coordinator: NSObject, WKNavigationDelegate, WKScriptMessageHandler {
         var lastContentKey: String?
         var skipNextReload: Bool = false
+        var renderTask: Task<Void, Never>?
         var fileURL: URL?
         var onWikiLinkClicked: ((String) -> Void)?
         var onTaskToggle: ((Int, Bool) -> Void)?
