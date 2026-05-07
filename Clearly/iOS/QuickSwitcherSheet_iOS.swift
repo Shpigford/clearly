@@ -13,9 +13,11 @@ struct QuickSwitcherSheet_iOS: View {
 
     @State private var query: String = ""
     @State private var rows: [QuickSwitcherRow] = []
+    @State private var searchTask: Task<Void, Never>?
 
     private static let filenameLimit = 20
     private static let contentLimit = 30
+    private static let searchDebounceNanoseconds: UInt64 = 180_000_000
 
     var body: some View {
         NavigationStack {
@@ -43,6 +45,7 @@ struct QuickSwitcherSheet_iOS: View {
         }
         .onChange(of: query) { _, _ in recomputeRows() }
         .onChange(of: vault.files) { _, _ in recomputeRows() }
+        .onDisappear { searchTask?.cancel() }
     }
 
     @ViewBuilder
@@ -132,6 +135,8 @@ struct QuickSwitcherSheet_iOS: View {
     // MARK: - Row computation
 
     private func recomputeRows() {
+        searchTask?.cancel()
+
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
         if trimmed.isEmpty {
             if !vault.recentFiles.isEmpty {
@@ -149,8 +154,38 @@ struct QuickSwitcherSheet_iOS: View {
             return
         }
 
+        let files = vault.files
+        let index = vault.currentIndex
+        let vaultRoot = vault.currentVault?.url ?? index?.rootURL
+        searchTask = Task {
+            do {
+                try await Task.sleep(nanoseconds: Self.searchDebounceNanoseconds)
+            } catch {
+                return
+            }
+
+            let computedRows = await Task.detached(priority: .userInitiated) {
+                Self.computeRows(
+                    query: trimmed,
+                    files: files,
+                    index: index,
+                    vaultRoot: vaultRoot
+                )
+            }.value
+
+            guard !Task.isCancelled else { return }
+            rows = computedRows
+        }
+    }
+
+    private static func computeRows(
+        query trimmed: String,
+        files: [VaultFile],
+        index: VaultIndex?,
+        vaultRoot: URL?
+    ) -> [QuickSwitcherRow] {
         var filenameMatches: [(file: VaultFile, score: Int, ranges: [Range<String.Index>])] = []
-        for file in vault.files {
+        for file in files {
             if let result = FuzzyMatcher.match(query: trimmed, target: file.name) {
                 filenameMatches.append((file, result.score, result.matchedRanges))
             }
@@ -161,15 +196,15 @@ struct QuickSwitcherSheet_iOS: View {
         }
 
         var contentHits: [QuickSwitcherRow] = []
-        if trimmed.count >= 2, let index = vault.currentIndex {
+        if trimmed.count >= 2, let index {
             let filenameURLs = Set(filenameMatches.map { $0.file.url.standardizedFileURL })
-            let vaultRoot = vault.currentVault?.url ?? index.rootURL
-            let byURL = Dictionary(uniqueKeysWithValues: vault.files.map {
+            let root = vaultRoot ?? index.rootURL
+            let byURL = Dictionary(uniqueKeysWithValues: files.map {
                 ($0.url.standardizedFileURL, $0)
             })
-            let groups = index.searchFilesGrouped(query: trimmed)
+            let groups = index.searchFilesGrouped(query: trimmed, maxExcerptsPerFile: 1)
             for group in groups {
-                let absoluteURL = vaultRoot.appendingPathComponent(group.file.path).standardizedFileURL
+                let absoluteURL = root.appendingPathComponent(group.file.path).standardizedFileURL
                 guard !filenameURLs.contains(absoluteURL) else { continue }
                 let file = byURL[absoluteURL] ?? VaultFile(
                     url: absoluteURL,
@@ -195,7 +230,7 @@ struct QuickSwitcherSheet_iOS: View {
         if combined.isEmpty {
             combined.append(.create(name: createName(for: trimmed)))
         }
-        rows = combined
+        return combined
     }
 
     // MARK: - Interaction
@@ -286,7 +321,7 @@ struct QuickSwitcherSheet_iOS: View {
     /// Turn the user's query into the filename we'll create. Runs through the
     /// same kebab-case sanitization as manual renames and Notes-style
     /// auto-naming so filenames across the app stay consistent.
-    private func createName(for query: String) -> String {
+    private static func createName(for query: String) -> String {
         var stem = query.trimmingCharacters(in: .whitespacesAndNewlines)
         if stem.lowercased().hasSuffix(".md") {
             stem = String(stem.dropLast(3))

@@ -4,6 +4,9 @@ import ClearlyCore
 final class LineNumberGutterView: NSView {
     weak var textView: NSTextView?
     private var currentLineIndex: Int = 0 // 0-based
+    private var lineStarts: [Int] = [0]
+    private var cachedTextLength: Int = 0
+    private var lineCacheValid = false
 
     override var isFlipped: Bool { true }
 
@@ -19,8 +22,8 @@ final class LineNumberGutterView: NSView {
     // MARK: - Width
 
     func preferredWidth() -> CGFloat {
-        guard let textView else { return 36 }
-        let lineCount = max(1, (textView.string as NSString).components(separatedBy: "\n").count)
+        ensureLineCache()
+        let lineCount = max(1, lineStarts.count)
         let digits = max(2, String(lineCount).count)
         let charWidth = NSString(string: "8").size(withAttributes: [.font: Theme.editorFont]).width
         return ceil(CGFloat(digits) * charWidth + 20)
@@ -36,6 +39,7 @@ final class LineNumberGutterView: NSView {
               let layoutManager = textView.layoutManager,
               let textContainer = textView.textContainer else { return }
 
+        ensureLineCache()
         let text = textView.string as NSString
 
         // Convert coordinate systems: gutter ↔ text view
@@ -56,16 +60,7 @@ final class LineNumberGutterView: NSView {
 
         let visibleCharRange = layoutManager.characterRange(forGlyphRange: visibleGlyphRange, actualGlyphRange: nil)
 
-        // Find the logical line number at the start of the visible range
-        var lineNumber = 1
-        var scanIndex = 0
         let startChar = visibleCharRange.location
-        while scanIndex < startChar {
-            if text.character(at: scanIndex) == 0x0A {
-                lineNumber += 1
-            }
-            scanIndex += 1
-        }
 
         // Walk back to the start of the first visible logical line
         var lineStart = startChar
@@ -73,6 +68,7 @@ final class LineNumberGutterView: NSView {
             let lineRange = text.lineRange(for: NSRange(location: lineStart, length: 0))
             lineStart = lineRange.location
         }
+        var lineNumber = lineIndex(containing: lineStart) + 1
 
         let containerOrigin = textView.textContainerOrigin
 
@@ -128,31 +124,153 @@ final class LineNumberGutterView: NSView {
 
     // MARK: - Update triggers
 
-    func textDidChange() {
+    func reloadData() {
+        rebuildLineCache()
+        // After a full reload (e.g. external text replacement on document
+        // switch), the cached currentLineIndex is for the previous document.
+        // Re-derive from the live selection so the highlight lands on the
+        // right line until the next selectionDidChange call.
+        if let textView {
+            currentLineIndex = lineIndex(containing: textView.selectedRange().location)
+        }
+        needsDisplay = true
+    }
+
+    func textDidChange(editedRange: NSRange? = nil, replacementString: String? = nil) {
+        guard !isHidden else {
+            lineCacheValid = false
+            return
+        }
+        if let editedRange {
+            updateLineCache(editedRange: editedRange, replacementString: replacementString ?? "")
+        } else {
+            rebuildLineCache()
+        }
         needsDisplay = true
     }
 
     func selectionDidChange(selectedRange: NSRange) {
-        guard let textView else { return }
-        let text = textView.string as NSString
-        var line = 0
-        var i = 0
-        let location = min(selectedRange.location, text.length)
-        while i < location {
-            if text.character(at: i) == 0x0A { line += 1 }
-            i += 1
-        }
+        guard !isHidden else { return }
+        ensureLineCache()
+        let line = lineIndex(containing: selectedRange.location)
         if currentLineIndex != line {
             currentLineIndex = line
             needsDisplay = true
         }
     }
 
+    func lineInfo(selectedRange: NSRange) -> (current: Int, total: Int) {
+        ensureLineCache()
+        return (lineIndex(containing: selectedRange.location) + 1, max(1, lineStarts.count))
+    }
+
     func scrollOrFrameDidChange() {
+        guard !isHidden else { return }
         needsDisplay = true
     }
 
     func appearanceDidChange() {
         needsDisplay = true
+    }
+
+    private func ensureLineCache() {
+        guard let textView else { return }
+        let textLength = (textView.string as NSString).length
+        if !lineCacheValid || cachedTextLength != textLength {
+            rebuildLineCache()
+        }
+    }
+
+    private func rebuildLineCache() {
+        guard let textView else {
+            lineStarts = [0]
+            cachedTextLength = 0
+            lineCacheValid = true
+            return
+        }
+        let text = textView.string as NSString
+        var starts = [0]
+        starts.reserveCapacity(max(1, text.length / 80))
+        if text.length > 0 {
+            for i in 0..<text.length where text.character(at: i) == 0x0A {
+                starts.append(i + 1)
+            }
+        }
+        lineStarts = starts
+        cachedTextLength = text.length
+        lineCacheValid = true
+        currentLineIndex = min(currentLineIndex, max(0, starts.count - 1))
+    }
+
+    private func updateLineCache(editedRange: NSRange, replacementString: String) {
+        guard let textView else {
+            lineCacheValid = false
+            return
+        }
+        if !lineCacheValid {
+            rebuildLineCache()
+            return
+        }
+
+        let replacementLength = (replacementString as NSString).length
+        let newLength = (textView.string as NSString).length
+        let oldLength = newLength - replacementLength + editedRange.length
+        guard oldLength == cachedTextLength else {
+            rebuildLineCache()
+            return
+        }
+
+        let editStart = max(0, min(editedRange.location, oldLength))
+        let editEnd = max(editStart, min(editedRange.location + editedRange.length, oldLength))
+        let delta = replacementLength - editedRange.length
+        var updated: [Int] = []
+        updated.reserveCapacity(lineStarts.count + max(1, replacementLength / 80))
+
+        for start in lineStarts {
+            if start <= editStart {
+                updated.append(start)
+            } else if start > editEnd {
+                updated.append(start + delta)
+            }
+        }
+
+        let replacement = replacementString as NSString
+        if replacement.length > 0 {
+            for i in 0..<replacement.length where replacement.character(at: i) == 0x0A {
+                updated.append(editStart + i + 1)
+            }
+        }
+
+        updated.sort()
+        var deduped: [Int] = []
+        deduped.reserveCapacity(updated.count)
+        for start in updated where start >= 0 && start <= newLength {
+            if deduped.last != start {
+                deduped.append(start)
+            }
+        }
+        if deduped.first != 0 {
+            deduped.insert(0, at: 0)
+        }
+
+        lineStarts = deduped
+        cachedTextLength = newLength
+        lineCacheValid = true
+        currentLineIndex = min(currentLineIndex, max(0, deduped.count - 1))
+    }
+
+    private func lineIndex(containing utf16Offset: Int) -> Int {
+        let location = max(0, min(utf16Offset, cachedTextLength))
+        var low = 0
+        var high = lineStarts.count
+        while low < high {
+            let mid = (low + high) / 2
+            if lineStarts[mid] <= location {
+                low = mid + 1
+            } else {
+                high = mid
+            }
+        }
+        return max(0, low - 1)
     }
 }

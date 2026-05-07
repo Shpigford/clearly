@@ -718,14 +718,18 @@ public final class VaultIndex: @unchecked Sendable {
         }
     }
 
-    public func searchFilesGrouped(query: String) -> [SearchFileGroup] {
-        searchFilesGrouped(parsed: SearchQueryParser.parse(query))
+    public func searchFilesGrouped(query: String, maxExcerptsPerFile: Int = 100) -> [SearchFileGroup] {
+        searchFilesGrouped(parsed: SearchQueryParser.parse(query), maxExcerptsPerFile: maxExcerptsPerFile)
     }
 
-    public func searchFilesGrouped(parsed: ParsedSearchQuery) -> [SearchFileGroup] {
+    public func searchFilesGrouped(
+        parsed: ParsedSearchQuery,
+        maxExcerptsPerFile: Int = 100
+    ) -> [SearchFileGroup] {
         let trimmed = parsed.ftsQuery.trimmingCharacters(in: .whitespaces)
         var ftsTerms: [String] = []
         var searchTerms: [String] = [] // plain terms for line matching
+        let excerptLimit = max(1, maxExcerptsPerFile)
 
         if !trimmed.isEmpty {
             let quoteRegex = try! NSRegularExpression(pattern: #""([^"]+)""#)
@@ -822,7 +826,7 @@ public final class VaultIndex: @unchecked Sendable {
                                     .replacingOccurrences(of: ">>", with: ""),
                                 highlightedContextLine: highlightedLine
                             ))
-                            if excerpts.count >= 5 { break }
+                            if excerpts.count >= excerptLimit { break }
                         }
                     }
 

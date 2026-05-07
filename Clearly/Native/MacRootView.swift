@@ -25,7 +25,15 @@ struct MacRootView: View {
         if workspace.isFirstRun && workspace.locations.isEmpty && workspace.activeDocumentID == nil {
             WelcomeView(workspace: workspace)
         } else {
-            splitView
+            ZStack {
+                splitView
+                if let loading = workspace.documentLoadingState {
+                    DocumentLoadingOverlay(state: loading) {
+                        workspace.cancelDocumentLoad()
+                    }
+                    .transition(.opacity)
+                }
+            }
         }
     }
 
@@ -107,5 +115,53 @@ struct MacRootView: View {
             return "Clearly"
         }
         return workspace.isDirty ? "\u{2022} \(doc.displayName)" : doc.displayName
+    }
+}
+
+private struct DocumentLoadingOverlay: View {
+    let state: DocumentLoadingState
+    let onCancel: () -> Void
+
+    var body: some View {
+        ZStack {
+            Rectangle()
+                .fill(.black.opacity(0.12))
+                .ignoresSafeArea()
+                // Block clicks from reaching the editor/sidebar underneath
+                // while the load is in flight. Without this the overlay is
+                // purely cosmetic — the user can interact with the content
+                // they "can't see" and clicks on toolbar/sidebar items race
+                // against the document load, which can land on the wrong
+                // document by the time the load resolves.
+                .contentShape(Rectangle())
+                .onTapGesture {}
+
+            VStack(spacing: 14) {
+                ProgressView(value: state.progress)
+                    .progressViewStyle(.linear)
+                    .frame(width: 260)
+
+                VStack(spacing: 4) {
+                    Text(state.message)
+                        .font(.headline)
+                    Text(state.fileName)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                        .frame(maxWidth: 320)
+                }
+
+                if state.canCancel {
+                    Button("Cancel") {
+                        onCancel()
+                    }
+                    .keyboardShortcut(.cancelAction)
+                }
+            }
+            .padding(24)
+            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .shadow(radius: 20)
+        }
     }
 }

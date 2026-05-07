@@ -56,4 +56,14 @@ final class TextMatcherTests: XCTestCase {
             NSRange(location: 18, length: 4),
         ])
     }
+
+    func testLargeRepeatedQueryCountsEveryMatch() throws {
+        let text = (1...20)
+            .map { "Chapter \($0)\nThe story continues." }
+            .joined(separator: "\n")
+
+        let matches = try TextMatcher.matches(of: "chapter", in: text)
+
+        XCTAssertEqual(matches.count, 20)
+    }
 }

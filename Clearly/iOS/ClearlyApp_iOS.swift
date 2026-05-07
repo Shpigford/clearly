@@ -13,6 +13,11 @@ struct ClearlyApp_iOS: App {
                 .environment(vaultSession)
                 .environment(expansionState)
                 .task {
+                    #if DEBUG
+                    if attachDebugFixtureVaultIfAvailable() {
+                        return
+                    }
+                    #endif
                     await vaultSession.restoreFromPersistence()
                 }
                 .onChange(of: vaultSession.currentVault?.url) { _, newURL in
@@ -20,6 +25,37 @@ struct ClearlyApp_iOS: App {
                 }
         }
     }
+
+    #if DEBUG
+    @MainActor
+    private func attachDebugFixtureVaultIfAvailable() -> Bool {
+        guard let bundledFixture = Bundle.main.resourceURL?
+            .appendingPathComponent("DebugFixtureVault", isDirectory: true),
+            FileManager.default.fileExists(atPath: bundledFixture.path) else {
+            return false
+        }
+
+        do {
+            let contents = try FileManager.default.contentsOfDirectory(
+                at: bundledFixture,
+                includingPropertiesForKeys: nil
+            )
+            guard !contents.isEmpty else { return false }
+
+            let documents = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+            let writableFixture = documents.appendingPathComponent("DebugFixtureVault", isDirectory: true)
+            if FileManager.default.fileExists(atPath: writableFixture.path) {
+                try FileManager.default.removeItem(at: writableFixture)
+            }
+            try FileManager.default.copyItem(at: bundledFixture, to: writableFixture)
+            vaultSession.attach(VaultLocation(kind: .local, url: writableFixture))
+            return true
+        } catch {
+            DiagnosticLog.log("iOS debug fixture vault failed: \(error.localizedDescription)")
+            return false
+        }
+    }
+    #endif
 }
 
 /// Top-level view that picks between the iPhone `NavigationStack` path and

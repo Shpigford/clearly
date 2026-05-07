@@ -22,9 +22,12 @@ private final class DraggableWKWebView: WKWebView {
 
 struct PreviewView: NSViewRepresentable {
     let markdown: String
+    var contentVersion: Int = 0
     var fontSize: CGFloat = 18
     var fontFamily: String = "sanFrancisco"
     var mode: ViewMode
+    var preloadWhenHidden = false
+    var hideWhenInactive = true
     var positionSyncID: String
     var fileURL: URL?
     var findState: FindState?
@@ -46,7 +49,7 @@ struct PreviewView: NSViewRepresentable {
     }
 
     private var contentKey: String {
-        "\(markdown.count)|\(markdown.hashValue)__\(fontSize)__\(fontFamily)__\(colorScheme == .dark ? "dark" : "light")__\(LocalImageSupport.fileURLKeyFragment(fileURL))__\(wikiFilesKey)__\(contentWidthEm.map { "\($0)" } ?? "off")__\(hideFrontmatterInPreview)"
+        "\(contentVersion)__\(fontSize)__\(fontFamily)__\(colorScheme == .dark ? "dark" : "light")__\(LocalImageSupport.fileURLKeyFragment(fileURL))__\(wikiFilesKey)__\(contentWidthEm.map { "\($0)" } ?? "off")__\(hideFrontmatterInPreview)"
     }
 
     private var wikiFilesKey: String {
@@ -67,11 +70,14 @@ struct PreviewView: NSViewRepresentable {
         config.userContentController.add(context.coordinator, name: "foldToggle")
         config.userContentController.add(context.coordinator, name: "selectionCapture")
         config.userContentController.add(context.coordinator, name: "jumpToSource")
+        config.userContentController.add(context.coordinator, name: "loadPreviewChunk")
         config.userContentController.addUserScript(PreviewUserScripts.codeBlockChromeScript())
         let webView = DraggableWKWebView(frame: .zero, configuration: config)
         webView.navigationDelegate = context.coordinator
         webView.underPageBackgroundColor = Theme.backgroundColor
+        webView.isHidden = hideWhenInactive && mode != .preview
         webView.alphaValue = 0 // hidden until content loads
+        context.coordinator.webView = webView
         context.coordinator.fileURL = fileURL
         context.coordinator.positionSyncID = positionSyncID
         context.coordinator.findState = findState
@@ -106,12 +112,14 @@ struct PreviewView: NSViewRepresentable {
             object: nil
         )
 
-        loadHTML(in: webView, context: context)
+        if mode == .preview || preloadWhenHidden {
+            loadHTML(in: webView, context: context)
+        }
         return webView
     }
 
     func updateNSView(_ webView: WKWebView, context: Context) {
-        webView.isHidden = mode != .preview
+        webView.isHidden = hideWhenInactive && mode != .preview
         webView.underPageBackgroundColor = Theme.backgroundColor
         context.coordinator.fileURL = fileURL
         context.coordinator.positionSyncID = positionSyncID
@@ -129,10 +137,11 @@ struct PreviewView: NSViewRepresentable {
         }
         context.coordinator.lastMode = mode
 
-        // Skip expensive content rendering when preview is hidden.
+        // Skip expensive content rendering when preview is hidden unless the
+        // caller explicitly opts into preloading small documents for crossfade.
         // When content changes while hidden, lastContentKey stays stale,
         // so the normal key comparison below will trigger a reload once visible.
-        guard mode == .preview else { return }
+        guard mode == .preview || preloadWhenHidden else { return }
 
         if context.coordinator.lastContentKey != contentKey {
             if context.coordinator.skipNextReload {
@@ -154,21 +163,116 @@ struct PreviewView: NSViewRepresentable {
         webView.configuration.userContentController.removeScriptMessageHandler(forName: "foldToggle")
         webView.configuration.userContentController.removeScriptMessageHandler(forName: "selectionCapture")
         webView.configuration.userContentController.removeScriptMessageHandler(forName: "jumpToSource")
+        webView.configuration.userContentController.removeScriptMessageHandler(forName: "loadPreviewChunk")
+        coordinator.renderTask?.cancel()
     }
 
     private func loadHTML(in webView: WKWebView, context: Context) {
         context.coordinator.lastContentKey = contentKey
         context.coordinator.isLoadingContent = true
-        let rawBody = MarkdownRenderer.renderHTML(markdown, appLinkURLs: true, includeFrontmatter: !hideFrontmatterInPreview)
+        context.coordinator.renderGeneration += 1
+        context.coordinator.renderTask?.cancel()
+        let generation = context.coordinator.renderGeneration
+        let coordinator = context.coordinator
+        let markdownByteCount = markdown.utf8.count
+        DiagnosticLog.log("PreviewTiming start generation=\(generation) bytes=\(markdownByteCount) version=\(contentVersion) file=\(fileURL?.lastPathComponent ?? "<untitled>")")
+
+        if markdownByteCount >= Limits.asyncPreviewRenderLength {
+            loadChunkedPreview(in: webView, coordinator: coordinator, generation: generation)
+            return
+        }
+
+        coordinator.lazyChunks = []
+        coordinator.lazyPreviewContext = nil
+        let rawBody = MarkdownRenderer.renderHTML(
+            markdown,
+            appLinkURLs: true,
+            includeFrontmatter: !hideFrontmatterInPreview,
+            diagnosticsLabel: "small.renderHTML"
+        )
+        let imageStart = Self.timingStart()
         let htmlBody = LocalImageSupport.resolveImageSources(in: rawBody, relativeTo: fileURL)
-        let wikiFilesJSON: String = {
-            guard let names = wikiFileNames, !names.isEmpty else { return "[]" }
-            guard let data = try? JSONSerialization.data(withJSONObject: Array(names)),
-                  var json = String(data: data, encoding: .utf8) else { return "[]" }
-            // Prevent </script> injection in HTML context
-            json = json.replacingOccurrences(of: "</", with: "<\\/")
-            return json
-        }()
+        Self.logTiming("small.imageRewrite", since: imageStart)
+        loadHTMLBody(htmlBody, in: webView, coordinator: coordinator)
+    }
+
+    private func loadChunkedPreview(in webView: WKWebView, coordinator: Coordinator, generation: Int) {
+        coordinator.lazyChunks = []
+        coordinator.nextLazyChunkIndex = 0
+        coordinator.isLazyChunkRendering = false
+        coordinator.lazyPreviewContext = nil
+
+        let markdown = markdown
+        let fileURL = fileURL
+        let includeFrontmatter = !hideFrontmatterInPreview
+        coordinator.renderTask = Task {
+            do {
+                let backgroundStart = Self.timingStart()
+                let result = try await Task.detached(priority: .userInitiated) {
+                    try Task.checkCancellation()
+                    let chunkStart = Self.timingStart()
+                    let chunks = Self.previewChunks(from: markdown)
+                    Self.logTiming("large.planChunks count=\(chunks.count)", since: chunkStart)
+                    guard let firstChunk = chunks.first else {
+                        return (chunks: chunks, htmlBody: "")
+                    }
+                    let rawBody = MarkdownRenderer.renderHTML(
+                        firstChunk.markdown,
+                        appLinkURLs: true,
+                        includeFrontmatter: includeFrontmatter,
+                        sourceLineOffset: firstChunk.startLine - 1,
+                        diagnosticsLabel: "large.firstChunk.renderHTML"
+                    )
+                    try Task.checkCancellation()
+                    let imageStart = Self.timingStart()
+                    let htmlBody = LocalImageSupport.resolveImageSources(in: rawBody, relativeTo: fileURL)
+                    Self.logTiming("large.firstChunk.imageRewrite", since: imageStart)
+                    return (chunks: chunks, htmlBody: htmlBody)
+                }.value
+                Self.logTiming("large.firstChunk.backgroundTotal", since: backgroundStart)
+                try Task.checkCancellation()
+
+                await MainActor.run {
+                    guard coordinator.renderGeneration == generation else { return }
+                    coordinator.renderTask = nil
+                    coordinator.lazyChunks = result.chunks
+                    coordinator.nextLazyChunkIndex = min(1, result.chunks.count)
+                    coordinator.isLazyChunkRendering = false
+                    coordinator.lazyPreviewContext = LazyPreviewContext(fileURL: fileURL)
+                    let shellStart = Self.timingStart()
+                    let html = self.lazyPreviewHTML(
+                        initialHTMLBody: result.htmlBody,
+                        loadedChunks: min(1, result.chunks.count),
+                        totalChunks: result.chunks.count
+                    )
+                    Self.logTiming("large.lazyShellAssembly", since: shellStart)
+                    coordinator.navigationTimingLabel = "large.initialWebView"
+                    coordinator.navigationTimingStart = Self.timingStart()
+                    webView.loadHTMLString(
+                        html,
+                        baseURL: fileURL?.deletingLastPathComponent() ?? MermaidSupport.resourceBaseURL
+                    )
+                    DiagnosticLog.log("PreviewTiming large.initialWebView.loadHTMLStringIssued")
+                }
+            } catch is CancellationError {
+                await MainActor.run {
+                    guard coordinator.renderGeneration == generation else { return }
+                    coordinator.isLoadingContent = false
+                }
+            } catch {
+                await MainActor.run {
+                    guard coordinator.renderGeneration == generation else { return }
+                    coordinator.isLoadingContent = false
+                    webView.loadHTMLString(Self.errorHTML(error), baseURL: nil)
+                }
+            }
+        }
+    }
+
+    private func loadHTMLBody(_ htmlBody: String, in webView: WKWebView, coordinator: Coordinator) {
+        coordinator.renderTask = nil
+        let shellStart = Self.timingStart()
+        let wikiFilesJSON = wikiFilesJSON()
         let scrollJS = """
         // Track scroll fraction for position sync between editor and preview.
         var _scrollTicking = false;
@@ -365,7 +469,273 @@ struct PreviewView: NSViewRepresentable {
         \(SyntaxHighlightSupport.scriptHTML(for: htmlBody))
         </html>
         """
+        Self.logTiming("small.fullShellAssembly", since: shellStart)
+        coordinator.navigationTimingLabel = "small.webView"
+        coordinator.navigationTimingStart = Self.timingStart()
         webView.loadHTMLString(html, baseURL: fileURL?.deletingLastPathComponent() ?? MermaidSupport.resourceBaseURL)
+        DiagnosticLog.log("PreviewTiming small.webView.loadHTMLStringIssued")
+    }
+
+    private func wikiFilesJSON() -> String {
+        guard let names = wikiFileNames, !names.isEmpty else { return "[]" }
+        guard let data = try? JSONSerialization.data(withJSONObject: Array(names)),
+              var json = String(data: data, encoding: .utf8) else { return "[]" }
+        // Prevent </script> injection in HTML context
+        json = json.replacingOccurrences(of: "</", with: "<\\/")
+        return json
+    }
+
+    private func lazyPreviewHTML(initialHTMLBody: String, loadedChunks: Int, totalChunks: Int) -> String {
+        let hasMore = loadedChunks < totalChunks ? "true" : "false"
+        return """
+        <!DOCTYPE html>
+        <html>
+        <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <style>\(PreviewCSS.css(fontSize: fontSize, fontFamily: fontFamily, bodyMaxWidth: bodyMaxWidthCSS))
+        mark.clearly-find { background-color: rgba(255, 230, 0, 0.4); border-radius: 2px; padding: 0 1px; }
+        mark.clearly-mode-highlight { background: rgba(255, 210, 50, 0.5); border-radius: 3px; padding: 0 1px; transition: background 1.5s ease; }
+        mark.clearly-mode-highlight.fade { background: transparent; }
+        mark.clearly-outline-flash { background-color: rgba(255, 245, 100, 0.95); color: inherit; border-radius: 3px; padding: 0 2px; box-shadow: 0 0 0 1px rgba(220, 180, 0, 0.5); transition: background-color 1.2s ease, box-shadow 1.2s ease; }
+        mark.clearly-outline-flash.fade { background-color: transparent; box-shadow: 0 0 0 1px transparent; }
+        mark.clearly-find.current { background-color: rgba(255, 165, 0, 0.6); }
+        @media (prefers-color-scheme: dark) {
+            mark.clearly-find { background-color: rgba(180, 150, 0, 0.4); }
+            mark.clearly-find.current { background-color: rgba(200, 150, 0, 0.6); }
+        }
+        </style>
+        </head>
+        <body\(extraTopInset > 0 ? " style=\"padding-top: \(Int(extraTopInset))px\"" : "")>
+        <main id="clearly-preview-content">\(initialHTMLBody)</main>
+        </body>
+        <script>
+        var _clearlyHasMoreChunks = \(hasMore);
+        var _clearlyChunkRequestPending = false;
+        var _clearlyLoadedChunks = \(loadedChunks);
+        var _clearlyTotalChunks = \(totalChunks);
+        var _clearlyKnownFiles = new Set(\(wikiFilesJSON()));
+
+        function clearlyUniqueHeadingID(base) {
+            var normalized = (base || 'section').toLowerCase().replace(/[^\\w]+/g, '-').replace(/^-|-$/g, '') || 'section';
+            var candidate = normalized;
+            var suffix = 1;
+            while (document.getElementById(candidate)) {
+                candidate = normalized + '-' + suffix;
+                suffix += 1;
+            }
+            return candidate;
+        }
+
+        function clearlyPreparePreviewNodes(root) {
+            root.querySelectorAll('img').forEach(function(img) {
+                if (img.dataset.clearlyPrepared) return;
+                img.dataset.clearlyPrepared = '1';
+                img.addEventListener('error', function() {
+                    var el = document.createElement('div');
+                    el.className = 'img-placeholder';
+                    var label = img.alt || '';
+                    el.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>' + (label ? '<span>' + label + '</span>' : '');
+                    img.replaceWith(el);
+                });
+                img.style.cursor = 'zoom-in';
+            });
+
+            root.querySelectorAll('h1,h2,h3,h4,h5,h6').forEach(function(h) {
+                if (h.dataset.clearlyPrepared) return;
+                h.dataset.clearlyPrepared = '1';
+                h.id = h.id || clearlyUniqueHeadingID(h.textContent.trim());
+                var link = document.createElement('a');
+                link.className = 'heading-anchor';
+                link.href = '#' + h.id;
+                link.textContent = '#';
+                link.addEventListener('click', function(e) { e.stopPropagation(); });
+                h.prepend(link);
+            });
+
+            root.querySelectorAll('input[type="checkbox"]').forEach(function(cb) {
+                if (cb.dataset.clearlyPrepared) return;
+                cb.dataset.clearlyPrepared = '1';
+                var li = cb.closest('li');
+                if (!li) return;
+                cb.removeAttribute('disabled');
+                cb.disabled = false;
+                cb.style.cursor = 'pointer';
+                cb.addEventListener('click', function(e) {
+                    e.stopPropagation();
+                    var sp = li.getAttribute('data-sourcepos');
+                    if (!sp) {
+                        var parent = li.closest('[data-sourcepos]');
+                        if (parent) sp = parent.getAttribute('data-sourcepos');
+                    }
+                    if (sp && window.webkit && window.webkit.messageHandlers.taskToggle) {
+                        window.webkit.messageHandlers.taskToggle.postMessage({ sourcepos: sp, checked: cb.checked });
+                    }
+                });
+            });
+
+            root.querySelectorAll('a.wiki-link').forEach(function(a) {
+                var href = a.getAttribute('href') || '';
+                if (!href.startsWith('clearly://wiki/')) return;
+                var target = decodeURIComponent(href.replace('clearly://wiki/', '').split('#')[0]);
+                if (_clearlyKnownFiles.size > 0 && !_clearlyKnownFiles.has(target.toLowerCase())) {
+                    a.classList.add('wiki-link-broken');
+                }
+            });
+        }
+
+        document.addEventListener('click', function(e) {
+            var a = e.target.closest('a[href]');
+            if (!a) return;
+            var href = a.getAttribute('href');
+            if (!href || href.startsWith('#')) return;
+            e.preventDefault();
+            window.webkit.messageHandlers.linkClicked.postMessage(href);
+        });
+
+        document.addEventListener('dblclick', function(e) {
+            var t = e.target;
+            if (!t || t.nodeType !== 1) return;
+            if (t.closest('.mermaid-wrapper, .lightbox-overlay, .mermaid-lightbox-overlay, .footnote-popover, summary, input, button, .copy-button, .code-copy, .table-sort-button')) return;
+            var node = t.closest('[data-sourcepos]');
+            if (!node) return;
+            var sp = node.getAttribute('data-sourcepos') || '';
+            var m = /^(\\d+):/.exec(sp);
+            if (!m) return;
+            window.webkit.messageHandlers.jumpToSource.postMessage({ line: parseInt(m[1], 10) });
+        });
+
+        var _scrollTicking = false;
+        window.addEventListener('scroll', function() {
+            if (_scrollTicking) return;
+            _scrollTicking = true;
+            requestAnimationFrame(function() {
+                var maxScroll = Math.max(1, document.body.scrollHeight - window.innerHeight);
+                var fraction = window.scrollY / maxScroll;
+                window.webkit.messageHandlers.scrollSync.postMessage({ fraction: fraction });
+                if (_clearlyHasMoreChunks && !_clearlyChunkRequestPending && (window.innerHeight + window.scrollY) > document.body.scrollHeight - 1600) {
+                    _clearlyChunkRequestPending = true;
+                    window.webkit.messageHandlers.loadPreviewChunk.postMessage({});
+                }
+                _scrollTicking = false;
+            });
+        });
+
+        document.addEventListener('selectionchange', function() {
+            var sel = window.getSelection();
+            var text = sel ? sel.toString() : '';
+            window.webkit.messageHandlers.selectionCapture.postMessage({ text: text });
+        });
+
+        window.clearlyAppendPreviewChunk = function(html, loadedChunks, totalChunks, done) {
+            var container = document.getElementById('clearly-preview-content');
+            var template = document.createElement('template');
+            template.innerHTML = html;
+            var fragment = template.content;
+            clearlyPreparePreviewNodes(fragment);
+            container.appendChild(fragment);
+            _clearlyLoadedChunks = loadedChunks;
+            _clearlyTotalChunks = totalChunks;
+            _clearlyHasMoreChunks = !done;
+            _clearlyChunkRequestPending = false;
+            setTimeout(clearlyRequestNextChunkIfNeeded, 0);
+        };
+
+        function clearlyRequestNextChunkIfNeeded() {
+            if (!_clearlyHasMoreChunks || _clearlyChunkRequestPending) return;
+            if ((window.innerHeight + window.scrollY) > document.body.scrollHeight - 1600) {
+                _clearlyChunkRequestPending = true;
+                window.webkit.messageHandlers.loadPreviewChunk.postMessage({});
+            }
+        }
+
+        clearlyPreparePreviewNodes(document);
+        setTimeout(clearlyRequestNextChunkIfNeeded, 0);
+        </script>
+        \(MathSupport.scriptHTML(for: initialHTMLBody))
+        \(TableSupport.scriptHTML(for: initialHTMLBody))
+        \(MermaidSupport.scriptHTML)
+        \(MermaidLightboxSupport.scriptHTML(for: initialHTMLBody))
+        \(SyntaxHighlightSupport.scriptHTML(for: initialHTMLBody))
+        </html>
+        """
+    }
+
+    fileprivate typealias PreviewChunk = PreviewChunker.Chunk
+
+    fileprivate struct LazyPreviewContext {
+        let fileURL: URL?
+    }
+
+    private static func previewChunks(from markdown: String) -> [PreviewChunk] {
+        PreviewChunker.chunks(from: markdown)
+    }
+
+    private static func renderPreviewChunk(_ chunk: PreviewChunk, fileURL: URL?, includeFrontmatter: Bool) async throws -> String {
+        try await Task.detached(priority: .userInitiated) {
+            try Task.checkCancellation()
+            let rawBody = MarkdownRenderer.renderHTML(
+                chunk.markdown,
+                appLinkURLs: true,
+                includeFrontmatter: includeFrontmatter,
+                sourceLineOffset: chunk.startLine - 1,
+                diagnosticsLabel: "large.lazyChunk.line\(chunk.startLine).renderHTML"
+            )
+            try Task.checkCancellation()
+            let imageStart = timingStart()
+            let html = LocalImageSupport.resolveImageSources(in: rawBody, relativeTo: fileURL)
+            logTiming("large.lazyChunk.line\(chunk.startLine).imageRewrite", since: imageStart)
+            return html
+        }.value
+    }
+
+    private static func timingStart() -> UInt64 {
+        DispatchTime.now().uptimeNanoseconds
+    }
+
+    private static func logTiming(_ label: String, since start: UInt64) {
+        #if DEBUG
+            let elapsed = DispatchTime.now().uptimeNanoseconds - start
+            DiagnosticLog.log("PreviewTiming \(label): \(String(format: "%.2f", Double(elapsed) / 1_000_000)) ms")
+        #endif
+    }
+
+    private static func javascriptStringLiteral(_ text: String) -> String {
+        guard let data = try? JSONSerialization.data(withJSONObject: [text]),
+              let json = String(data: data, encoding: .utf8),
+              json.count >= 2 else {
+            return "\"\""
+        }
+        return String(json.dropFirst().dropLast())
+    }
+
+    private static func errorHTML(_ error: Error) -> String {
+        """
+        <!DOCTYPE html>
+        <html>
+        <head>
+        <meta charset="utf-8">
+        <style>
+        :root { color-scheme: light dark; }
+        body { margin: 0; padding: 32px; background: Canvas; color: CanvasText; font: 14px -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif; }
+        h1 { font-size: 16px; margin: 0 0 8px; }
+        p { margin: 0; opacity: 0.7; overflow-wrap: anywhere; }
+        </style>
+        </head>
+        <body>
+        <h1>Preview failed</h1>
+        <p>\(escapeHTML(error.localizedDescription))</p>
+        </body>
+        </html>
+        """
+    }
+
+    private static func escapeHTML(_ text: String) -> String {
+        text
+            .replacingOccurrences(of: "&", with: "&amp;")
+            .replacingOccurrences(of: "<", with: "&lt;")
+            .replacingOccurrences(of: ">", with: "&gt;")
+            .replacingOccurrences(of: "\"", with: "&quot;")
     }
 
     final class Coordinator: NSObject, WKNavigationDelegate, WKScriptMessageHandler {
@@ -383,6 +753,14 @@ struct PreviewView: NSViewRepresentable {
         var onJumpToSource: ((Int) -> Void)?
         var skipNextReload = false
         var isLoadingContent = false
+        var renderGeneration = 0
+        var renderTask: Task<Void, Never>?
+        fileprivate var lazyChunks: [PreviewChunk] = []
+        var nextLazyChunkIndex = 0
+        var isLazyChunkRendering = false
+        fileprivate var lazyPreviewContext: LazyPreviewContext?
+        var navigationTimingLabel: String?
+        var navigationTimingStart: UInt64?
         var pendingScrollLine: Int?
         var pendingHighlightText: String?
         weak var webView: WKWebView?
@@ -723,6 +1101,11 @@ struct PreviewView: NSViewRepresentable {
         }
 
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+            if let label = navigationTimingLabel, let start = navigationTimingStart {
+                PreviewView.logTiming("\(label).didFinish", since: start)
+                navigationTimingLabel = nil
+                navigationTimingStart = nil
+            }
             isLoadingContent = false
             if !didInitialLoad {
                 didInitialLoad = true
@@ -795,7 +1178,66 @@ struct PreviewView: NSViewRepresentable {
             NSWorkspace.shared.open(targetURL)
         }
 
+        private func loadNextLazyPreviewChunk() {
+            guard !isLazyChunkRendering,
+                  nextLazyChunkIndex < lazyChunks.count,
+                  let context = lazyPreviewContext else { return }
+
+            isLazyChunkRendering = true
+            let generation = renderGeneration
+            let index = nextLazyChunkIndex
+            let chunk = lazyChunks[index]
+            let total = lazyChunks.count
+
+            renderTask = Task { [weak self] in
+                do {
+                    let chunkStart = PreviewView.timingStart()
+                    let htmlBody = try await PreviewView.renderPreviewChunk(
+                        chunk,
+                        fileURL: context.fileURL,
+                        includeFrontmatter: false
+                    )
+                    PreviewView.logTiming("large.lazyChunk.\(index + 1).backgroundTotal", since: chunkStart)
+                    try Task.checkCancellation()
+                    let jsonStart = PreviewView.timingStart()
+                    let htmlJSON = PreviewView.javascriptStringLiteral(htmlBody)
+                    PreviewView.logTiming("large.lazyChunk.\(index + 1).jsonEncode", since: jsonStart)
+
+                    await MainActor.run {
+                        guard let self, self.renderGeneration == generation else { return }
+                        self.renderTask = nil
+                        self.isLazyChunkRendering = false
+                        self.nextLazyChunkIndex = index + 1
+                        let loaded = self.nextLazyChunkIndex
+                        let done = loaded >= total ? "true" : "false"
+                        let js = "window.clearlyAppendPreviewChunk && window.clearlyAppendPreviewChunk(\(htmlJSON), \(loaded), \(total), \(done));"
+                        let appendStart = PreviewView.timingStart()
+                        self.webView?.evaluateJavaScript(js)
+                        PreviewView.logTiming("large.lazyChunk.\(index + 1).evaluateJavaScriptIssued", since: appendStart)
+                    }
+                } catch is CancellationError {
+                    await MainActor.run {
+                        guard let self, self.renderGeneration == generation else { return }
+                        self.renderTask = nil
+                        self.isLazyChunkRendering = false
+                    }
+                } catch {
+                    await MainActor.run {
+                        guard let self, self.renderGeneration == generation else { return }
+                        self.renderTask = nil
+                        self.isLazyChunkRendering = false
+                        DiagnosticLog.log("Lazy preview chunk failed: \(error.localizedDescription)")
+                    }
+                }
+            }
+        }
+
         func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
+            if message.name == "loadPreviewChunk" {
+                loadNextLazyPreviewChunk()
+                return
+            }
+
             if message.name == "copyToClipboard", let text = message.body as? String {
                 NSPasteboard.general.clearContents()
                 NSPasteboard.general.setString(text, forType: .string)

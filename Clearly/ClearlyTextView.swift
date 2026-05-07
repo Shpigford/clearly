@@ -6,7 +6,16 @@ enum TextCheckingPreferences {
     private static let grammarCheckingKey = "grammarCheckingEnabled"
     private static let automaticSpellingCorrectionKey = "automaticSpellingCorrectionEnabled"
 
-    static func apply(to textView: NSTextView) {
+    static func apply(to textView: NSTextView, textLength: Int? = nil) {
+        if let textLength, textLength >= Limits.largeEditorPerformanceModeLength {
+            textView.isContinuousSpellCheckingEnabled = false
+            textView.isGrammarCheckingEnabled = false
+            textView.isAutomaticSpellingCorrectionEnabled = false
+            textView.enabledTextCheckingTypes = 0
+            return
+        }
+
+        textView.enabledTextCheckingTypes = NSTextCheckingAllTypes
         textView.isContinuousSpellCheckingEnabled = UserDefaults.standard.object(forKey: continuousSpellCheckingKey) as? Bool ?? true
         textView.isGrammarCheckingEnabled = UserDefaults.standard.object(forKey: grammarCheckingKey) as? Bool ?? true
         textView.isAutomaticSpellingCorrectionEnabled = UserDefaults.standard.object(forKey: automaticSpellingCorrectionKey) as? Bool ?? false

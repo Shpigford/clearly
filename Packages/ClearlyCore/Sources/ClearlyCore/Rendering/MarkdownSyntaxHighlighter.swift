@@ -5,6 +5,7 @@ import QuartzCore
 private typealias Attr = PlatformTextAttributes
 
 public final class MarkdownSyntaxHighlighter: NSObject {
+    private static let slowIncrementalHighlightLogThresholdMS: Double = 50
 
     public override init() {
         super.init()
@@ -514,34 +515,6 @@ public final class MarkdownSyntaxHighlighter: NSObject {
         defer { isHighlighting = false }
         let startTime = CACurrentMediaTime()
 
-        textStorage.beginEditing()
-
-        // Reset attributes in the affected range. Only reset font/paragraph/baseline
-        // when the range actually has non-default fonts (headings, code, bold, italic).
-        // Skipping the font reset for plain text avoids glyph regeneration, which is
-        // the main per-keystroke cost on large documents.
-        var needsFontReset = false
-        textStorage.enumerateAttribute(Attr.font, in: paragraphRange, options: .longestEffectiveRangeNotRequired) { value, _, stop in
-            if let font = value as? PlatformFont, font != Theme.editorFont {
-                needsFontReset = true
-                stop.pointee = true
-            }
-        }
-
-        if needsFontReset {
-            let paragraph = PlatformParagraphStyle()
-            paragraph.minimumLineHeight = Theme.editorLineHeight
-            paragraph.maximumLineHeight = Theme.editorLineHeight
-            textStorage.addAttributes([
-                Attr.font: Theme.editorFont,
-                Attr.paragraphStyle: paragraph,
-                Attr.baselineOffset: Theme.editorBaselineOffset
-            ], range: paragraphRange)
-        }
-        textStorage.addAttribute(Attr.foregroundColor, value: Theme.textColor, range: paragraphRange)
-        textStorage.removeAttribute(Attr.backgroundColor, range: paragraphRange)
-        textStorage.removeAttribute(Attr.strikethroughStyle, range: paragraphRange)
-
         // Keep cached protected ranges aligned with the edit. Most edits can cheaply
         // shift the cached ranges; block delimiters need a full protected-range rescan
         // so semantic queries stay correct until the deferred highlightAll runs.
@@ -574,12 +547,55 @@ public final class MarkdownSyntaxHighlighter: NSObject {
 
         // If the paragraph is entirely inside a protected block, apply that block's base style.
         if let block = protectedRanges.first(where: { NSIntersectionRange($0.range, paragraphRange).length == paragraphRange.length }) {
+            textStorage.beginEditing()
             applyProtectedBlockStyle(block, to: textStorage, range: paragraphRange)
             textStorage.endEditing()
             let elapsed = (CACurrentMediaTime() - startTime) * 1000
-            DiagnosticLog.log("highlightAround(\(caller)): inside protected block, \(paragraphRange) in \(Int(elapsed))ms")
+            if elapsed >= Self.slowIncrementalHighlightLogThresholdMS {
+                DiagnosticLog.log("highlightAround(\(caller)): inside protected block, \(paragraphRange) in \(Int(elapsed))ms")
+            }
             return
         }
+
+        if !Self.mayContainMarkdownSyntax(paragraphText) {
+            guard !usesDefaultPlainTextStyle(textStorage, range: paragraphRange) else {
+                let elapsed = (CACurrentMediaTime() - startTime) * 1000
+                if elapsed >= Self.slowIncrementalHighlightLogThresholdMS {
+                    DiagnosticLog.log("highlightAround(\(caller)): plain paragraph skipped, \(paragraphRange) in \(Int(elapsed))ms")
+                }
+                return
+            }
+
+            textStorage.beginEditing()
+            resetPlainTextStyle(textStorage, range: paragraphRange)
+            textStorage.endEditing()
+            let elapsed = (CACurrentMediaTime() - startTime) * 1000
+            if elapsed >= Self.slowIncrementalHighlightLogThresholdMS {
+                DiagnosticLog.log("highlightAround(\(caller)): plain paragraph reset, \(paragraphRange) in \(Int(elapsed))ms")
+            }
+            return
+        }
+
+        textStorage.beginEditing()
+
+        // Reset attributes in the affected range. Only reset font/paragraph/baseline
+        // when the range actually has non-default fonts (headings, code, bold, italic).
+        // Skipping the font reset for plain text avoids glyph regeneration, which is
+        // the main per-keystroke cost on large documents.
+        var needsFontReset = false
+        textStorage.enumerateAttribute(Attr.font, in: paragraphRange, options: .longestEffectiveRangeNotRequired) { value, _, stop in
+            if let font = value as? PlatformFont, !font.isEqual(Theme.editorFont) {
+                needsFontReset = true
+                stop.pointee = true
+            }
+        }
+
+        if needsFontReset {
+            resetBaseTypography(textStorage, range: paragraphRange)
+        }
+        textStorage.addAttribute(Attr.foregroundColor, value: Theme.textColor, range: paragraphRange)
+        textStorage.removeAttribute(Attr.backgroundColor, range: paragraphRange)
+        textStorage.removeAttribute(Attr.strikethroughStyle, range: paragraphRange)
 
         // Run all patterns on the paragraph range only
         for (regex, style) in Self.patterns {
@@ -762,7 +778,9 @@ public final class MarkdownSyntaxHighlighter: NSObject {
         textStorage.endEditing()
 
         let elapsed = (CACurrentMediaTime() - startTime) * 1000
-        DiagnosticLog.log("highlightAround(\(caller)): \(paragraphRange) in \(Int(elapsed))ms")
+        if elapsed >= Self.slowIncrementalHighlightLogThresholdMS {
+            DiagnosticLog.log("highlightAround(\(caller)): \(paragraphRange) in \(Int(elapsed))ms")
+        }
     }
 
     // MARK: - Public Query
@@ -789,5 +807,61 @@ public final class MarkdownSyntaxHighlighter: NSObject {
                 textStorage.addAttribute(Attr.foregroundColor, value: Theme.syntaxColor, range: match.range(at: 2))
             }
         }
+    }
+
+    private static func mayContainMarkdownSyntax(_ text: String) -> Bool {
+        if text.range(of: #"[#*_`\[\]!>$|<~]"#, options: .regularExpression) != nil {
+            return true
+        }
+        // `=` is too noisy for the cheap regex above (matches `key=value` in
+        // ordinary prose); only `==highlight==` is markdown, so check for
+        // the doubled form explicitly.
+        if text.contains("==") {
+            return true
+        }
+
+        let line = text.trimmingCharacters(in: .newlines)
+        if line.range(of: #"^\s*(?:[-+]\s|\d+\.\s|[-*_]{3,}\s*$)"#, options: .regularExpression) != nil {
+            return true
+        }
+
+        return false
+    }
+
+    private func usesDefaultPlainTextStyle(_ textStorage: PlatformTextStorage, range: NSRange) -> Bool {
+        var isDefault = true
+        textStorage.enumerateAttributes(in: range, options: .longestEffectiveRangeNotRequired) { attributes, _, stop in
+            if let font = attributes[Attr.font] as? PlatformFont, !font.isEqual(Theme.editorFont) {
+                isDefault = false
+            }
+            if let color = attributes[Attr.foregroundColor] as? PlatformColor, !color.isEqual(Theme.textColor) {
+                isDefault = false
+            }
+            if attributes[Attr.backgroundColor] != nil || attributes[Attr.strikethroughStyle] != nil {
+                isDefault = false
+            }
+            if !isDefault {
+                stop.pointee = true
+            }
+        }
+        return isDefault
+    }
+
+    private func resetPlainTextStyle(_ textStorage: PlatformTextStorage, range: NSRange) {
+        resetBaseTypography(textStorage, range: range)
+        textStorage.addAttribute(Attr.foregroundColor, value: Theme.textColor, range: range)
+        textStorage.removeAttribute(Attr.backgroundColor, range: range)
+        textStorage.removeAttribute(Attr.strikethroughStyle, range: range)
+    }
+
+    private func resetBaseTypography(_ textStorage: PlatformTextStorage, range: NSRange) {
+        let paragraph = PlatformParagraphStyle()
+        paragraph.minimumLineHeight = Theme.editorLineHeight
+        paragraph.maximumLineHeight = Theme.editorLineHeight
+        textStorage.addAttributes([
+            Attr.font: Theme.editorFont,
+            Attr.paragraphStyle: paragraph,
+            Attr.baselineOffset: Theme.editorBaselineOffset
+        ], range: range)
     }
 }

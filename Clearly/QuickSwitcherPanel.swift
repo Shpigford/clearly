@@ -3,7 +3,7 @@ import ClearlyCore
 
 // MARK: - Quick Switcher File Item
 
-struct QuickSwitcherItem {
+struct QuickSwitcherItem: Sendable {
     let filename: String       // e.g. "My Note"
     let relativePath: String   // e.g. "folder/My Note.md"
     let fullURL: URL
@@ -40,7 +40,7 @@ struct QuickSwitcherItem {
 final class QuickSwitcherManager: NSObject {
     static let shared = QuickSwitcherManager()
 
-    private enum TagFilterMode {
+    private enum TagFilterMode: Sendable {
         case contains
         case exact(String)
     }
@@ -54,6 +54,10 @@ final class QuickSwitcherManager: NSObject {
     private var items: [QuickSwitcherItem] = []
     private var allFiles: [(filename: String, path: String, url: URL)] = []
     private var tagFilterMode: TagFilterMode = .contains
+    private var searchTask: Task<Void, Never>?
+    private var searchGeneration = 0
+
+    private static let searchDebounceNanoseconds: UInt64 = 180_000_000
 
     var isVisible: Bool { panel?.isVisible ?? false }
 
@@ -87,6 +91,7 @@ final class QuickSwitcherManager: NSObject {
     }
 
     func dismiss() {
+        searchTask?.cancel()
         panel?.orderOut(nil)
     }
 
@@ -241,6 +246,10 @@ final class QuickSwitcherManager: NSObject {
     }
 
     private func updateResults(query: String) {
+        searchTask?.cancel()
+        searchGeneration += 1
+        let generation = searchGeneration
+
         if query.isEmpty {
             // Show recent files
             let recents = WorkspaceManager.shared.recentFiles
@@ -262,11 +271,52 @@ final class QuickSwitcherManager: NSObject {
                     isCreateNew: false
                 )
             }
-        } else if query.hasPrefix("#") && query.count >= 2 {
+        } else {
+            let files = allFiles
+            let indexes = WorkspaceManager.shared.activeVaultIndexes
+            let mode = tagFilterMode
+            searchTask = Task {
+                do {
+                    try await Task.sleep(nanoseconds: Self.searchDebounceNanoseconds)
+                } catch {
+                    return
+                }
+
+                let computedItems = await Task.detached(priority: .userInitiated) {
+                    Self.computeItems(query: query, files: files, indexes: indexes, tagFilterMode: mode)
+                }.value
+
+                guard !Task.isCancelled, generation == self.searchGeneration else { return }
+                self.applyItems(computedItems)
+            }
+            return
+        }
+
+        applyItems(items)
+    }
+
+    private func applyItems(_ newItems: [QuickSwitcherItem]) {
+        items = newItems
+
+        tableView?.reloadData()
+        if !items.isEmpty {
+            tableView?.selectRowIndexes(IndexSet(integer: 0), byExtendingSelection: false)
+            tableView?.scrollRowToVisible(0)
+        }
+        resizePanelToFit()
+    }
+
+    nonisolated private static func computeItems(
+        query: String,
+        files: [(filename: String, path: String, url: URL)],
+        indexes: [VaultIndex],
+        tagFilterMode: TagFilterMode
+    ) -> [QuickSwitcherItem] {
+        if query.hasPrefix("#") && query.count >= 2 {
             // Tag filter: show files matching the tag
             let tagQuery = String(query.dropFirst()).lowercased()
             var tagResults: [QuickSwitcherItem] = []
-            for index in WorkspaceManager.shared.activeVaultIndexes {
+            for index in indexes {
                 // Find tags that match the query
                 let matchingTags = index.allTags().filter { entry in
                     switch tagFilterMode {
@@ -297,70 +347,63 @@ final class QuickSwitcherManager: NSObject {
                     }
                 }
             }
-            tagResults.sort { $0.filename.lowercased() < $1.filename.lowercased() }
-            items = tagResults
-        } else {
-            // Fuzzy match on filenames
-            var nameMatches = allFiles.compactMap { file -> QuickSwitcherItem? in
-                guard let result = FuzzyMatcher.match(query: query, target: file.filename) else { return nil }
-                return QuickSwitcherItem(
-                    filename: file.filename,
-                    relativePath: file.path,
-                    fullURL: file.url,
-                    score: result.score,
-                    matchedRanges: result.matchedRanges,
-                    isCreateNew: false
-                )
-            }
-            .sorted { $0.score > $1.score }
-            if nameMatches.count > 20 { nameMatches = Array(nameMatches.prefix(20)) }
+            return tagResults.sorted { $0.filename.lowercased() < $1.filename.lowercased() }
+        }
 
-            // Content matches via FTS5 (only if query is 2+ chars)
-            var contentMatches: [QuickSwitcherItem] = []
-            if query.count >= 2 {
-                let nameMatchURLs = Set(nameMatches.map(\.fullURL))
-                for index in WorkspaceManager.shared.activeVaultIndexes {
-                    for group in index.searchFilesGrouped(query: query) {
-                        let fileURL = group.vaultRootURL.appendingPathComponent(group.file.path)
-                        guard !nameMatchURLs.contains(fileURL) else { continue }
-                        let excerpt = group.excerpts.first
-                        contentMatches.append(QuickSwitcherItem(
-                            filename: group.file.filename,
-                            relativePath: group.file.path,
-                            fullURL: fileURL,
-                            score: 0,
-                            matchedRanges: [],
-                            isCreateNew: false,
-                            lineNumber: excerpt?.lineNumber,
-                            contextSnippet: excerpt?.contextLine.trimmingCharacters(in: .whitespaces)
-                        ))
-                    }
+        // Fuzzy match on filenames
+        var nameMatches = files.compactMap { file -> QuickSwitcherItem? in
+            guard let result = FuzzyMatcher.match(query: query, target: file.filename) else { return nil }
+            return QuickSwitcherItem(
+                filename: file.filename,
+                relativePath: file.path,
+                fullURL: file.url,
+                score: result.score,
+                matchedRanges: result.matchedRanges,
+                isCreateNew: false
+            )
+        }
+        .sorted { $0.score > $1.score }
+        if nameMatches.count > 20 { nameMatches = Array(nameMatches.prefix(20)) }
+
+        // Content matches via FTS5 (only if query is 2+ chars)
+        var contentMatches: [QuickSwitcherItem] = []
+        if query.count >= 2 {
+            let nameMatchURLs = Set(nameMatches.map(\.fullURL))
+            for index in indexes {
+                for group in index.searchFilesGrouped(query: query, maxExcerptsPerFile: 1) {
+                    let fileURL = group.vaultRootURL.appendingPathComponent(group.file.path)
+                    guard !nameMatchURLs.contains(fileURL) else { continue }
+                    let excerpt = group.excerpts.first
+                    contentMatches.append(QuickSwitcherItem(
+                        filename: group.file.filename,
+                        relativePath: group.file.path,
+                        fullURL: fileURL,
+                        score: 0,
+                        matchedRanges: [],
+                        isCreateNew: false,
+                        lineNumber: excerpt?.lineNumber,
+                        contextSnippet: excerpt?.contextLine.trimmingCharacters(in: .whitespaces)
+                    ))
                 }
-                if contentMatches.count > 30 { contentMatches = Array(contentMatches.prefix(30)) }
             }
-
-            items = nameMatches + contentMatches
-
-            // Add create-on-miss if no results at all
-            if items.isEmpty {
-                let createName = query.hasSuffix(".md") ? query : "\(query).md"
-                items = [QuickSwitcherItem(
-                    filename: "Create \(createName)",
-                    relativePath: createName,
-                    fullURL: URL(fileURLWithPath: "/"),
-                    score: -1,
-                    matchedRanges: [],
-                    isCreateNew: true
-                )]
-            }
+            if contentMatches.count > 30 { contentMatches = Array(contentMatches.prefix(30)) }
         }
 
-        tableView?.reloadData()
-        if !items.isEmpty {
-            tableView?.selectRowIndexes(IndexSet(integer: 0), byExtendingSelection: false)
-            tableView?.scrollRowToVisible(0)
+        let results = nameMatches + contentMatches
+        if !results.isEmpty {
+            return results
         }
-        resizePanelToFit()
+
+        // Add create-on-miss if no results at all
+        let createName = query.hasSuffix(".md") ? query : "\(query).md"
+        return [QuickSwitcherItem(
+            filename: "Create \(createName)",
+            relativePath: createName,
+            fullURL: URL(fileURLWithPath: "/"),
+            score: -1,
+            matchedRanges: [],
+            isCreateNew: true
+        )]
     }
 
     private static let maxVisibleRows = 10

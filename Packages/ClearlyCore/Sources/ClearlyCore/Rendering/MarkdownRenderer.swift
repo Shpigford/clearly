@@ -6,14 +6,39 @@ public enum MarkdownRenderer {
     private static let escapedMathDollarToken = "\u{E101}"
     private static let escapedMathPaddingToken = "\u{E102}"
 
-    public static func renderHTML(_ markdown: String, appLinkURLs: Bool = false, includeFrontmatter: Bool = true) -> String {
+    public static func renderHTML(
+        _ markdown: String,
+        appLinkURLs: Bool = false,
+        includeFrontmatter: Bool = true,
+        sourceLineOffset: Int = 0,
+        diagnosticsLabel: String? = nil
+    ) -> String {
         guard !markdown.isEmpty else { return "" }
+
+        let totalStart = DispatchTime.now().uptimeNanoseconds
+        var stageStart = totalStart
+        func mark(_ stage: String) {
+            #if DEBUG
+                guard let diagnosticsLabel else { return }
+                let now = DispatchTime.now().uptimeNanoseconds
+                DiagnosticLog.log("PreviewTiming \(diagnosticsLabel).\(stage): \(formatMilliseconds(now - stageStart)) ms")
+                stageStart = now
+            #endif
+        }
+        func finishTiming() {
+            #if DEBUG
+                guard let diagnosticsLabel else { return }
+                let now = DispatchTime.now().uptimeNanoseconds
+                DiagnosticLog.log("PreviewTiming \(diagnosticsLabel).total: \(formatMilliseconds(now - totalStart)) ms")
+            #endif
+        }
 
         let frontmatter = FrontmatterSupport.extract(from: markdown)
 
         let rawBody = frontmatter?.body ?? markdown
         let (body, codeFilenames) = extractCodeFilenames(rawBody)
         let protectedBody = protectEscapedMathDelimiters(in: body)
+        mark("preprocess")
         let len = protectedBody.utf8.count
         let options = Int32(CMARK_OPT_UNSAFE | CMARK_OPT_FOOTNOTES | CMARK_OPT_STRIKETHROUGH_DOUBLE_TILDE | CMARK_OPT_SOURCEPOS | CMARK_OPT_TABLE_PREFER_STYLE_ATTRIBUTES)
         var html: String
@@ -28,29 +53,50 @@ public enum MarkdownRenderer {
         } else {
             return ""
         }
+        mark("cmark")
         html = processMath(html)
+        mark("math")
         html = restoreEscapedMathDelimiters(in: html)
         html = processHighlightMarks(html)
+        mark("highlightMarks")
         html = processSuperSub(html)
+        mark("superSub")
         html = processEmoji(html)
+        mark("emoji")
         html = processWikiLinks(html, appLinkURLs: appLinkURLs)
+        mark("wikiLinks")
         html = processTags(html, appLinkURLs: appLinkURLs)
+        mark("tags")
         html = processCallouts(html)
+        mark("callouts")
         html = processTOC(html)
+        mark("toc")
         html = processCaptions(html)
         html = injectCodeFilenames(html, filenames: codeFilenames)
+        mark("captionsAndCodeFilenames")
 
-        // Fix sourcepos line numbers after stripping frontmatter
+        // Fix sourcepos line numbers after stripping frontmatter and/or rendering a document chunk.
+        var sourceOffset = sourceLineOffset
         if let frontmatter, frontmatter.lineCount > 0 {
-            html = adjustSourcePositions(in: html, offset: frontmatter.lineCount)
+            sourceOffset += frontmatter.lineCount
+        }
+        if sourceOffset > 0 {
+            html = adjustSourcePositions(in: html, offset: sourceOffset)
+            mark("sourceposAdjust")
         }
 
         // Prepend frontmatter HTML
         if includeFrontmatter, let frontmatter {
             html = frontmatterHTML(from: frontmatter) + html
+            mark("frontmatterHTML")
         }
 
+        finishTiming()
         return html
+    }
+
+    private static func formatMilliseconds(_ nanoseconds: UInt64) -> String {
+        String(format: "%.2f", Double(nanoseconds) / 1_000_000)
     }
 
     // MARK: - Frontmatter
@@ -212,14 +258,34 @@ public enum MarkdownRenderer {
     }
 
     private static func restoreProtectedSegments(in html: String, segments: [String]) -> String {
-        var restored = html
-        for (index, segment) in segments.enumerated() {
-            restored = restored.replacingOccurrences(
-                of: "__CLEARLY_PROTECTED_CODE_\(index)__",
-                with: segment
-            )
+        restoreTokenizedSegments(in: html, tokenPrefix: "__CLEARLY_PROTECTED_CODE_", segments: segments)
+    }
+
+    private static func restoreTokenizedSegments(in html: String, tokenPrefix: String, segments: [String]) -> String {
+        guard !segments.isEmpty else { return html }
+        let pattern = NSRegularExpression.escapedPattern(for: tokenPrefix) + #"(\d+)__"#
+        guard let regex = try? NSRegularExpression(pattern: pattern) else { return html }
+
+        let nsHTML = html as NSString
+        var result = ""
+        var lastEnd = 0
+
+        for match in regex.matches(in: html, range: NSRange(location: 0, length: nsHTML.length)) {
+            result += nsHTML.substring(with: NSRange(location: lastEnd, length: match.range.location - lastEnd))
+            let indexString = nsHTML.substring(with: match.range(at: 1))
+            if let index = Int(indexString), segments.indices.contains(index) {
+                result += segments[index]
+            } else {
+                #if DEBUG
+                DiagnosticLog.log("MarkdownRenderer.restoreTokenizedSegments: dropped placeholder \(tokenPrefix)\(indexString)__ (segments.count=\(segments.count))")
+                #endif
+                result += nsHTML.substring(with: match.range)
+            }
+            lastEnd = match.range.location + match.range.length
         }
-        return restored
+
+        result += nsHTML.substring(from: lastEnd)
+        return result
     }
 
     /// Convert "Table: caption text" paragraphs immediately before a <table> into <caption> elements.
@@ -368,14 +434,7 @@ public enum MarkdownRenderer {
     }
 
     private static func restoreWikiLinkRegions(in html: String, segments: [String]) -> String {
-        var restored = html
-        for (index, segment) in segments.enumerated() {
-            restored = restored.replacingOccurrences(
-                of: "__CLEARLY_PROTECTED_WIKILINK_\(index)__",
-                with: segment
-            )
-        }
-        return restored
+        restoreTokenizedSegments(in: html, tokenPrefix: "__CLEARLY_PROTECTED_WIKILINK_", segments: segments)
     }
 
     // MARK: - Tags #tag
@@ -427,14 +486,7 @@ public enum MarkdownRenderer {
     }
 
     private static func restoreTagRegions(in html: String, segments: [String]) -> String {
-        var restored = html
-        for (index, segment) in segments.enumerated() {
-            restored = restored.replacingOccurrences(
-                of: "__CLEARLY_PROTECTED_TAG_\(index)__",
-                with: segment
-            )
-        }
-        return restored
+        restoreTokenizedSegments(in: html, tokenPrefix: "__CLEARLY_PROTECTED_TAG_", segments: segments)
     }
 
     // MARK: - Highlight/Mark ==text==

@@ -48,6 +48,33 @@ enum DeleteItemResult {
     case failed
 }
 
+struct DocumentLoadingState: Identifiable, Equatable {
+    let id: UUID
+    let fileName: String
+    var progress: Double?
+    var message: String
+    var canCancel: Bool
+
+    init(id: UUID = UUID(), fileName: String, progress: Double? = nil, message: String, canCancel: Bool = true) {
+        self.id = id
+        self.fileName = fileName
+        self.progress = progress
+        self.message = message
+        self.canCancel = canCancel
+    }
+}
+
+private enum DocumentLoadError: LocalizedError {
+    case invalidUTF8
+
+    var errorDescription: String? {
+        switch self {
+        case .invalidUTF8:
+            return "The file is not valid UTF-8 text."
+        }
+    }
+}
+
 /// Central state manager for file navigation: locations, recents, and current file.
 @Observable
 final class WorkspaceManager {
@@ -70,8 +97,10 @@ final class WorkspaceManager {
 
     var currentFileURL: URL?
     var currentFileText: String = ""
+    var currentFileRevision: Int = 0
     var currentViewMode: ViewMode = WorkspaceManager.defaultViewModeForOpenedFile
     var currentConflictOutcome: ConflictResolver.Outcome?
+    var documentLoadingState: DocumentLoadingState?
 
     /// The currently-active open document, if any. Source of truth for
     /// dirty/clean state — see `isDirty`.
@@ -169,6 +198,7 @@ final class WorkspaceManager {
     @ObservationIgnored private var refreshWork: [UUID: DispatchWorkItem] = [:]
     @ObservationIgnored private var treeBuildGeneration: [UUID: Int] = [:]
     @ObservationIgnored private var treeBuildTasks: [UUID: Task<Void, Never>] = [:]
+    @ObservationIgnored private var documentLoadTask: Task<Void, Never>?
     private var autoSaveWork: DispatchWorkItem?
     private var accessedURLs: Set<URL> = []
     private var hasPreparedInitialDocuments = false
@@ -278,6 +308,7 @@ final class WorkspaceManager {
 
     deinit {
         autoSaveWork?.cancel()
+        documentLoadTask?.cancel()
         refreshWork.values.forEach { $0.cancel() }
         treeBuildTasks.values.forEach { $0.cancel() }
         for index in vaultIndexes.values { index.close() }
@@ -613,6 +644,7 @@ final class WorkspaceManager {
         openDocuments[idx].lastSavedText = ""
         if activeDocumentID == openDocuments[idx].id {
             currentFileText = ""
+            currentFileRevision += 1
         }
     }
 
@@ -625,6 +657,15 @@ final class WorkspaceManager {
         alert.runModal()
     }
 
+    private func presentFileOpenFailureAlert(for url: URL, error: Error) {
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = "Couldn't open “\(url.lastPathComponent)”."
+        alert.informativeText = error.localizedDescription
+        alert.addButton(withTitle: "OK")
+        alert.runModal()
+    }
+
     // MARK: - Open File
 
     /// Opens a file by replacing the active tab's content (no new tab created).
@@ -632,6 +673,7 @@ final class WorkspaceManager {
     func openFile(at url: URL) -> Bool {
         // If already open in a tab, just switch to it
         if let existing = openDocuments.first(where: { $0.fileURL == url }) {
+            cancelDocumentLoad()
             return switchToDocument(existing.id)
         }
 
@@ -646,6 +688,11 @@ final class WorkspaceManager {
             return false
         }
 
+        if shouldLoadFileAsynchronously(url) {
+            startAsyncOpenFile(at: url, inNewTab: false)
+            return true
+        }
+
         // Load new file
         guard let data = try? Data(contentsOf: url),
               let text = String(data: data, encoding: .utf8) else {
@@ -653,13 +700,149 @@ final class WorkspaceManager {
             return false
         }
 
-        if let idx = activeDocumentIndex {
+        applyLoadedFile(url: url, text: text, inNewTab: false)
+        return true
+    }
+
+    /// Opens a file in a new tab (Cmd+click or Cmd+T then navigate).
+    @discardableResult
+    func openFileInNewTab(at url: URL) -> Bool {
+        // If already open in a tab, just switch to it
+        if let existing = openDocuments.first(where: { $0.fileURL == url }) {
+            cancelDocumentLoad()
+            return switchToDocument(existing.id)
+        }
+
+        guard confirmNavigationAwayFromActiveDoc() else { return false }
+
+        guard Limits.isOpenableSize(url) else {
+            DiagnosticLog.log("Refusing to open oversized file: \(url.lastPathComponent)")
+            presentFileTooLargeAlert(for: url)
+            return false
+        }
+
+        if shouldLoadFileAsynchronously(url) {
+            startAsyncOpenFile(at: url, inNewTab: true)
+            return true
+        }
+
+        guard let data = try? Data(contentsOf: url),
+              let text = String(data: data, encoding: .utf8) else {
+            DiagnosticLog.log("Failed to read file: \(url.lastPathComponent)")
+            return false
+        }
+
+        applyLoadedFile(url: url, text: text, inNewTab: true)
+        return true
+    }
+
+    private func shouldLoadFileAsynchronously(_ url: URL) -> Bool {
+        fileSize(of: url).map { $0 >= Limits.asyncDocumentLoadFileSize } ?? false
+    }
+
+    private func fileSize(of url: URL) -> Int64? {
+        let resolvedURL = url.resolvingSymlinksInPath()
+        guard let size = try? resolvedURL.resourceValues(forKeys: [.fileSizeKey]).fileSize else {
+            return nil
+        }
+        return Int64(size)
+    }
+
+    func cancelDocumentLoad() {
+        documentLoadTask?.cancel()
+        documentLoadTask = nil
+        documentLoadingState = nil
+    }
+
+    private func startAsyncOpenFile(at url: URL, inNewTab: Bool) {
+        cancelDocumentLoad()
+
+        let loadID = UUID()
+        documentLoadingState = DocumentLoadingState(
+            id: loadID,
+            fileName: url.lastPathComponent,
+            progress: 0,
+            message: "Loading document…",
+            canCancel: true
+        )
+        presentMainWindow()
+
+        documentLoadTask = Task { [weak self] in
+            do {
+                let text = try await Task.detached(priority: .userInitiated) {
+                    try Self.readUTF8Text(at: url) { progress in
+                        DispatchQueue.main.async { [weak self] in
+                            guard self?.documentLoadingState?.id == loadID else { return }
+                            self?.documentLoadingState?.progress = progress
+                        }
+                    }
+                }.value
+                try Task.checkCancellation()
+
+                await MainActor.run {
+                    guard let self, self.documentLoadingState?.id == loadID else { return }
+                    self.documentLoadTask = nil
+                    self.documentLoadingState = nil
+                    self.applyLoadedFile(url: url, text: text, inNewTab: inNewTab)
+                }
+            } catch is CancellationError {
+                await MainActor.run {
+                    guard let self, self.documentLoadingState?.id == loadID else { return }
+                    self.documentLoadTask = nil
+                    self.documentLoadingState = nil
+                }
+            } catch {
+                await MainActor.run {
+                    guard let self, self.documentLoadingState?.id == loadID else { return }
+                    self.documentLoadTask = nil
+                    self.documentLoadingState = nil
+                    DiagnosticLog.log("Failed to read file: \(url.lastPathComponent) (\(error.localizedDescription))")
+                    self.presentFileOpenFailureAlert(for: url, error: error)
+                }
+            }
+        }
+    }
+
+    private static func readUTF8Text(at url: URL, progress: @escaping @Sendable (Double) -> Void) throws -> String {
+        try Task.checkCancellation()
+        // Memory-map when the OS thinks it's safe (i.e. the file is on a
+        // local volume) — that avoids the 2× peak of FileHandle.read(into:)
+        // followed by String(data:encoding:) for large markdown files.
+        // Falls back to a regular load for network/iCloud paths.
+        let data = try Data(contentsOf: url, options: .mappedIfSafe)
+        try Task.checkCancellation()
+        progress(1)
+        guard let text = String(data: data, encoding: .utf8) else {
+            throw DocumentLoadError.invalidUTF8
+        }
+        try Task.checkCancellation()
+        return text
+    }
+
+    private func applyLoadedFile(url: URL, text: String, inNewTab: Bool) {
+        // The dirty-state of the active document may have changed between
+        // when the load was kicked off and when its bytes are ready (the
+        // user kept typing). Re-confirm before clobbering.
+        if !inNewTab, activeDocumentIndex != nil {
+            guard confirmNavigationAwayFromActiveDoc() else { return }
+        }
+        if inNewTab {
+            let doc = OpenDocument(
+                id: UUID(),
+                fileURL: url,
+                text: text,
+                lastSavedText: text,
+                untitledNumber: nil,
+                viewMode: WorkspaceManager.defaultViewModeForOpenedFile
+            )
+            openDocuments.append(doc)
+            activateDocument(doc)
+        } else if let idx = activeDocumentIndex {
             // Replacing the active tab's file is a host-driven same-document revision.
             // Bump the live editor epoch before mutating text so stale callbacks from
             // the previously loaded file cannot overwrite the newly opened content.
             documentEpoch += 1
             WYSIWYGSession.update(documentID: openDocuments[idx].id, epoch: documentEpoch)
-            // Replace the active tab's content in place
             openDocuments[idx].fileURL = url
             openDocuments[idx].text = text
             openDocuments[idx].lastSavedText = text
@@ -668,11 +851,11 @@ final class WorkspaceManager {
             openDocuments[idx].viewMode = WorkspaceManager.defaultViewModeForOpenedFile
             currentFileURL = url
             currentFileText = text
+            currentFileRevision += 1
             currentViewMode = openDocuments[idx].viewMode
             currentConflictOutcome = nil
             refreshConflictOutcomeForActiveDocument()
         } else {
-            // No active document — create one
             let doc = OpenDocument(
                 id: UUID(),
                 fileURL: url,
@@ -688,50 +871,8 @@ final class WorkspaceManager {
         addToRecents(url)
         persistLastOpenFile(url)
 
-        DiagnosticLog.log("Opened file: \(url.lastPathComponent)")
+        DiagnosticLog.log(inNewTab ? "Opened file in new tab: \(url.lastPathComponent)" : "Opened file: \(url.lastPathComponent)")
         presentMainWindow()
-        return true
-    }
-
-    /// Opens a file in a new tab (Cmd+click or Cmd+T then navigate).
-    @discardableResult
-    func openFileInNewTab(at url: URL) -> Bool {
-        // If already open in a tab, just switch to it
-        if let existing = openDocuments.first(where: { $0.fileURL == url }) {
-            return switchToDocument(existing.id)
-        }
-
-        guard confirmNavigationAwayFromActiveDoc() else { return false }
-
-        guard Limits.isOpenableSize(url) else {
-            DiagnosticLog.log("Refusing to open oversized file: \(url.lastPathComponent)")
-            presentFileTooLargeAlert(for: url)
-            return false
-        }
-
-        guard let data = try? Data(contentsOf: url),
-              let text = String(data: data, encoding: .utf8) else {
-            DiagnosticLog.log("Failed to read file: \(url.lastPathComponent)")
-            return false
-        }
-
-        let doc = OpenDocument(
-            id: UUID(),
-            fileURL: url,
-            text: text,
-            lastSavedText: text,
-            untitledNumber: nil,
-            viewMode: WorkspaceManager.defaultViewModeForOpenedFile
-        )
-        openDocuments.append(doc)
-        activateDocument(doc)
-
-        addToRecents(url)
-        persistLastOpenFile(url)
-
-        DiagnosticLog.log("Opened file in new tab: \(url.lastPathComponent)")
-        presentMainWindow()
-        return true
     }
 
     // MARK: - Text Changes
@@ -770,6 +911,7 @@ final class WorkspaceManager {
         // will read on its next access.
         if let idx = activeDocumentIndex {
             openDocuments[idx].text = currentFileText
+            currentFileRevision += 1
         }
         // Only auto-save file-backed documents
         if isDirty, currentFileURL != nil {
@@ -784,6 +926,7 @@ final class WorkspaceManager {
         documentEpoch += 1
         WYSIWYGSession.update(documentID: activeDocumentID, epoch: documentEpoch)
         currentFileText = newText
+        currentFileRevision += 1
         if let idx = activeDocumentIndex {
             openDocuments[idx].text = newText
             openDocuments[idx].lastSavedText = newText
@@ -2513,6 +2656,7 @@ final class WorkspaceManager {
         WYSIWYGSession.update(documentID: doc.id, epoch: documentEpoch)
         currentFileURL = doc.fileURL
         currentFileText = doc.text
+        currentFileRevision += 1
         currentViewMode = doc.viewMode
         currentConflictOutcome = doc.conflictOutcome
         if doc.fileURL != nil {
@@ -2527,6 +2671,7 @@ final class WorkspaceManager {
         activeDocumentID = doc.id
         currentFileURL = doc.fileURL
         currentFileText = doc.text
+        currentFileRevision += 1
         currentViewMode = doc.viewMode
         currentConflictOutcome = doc.conflictOutcome
         if doc.fileURL != nil {

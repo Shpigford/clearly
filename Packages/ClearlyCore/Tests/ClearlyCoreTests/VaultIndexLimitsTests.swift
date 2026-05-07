@@ -57,6 +57,35 @@ final class VaultIndexLimitsTests: XCTestCase {
         XCTAssertEqual(index.searchFiles(query: "needle").count, 0)
     }
 
+    func testGroupedSearchReturnsMoreThanFiveExcerptsForLargeBooks() throws {
+        let index = try VaultIndex(locationURL: tempVault)
+        let body = (1...20)
+            .map { "Chapter \($0)\nThe story continues." }
+            .joined(separator: "\n")
+        _ = try writeNote("book.md", body: body)
+        index.indexAllFiles()
+
+        let group = try XCTUnwrap(index.searchFilesGrouped(query: "chapter").first { $0.file.path == "book.md" })
+
+        XCTAssertEqual(group.excerpts.count, 20)
+        XCTAssertTrue(group.excerpts.first?.contextLine.contains("Chapter 1") == true)
+        XCTAssertTrue(group.excerpts.last?.contextLine.contains("Chapter 20") == true)
+    }
+
+    func testGroupedSearchHonorsExplicitExcerptLimit() throws {
+        let index = try VaultIndex(locationURL: tempVault)
+        let body = (1...20)
+            .map { "Chapter \($0)\nThe story continues." }
+            .joined(separator: "\n")
+        _ = try writeNote("book.md", body: body)
+        index.indexAllFiles()
+
+        let group = try XCTUnwrap(index.searchFilesGrouped(query: "chapter", maxExcerptsPerFile: 1).first { $0.file.path == "book.md" })
+
+        XCTAssertEqual(group.excerpts.count, 1)
+        XCTAssertTrue(group.excerpts[0].contextLine.contains("Chapter 1"))
+    }
+
     private func writeNote(_ name: String, body: String) throws -> URL {
         let url = tempVault.appendingPathComponent(name)
         try body.write(to: url, atomically: true, encoding: .utf8)
