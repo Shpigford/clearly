@@ -181,7 +181,8 @@ enum VaultChatCoordinator {
     }
 
     private static func selectedBackend() -> String {
-        UserDefaults.standard.string(forKey: OpenAICompatibleAgentRunner.Keys.backend) ?? "cli"
+        UserDefaults.standard.string(forKey: OpenAICompatibleAgentRunner.Keys.backend) ??
+            OpenAICompatibleAgentRunner.Keys.defaultBackend
     }
 
     private static func shouldWarmSelectedRunner() -> Bool {

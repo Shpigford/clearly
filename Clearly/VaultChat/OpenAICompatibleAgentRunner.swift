@@ -102,6 +102,7 @@ struct OpenAICompatibleAgentRunner: AgentRunner {
     }
 
     enum Keys {
+        static let defaultBackend = "cli"
         static let backend = "vaultChatBackend"
         static let baseURL = "vaultChatAPIBaseURL"
         static let model = "vaultChatAPIModel"

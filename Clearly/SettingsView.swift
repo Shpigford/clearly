@@ -664,7 +664,7 @@ private struct SyncSettingsTab: View {
 // MARK: - Chat Settings Tab
 
 private struct ChatSettingsTab: View {
-    @AppStorage(OpenAICompatibleAgentRunner.Keys.backend) private var backend = "cli"
+    @AppStorage(OpenAICompatibleAgentRunner.Keys.backend) private var backend = OpenAICompatibleAgentRunner.Keys.defaultBackend
     @AppStorage("vaultChatRunner") private var runner = "auto"
     @AppStorage(OpenAICompatibleAgentRunner.Keys.baseURL) private var apiBaseURL = OpenAICompatibleAgentRunner.Settings.defaultBaseURLString
     @AppStorage(OpenAICompatibleAgentRunner.Keys.model) private var apiModel = ""
