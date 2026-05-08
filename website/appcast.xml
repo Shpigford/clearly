@@ -3,6 +3,20 @@
   <channel>
     <title>Clearly</title>
     <item>
+      <title>Version 3.0.1</title>
+      <sparkle:version>3.0.1</sparkle:version>
+      <sparkle:shortVersionString>3.0.1</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+      <pubDate>Fri, 08 May 2026 16:01:34 +0000</pubDate>
+      <description><![CDATA[<ul><li>Restored QuickLook previews and the default-opener behavior for .md files in Finder</li></ul>]]></description>
+      <enclosure
+        url="https://github.com/Shpigford/clearly/releases/download/v3.0.1/Clearly.dmg"
+        sparkle:edSignature="YbURwIQSD4q+N310o55aPoIVDR4VubyfOv5MFgxpeYyXSeXx4n73we1WGNWB0/Lw+OB2+2ztcCKGOsSihSRdDg=="
+        length="8581982"
+        type="application/octet-stream"
+      />
+    </item>
+    <item>
       <title>Version 3.0.0</title>
       <sparkle:version>3.0.0</sparkle:version>
       <sparkle:shortVersionString>3.0.0</sparkle:shortVersionString>
