@@ -13,6 +13,7 @@ struct EditorView: NSViewRepresentable {
     var findState: FindState?
     var outlineState: OutlineState?
     var extraTopInset: CGFloat = 0
+    var extraBottomInset: CGFloat = 0
     var showLineNumbers: Bool = false
     var jumpToLineState: JumpToLineState?
     var statusBarState: StatusBarState?
@@ -41,6 +42,9 @@ struct EditorView: NSViewRepresentable {
         scrollView.hasHorizontalScroller = false
         scrollView.drawsBackground = false
         scrollView.autohidesScrollers = true
+        scrollView.automaticallyAdjustsContentInsets = false
+        scrollView.contentInsets = NSEdgeInsets(top: 0, left: 0, bottom: extraBottomInset, right: 0)
+        scrollView.scrollerInsets = NSEdgeInsets(top: 0, left: 0, bottom: -extraBottomInset, right: 0)
 
         let textView = ClearlyTextView()
         textView.isRichText = false
@@ -236,6 +240,11 @@ struct EditorView: NSViewRepresentable {
         let expectedInset = NSSize(width: horizontalInset, height: Theme.editorInsetTop + extraTopInset)
         if textView.textContainerInset != expectedInset {
             textView.textContainerInset = expectedInset
+        }
+
+        if abs(scrollView.contentInsets.bottom - extraBottomInset) > 0.5 {
+            scrollView.contentInsets = NSEdgeInsets(top: 0, left: 0, bottom: extraBottomInset, right: 0)
+            scrollView.scrollerInsets = NSEdgeInsets(top: 0, left: 0, bottom: -extraBottomInset, right: 0)
         }
 
         let didChangeDocument = context.coordinator.lastPositionSyncID != positionSyncID

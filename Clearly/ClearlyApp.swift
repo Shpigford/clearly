@@ -240,8 +240,8 @@ struct ClearlyApp: App {
             CommandGroup(after: .toolbar) {
                 ViewModeCommands()
                 OutlineToggleCommand()
-                StatusBarToggleCommand()
                 LineNumbersToggleCommand()
+                BottomToolbarVisibilityCommand()
             }
             CommandGroup(replacing: .textFormatting) {
                 FontSizeCommands()
@@ -384,10 +384,6 @@ private struct OutlineStateKey: FocusedValueKey {
     typealias Value = OutlineState
 }
 
-private struct StatusBarStateKey: FocusedValueKey {
-    typealias Value = StatusBarState
-}
-
 private struct ViewModeKey: FocusedValueKey {
     typealias Value = Binding<ViewMode>
 }
@@ -408,10 +404,6 @@ extension FocusedValues {
     var outlineState: OutlineState? {
         get { self[OutlineStateKey.self] }
         set { self[OutlineStateKey.self] = newValue }
-    }
-    var statusBarState: StatusBarState? {
-        get { self[StatusBarStateKey.self] }
-        set { self[StatusBarStateKey.self] = newValue }
     }
     var viewMode: Binding<ViewMode>? {
         get { self[ViewModeKey.self] }
@@ -474,19 +466,19 @@ struct OutlineToggleCommand: View {
     }
 }
 
-struct StatusBarToggleCommand: View {
-    @FocusedValue(\.statusBarState) var statusBarState
+struct BottomToolbarVisibilityCommand: View {
+    @AppStorage("alwaysShowBottomToolbar") private var alwaysShowBottomToolbar: Bool = false
 
     var body: some View {
         Button {
-            statusBarState?.toggle()
+            alwaysShowBottomToolbar.toggle()
         } label: {
             Label(
-                statusBarState?.isVisible == true ? "Hide Word Counts" : "Show Word Counts",
-                systemImage: "character.textbox"
+                alwaysShowBottomToolbar ? "Hide Toolbar" : "Show Toolbar",
+                systemImage: "rectangle.bottomthird.inset.filled"
             )
         }
-        .disabled(statusBarState == nil)
+        .keyboardShortcut("b", modifiers: [.command, .shift])
     }
 }
 
