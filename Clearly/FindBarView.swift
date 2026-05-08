@@ -36,10 +36,9 @@ struct FindBarView: View {
     private var findRow: some View {
         HStack(spacing: 8) {
             DisclosureChevron(isExpanded: isReplaceVisible) {
-                if findState.activeMode == .preview {
-                    WorkspaceManager.shared.currentViewMode = .edit
-                    findState.showReplace = true
-                } else {
+                // Replace UI only makes sense in edit mode. If we're in
+                // preview, defer the toggle until the user switches modes.
+                if findState.activeMode == .edit {
                     findState.showReplace.toggle()
                 }
                 findState.lastReplaceCount = nil

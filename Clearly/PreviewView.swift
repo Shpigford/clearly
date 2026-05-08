@@ -30,10 +30,7 @@ struct PreviewView: NSViewRepresentable {
     var findState: FindState?
     var outlineState: OutlineState?
     var onTaskToggle: ((Int, Bool) -> Void)?
-    var onWikiLinkClicked: ((String, String?) -> Void)?
-    var onTagClicked: ((String) -> Void)?
     var onJumpToSource: ((Int) -> Void)?
-    var wikiFileNames: Set<String>?
     var contentWidthEm: CGFloat? = nil
     var extraTopInset: CGFloat = 0
     @AppStorage("hideFrontmatterInPreview") private var hideFrontmatterInPreview = false
@@ -46,11 +43,7 @@ struct PreviewView: NSViewRepresentable {
     }
 
     private var contentKey: String {
-        "\(markdown.count)|\(markdown.hashValue)__\(fontSize)__\(fontFamily)__\(colorScheme == .dark ? "dark" : "light")__\(LocalImageSupport.fileURLKeyFragment(fileURL))__\(wikiFilesKey)__\(contentWidthEm.map { "\($0)" } ?? "off")__\(hideFrontmatterInPreview)"
-    }
-
-    private var wikiFilesKey: String {
-        (wikiFileNames ?? []).sorted().joined(separator: "\n")
+        "\(markdown.count)|\(markdown.hashValue)__\(fontSize)__\(fontFamily)__\(colorScheme == .dark ? "dark" : "light")__\(LocalImageSupport.fileURLKeyFragment(fileURL))__\(contentWidthEm.map { "\($0)" } ?? "off")__\(hideFrontmatterInPreview)"
     }
 
     func makeCoordinator() -> Coordinator {
@@ -77,8 +70,6 @@ struct PreviewView: NSViewRepresentable {
         context.coordinator.findState = findState
         context.coordinator.outlineState = outlineState
         context.coordinator.onTaskToggle = onTaskToggle
-        context.coordinator.onWikiLinkClicked = onWikiLinkClicked
-        context.coordinator.onTagClicked = onTagClicked
         context.coordinator.onJumpToSource = onJumpToSource
         let coordinator = context.coordinator
         findState?.previewNavigateToNext = { [weak coordinator] in
@@ -159,16 +150,8 @@ struct PreviewView: NSViewRepresentable {
     private func loadHTML(in webView: WKWebView, context: Context) {
         context.coordinator.lastContentKey = contentKey
         context.coordinator.isLoadingContent = true
-        let rawBody = MarkdownRenderer.renderHTML(markdown, appLinkURLs: true, includeFrontmatter: !hideFrontmatterInPreview)
+        let rawBody = MarkdownRenderer.renderHTML(markdown, includeFrontmatter: !hideFrontmatterInPreview)
         let htmlBody = LocalImageSupport.resolveImageSources(in: rawBody, relativeTo: fileURL)
-        let wikiFilesJSON: String = {
-            guard let names = wikiFileNames, !names.isEmpty else { return "[]" }
-            guard let data = try? JSONSerialization.data(withJSONObject: Array(names)),
-                  var json = String(data: data, encoding: .utf8) else { return "[]" }
-            // Prevent </script> injection in HTML context
-            json = json.replacingOccurrences(of: "</", with: "<\\/")
-            return json
-        }()
         let scrollJS = """
         // Track scroll fraction for position sync between editor and preview.
         var _scrollTicking = false;
@@ -331,18 +314,6 @@ struct PreviewView: NSViewRepresentable {
                 if (popover) { popover.remove(); popover = null; }
             });
         });
-        // Wiki-link broken detection
-        (function() {
-            var knownFiles = new Set(\(wikiFilesJSON));
-            document.querySelectorAll('a.wiki-link').forEach(function(a) {
-                var href = a.getAttribute('href') || '';
-                if (!href.startsWith('clearly://wiki/')) return;
-                var target = decodeURIComponent(href.replace('clearly://wiki/', '').split('#')[0]);
-                if (knownFiles.size > 0 && !knownFiles.has(target.toLowerCase())) {
-                    a.classList.add('wiki-link-broken');
-                }
-            });
-        })();
         // Double-click any element to jump to its source line in the editor.
         document.addEventListener('dblclick', function(e) {
             var t = e.target;
@@ -378,8 +349,6 @@ struct PreviewView: NSViewRepresentable {
         var findState: FindState?
         var outlineState: OutlineState?
         var onTaskToggle: ((Int, Bool) -> Void)?
-        var onWikiLinkClicked: ((String, String?) -> Void)?
-        var onTagClicked: ((String) -> Void)?
         var onJumpToSource: ((Int) -> Void)?
         var skipNextReload = false
         var isLoadingContent = false
@@ -773,24 +742,6 @@ struct PreviewView: NSViewRepresentable {
         }
 
         private func handleLinkClick(_ href: String) {
-            if href.hasPrefix("clearly://wiki/") {
-                let remainder = String(href.dropFirst("clearly://wiki/".count))
-                let parts = remainder.components(separatedBy: "#")
-                let target = parts[0].removingPercentEncoding ?? parts[0]
-                let heading = parts.count > 1 ? (parts[1].removingPercentEncoding ?? parts[1]) : nil
-                DispatchQueue.main.async { [weak self] in
-                    self?.onWikiLinkClicked?(target, heading)
-                }
-                return
-            }
-            if href.hasPrefix("clearly://tag/") {
-                let tagName = String(href.dropFirst("clearly://tag/".count))
-                    .removingPercentEncoding ?? String(href.dropFirst("clearly://tag/".count))
-                DispatchQueue.main.async { [weak self] in
-                    self?.onTagClicked?(tagName)
-                }
-                return
-            }
             guard let targetURL = resolvedLinkURL(for: href) else { return }
             NSWorkspace.shared.open(targetURL)
         }

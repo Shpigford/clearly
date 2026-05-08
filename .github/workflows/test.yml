@@ -11,50 +11,6 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  cli:
-    name: CLI Build + Integration + Smoke
-    runs-on: macos-15
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Select Xcode
-        uses: maxim-lobanov/setup-xcode@v1
-        with:
-          # Pinned: Xcode 26.3 + macos-15 runner crashes ibtoold during
-          # AppIcon.icon (Icon Composer) compile with dyld AVFCore symbol
-          # mismatches. 26.2 builds the .icon asset cleanly.
-          xcode-version: "26.2"
-
-      - name: Install xcodegen
-        run: brew install xcodegen
-
-      - name: Generate Xcode project
-        run: xcodegen generate
-
-      - name: Cache DerivedData and SPM
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/Library/Developer/Xcode/DerivedData
-            ~/Library/Caches/org.swift.swiftpm
-          key: ${{ runner.os }}-cli-${{ hashFiles('project.yml', 'Packages/ClearlyCore/Package.swift', 'Packages/ClearlyCore/Package.resolved') }}
-          restore-keys: |
-            ${{ runner.os }}-cli-
-
-      - name: Build ClearlyCLI (Debug)
-        run: xcodebuild -scheme ClearlyCLI -configuration Debug build -quiet
-
-      - name: Integration tests
-        run: |
-          xcodebuild test \
-            -scheme ClearlyCLIIntegrationTests \
-            -destination 'platform=macOS' \
-            -quiet
-
-      - name: CLI smoke test
-        run: ./scripts/cli-smoke.sh
-
   build-app-macos:
     name: Build Mac app (Debug)
     runs-on: macos-15

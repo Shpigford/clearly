@@ -2,44 +2,15 @@
 title: Welcome to Clearly
 author: Josh Pigford
 date: 2026-04-14
-tags: getting-started, knowledge-base, markdown
 ---
 
 # Welcome to Clearly
 
-A **native macOS knowledge base** built with SwiftUI — fast, focused, and beautifully rendered. Write in markdown, connect your thinking with [[wiki links]] and #tags, and let Clearly handle the rest.
+A **native macOS markdown editor** built with SwiftUI — fast, focused, and beautifully rendered. Write in markdown, switch to a live preview, and let Clearly handle the rest.
 
 > "The best tool is the one that gets out of your way." — *somebody, probably*
 
 [TOC]
-
----
-
-## Connecting Your Knowledge
-
-Clearly isn't just a markdown editor — it's a place to think. Link your notes together, tag them for easy retrieval, and let the backlinks panel show you connections you didn't know existed.
-
-### Wiki Links
-
-Link to other documents in your workspace with double brackets:
-
-- **Basic link:** [[Getting Started]] links to a page by name
-- **With display text:** [[Markdown Syntax|the full syntax guide]] shows custom text
-- **To a heading:** [[Keyboard Shortcuts#Preview Mode]] jumps to a specific section
-- **Both:** [[Workspace Setup#Adding Folders|set up your folders]] combines alias and heading
-
-> [!TIP]
-> Type `[[` in the editor and Clearly will suggest matching pages from your workspace. Links that resolve to an existing page appear green; unresolved links appear orange so you can spot gaps.
-
-### Tags
-
-Add #tags inline to categorize your notes, or use the `tags` field in frontmatter (like this document does). Tags are clickable in preview and aggregated in the sidebar.
-
-Organize by topic — #projects, #research, #meeting-notes — whatever fits your workflow. Tags support hyphens, slashes, and unicode: #café, #work/2026, #日本語.
-
-### Backlinks
-
-Open the backlinks panel to see every document that links *to* the current page — both explicit wiki links and unlinked mentions of the page title. It's the fastest way to resurface forgotten connections.
 
 ---
 
@@ -49,7 +20,7 @@ Clearly supports the full range of markdown formatting. Write in **bold**, *ital
 
 Use `inline code` for short snippets, variable names like `NSTextStorage`, or file paths like `~/Desktop/notes.md`.
 
-Links look like this: [Clearly on GitHub](https://github.com/joshpigford/clearly), and autolinked URLs work too: https://apple.com.
+Links look like this: [Clearly on GitHub](https://github.com/Shpigford/clearly), and autolinked URLs work too: https://apple.com.
 
 ### Highlight
 
@@ -94,7 +65,6 @@ Ship features :ship:, fix bugs :bug:, and celebrate :champagne:!
 - [x] Open a markdown file
 - [x] See beautiful syntax highlighting
 - [x] Render a live preview
-- [ ] Link your notes with [[wiki links]]
 - [ ] Tell all your friends
 
 *Tip: In preview mode, you can click the checkboxes to toggle them!*
@@ -195,8 +165,6 @@ xcodebuild -scheme Clearly -configuration Debug build
 | :------------------- | :----: | :-----: | :-------: |
 | Syntax highlighting  |   ✓    |    ✓    |     ✓     |
 | Live GFM rendering   |   —    |    ✓    |     ✓     |
-| Wiki links           |   ✓    |    ✓    |     ✓     |
-| Tags                 |   ✓    |    ✓    |     ✓     |
 | Tables               |   ✓    |    ✓    |     ✓     |
 | Math (KaTeX)         |   ✓    |    ✓    |     ✓     |
 | Mermaid diagrams     |   ✓    |    ✓    |     ✓     |
@@ -331,4 +299,4 @@ HTML passes through for when you need it:
 
 ## What's Next
 
-This document barely scratches the surface. Start building your own #knowledge-base — create a new file, link it with `[[double brackets]]`, and watch Clearly connect the dots for you. :rocket:
+That's the tour. Open your own `.md` file (or hit `⌘N` for a fresh one) and start writing. :rocket:

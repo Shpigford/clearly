@@ -135,31 +135,12 @@ for key in SUFeedURL SUPublicEDKey SUEnableInstallerLauncherService; do
   /usr/libexec/PlistBuddy -c "Delete :$key" Clearly/Info.plist 2>/dev/null || true
 done
 
-# ── 2. Generate project.yml without Sparkle or ClearlyCLI ───────────────────
-# The ClearlyCLI helper is stripped from App Store builds: as a sandboxed helper
-# bundled at Contents/Resources/Helpers/ClearlyCLI it cannot read the main
-# app's container, and App Store Review rejects non-sandboxed nested executables.
-# Direct-download users still get it via release.sh.
+# ── 2. Generate project.yml without Sparkle ─────────────────────────────────
 sed \
   -e '/^  Sparkle:$/,/from:/d' \
   -e '/- package: Sparkle/d' \
   -e 's|Clearly/Clearly.entitlements|Clearly/Clearly-AppStore.entitlements|' \
-  project.yml | \
-awk '
-  # Drop the ClearlyCLI target block (it is the last target in project.yml).
-  /^  ClearlyCLI:/ { skip_target = 1 }
-  skip_target { next }
-  # Drop the postCompileScripts block inside the Clearly target.
-  # It ends at the next 4-space-indented key (e.g. "    settings:").
-  /^    postCompileScripts:/ { skip_postcompile = 1; next }
-  skip_postcompile && /^    [a-zA-Z]/ { skip_postcompile = 0 }
-  skip_postcompile { next }
-  # Drop the ClearlyCLI dependency entry plus its indented children (embed, etc).
-  /^      - target: ClearlyCLI/ { skip_cli_dep = 1; next }
-  skip_cli_dep && /^        / { next }
-  skip_cli_dep { skip_cli_dep = 0 }
-  { print }
-' > build/project-appstore.yml
+  project.yml > build/project-appstore.yml
 
 # ── 3. Generate Xcode project from modified spec ────────────────────────────
 xcodegen generate --spec build/project-appstore.yml -p . -r .
@@ -183,7 +164,7 @@ fi
 echo "✅ Archive clean — no Sparkle framework."
 
 # ── 5. Export + upload to App Store Connect ──────────────────────────────────
-# Verify iCloud entitlements on the archived app BEFORE upload. The export
+# Verify app entitlements on the archived app BEFORE upload. The export
 # step uses destination=upload and uploads directly to ASC without leaving a
 # local .app behind, so we validate the archive (which is what gets signed
 # and shipped).

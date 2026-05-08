@@ -2,8 +2,7 @@ import Foundation
 
 /// Writes pasted/dropped images to disk next to the open `.md` document.
 /// Filenames follow `<slug>-<N>.<ext>` with a linear counter derived from
-/// sibling files in the same directory. Always coordinated through
-/// `CoordinatedFileIO` so the iCloud presenter dance works on iOS.
+/// sibling files in the same directory.
 public enum ImagePasteService {
 
     public struct WriteResult {
@@ -18,21 +17,15 @@ public enum ImagePasteService {
     ]
 
     /// URL is worth attempting to download as an image when it's HTTP(S) and
-    /// its path ends in a known image extension. Extension-less URLs aren't
-    /// treated as images — most modern links (articles, share URLs, CDN
-    /// endpoints without an explicit extension) would otherwise trigger a
-    /// download that fails and leaves a broken `![](failed-download)`.
+    /// its path ends in a known image extension.
     public static func isLikelyImageURL(_ url: URL) -> Bool {
         guard let scheme = url.scheme?.lowercased(), scheme == "http" || scheme == "https" else { return false }
         return imageFileExtensions.contains(url.pathExtension.lowercased())
     }
 
-    /// Derive a URL-safe slug from the document's filename stem. Lowercased,
-    /// non-alphanumerics collapsed to `-`, capped at 40 chars so the final
-    /// image filename stays well under APFS's 255-byte limit even with a
-    /// high counter. Falls back to `"image"` for empty input.
+    /// Derive a URL-safe slug from the document's filename stem.
     public static func imageSlug(fromDocumentStem stem: String) -> String {
-        let sanitized = UntitledRename.sanitizeFilename(stem).lowercased()
+        let sanitized = sanitizeFilename(stem).lowercased()
         var chars: [Character] = []
         var lastWasDash = false
         for char in sanitized {
@@ -55,8 +48,7 @@ public enum ImagePasteService {
     }
 
     /// Next collision-free URL of the form `<slug>-<N>.<ext>` in the same
-    /// directory as `docURL`. Scans existing siblings for the highest N
-    /// matching the prefix and returns N+1.
+    /// directory as `docURL`.
     public static func nextImageURL(besidesDocumentAt docURL: URL, ext: String = "png") -> URL {
         let parent = docURL.deletingLastPathComponent()
         let stem = (docURL.lastPathComponent as NSString).deletingPathExtension
@@ -74,26 +66,36 @@ public enum ImagePasteService {
         return parent.appendingPathComponent("\(prefix)\(maxN + 1).\(ext)")
     }
 
-    /// Writes PNG bytes to a sibling file next to `docURL` via coordinated
-    /// I/O, returning the resulting URL and the relative-path markdown
-    /// token (`![](slug-N.png)`) to insert into the editor.
     public static func writeImageData(_ data: Data,
                                       ext: String,
-                                      besidesDocumentAt docURL: URL,
-                                      presenter: NSFilePresenter?) throws -> WriteResult {
+                                      besidesDocumentAt docURL: URL) throws -> WriteResult {
         let normalizedExt = ext.lowercased().isEmpty ? "png" : ext.lowercased()
         let url = nextImageURL(besidesDocumentAt: docURL, ext: normalizedExt)
-        try CoordinatedFileIO.write(data, to: url, presenter: presenter)
+        try data.write(to: url, options: .atomic)
         let encoded = url.lastPathComponent.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? url.lastPathComponent
         return WriteResult(url: url, markdown: "![](\(encoded))")
     }
 
-    /// Writes PNG bytes to a sibling file next to `docURL` via coordinated
-    /// I/O, returning the resulting URL and the relative-path markdown
-    /// token (`![](slug-N.png)`) to insert into the editor.
-    public static func writePNG(_ pngData: Data,
-                                besidesDocumentAt docURL: URL,
-                                presenter: NSFilePresenter?) throws -> WriteResult {
-        try writeImageData(pngData, ext: "png", besidesDocumentAt: docURL, presenter: presenter)
+    public static func writePNG(_ pngData: Data, besidesDocumentAt docURL: URL) throws -> WriteResult {
+        try writeImageData(pngData, ext: "png", besidesDocumentAt: docURL)
+    }
+
+    /// Lightly sanitize a filename stem: strip filesystem-invalid chars,
+    /// trim whitespace, drop leading dots, cap at 240 chars (APFS limit
+    /// minus headroom for extension and collision suffix).
+    private static func sanitizeFilename(_ raw: String) -> String {
+        let forbidden: Set<Character> = ["/", "\\", ":", "?", "*", "\"", "<", ">", "|"]
+        var result = ""
+        for char in raw {
+            if forbidden.contains(char) { continue }
+            if char.unicodeScalars.contains(where: { $0.value == 0 || $0.properties.generalCategory == .control }) {
+                continue
+            }
+            result.append(char)
+        }
+        var trimmed = result.trimmingCharacters(in: .whitespacesAndNewlines)
+        while trimmed.hasPrefix(".") { trimmed.removeFirst() }
+        if trimmed.count > 240 { trimmed = String(trimmed.prefix(240)) }
+        return trimmed
     }
 }

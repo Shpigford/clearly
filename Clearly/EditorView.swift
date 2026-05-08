@@ -98,17 +98,6 @@ struct EditorView: NSViewRepresentable {
         context.coordinator.highlighter = highlighter
         textView.string = text
         textView.delegate = context.coordinator
-        textView.onWikiLinkClicked = { target, heading in
-            NotificationCenter.default.post(
-                name: .navigateWikiLink, object: nil,
-                userInfo: ["target": target, "heading": heading as Any]
-            )
-        }
-        textView.onPasteRequiresSave = {
-            let ws = WorkspaceManager.shared
-            _ = ws.saveCurrentFile()
-            return ws.currentFileURL
-        }
         scrollView.documentView = textView
 
         // Line number gutter (plain NSView, not NSRulerView)
@@ -118,7 +107,7 @@ struct EditorView: NSViewRepresentable {
         context.coordinator.gutterView = gutter
 
         context.coordinator.textView = textView
-        WorkspaceManager.shared.activeEditorTextView = textView
+        ActiveEditor.shared.textView = textView
         context.coordinator.findState = findState
         context.coordinator.outlineState = outlineState
         if let findState {
@@ -205,8 +194,8 @@ struct EditorView: NSViewRepresentable {
     static func dismantleNSView(_ container: NSView, coordinator: Coordinator) {
         NotificationCenter.default.removeObserver(coordinator)
         if let textView = coordinator.textView,
-           WorkspaceManager.shared.activeEditorTextView === textView {
-            WorkspaceManager.shared.activeEditorTextView = nil
+           ActiveEditor.shared.textView === textView {
+            ActiveEditor.shared.textView = nil
         }
         DiagnosticLog.log("dismantleNSView: EditorView torn down")
     }
@@ -317,10 +306,9 @@ struct EditorView: NSViewRepresentable {
         }
 
         // Only update text if it changed externally (not from user typing).
-        // When the user types, textDidChange increments pendingBindingUpdates
-        // synchronously, then the async block decrements it after updating the
-        // binding. While updates are pending, the text view is authoritative —
-        // any mismatch is just the binding lagging behind, not an external change.
+        // When the user types, textDidChange marks the text view authoritative
+        // until the next run loop. While updates are pending, any mismatch is
+        // just SwiftUI catching up, not an external change.
         let textMismatch = text.count != textView.string.count || textView.string != text
         if !context.coordinator.isUpdating && context.coordinator.pendingBindingUpdates == 0 && textMismatch {
             DiagnosticLog.log("updateNSView #\(count): external text change (\(text.count) chars)")
@@ -375,7 +363,6 @@ struct EditorView: NSViewRepresentable {
         var cachedNeedsTrafficLightClearance: Bool = false
         var updateCount = 0
         private var lastScrollTime: TimeInterval = 0
-        private var editGeneration: UInt = 0
         /// Tracks how many async binding updates are in-flight. While > 0,
         /// updateNSView must not replace the text view's content — the text
         /// view is authoritative and the binding will catch up.
@@ -486,6 +473,8 @@ struct EditorView: NSViewRepresentable {
 
         @objc func flushEditorBuffer(_ notification: Notification) {
             guard let textView else { return }
+            pendingBindingUpdateToken = nil
+            pendingBindingUpdates = 0
             commitTextViewContents(textView)
         }
 
@@ -595,12 +584,9 @@ struct EditorView: NSViewRepresentable {
                 .store(in: &findCancellables)
         }
 
-        var lastReplacementString: String?
-
         func textView(_ textView: NSTextView, shouldChangeTextIn affectedCharRange: NSRange, replacementString: String?) -> Bool {
             lastEditedRange = affectedCharRange
             lastReplacementLength = replacementString?.utf16.count ?? 0
-            lastReplacementString = replacementString
             return true
         }
 
@@ -685,98 +671,22 @@ struct EditorView: NSViewRepresentable {
             // Update line number ruler
             gutterView?.textDidChange()
 
-            // Wiki-link auto-complete trigger/update
-            handleWikiLinkCompletion(textView)
-
-            // Update SwiftUI binding with a short debounce. The text view already shows
-            // the correct content — the binding is only needed for preview, file saving,
-            // and outline parsing, which are expensive on long documents and don't need
-            // to run on every keystroke.
-            editGeneration += 1
-            let gen = editGeneration
+            // Update SwiftUI's document binding immediately so DocumentGroup
+            // saves the latest keystroke even when Cmd+S follows typing.
             let token = UUID()
             pendingBindingUpdateToken = token
-            let scheduledPositionSyncID = lastPositionSyncID
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in
+            commitTextViewContents(textView)
+
+            DispatchQueue.main.async { [weak self] in
                 guard let self else { return }
                 guard self.pendingBindingUpdateToken == token else { return }
                 self.pendingBindingUpdateToken = nil
                 self.pendingBindingUpdates = 0
-                guard gen == self.editGeneration else { return }
-                guard self.lastPositionSyncID == scheduledPositionSyncID else { return }
-                guard let textView = self.textView else { return }
-                self.commitTextViewContents(textView)
             }
         }
 
         private func commitTextViewContents(_ textView: NSTextView) {
             parent.text = textView.string
-            WorkspaceManager.shared.contentDidChange()
-        }
-
-        // MARK: - Wiki-Link Auto-Complete
-
-        private func handleWikiLinkCompletion(_ textView: NSTextView) {
-            let completion = WikiLinkCompletionManager.shared
-
-            if completion.isVisible {
-                let cursorLocation = textView.selectedRange().location
-
-                // Dismiss if cursor moved before the trigger
-                guard cursorLocation >= completion.triggerLocation + 2 else {
-                    completion.dismiss()
-                    return
-                }
-
-                let queryStart = completion.triggerLocation + 2
-                let queryLength = cursorLocation - queryStart
-
-                guard queryLength >= 0 else {
-                    completion.dismiss()
-                    return
-                }
-
-                let nsText = textView.string as NSString
-
-                // Check if `]]` was typed
-                if cursorLocation >= 2 {
-                    let lastTwo = nsText.substring(with: NSRange(location: cursorLocation - 2, length: 2))
-                    if lastTwo == "]]" {
-                        completion.dismiss()
-                        return
-                    }
-                }
-
-                let query: String
-                if queryLength == 0 {
-                    query = ""
-                } else {
-                    query = nsText.substring(with: NSRange(location: queryStart, length: queryLength))
-                }
-
-                if query.contains("\n") {
-                    completion.dismiss()
-                    return
-                }
-
-                completion.updateResults(query: query)
-                return
-            }
-
-            // Not visible — check if `[[` was just typed
-            guard let replacement = lastReplacementString, replacement.contains("[") else { return }
-
-            let cursorLocation = textView.selectedRange().location
-            guard cursorLocation >= 2 else { return }
-
-            let nsText = textView.string as NSString
-            let twoBack = nsText.substring(with: NSRange(location: cursorLocation - 2, length: 2))
-            guard twoBack == "[[" else { return }
-
-            // Don't trigger inside code blocks / math / frontmatter
-            if highlighter?.isInsideProtectedRange(at: cursorLocation - 2) == true { return }
-
-            completion.show(for: textView, triggerLocation: cursorLocation - 2)
         }
 
         private var scrollSuppressCount = 0
