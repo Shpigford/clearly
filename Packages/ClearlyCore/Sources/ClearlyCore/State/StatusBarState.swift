@@ -1,16 +1,6 @@
 import Foundation
 
 public final class StatusBarState: ObservableObject {
-    public static let userDefaultsKey = "statusBarVisible"
-
-    @Published public var isVisible: Bool {
-        didSet {
-            UserDefaults.standard.set(isVisible, forKey: Self.userDefaultsKey)
-            if isVisible {
-                recomputeAll()
-            }
-        }
-    }
     @Published public private(set) var counts: MarkdownStats.Counts = .empty
 
     private var lastText: String = ""
@@ -18,13 +8,7 @@ public final class StatusBarState: ObservableObject {
     private var cachedTotals: MarkdownStats.Counts = .empty
     private var hasCachedTotals = false
 
-    public init() {
-        self.isVisible = UserDefaults.standard.bool(forKey: Self.userDefaultsKey)
-    }
-
-    public func toggle() {
-        isVisible.toggle()
-    }
+    public init() {}
 
     /// Replace the cached document text and recompute. Selection length is
     /// preserved if it still fits inside the new text; otherwise it collapses.
@@ -35,7 +19,6 @@ public final class StatusBarState: ObservableObject {
         if lastSelection.location + lastSelection.length > nsLength {
             lastSelection = NSRange(location: 0, length: 0)
         }
-        guard isVisible else { return }
         recomputeAll()
     }
 
@@ -45,10 +28,6 @@ public final class StatusBarState: ObservableObject {
     public func updateSelection(_ range: NSRange, in text: String) {
         lastText = text
         lastSelection = range
-        guard isVisible else {
-            hasCachedTotals = false
-            return
-        }
         if hasCachedTotals {
             recomputeSelectionOnly()
         } else {
@@ -60,7 +39,6 @@ public final class StatusBarState: ObservableObject {
     /// document switches or the editor is dismissed.
     public func resetSelection() {
         lastSelection = NSRange(location: 0, length: 0)
-        guard isVisible else { return }
         if hasCachedTotals {
             recomputeSelectionOnly()
         } else {

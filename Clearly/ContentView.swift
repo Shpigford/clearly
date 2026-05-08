@@ -2,9 +2,9 @@ import SwiftUI
 import AppKit
 import ClearlyCore
 
-/// Per-document scene root: hosts the editor / preview, find bar, jump-to-line bar,
-/// outline panel, status bar, and the toolbar mode picker. One instance per
-/// `DocumentGroup` window.
+/// Per-document scene root: hosts the editor / preview, find bar, jump-to-line
+/// bar, outline panel, and the floating bottom toolbar (mode picker / counts /
+/// copy / outline). One instance per `DocumentGroup` window.
 struct ContentView: View {
     @Binding var document: MarkdownDocument
     let fileURL: URL?
@@ -19,10 +19,17 @@ struct ContentView: View {
     @AppStorage("previewFontFamily") private var previewFontFamily: String = "sanFrancisco"
     @AppStorage("contentWidth") private var contentWidth: String = "off"
     @AppStorage("showLineNumbers") private var showLineNumbers: Bool = false
+    @AppStorage("alwaysShowBottomToolbar") private var alwaysShowBottomToolbar: Bool = false
+
+    @State private var isHoveringBottom: Bool = false
 
     /// Stable per-window key for ScrollBridge / SelectionBridge. Re-keyed on
     /// document URL change so two windows on different files don't collide.
     @State private var positionSyncID: String = UUID().uuidString
+
+    private var shouldShowBottomToolbar: Bool {
+        alwaysShowBottomToolbar || isHoveringBottom
+    }
 
     private var contentWidthEm: CGFloat? {
         switch contentWidth {
@@ -47,40 +54,52 @@ struct ContentView: View {
             HStack(spacing: 0) {
                 mainPane
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .overlay(alignment: .bottom) {
+                        ZStack(alignment: .bottom) {
+                            BottomHoverTracker { hovering in
+                                withAnimation(.easeInOut(duration: 0.18)) {
+                                    isHoveringBottom = hovering
+                                }
+                            }
+                            .frame(height: 96)
+
+                            if shouldShowBottomToolbar {
+                                LinearGradient(
+                                    stops: [
+                                        .init(color: Theme.backgroundColorSwiftUI.opacity(0), location: 0),
+                                        .init(color: Theme.backgroundColorSwiftUI.opacity(0.7), location: 0.55),
+                                        .init(color: Theme.backgroundColorSwiftUI, location: 1)
+                                    ],
+                                    startPoint: .top,
+                                    endPoint: .bottom
+                                )
+                                .frame(height: 96)
+                                .allowsHitTesting(false)
+                                .transition(.opacity)
+
+                                BottomToolbar(
+                                    viewMode: $viewMode,
+                                    statusBarState: statusBarState,
+                                    outlineState: outlineState,
+                                    fileURL: fileURL,
+                                    documentText: { document.text }
+                                )
+                                .padding(.horizontal, 12)
+                                .padding(.bottom, 6)
+                                .transition(.opacity.combined(with: .move(edge: .bottom)))
+                            }
+                        }
+                    }
 
                 if outlineState.isVisible {
                     OutlineView(outlineState: outlineState, isEditorVisible: viewMode == .edit)
                         .frame(width: 240)
                 }
             }
-
-            if statusBarState.isVisible {
-                Divider()
-                StatusBar(state: statusBarState)
-            }
         }
         .frame(minWidth: 600, minHeight: 360)
-        .toolbar {
-            ToolbarItem(placement: .principal) {
-                Picker("View", selection: $viewMode) {
-                    Text("Editor").tag(ViewMode.edit)
-                    Text("Preview").tag(ViewMode.preview)
-                }
-                .pickerStyle(.segmented)
-                .frame(width: 160)
-            }
-            ToolbarItem(placement: .primaryAction) {
-                Button {
-                    outlineState.isVisible.toggle()
-                } label: {
-                    Image(systemName: "list.bullet.indent")
-                }
-                .help("Toggle Outline")
-            }
-        }
         .focusedSceneValue(\.findState, findState)
         .focusedSceneValue(\.outlineState, outlineState)
-        .focusedSceneValue(\.statusBarState, statusBarState)
         .focusedSceneValue(\.viewMode, $viewMode)
         .focusedSceneValue(\.exportPDFAction) { exportPDF() }
         .focusedSceneValue(\.printDocumentAction) { printDocument() }
@@ -110,6 +129,7 @@ struct ContentView: View {
                 positionSyncID: positionSyncID,
                 findState: findState,
                 outlineState: outlineState,
+                extraBottomInset: BottomToolbar.pillHeight + 24,
                 showLineNumbers: showLineNumbers,
                 jumpToLineState: jumpToLineState,
                 statusBarState: statusBarState,
@@ -182,33 +202,3 @@ struct ContentView: View {
     }
 }
 
-// MARK: - Status bar
-
-private struct StatusBar: View {
-    @ObservedObject var state: StatusBarState
-
-    var body: some View {
-        HStack(spacing: 16) {
-            if state.counts.hasSelection {
-                Text("\(state.counts.selectionWords) words")
-                Text("\(state.counts.selectionChars) chars")
-            } else {
-                Text("\(state.counts.totalWords) words")
-                Text("\(state.counts.totalChars) chars")
-                Text(readingTime(seconds: state.counts.totalReadingSeconds))
-            }
-        }
-        .font(.system(size: 11))
-        .foregroundStyle(.secondary)
-        .frame(maxWidth: .infinity, alignment: .center)
-        .padding(.horizontal, 12)
-        .padding(.vertical, 4)
-        .background(.bar)
-    }
-
-    private func readingTime(seconds: Int) -> String {
-        if seconds < 60 { return "\(seconds)s read" }
-        let minutes = (seconds + 30) / 60
-        return "\(minutes) min read"
-    }
-}

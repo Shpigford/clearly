@@ -399,7 +399,7 @@ public enum PreviewCSS {
             margin: 0 auto;
             padding-top: max(40px, env(safe-area-inset-top));
             padding-right: max(64px, env(safe-area-inset-right));
-            padding-bottom: max(48px, env(safe-area-inset-bottom));
+            padding-bottom: max(80px, env(safe-area-inset-bottom));
             padding-left: max(64px, env(safe-area-inset-left));
             color: var(--c-text);
             background-color: var(--c-bg);
