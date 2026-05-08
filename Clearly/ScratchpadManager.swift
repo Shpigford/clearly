@@ -151,8 +151,11 @@ final class ScratchpadManager {
                 return
             }
 
-            activateDocumentApp()
-            if WorkspaceManager.shared.openFile(at: url) {
+            if NSApp.activationPolicy() != .regular {
+                NSApp.setActivationPolicy(.regular)
+            }
+            NSApp.activate(ignoringOtherApps: true)
+            NSDocumentController.shared.openDocument(withContentsOf: url, display: true) { _, _, _ in
                 Task { @MainActor in
                     self?.windows[id]?.close()
                 }

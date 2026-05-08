@@ -29,20 +29,14 @@ struct ScratchpadMenuBar: View {
 
         Button("New Document") {
             performMenuBarAction {
-                WorkspaceManager.shared.createUntitledDocument()
+                NSDocumentController.shared.newDocument(nil)
             }
         }
         .keyboardShortcut("n", modifiers: [.command])
 
-        Button("Show Workspace") {
-            performMenuBarAction {
-                WindowRouter.shared.showMainWindow()
-            }
-        }
-
         Button("Open Document") {
             performMenuBarAction {
-                WorkspaceManager.shared.showOpenPanel()
+                NSDocumentController.shared.openDocument(nil)
             }
         }
         .keyboardShortcut("o", modifiers: [.command])
@@ -61,9 +55,11 @@ struct ScratchpadMenuBar: View {
 
     private func performMenuBarAction(_ action: @escaping () -> Void) {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-            activateDocumentApp()
+            if NSApp.activationPolicy() != .regular {
+                NSApp.setActivationPolicy(.regular)
+            }
+            NSApp.activate(ignoringOtherApps: true)
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
-                WindowRouter.shared.showMainWindow()
                 action()
             }
         }
@@ -71,9 +67,11 @@ struct ScratchpadMenuBar: View {
 
     private func performSettingsMenuBarAction() {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-            let delegate = ClearlyAppDelegate.shared
-            delegate?.prepareForMenuBarSettingsActivation()
-            activateDocumentApp()
+            ClearlyAppDelegate.shared?.prepareForMenuBarSettingsActivation()
+            if NSApp.activationPolicy() != .regular {
+                NSApp.setActivationPolicy(.regular)
+            }
+            NSApp.activate(ignoringOtherApps: true)
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
                 openSettings()
             }

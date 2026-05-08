@@ -20,15 +20,6 @@ packages:
   KeyboardShortcuts:
     url: https://github.com/sindresorhus/KeyboardShortcuts
     from: "2.1.0"
-  GRDB:
-    url: https://github.com/groue/GRDB.swift.git
-    from: "7.0.0"
-  MCP:
-    url: https://github.com/modelcontextprotocol/swift-sdk.git
-    from: "0.11.0"
-  swift-argument-parser:
-    url: https://github.com/apple/swift-argument-parser.git
-    from: "1.5.0"
   ClearlyCore:
     path: Packages/ClearlyCore
 
@@ -59,30 +50,14 @@ targets:
         buildPhase: resources
       - path: Shared/Resources/getting-started.md
         buildPhase: resources
-      - path: Shared/Resources/recipes
-        buildPhase: resources
-        type: folder
-      - path: Shared/Resources/wysiwyg
-        buildPhase: resources
-        type: folder
     dependencies:
       - package: ClearlyCore
       - package: cmark-gfm
         product: cmark
       - package: Sparkle
       - package: KeyboardShortcuts
-      - package: GRDB
       - target: ClearlyQuickLook
         embed: true
-      - target: ClearlyCLI
-        embed: false
-    postCompileScripts:
-      - script: |
-          HELPERS_DIR="${BUILT_PRODUCTS_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/Helpers"
-          mkdir -p "$HELPERS_DIR"
-          cp "${BUILT_PRODUCTS_DIR}/ClearlyCLI" "$HELPERS_DIR/ClearlyCLI"
-        name: "Copy CLI Helper"
-        basedOnDependencyAnalysis: false
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.sabotage.clearly
@@ -109,6 +84,7 @@ targets:
     platform: iOS
     sources:
       - path: Clearly/iOS
+      - path: Clearly/MarkdownDocument.swift
       - path: Clearly/AppIcon.icon
       - path: Shared/Resources/mermaid.min.js
         buildPhase: resources
@@ -192,58 +168,3 @@ targets:
           CODE_SIGN_STYLE: Automatic
         Release:
           CODE_SIGN_STYLE: Automatic
-
-  ClearlyCLI:
-    type: tool
-    platform: macOS
-    sources:
-      - path: ClearlyCLI
-    dependencies:
-      - package: ClearlyCore
-      - package: GRDB
-      - package: MCP
-      - package: swift-argument-parser
-        product: ArgumentParser
-    settings:
-      base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.sabotage.clearly.mcp
-        PRODUCT_NAME: ClearlyCLI
-        MARKETING_VERSION: "2.13.0"
-        CURRENT_PROJECT_VERSION: "1"
-        SWIFT_VERSION: "6.0"
-        SWIFT_STRICT_CONCURRENCY: minimal
-        ENABLE_HARDENED_RUNTIME: YES
-        SKIP_INSTALL: YES
-        # Embed an Info.plist via -sectcreate so `Bundle.main` exposes
-        # CFBundleShortVersionString — `clearly status` reads it for the
-        # binary_version diagnostic.
-        GENERATE_INFOPLIST_FILE: YES
-        CREATE_INFOPLIST_SECTION_IN_BINARY: YES
-      configs:
-        Release:
-          CODE_SIGN_STYLE: Manual
-          CODE_SIGN_IDENTITY: "Developer ID Application"
-
-  ClearlyCLIIntegrationTests:
-    type: bundle.unit-test
-    platform: macOS
-    sources:
-      - path: ClearlyCLI
-        excludes:
-          - "CLI/ClearlyCLI.swift"
-      - path: ClearlyCLIIntegrationTests
-      - path: ClearlyCLIIntegrationTests/FixtureVault
-        buildPhase: resources
-        type: folder
-    dependencies:
-      - package: ClearlyCore
-      - package: GRDB
-      - package: MCP
-      - package: swift-argument-parser
-        product: ArgumentParser
-    settings:
-      base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.sabotage.clearly.tests
-        SWIFT_VERSION: "6.0"
-        SWIFT_STRICT_CONCURRENCY: minimal
-        GENERATE_INFOPLIST_FILE: YES

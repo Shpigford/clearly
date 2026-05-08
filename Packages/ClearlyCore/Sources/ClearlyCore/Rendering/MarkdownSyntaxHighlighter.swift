@@ -113,12 +113,6 @@ public final class MarkdownSyntaxHighlighter: NSObject {
         // Footnote markers: [^ref]
         add("(\\[\\^)([^\\]\n]+)(\\])", .footnote)
 
-        // Wiki-links: [[note]] or [[note|alias]] or [[note#heading]]
-        add(#"(\[\[)([^\]\n]+?)(\]\])"#, .wikiLink)
-
-        // Tags: #tag (not headings, not inside code blocks)
-        add(#"(?:^|(?<=\s))#([\p{L}\p{N}_\-/]*[\p{L}_\-/][\p{L}\p{N}_\-/]*)"#, .tag)
-
         // Table rows: lines with pipes
         add("^(\\|.+\\|)\\s*$", .syntax, options: .anchorsMatchLines)
 
@@ -150,8 +144,6 @@ public final class MarkdownSyntaxHighlighter: NSObject {
         case frontmatter
         case highlight
         case footnote
-        case wikiLink
-        case tag
         case htmlTag
     }
 
@@ -363,20 +355,6 @@ public final class MarkdownSyntaxHighlighter: NSObject {
 
                 case .footnote:
                     textStorage.addAttribute(Attr.foregroundColor, value: Theme.footnoteColor, range: match.range)
-
-                case .wikiLink:
-                    if match.numberOfRanges >= 4 {
-                        textStorage.addAttribute(Attr.foregroundColor, value: Theme.syntaxColor, range: match.range(at: 1))
-                        textStorage.addAttribute(Attr.foregroundColor, value: Theme.wikiLinkColor, range: match.range(at: 2))
-                        textStorage.addAttribute(Attr.foregroundColor, value: Theme.syntaxColor, range: match.range(at: 3))
-                    }
-
-                case .tag:
-                    let hashRange = NSRange(location: match.range.location, length: 1)
-                    textStorage.addAttribute(Attr.foregroundColor, value: Theme.syntaxColor, range: hashRange)
-                    if match.numberOfRanges >= 2 {
-                        textStorage.addAttribute(Attr.foregroundColor, value: Theme.tagColor, range: match.range(at: 1))
-                    }
 
                 case .htmlTag:
                     textStorage.addAttribute(Attr.foregroundColor, value: Theme.htmlTagColor, range: match.range)
@@ -734,20 +712,6 @@ public final class MarkdownSyntaxHighlighter: NSObject {
 
                 case .footnote:
                     textStorage.addAttribute(Attr.foregroundColor, value: Theme.footnoteColor, range: match.range)
-
-                case .wikiLink:
-                    if match.numberOfRanges >= 4 {
-                        textStorage.addAttribute(Attr.foregroundColor, value: Theme.syntaxColor, range: match.range(at: 1))
-                        textStorage.addAttribute(Attr.foregroundColor, value: Theme.wikiLinkColor, range: match.range(at: 2))
-                        textStorage.addAttribute(Attr.foregroundColor, value: Theme.syntaxColor, range: match.range(at: 3))
-                    }
-
-                case .tag:
-                    let hashRange = NSRange(location: match.range.location, length: 1)
-                    textStorage.addAttribute(Attr.foregroundColor, value: Theme.syntaxColor, range: hashRange)
-                    if match.numberOfRanges >= 2 {
-                        textStorage.addAttribute(Attr.foregroundColor, value: Theme.tagColor, range: match.range(at: 1))
-                    }
 
                 case .htmlTag:
                     textStorage.addAttribute(Attr.foregroundColor, value: Theme.htmlTagColor, range: match.range)

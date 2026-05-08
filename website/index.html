@@ -9,18 +9,18 @@
     <meta name="apple-mobile-web-app-title" content="Clearly">
     <link rel="manifest" href="/site.webmanifest">
 
-    <title>Clearly — Native markdown editor and knowledge base for Mac</title>
-    <meta name="description" content="A native Mac markdown editor that's also a knowledge base. Write with syntax highlighting, link thoughts with wiki-links, search everything, preview beautifully.">
-    <meta property="og:title" content="Clearly — Markdown editor for Mac">
-    <meta property="og:description" content="Native markdown editor and knowledge base for macOS.">
+    <title>Clearly — Native markdown editor for Mac and iPhone</title>
+    <meta name="description" content="A native markdown editor for Mac and iPhone. Open a .md file, write with syntax highlighting, toggle to a beautiful preview. Free and open source.">
+    <meta property="og:title" content="Clearly — Markdown editor for Mac and iPhone">
+    <meta property="og:description" content="A native markdown editor for Mac and iPhone.">
     <meta property="og:image" content="https://clearly.md/meta.jpg">
     <meta property="og:image:width" content="1200">
     <meta property="og:image:height" content="675">
     <meta property="og:type" content="website">
     <meta property="og:url" content="https://clearly.md">
     <meta name="twitter:card" content="summary_large_image">
-    <meta name="twitter:title" content="Clearly — Markdown editor for Mac">
-    <meta name="twitter:description" content="Native markdown editor and knowledge base for macOS.">
+    <meta name="twitter:title" content="Clearly — Markdown editor for Mac and iPhone">
+    <meta name="twitter:description" content="A native markdown editor for Mac and iPhone.">
     <meta name="twitter:image" content="https://clearly.md/meta.jpg">
 
     <link rel="preconnect" href="https://rsms.me" crossorigin>
@@ -82,7 +82,6 @@
             </a>
             <div class="flex items-center gap-5 text-zinc-400">
                 <a href="/changelog" class="hover:text-white transition-colors">Changelog</a>
-                <a href="/cli" class="hover:text-white transition-colors">Docs</a>
                 <a href="https://github.com/Shpigford/clearly" class="hover:text-white transition-colors">GitHub</a>
             </div>
         </div>
@@ -117,10 +116,10 @@
             <div class="relative max-w-4xl mx-auto px-6 text-center">
                 <img src="icon.png" alt="" class="size-20 rounded-[1.25rem] mx-auto mb-8">
                 <h1 class="text-4xl sm:text-5xl font-medium tracking-tight text-white text-balance max-w-[30ch] mx-auto">
-                    Clearly. A markdown editor and knowledge base for Mac.
+                    Clearly. A native markdown editor for Mac and iPhone.
                 </h1>
                 <p class="mt-6 text-lg text-zinc-400 text-pretty max-w-[48ch] mx-auto">
-                    Write with syntax highlighting. Link your thoughts. Search everything. Preview beautifully. Free and open source.
+                    Open a markdown file. Write with syntax highlighting. Toggle to a beautiful preview. Free and open source.
                 </p>
                 <div class="mt-8 flex flex-wrap items-center justify-center gap-4">
                     <a href="https://github.com/Shpigford/clearly/releases/latest/download/Clearly.dmg" class="inline-flex items-center gap-2 px-3 py-2 rounded-md bg-white text-zinc-950 text-sm font-medium hover:bg-zinc-200 transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500">
@@ -162,46 +161,23 @@
                             </div>
                             <div class="sm:flex sm:gap-2 text-sm">
                                 <dt class="font-medium text-zinc-200 sm:shrink-0">Format Shortcuts</dt>
-                                <dd class="text-zinc-500"><span class="max-sm:hidden">&mdash; </span>&#8984;B bold, &#8984;I italic, &#8984;K links.</dd>
+                                <dd class="text-zinc-500"><span class="max-sm:hidden">&mdash; </span>&#8984;B bold, &#8984;I italic, &#8984;K links, plus a full Format menu.</dd>
                             </div>
                             <div class="sm:flex sm:gap-2 text-sm">
                                 <dt class="font-medium text-zinc-200 sm:shrink-0">Extended Markdown</dt>
                                 <dd class="text-zinc-500"><span class="max-sm:hidden">&mdash; </span>Highlights, superscript, subscript, emoji shortcodes, table of contents.</dd>
                             </div>
                             <div class="sm:flex sm:gap-2 text-sm">
-                                <dt class="font-medium text-zinc-200 sm:shrink-0">Scratchpad</dt>
-                                <dd class="text-zinc-500"><span class="max-sm:hidden">&mdash; </span>Menubar scratch pad with a global hotkey.</dd>
-                            </div>
-                        </dl>
-                    </div>
-
-                    <!-- Knowledge -->
-                    <div>
-                        <h2 class="font-mono text-xs tracking-wide uppercase text-zinc-600 mb-6">Knowledge</h2>
-                        <dl class="space-y-3">
-                            <div class="sm:flex sm:gap-2 text-sm">
-                                <dt class="font-medium text-zinc-200 sm:shrink-0">Wiki-links</dt>
-                                <dd class="text-zinc-500"><span class="max-sm:hidden">&mdash; </span>Link documents with [[wiki-links]]. Type [[ to autocomplete.</dd>
-                            </div>
-                            <div class="sm:flex sm:gap-2 text-sm">
-                                <dt class="font-medium text-zinc-200 sm:shrink-0">Backlinks</dt>
-                                <dd class="text-zinc-500"><span class="max-sm:hidden">&mdash; </span>Linked and unlinked mentions with one-click linking.</dd>
-                            </div>
-                            <div class="sm:flex sm:gap-2 text-sm">
-                                <dt class="font-medium text-zinc-200 sm:shrink-0">Tags</dt>
-                                <dd class="text-zinc-500"><span class="max-sm:hidden">&mdash; </span>Organize with #tags. Browse in the sidebar.</dd>
-                            </div>
-                            <div class="sm:flex sm:gap-2 text-sm">
-                                <dt class="font-medium text-zinc-200 sm:shrink-0">Global Search</dt>
-                                <dd class="text-zinc-500"><span class="max-sm:hidden">&mdash; </span>Full-text search across every document, ranked by relevance.</dd>
-                            </div>
-                            <div class="sm:flex sm:gap-2 text-sm">
                                 <dt class="font-medium text-zinc-200 sm:shrink-0">Document Outline</dt>
-                                <dd class="text-zinc-500"><span class="max-sm:hidden">&mdash; </span>Navigate headings. Click to jump.</dd>
+                                <dd class="text-zinc-500"><span class="max-sm:hidden">&mdash; </span>Heading tree per document. Click to jump.</dd>
                             </div>
                             <div class="sm:flex sm:gap-2 text-sm">
-                                <dt class="font-medium text-zinc-200 sm:shrink-0">File Explorer</dt>
-                                <dd class="text-zinc-500"><span class="max-sm:hidden">&mdash; </span>Browse folders, bookmark locations, create and rename files.</dd>
+                                <dt class="font-medium text-zinc-200 sm:shrink-0">Find &amp; Replace</dt>
+                                <dd class="text-zinc-500"><span class="max-sm:hidden">&mdash; </span>&#8984;F with regex and case-sensitive options.</dd>
+                            </div>
+                            <div class="sm:flex sm:gap-2 text-sm">
+                                <dt class="font-medium text-zinc-200 sm:shrink-0">Scratchpad</dt>
+                                <dd class="text-zinc-500"><span class="max-sm:hidden">&mdash; </span>Menu-bar floating notes with a global hotkey.</dd>
                             </div>
                         </dl>
                     </div>
@@ -224,7 +200,7 @@
                             </div>
                             <div class="sm:flex sm:gap-2 text-sm">
                                 <dt class="font-medium text-zinc-200 sm:shrink-0">Code Blocks</dt>
-                                <dd class="text-zinc-500"><span class="max-sm:hidden">&mdash; </span>27+ languages, line numbers, diff highlighting, one-click copy.</dd>
+                                <dd class="text-zinc-500"><span class="max-sm:hidden">&mdash; </span>Syntax highlighted, line numbers, diff highlighting, one-click copy.</dd>
                             </div>
                             <div class="sm:flex sm:gap-2 text-sm">
                                 <dt class="font-medium text-zinc-200 sm:shrink-0">Callouts</dt>
@@ -242,10 +218,6 @@
                         <h2 class="font-mono text-xs tracking-wide uppercase text-zinc-600 mb-6">Integration</h2>
                         <dl class="space-y-3">
                             <div class="sm:flex sm:gap-2 text-sm">
-                                <dt class="font-medium text-zinc-200 sm:shrink-0">AI / MCP Server</dt>
-                                <dd class="text-zinc-500"><span class="max-sm:hidden">&mdash; </span>Exposes your vault to AI agents for search and retrieval.</dd>
-                            </div>
-                            <div class="sm:flex sm:gap-2 text-sm">
                                 <dt class="font-medium text-zinc-200 sm:shrink-0">QuickLook</dt>
                                 <dd class="text-zinc-500"><span class="max-sm:hidden">&mdash; </span>Preview .md files in Finder with Space.</dd>
                             </div>
@@ -254,8 +226,8 @@
                                 <dd class="text-zinc-500"><span class="max-sm:hidden">&mdash; </span>Export or print. Page breaks handled.</dd>
                             </div>
                             <div class="sm:flex sm:gap-2 text-sm">
-                                <dt class="font-medium text-zinc-200 sm:shrink-0">Copy Formats</dt>
-                                <dd class="text-zinc-500"><span class="max-sm:hidden">&mdash; </span>Markdown, HTML, or rich text.</dd>
+                                <dt class="font-medium text-zinc-200 sm:shrink-0">iOS</dt>
+                                <dd class="text-zinc-500"><span class="max-sm:hidden">&mdash; </span>Same renderer, same syntax highlighter. Opens any .md from the Files app.</dd>
                             </div>
                         </dl>
                     </div>

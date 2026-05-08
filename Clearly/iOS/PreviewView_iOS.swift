@@ -13,7 +13,6 @@ struct PreviewView_iOS: UIViewRepresentable {
     /// on every keystroke when the user is in edit mode and the preview is
     /// hidden. The HTML refreshes the moment `isVisible` flips back to true.
     let isVisible: Bool
-    var onWikiLinkClicked: ((String) -> Void)?
     var onTaskToggle: ((Int, Bool) -> Void)?
 
     init(
@@ -23,7 +22,6 @@ struct PreviewView_iOS: UIViewRepresentable {
         fontFamily: String = "sanFrancisco",
         hideFrontmatter: Bool = false,
         isVisible: Bool = true,
-        onWikiLinkClicked: ((String) -> Void)? = nil,
         onTaskToggle: ((Int, Bool) -> Void)? = nil
     ) {
         self.markdown = markdown
@@ -32,7 +30,6 @@ struct PreviewView_iOS: UIViewRepresentable {
         self.fontFamily = fontFamily
         self.hideFrontmatter = hideFrontmatter
         self.isVisible = isVisible
-        self.onWikiLinkClicked = onWikiLinkClicked
         self.onTaskToggle = onTaskToggle
     }
 
@@ -61,7 +58,6 @@ struct PreviewView_iOS: UIViewRepresentable {
         webView.scrollView.alwaysBounceVertical = true
 
         context.coordinator.fileURL = fileURL
-        context.coordinator.onWikiLinkClicked = onWikiLinkClicked
         context.coordinator.onTaskToggle = onTaskToggle
 
         if isVisible {
@@ -72,7 +68,6 @@ struct PreviewView_iOS: UIViewRepresentable {
 
     func updateUIView(_ webView: WKWebView, context: Context) {
         context.coordinator.fileURL = fileURL
-        context.coordinator.onWikiLinkClicked = onWikiLinkClicked
         context.coordinator.onTaskToggle = onTaskToggle
 
         // Skip the markdown→HTML pipeline when the preview is hidden. The
@@ -99,7 +94,7 @@ struct PreviewView_iOS: UIViewRepresentable {
 
     private func loadHTML(in webView: WKWebView, context: Context) {
         context.coordinator.lastContentKey = contentKey
-        let rawBody = MarkdownRenderer.renderHTML(markdown, appLinkURLs: true, includeFrontmatter: !hideFrontmatter)
+        let rawBody = MarkdownRenderer.renderHTML(markdown, includeFrontmatter: !hideFrontmatter)
         let htmlBody = LocalImageSupport.resolveImageSources(in: rawBody, relativeTo: fileURL)
 
         let html = """
@@ -212,7 +207,6 @@ struct PreviewView_iOS: UIViewRepresentable {
         var lastContentKey: String?
         var skipNextReload: Bool = false
         var fileURL: URL?
-        var onWikiLinkClicked: ((String) -> Void)?
         var onTaskToggle: ((Int, Bool) -> Void)?
 
         func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
@@ -273,17 +267,6 @@ struct PreviewView_iOS: UIViewRepresentable {
         }
 
         private func handleLinkClick(_ href: String) {
-            if href.hasPrefix("clearly://wiki/") {
-                let remainder = String(href.dropFirst("clearly://wiki/".count))
-                let nameOnly = remainder.components(separatedBy: "#").first ?? remainder
-                let target = nameOnly.removingPercentEncoding ?? nameOnly
-                DispatchQueue.main.async { [weak self] in
-                    self?.onWikiLinkClicked?(target)
-                }
-                return
-            }
-            // Other `clearly://` schemes (tags, etc.) are handled in later phases.
-            if href.hasPrefix("clearly://") { return }
             guard let url = resolvedLinkURL(for: href) else { return }
             DispatchQueue.main.async {
                 UIApplication.shared.open(url)

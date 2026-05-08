@@ -120,7 +120,7 @@ final class ClearlyUITextView: UITextView {
             return
         }
         do {
-            let result = try ImagePasteService.writePNG(png, besidesDocumentAt: docURL, presenter: nil)
+            let result = try ImagePasteService.writePNG(png, besidesDocumentAt: docURL)
             insertMarkdown(result.markdown)
         } catch {
             DiagnosticLog.log("iOS paste: failed to write sibling PNG: \(error.localizedDescription)")
@@ -139,7 +139,7 @@ final class ClearlyUITextView: UITextView {
             do {
                 let png = try await ImageDownloader.fetchImagePNG(from: url)
                 guard let self else { return }
-                let result = try ImagePasteService.writePNG(png, besidesDocumentAt: docURL, presenter: nil)
+                let result = try ImagePasteService.writePNG(png, besidesDocumentAt: docURL)
                 self.replacePlaceholder(placeholder, with: result.markdown)
             } catch {
                 DiagnosticLog.log("iOS paste: image download failed for \(url): \(error.localizedDescription)")

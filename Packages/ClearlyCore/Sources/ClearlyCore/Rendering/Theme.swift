@@ -59,9 +59,6 @@ public enum Theme {
     public static let highlightColor = PlatformColor.clearlyAsset(named: "Highlight")
     public static let highlightBackgroundColor = PlatformColor.clearlyAsset(named: "HighlightBackground")
     public static let footnoteColor = PlatformColor.clearlyAsset(named: "Footnote")
-    public static let wikiLinkColor = PlatformColor.clearlyAsset(named: "WikiLink")
-    public static let wikiLinkBrokenColor = PlatformColor.clearlyAsset(named: "WikiLinkBroken")
-    public static let tagColor = PlatformColor.clearlyAsset(named: "Tag")
     public static let htmlTagColor = PlatformColor.clearlyAsset(named: "HtmlTag")
     public static let findHighlightColor = PlatformColor.clearlyAsset(named: "FindHighlight")
     public static let findCurrentHighlightColor = PlatformColor.clearlyAsset(named: "FindCurrentHighlight")
@@ -84,9 +81,6 @@ public enum Theme {
     public static var highlightColorSwiftUI: Color { Color(platformColor: highlightColor) }
     public static var highlightBackgroundColorSwiftUI: Color { Color(platformColor: highlightBackgroundColor) }
     public static var footnoteColorSwiftUI: Color { Color(platformColor: footnoteColor) }
-    public static var wikiLinkColorSwiftUI: Color { Color(platformColor: wikiLinkColor) }
-    public static var wikiLinkBrokenColorSwiftUI: Color { Color(platformColor: wikiLinkBrokenColor) }
-    public static var tagColorSwiftUI: Color { Color(platformColor: tagColor) }
     public static var htmlTagColorSwiftUI: Color { Color(platformColor: htmlTagColor) }
     public static var findHighlightColorSwiftUI: Color { Color(platformColor: findHighlightColor) }
     public static var findCurrentHighlightColorSwiftUI: Color { Color(platformColor: findCurrentHighlightColor) }
