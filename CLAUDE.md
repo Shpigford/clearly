@@ -104,6 +104,24 @@ Folders inside `Sources/ClearlyCore/`:
 
 **SwiftUI `.keyboardShortcut(letter, modifiers: [.command, .option])` does not dispatch on this macOS** even though the menu item displays the shortcut. `.command` alone and `[.command, .shift]` work fine; the option modifier on a letter silently fails. For ⌥⌘-letter shortcuts, build an `NSMenuItem` with `keyEquivalent: "x"` + `keyEquivalentModifierMask = [.command, .option]` and inject it via the `applicationWillUpdate` AppKit-menu pattern in `ClearlyAppDelegate`.
 
+## QuickLook + LaunchServices (macOS 15/26 gotchas)
+
+The `.md` QuickLook preview, Finder column-view preview, and "default app for `.md`" all share LaunchServices routing and break in non-obvious ways. A working configuration requires THREE Info.plist invariants together — any one missing silently degrades to raw-text preview or wrong default opener.
+
+**1. Use `UTExportedTypeDeclarations`, not `UTImportedTypeDeclarations`,** for `net.daringfireball.markdown` in `Clearly/Info.plist` and `Clearly/iOS/Info-iOS.plist`. Imported declarations are flagged `inactive imported untrusted` by LaunchServices when no app on the system *exports* the type authoritatively, and `quicklookd` falls through to the legacy `Text.qlgenerator` (raw markdown). `UTExportedTypeDeclarations` claims authoritative ownership.
+
+**2. `LSHandlerRank` must be `Owner`** in the same Info.plists. With `Default`, other `Owner`-rank claimants (Cursor, iA Writer, etc.) win the default-opener race even when their UTI claim is weaker.
+
+**3. `ClearlyQuickLook/Info.plist` `QLSupportedContentTypes` must include both `net.daringfireball.markdown` AND `net.ia.markdown`.** macOS Spotlight stickily types `.md` files using whichever markdown UTI was authoritative when the file was first indexed. Users who've ever had iA Writer (or any app exporting `net.ia.markdown`) installed end up with about half their `.md` files typed as `net.ia.markdown` — even after that app is uninstalled. The QL extension only gets invoked for UTIs in `QLSupportedContentTypes`, so missing `net.ia.markdown` means raw-text preview for those files.
+
+**Verification gotchas:**
+
+- **`qlmanage` CLI is broken on macOS 26 for `.appex` previews.** It crashes inside `EXConcreteExtension makeExtensionContextAndXPCConnectionForRequest` with "key cannot be nil." Don't trust it for verification. The actual `quicklookd` daemon (used by Finder spacebar / column-view) handles XPC correctly. Spacebar in Finder is the only reliable test.
+- **`qlmanage -m plugins` only lists legacy `.qlgenerator` bundles, not `.appex` extensions.** Empty results for markdown there are *normal*, not diagnostic.
+- **`quicklookd` on macOS 26 won't invoke an `.appex` whose parent app isn't notarized+stapled.** `scripts/release.sh --dry-run` skips notarization, so its output cannot fully verify QL behavior. To test locally without cutting a real release: `release.sh --dry-run <ver>` → `cp -R build/export/Clearly.app /Applications/Clearly.app` → `ditto -c -k --keepParent /Applications/Clearly.app /tmp/x.zip` → `xcrun notarytool submit /tmp/x.zip --keychain-profile AC_PASSWORD --wait` → `xcrun stapler staple /Applications/Clearly.app` → `qlmanage -r && qlmanage -r cache` → spacebar in Finder.
+- **Conductor parallel worktrees pollute LaunchServices** with hundreds of stale `Clearly Dev.app` registrations from old DerivedData paths. `lsregister -kill` was removed in macOS 15+; the working recipe is `lsregister -u <path>` per stale path. Stale entries don't affect end users (they don't have worktrees), but they make local verification a minefield because the wrong bundle can win the UTI binding.
+- **Default-opener override on a polluted Mac:** Right-click `.md` → Get Info → Open with → Clearly → "Change All…". Programmatic equivalent: `LSSetDefaultRoleHandlerForContentType("net.daringfireball.markdown" as CFString, .all, "com.sabotage.clearly" as CFString)` (note: has propagation delay; `touch` + `mdimport` to refresh the file's `kMDItemContentType` cache may be needed before `urlForApplication(toOpen:)` reflects the change).
+
 ## Dual Distribution: Sparkle + App Store (Mac)
 
 The Mac app ships through two channels from the same codebase:

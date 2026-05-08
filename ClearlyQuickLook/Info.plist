@@ -25,6 +25,7 @@
 			<key>QLSupportedContentTypes</key>
 			<array>
 				<string>net.daringfireball.markdown</string>
+				<string>net.ia.markdown</string>
 			</array>
 			<key>QLSupportsSearchableItems</key>
 			<true/>
