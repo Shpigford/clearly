@@ -49,18 +49,22 @@ struct ScratchpadMenuBar: View {
         .keyboardShortcut(",", modifiers: [.command])
 
         Button("Quit Clearly") {
-            NSApp.terminate(nil)
+            ClearlyAppDelegate.shared?.requestFullQuitFromMenuBar()
         }
     }
 
     private func performMenuBarAction(_ action: @escaping () -> Void) {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-            if NSApp.activationPolicy() != .regular {
-                NSApp.setActivationPolicy(.regular)
-            }
-            NSApp.activate(ignoringOtherApps: true)
+            ClearlyAppDelegate.shared?.ensureRegularAndActivate()
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
                 action()
+                // Re-activate after the action so any NSOpenPanel /
+                // NSSavePanel comes to the front. Without this second
+                // activation, transitions from `.accessory` can leave the
+                // panel buried behind other apps' windows.
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+                    NSApp.activate(ignoringOtherApps: true)
+                }
             }
         }
     }
@@ -68,12 +72,12 @@ struct ScratchpadMenuBar: View {
     private func performSettingsMenuBarAction() {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
             ClearlyAppDelegate.shared?.prepareForMenuBarSettingsActivation()
-            if NSApp.activationPolicy() != .regular {
-                NSApp.setActivationPolicy(.regular)
-            }
-            NSApp.activate(ignoringOtherApps: true)
+            ClearlyAppDelegate.shared?.ensureRegularAndActivate()
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
                 openSettings()
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+                    NSApp.activate(ignoringOtherApps: true)
+                }
             }
         }
     }

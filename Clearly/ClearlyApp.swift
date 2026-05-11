@@ -17,10 +17,26 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate {
     private var isOpeningSettingsFromMenuBar = false
     private var observers: [Any] = []
 
-    /// Mirrors the `@AppStorage("showMenuBarIcon")` value the SwiftUI side reads.
-    /// Reads via `object(forKey:)` so the unset state resolves to `true`.
-    private var showMenuBarIcon: Bool {
-        (UserDefaults.standard.object(forKey: "showMenuBarIcon") as? Bool) ?? true
+    /// Temporarily set by the menubar "Quit Clearly" item so
+    /// `applicationShouldTerminate` knows to let the process actually exit.
+    /// Any other terminate path (⌘Q, File ▸ Quit) is treated as "drop to
+    /// menubar" when the menubar-only toggle is on.
+    private var allowFullQuit = false
+
+    /// SwiftUI side stores this with `@AppStorage("keepRunningMenubarOnly")`,
+    /// default `true`. Use `object(forKey:)` to distinguish unset (→ true)
+    /// from an explicit `false` the user wrote.
+    private var keepRunningMenubarOnly: Bool {
+        (UserDefaults.standard.object(forKey: "keepRunningMenubarOnly") as? Bool) ?? true
+    }
+
+    func applicationWillFinishLaunching(_ notification: Notification) {
+        // Avoid Dock-icon flash when the user launches with the toggle on.
+        // The `didBecomeMain` observer flips us back to `.regular` once a
+        // document window appears (Finder-open, untitled-on-launch, etc.).
+        if keepRunningMenubarOnly {
+            NSApp.setActivationPolicy(.accessory)
+        }
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -30,11 +46,22 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate {
 
         let nc = NotificationCenter.default
         observers.append(nc.addObserver(forName: NSWindow.willCloseNotification, object: nil, queue: .main) { [weak self] notification in
+            let window = notification.object as? NSWindow
             Task { @MainActor [weak self] in
                 guard let self else { return }
-                if let window = notification.object as? NSWindow {
-                    self.clearTrackedSettingsWindow(window)
+                if let window { self.clearTrackedSettingsWindow(window) }
+            }
+            // willClose fires while the window is still in NSApp.windows;
+            // defer the policy check until after it's removed.
+            DispatchQueue.main.async {
+                Task { @MainActor [weak self] in
+                    self?.updateActivationPolicy()
                 }
+            }
+        })
+        observers.append(nc.addObserver(forName: NSWindow.didBecomeMainNotification, object: nil, queue: .main) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                self?.updateActivationPolicy()
             }
         })
     }
@@ -84,7 +111,54 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
-        !showMenuBarIcon
+        if keepRunningMenubarOnly {
+            NSApp.setActivationPolicy(.accessory)
+            return false
+        }
+        return true
+    }
+
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        if allowFullQuit { return .terminateNow }
+        guard keepRunningMenubarOnly else { return .terminateNow }
+
+        // Drop to menubar instead of terminating. `closeAllDocuments` walks
+        // every NSDocument (including SwiftUI DocumentGroup ones), prompting
+        // for unsaved changes — looping NSApp.windows and calling performClose
+        // does NOT reliably close DocumentGroup windows.
+        let docs = NSDocumentController.shared.documents
+        if docs.isEmpty {
+            NSApp.setActivationPolicy(.accessory)
+            return .terminateCancel
+        }
+        NSDocumentController.shared.closeAllDocuments(
+            withDelegate: self,
+            didCloseAllSelector: #selector(menubarOnlyDidCloseAllDocuments(_:didCloseAll:contextInfo:)),
+            contextInfo: nil
+        )
+        return .terminateLater
+    }
+
+    @objc private func menubarOnlyDidCloseAllDocuments(_ controller: NSDocumentController, didCloseAll: Bool, contextInfo: UnsafeMutableRawPointer?) {
+        // Always reply NO — we're dropping to menubar regardless of whether
+        // all docs closed (user may have cancelled a save).
+        NSApp.reply(toApplicationShouldTerminate: false)
+        if didCloseAll {
+            // All docs closed. Hide Dock immediately; don't go through
+            // `updateActivationPolicy()` because the just-closed windows are
+            // still in `NSApp.windows` for a beat and would read as "doc open".
+            NSApp.setActivationPolicy(.accessory)
+        } else {
+            // User cancelled at least one save — at least one doc window
+            // remains; recompute against the real state.
+            updateActivationPolicy()
+        }
+    }
+
+    func requestFullQuitFromMenuBar() {
+        allowFullQuit = true
+        defer { allowFullQuit = false }
+        NSApp.terminate(nil)
     }
 
     func applicationWillTerminate(_ notification: Notification) {
@@ -94,11 +168,48 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate {
         observers.removeAll()
     }
 
-    private func hasDocumentWindows() -> Bool {
-        NSApp.windows.contains { window in
-            guard !(window is NSPanel), !window.isSheet, window.level != .floating else { return false }
-            return window.frame.width >= 200 && window.frame.height >= 200 && window !== trackedSettingsWindow
+    /// Drives the Dock icon. Called from window observers and from the
+    /// Settings toggle's `.onChange`. Always `.regular` when the toggle is
+    /// off. When the toggle is on, `.regular` only while a document window
+    /// is on screen.
+    func updateActivationPolicy() {
+        guard keepRunningMenubarOnly else {
+            if NSApp.activationPolicy() != .regular {
+                NSApp.setActivationPolicy(.regular)
+            }
+            return
         }
+        if hasDocumentWindows() {
+            if NSApp.activationPolicy() != .regular {
+                NSApp.setActivationPolicy(.regular)
+            }
+        } else {
+            if NSApp.activationPolicy() != .accessory {
+                NSApp.setActivationPolicy(.accessory)
+            }
+        }
+    }
+
+    /// Surfaces the Dock icon and brings the app forward. Used by the
+    /// menubar dropdown before opening a window — `updateActivationPolicy()`
+    /// will then keep us `.regular` until the window closes.
+    func ensureRegularAndActivate() {
+        if NSApp.activationPolicy() != .regular {
+            NSApp.setActivationPolicy(.regular)
+        }
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
+    private func hasDocumentWindows() -> Bool {
+        NSApp.windows.contains(where: isDocumentWindow)
+    }
+
+    private func isDocumentWindow(_ window: NSWindow) -> Bool {
+        // `isVisible` filters out windows that have just closed but are still
+        // in `NSApp.windows` waiting to be released — those would otherwise
+        // pin the activation policy to `.regular` for a beat after Cmd+Q.
+        guard window.isVisible, !(window is NSPanel), !window.isSheet, window.level != .floating else { return false }
+        return window.frame.width >= 200 && window.frame.height >= 200 && window !== trackedSettingsWindow
     }
 
     // MARK: - Settings window tracking (menu-bar Settings… coordination)
@@ -192,7 +303,6 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate {
 struct ClearlyApp: App {
     @NSApplicationDelegateAdaptor(ClearlyAppDelegate.self) var appDelegate
     @AppStorage("themePreference") private var themePreference = "system"
-    @AppStorage("showMenuBarIcon") private var showMenuBarIcon = true
     @State private var scratchpadManager = ScratchpadManager.shared
 
     #if canImport(Sparkle)
@@ -324,7 +434,7 @@ struct ClearlyApp: App {
             #endif
         }
 
-        MenuBarExtra("Scratchpads", image: "ScratchpadMenuBarIcon", isInserted: $showMenuBarIcon) {
+        MenuBarExtra("Scratchpads", image: "ScratchpadMenuBarIcon") {
             ScratchpadMenuBar(manager: scratchpadManager)
         }
     }

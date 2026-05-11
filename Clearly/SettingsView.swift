@@ -16,7 +16,7 @@ struct SettingsView: View {
     @AppStorage("themePreference") private var themePreference = "system"
     @AppStorage("contentWidth") private var contentWidth = "off"
     @AppStorage("hideFrontmatterInPreview") private var hideFrontmatterInPreview = false
-    @AppStorage("showMenuBarIcon") private var showMenuBarIcon = true
+    @AppStorage("keepRunningMenubarOnly") private var keepRunningMenubarOnly = true
     @AppStorage("launchBehavior") private var launchBehavior = "filePicker"
     @State private var launchAtLogin = SMAppService.mainApp.status == .enabled
 
@@ -84,7 +84,10 @@ struct SettingsView: View {
             }
 
             Toggle("Hide frontmatter in Preview", isOn: $hideFrontmatterInPreview)
-            Toggle("Show icon in menu bar", isOn: $showMenuBarIcon)
+            Toggle("Keep running in menu bar", isOn: $keepRunningMenubarOnly)
+                .onChange(of: keepRunningMenubarOnly) { _, _ in
+                    ClearlyAppDelegate.shared?.updateActivationPolicy()
+                }
 
             KeyboardShortcuts.Recorder("New Scratchpad:", name: .newScratchpad)
 
@@ -102,6 +105,7 @@ struct SettingsView: View {
                 }
         }
         .formStyle(.grouped)
+        .scrollDisabled(true)
     }
 }
 
