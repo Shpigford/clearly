@@ -55,6 +55,10 @@
 					<string>mdwn</string>
 					<string>mdx</string>
 				</array>
+				<key>public.mime-type</key>
+				<array>
+					<string>text/markdown</string>
+				</array>
 			</dict>
 		</dict>
 	</array>

@@ -84,6 +84,9 @@ targets:
     platform: iOS
     sources:
       - path: Clearly/iOS
+        excludes:
+          - "PreviewExtension/**"
+          - "ThumbnailExtension/**"
       - path: Clearly/MarkdownDocument.swift
       - path: Clearly/AppIcon.icon
       - path: Shared/Resources/mermaid.min.js
@@ -103,6 +106,10 @@ targets:
         buildPhase: resources
     dependencies:
       - package: ClearlyCore
+      - target: ClearlyPreview-iOS
+        embed: true
+      - target: ClearlyThumbnail-iOS
+        embed: true
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.sabotage.clearly
@@ -165,6 +172,76 @@ targets:
       configs:
         Debug:
           PRODUCT_BUNDLE_IDENTIFIER: com.sabotage.clearly.dev.quicklook
+          CODE_SIGN_STYLE: Automatic
+        Release:
+          CODE_SIGN_STYLE: Automatic
+
+  ClearlyPreview-iOS:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: Clearly/iOS/PreviewExtension
+      - path: Shared/Resources/mermaid.min.js
+        buildPhase: resources
+      - path: Shared/Resources/svg-pan-zoom.min.js
+        buildPhase: resources
+      - path: Shared/Resources/katex.min.js
+        buildPhase: resources
+      - path: Shared/Resources/katex.min.css
+        buildPhase: resources
+      - path: Shared/Resources/fonts
+        buildPhase: resources
+        type: folder
+      - path: Shared/Resources/highlight.min.js
+        buildPhase: resources
+      - path: Shared/Resources/highlight-theme.css
+        buildPhase: resources
+    dependencies:
+      - package: ClearlyCore
+      - package: cmark-gfm
+        product: cmark
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.sabotage.clearly.preview
+        PRODUCT_NAME: ClearlyPreview
+        MARKETING_VERSION: "1.4.0"
+        CURRENT_PROJECT_VERSION: "1"
+        SWIFT_VERSION: "5.9"
+        TARGETED_DEVICE_FAMILY: "1,2"
+        SUPPORTS_MACCATALYST: NO
+        GENERATE_INFOPLIST_FILE: NO
+        CODE_SIGN_ENTITLEMENTS: Clearly/iOS/PreviewExtension/ClearlyPreview.entitlements
+        INFOPLIST_FILE: Clearly/iOS/PreviewExtension/Info.plist
+        DEVELOPMENT_TEAM: W33JZPPPFN
+      configs:
+        Debug:
+          PRODUCT_BUNDLE_IDENTIFIER: com.sabotage.clearly.dev.preview
+          CODE_SIGN_STYLE: Automatic
+        Release:
+          CODE_SIGN_STYLE: Automatic
+
+  ClearlyThumbnail-iOS:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: Clearly/iOS/ThumbnailExtension
+    dependencies: []
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.sabotage.clearly.thumbnail
+        PRODUCT_NAME: ClearlyThumbnail
+        MARKETING_VERSION: "1.4.0"
+        CURRENT_PROJECT_VERSION: "1"
+        SWIFT_VERSION: "5.9"
+        TARGETED_DEVICE_FAMILY: "1,2"
+        SUPPORTS_MACCATALYST: NO
+        GENERATE_INFOPLIST_FILE: NO
+        CODE_SIGN_ENTITLEMENTS: Clearly/iOS/ThumbnailExtension/ClearlyThumbnail.entitlements
+        INFOPLIST_FILE: Clearly/iOS/ThumbnailExtension/Info.plist
+        DEVELOPMENT_TEAM: W33JZPPPFN
+      configs:
+        Debug:
+          PRODUCT_BUNDLE_IDENTIFIER: com.sabotage.clearly.dev.thumbnail
           CODE_SIGN_STYLE: Automatic
         Release:
           CODE_SIGN_STYLE: Automatic
