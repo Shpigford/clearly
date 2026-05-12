@@ -18,6 +18,9 @@ struct SettingsView: View {
     @AppStorage("hideFrontmatterInPreview") private var hideFrontmatterInPreview = false
     @AppStorage("keepRunningMenubarOnly") private var keepRunningMenubarOnly = true
     @AppStorage("launchBehavior") private var launchBehavior = "filePicker"
+    @AppStorage("scratchpadRetentionMode") private var scratchpadRetentionMode = "all"
+    @AppStorage("scratchpadRetentionDays") private var scratchpadRetentionDays = 90
+    @AppStorage("scratchpadRetentionCount") private var scratchpadRetentionCount = 100
     @State private var launchAtLogin = SMAppService.mainApp.status == .enabled
 
     @Environment(\.dismiss) private var dismiss
@@ -27,6 +30,11 @@ struct SettingsView: View {
             generalSettings
                 .tabItem {
                     Label("General", systemImage: "gearshape")
+                }
+
+            scratchpadSettings
+                .tabItem {
+                    Label("Scratchpads", systemImage: "square.and.pencil")
                 }
 
             AboutView()
@@ -89,8 +97,6 @@ struct SettingsView: View {
                     ClearlyAppDelegate.shared?.updateActivationPolicy()
                 }
 
-            KeyboardShortcuts.Recorder("New Scratchpad:", name: .newScratchpad)
-
             Toggle("Launch at Login", isOn: $launchAtLogin)
                 .onChange(of: launchAtLogin) { _, newValue in
                     do {
@@ -106,6 +112,47 @@ struct SettingsView: View {
         }
         .formStyle(.grouped)
         .scrollDisabled(true)
+    }
+
+    private var scratchpadSettings: some View {
+        Form {
+            Section {
+                KeyboardShortcuts.Recorder("New Scratchpad:", name: .newScratchpad)
+            } footer: {
+                Text("Press this shortcut anywhere to bring the Scratchpad window to the front.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Section {
+                Picker("Retention", selection: $scratchpadRetentionMode) {
+                    Text("Keep all").tag("all")
+                    Text("Delete after…").tag("age")
+                    Text("Keep newest…").tag("count")
+                }
+
+                if scratchpadRetentionMode == "age" {
+                    Stepper(value: $scratchpadRetentionDays, in: 7...365) {
+                        Text("Delete after \(scratchpadRetentionDays) day\(scratchpadRetentionDays == 1 ? "" : "s")")
+                    }
+                }
+
+                if scratchpadRetentionMode == "count" {
+                    Stepper(value: $scratchpadRetentionCount, in: 10...1000, step: 10) {
+                        Text("Keep newest \(scratchpadRetentionCount) scratchpads")
+                    }
+                }
+            } footer: {
+                Text("Scratchpads are stored privately inside the app. With “Keep all” selected, history is preserved indefinitely.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .formStyle(.grouped)
+        .scrollDisabled(true)
+        .onChange(of: scratchpadRetentionMode) { _, _ in ScratchpadManager.shared.runRetentionSweep() }
+        .onChange(of: scratchpadRetentionDays) { _, _ in if scratchpadRetentionMode == "age" { ScratchpadManager.shared.runRetentionSweep() } }
+        .onChange(of: scratchpadRetentionCount) { _, _ in if scratchpadRetentionMode == "count" { ScratchpadManager.shared.runRetentionSweep() } }
     }
 }
 

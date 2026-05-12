@@ -21,6 +21,7 @@ struct ScratchpadEditorView: NSViewRepresentable {
     @Binding var text: String
     var fontSize: CGFloat = 16
     var onSave: (() -> Void)?
+    var onTextChange: ((String) -> Void)?
     @Environment(\.colorScheme) private var colorScheme
 
     func makeCoordinator() -> Coordinator {
@@ -168,6 +169,7 @@ struct ScratchpadEditorView: NSViewRepresentable {
             isHighlighting = false
 
             let newText = textView.string
+            parent.onTextChange?(newText)
             DispatchQueue.main.async { [weak self] in
                 guard let self else { return }
                 self.isUpdating = true

@@ -3,29 +3,39 @@ import KeyboardShortcuts
 
 struct ScratchpadMenuBar: View {
     var manager: ScratchpadManager
+    var store: ScratchpadStore
     @Environment(\.openSettings) private var openSettings
 
     var body: some View {
-        Button("New Scratchpad") {
-            manager.createScratchpad()
+        Button("Open Scratchpad") {
+            performMenuBarAction {
+                manager.showOrFocus()
+            }
         }
         .keyboardShortcut(for: .newScratchpad)
 
-        Divider()
+        Button("New Scratchpad") {
+            performMenuBarAction {
+                manager.createAndShowNew()
+            }
+        }
 
-        if !manager.scratchpads.isEmpty {
-            ForEach(manager.scratchpads) { pad in
-                Button(pad.displayTitle) {
-                    manager.focusScratchpad(id: pad.id)
+        if !store.notes.isEmpty {
+            Divider()
+
+            Menu("Recent Scratchpads") {
+                ForEach(store.notes.prefix(8)) { note in
+                    Button(note.title.isEmpty ? ScratchpadNote.titlePlaceholder : note.title) {
+                        performMenuBarAction {
+                            manager.select(note: note)
+                            manager.showOrFocus()
+                        }
+                    }
                 }
             }
-
-            Button("Close All Scratchpads") {
-                manager.closeAll()
-            }
-
-            Divider()
         }
+
+        Divider()
 
         Button("New Document") {
             performMenuBarAction {
@@ -58,10 +68,6 @@ struct ScratchpadMenuBar: View {
             ClearlyAppDelegate.shared?.ensureRegularAndActivate()
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
                 action()
-                // Re-activate after the action so any NSOpenPanel /
-                // NSSavePanel comes to the front. Without this second
-                // activation, transitions from `.accessory` can leave the
-                // panel buried behind other apps' windows.
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
                     NSApp.activate(ignoringOtherApps: true)
                 }

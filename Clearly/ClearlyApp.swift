@@ -304,6 +304,7 @@ struct ClearlyApp: App {
     @NSApplicationDelegateAdaptor(ClearlyAppDelegate.self) var appDelegate
     @AppStorage("themePreference") private var themePreference = "system"
     @State private var scratchpadManager = ScratchpadManager.shared
+    @State private var scratchpadStore = ScratchpadStore.shared
 
     #if canImport(Sparkle)
     private let updaterController: SPUStandardUpdaterController
@@ -435,7 +436,7 @@ struct ClearlyApp: App {
         }
 
         MenuBarExtra("Scratchpads", image: "ScratchpadMenuBarIcon") {
-            ScratchpadMenuBar(manager: scratchpadManager)
+            ScratchpadMenuBar(manager: scratchpadManager, store: scratchpadStore)
         }
     }
 
