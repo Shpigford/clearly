@@ -9,7 +9,7 @@ struct ContentView: View {
     @Binding var document: MarkdownDocument
     let fileURL: URL?
 
-    @State private var viewMode: ViewMode = .edit
+    @State private var viewMode: ViewMode
     @StateObject private var outlineState = OutlineState()
     @StateObject private var findState = FindState()
     @StateObject private var jumpToLineState = JumpToLineState()
@@ -26,6 +26,17 @@ struct ContentView: View {
     /// Stable per-window key for ScrollBridge / SelectionBridge. Re-keyed on
     /// document URL change so two windows on different files don't collide.
     @State private var positionSyncID: String = UUID().uuidString
+
+    init(document: Binding<MarkdownDocument>, fileURL: URL?) {
+        self._document = document
+        self.fileURL = fileURL
+        // Never land a blank document in Preview — there'd be nothing to see
+        // and no obvious way to edit.
+        let raw = UserDefaults.standard.string(forKey: "defaultViewMode") ?? "edit"
+        let preferred = ViewMode(rawValue: raw) ?? .edit
+        let isBlank = document.wrappedValue.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        self._viewMode = State(initialValue: (preferred == .preview && isBlank) ? .edit : preferred)
+    }
 
     private var shouldShowBottomToolbar: Bool {
         alwaysShowBottomToolbar || isHoveringBottom
