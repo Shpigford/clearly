@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+## [3.1.0] - 2026-05-12
+- Scratchpad now keeps a persistent history in a single floating window — closing won't lose work, and you can browse past notes from the title dropdown (search, ⌘N for new, ⌘P for history, ⌫ to delete with undo)
+- New Settings → Scratchpads tab with retention controls (keep all, delete after N days, or keep newest N)
+- New "Default View Mode" setting in Settings → General to open documents directly in Preview
+- "Keep running in menu bar" setting restores menubar-only mode — ⌘Q and closing the last window drop the app to the menubar instead of quitting
+
 ## [3.0.1] - 2026-05-08
 - Restored QuickLook previews and the default-opener behavior for .md files in Finder
 
