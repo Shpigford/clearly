@@ -18,6 +18,7 @@ struct SettingsView: View {
     @AppStorage("hideFrontmatterInPreview") private var hideFrontmatterInPreview = false
     @AppStorage("keepRunningMenubarOnly") private var keepRunningMenubarOnly = true
     @AppStorage("launchBehavior") private var launchBehavior = "filePicker"
+    @AppStorage("defaultViewMode") private var defaultViewMode = "edit"
     @State private var launchAtLogin = SMAppService.mainApp.status == .enabled
 
     @Environment(\.dismiss) private var dismiss
@@ -59,6 +60,11 @@ struct SettingsView: View {
                 Text("Open last file").tag("lastFile")
                 Text("Show file picker").tag("filePicker")
                 Text("Do nothing").tag("nothing")
+            }
+
+            Picker("Default View Mode", selection: $defaultViewMode) {
+                Text("Editor").tag("edit")
+                Text("Preview").tag("preview")
             }
 
             HStack {
