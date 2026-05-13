@@ -8,16 +8,12 @@ struct ScratchpadMenuBar: View {
 
     var body: some View {
         Button("Open Scratchpad") {
-            performMenuBarAction {
-                manager.showOrFocus()
-            }
+            manager.showOrFocus()
         }
         .keyboardShortcut(for: .newScratchpad)
 
         Button("New Scratchpad") {
-            performMenuBarAction {
-                manager.createAndShowNew()
-            }
+            manager.createAndShowNew()
         }
 
         if !store.notes.isEmpty {
@@ -26,10 +22,8 @@ struct ScratchpadMenuBar: View {
             Menu("Recent Scratchpads") {
                 ForEach(store.notes.prefix(8)) { note in
                     Button(note.title.isEmpty ? ScratchpadNote.titlePlaceholder : note.title) {
-                        performMenuBarAction {
-                            manager.select(note: note)
-                            manager.showOrFocus()
-                        }
+                        manager.select(note: note)
+                        manager.showOrFocus()
                     }
                 }
             }
