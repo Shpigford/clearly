@@ -4,6 +4,11 @@ import UniformTypeIdentifiers
 import KeyboardShortcuts
 import ClearlyCore
 
+private final class ScratchpadPanel: NSPanel {
+    override var canBecomeKey: Bool { true }
+    override var canBecomeMain: Bool { true }
+}
+
 @MainActor
 @Observable
 final class ScratchpadManager {
@@ -14,7 +19,7 @@ final class ScratchpadManager {
     var historyPopoverShown: Bool = false
 
     private let store = ScratchpadStore.shared
-    private var window: NSWindow?
+    private var window: ScratchpadPanel?
     private var windowDelegate: WindowDelegate?
 
     var isWindowVisible: Bool { window?.isVisible == true }
@@ -46,9 +51,8 @@ final class ScratchpadManager {
         if let id = currentNoteID, let note = store.notes.first(where: { $0.id == id }) {
             store.touchOpened(note)
         }
-        ClearlyAppDelegate.shared?.ensureRegularAndActivate()
         window?.makeKeyAndOrderFront(nil)
-        NSApp.activate(ignoringOtherApps: true)
+        window?.orderFrontRegardless()
     }
 
     func createAndShowNew() {
@@ -56,9 +60,8 @@ final class ScratchpadManager {
         store.flushPendingWrites()
         let note = store.create()
         select(note: note)
-        ClearlyAppDelegate.shared?.ensureRegularAndActivate()
         window?.makeKeyAndOrderFront(nil)
-        NSApp.activate(ignoringOtherApps: true)
+        window?.orderFrontRegardless()
     }
 
     func select(note: ScratchpadNote) {
@@ -159,14 +162,23 @@ final class ScratchpadManager {
             .environment(deleteUndo)
         let controller = NSHostingController(rootView: rootView)
         controller.view.translatesAutoresizingMaskIntoConstraints = false
+        controller.preferredContentSize = Self.defaultScratchpadContentSize
 
-        let win = NSWindow(contentViewController: controller)
-        win.styleMask = [.titled, .closable, .resizable, .miniaturizable, .fullSizeContentView]
+        let win = ScratchpadPanel(
+            contentRect: NSRect(x: 0, y: 0, width: 480, height: 560),
+            styleMask: [.titled, .closable, .resizable, .miniaturizable,
+                        .fullSizeContentView, .nonactivatingPanel],
+            backing: .buffered,
+            defer: false
+        )
+        win.contentViewController = controller
         win.title = " "
         win.level = .floating
+        win.isFloatingPanel = true
+        win.becomesKeyOnlyIfNeeded = false
+        win.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         win.isReleasedWhenClosed = false
         win.minSize = NSSize(width: 360, height: 280)
-        win.setContentSize(NSSize(width: 480, height: 560))
         win.titleVisibility = .hidden
         win.titlebarSeparatorStyle = .none
         win.titlebarAppearsTransparent = true
@@ -182,8 +194,11 @@ final class ScratchpadManager {
         positionTopRightIfUnsaved(win)
     }
 
-    private func positionTopRightIfUnsaved(_ win: NSWindow) {
-        guard !win.setFrameUsingName("ClearlyScratchpadWindow") else { return }
+    private static let defaultScratchpadContentSize = NSSize(width: 480, height: 560)
+
+    private func positionTopRightIfUnsaved(_ win: NSPanel) {
+        if win.setFrameUsingName("ClearlyScratchpadWindow") { return }
+        win.setContentSize(Self.defaultScratchpadContentSize)
         guard let screen = NSScreen.main else { return }
         let visible = screen.visibleFrame
         let size = win.frame.size
