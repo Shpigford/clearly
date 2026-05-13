@@ -3,6 +3,20 @@
   <channel>
     <title>Clearly</title>
     <item>
+      <title>Version 3.1.1</title>
+      <sparkle:version>3.1.1</sparkle:version>
+      <sparkle:shortVersionString>3.1.1</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+      <pubDate>Wed, 13 May 2026 18:31:10 +0000</pubDate>
+      <description><![CDATA[<ul><li>Scratchpad shortcut no longer steals focus from the app you were using</li><li>Scratchpad title no longer overlaps the traffic-light buttons</li></ul>]]></description>
+      <enclosure
+        url="https://github.com/Shpigford/clearly/releases/download/v3.1.1/Clearly.dmg"
+        sparkle:edSignature="yhmKk1pIEHTdlDMjC1wAX9Fx29UOgCnNKdpBj3Do2rXfVqDO41Q7mc9ZwdyiySFkzQfuyj/fXN9cUsli7nLTDg=="
+        length="8756588"
+        type="application/octet-stream"
+      />
+    </item>
+    <item>
       <title>Version 3.1.0</title>
       <sparkle:version>3.1.0</sparkle:version>
       <sparkle:shortVersionString>3.1.0</sparkle:shortVersionString>
