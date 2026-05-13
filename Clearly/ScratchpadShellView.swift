@@ -127,6 +127,7 @@ struct ScratchpadTitlebarBar: View {
     var body: some View {
         ZStack {
             ScratchpadTitleMenuButton()
+                .padding(.horizontal, 72)
 
             HStack(spacing: 0) {
                 Spacer(minLength: 0)
