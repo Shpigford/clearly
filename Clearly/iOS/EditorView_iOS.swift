@@ -45,6 +45,11 @@ struct EditorView_iOS: UIViewRepresentable {
         context.coordinator.attachOutlineState(outlineState)
         context.coordinator.attachFindState(findState)
         guard context.coordinator.pendingBindingUpdates == 0 else { return }
+        // Don't clobber an in-flight IME composition (CJK, predictive text,
+        // emoji picker). UIKit's marked text mutates the text view's content
+        // without firing textViewDidChange, so without this guard a layout
+        // pass that retriggers updateUIView would wipe the composing range.
+        guard textView.markedTextRange == nil else { return }
         guard text != context.coordinator.lastAppliedText else { return }
         context.coordinator.applyExternalText(text)
     }

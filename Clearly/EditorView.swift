@@ -318,8 +318,21 @@ struct EditorView: NSViewRepresentable {
         // When the user types, textDidChange marks the text view authoritative
         // until the next run loop. While updates are pending, any mismatch is
         // just SwiftUI catching up, not an external change.
+        //
+        // Marked-text composition (e.g. Option+U dead-key on a US keyboard;
+        // CJK IMEs) also makes textView.string diverge from the binding —
+        // setMarkedText inserts the composing character into textStorage but
+        // does NOT fire textDidChange, so pendingBindingUpdates stays 0. The
+        // hasMarkedText check below stops us from overwriting the composing
+        // character with the stale binding value, which would silently abort
+        // the dead-key sequence. The mismatch resolves naturally on the next
+        // textDidChange — either when composition commits (Option+u then o →
+        // "ö" gets inserted normally) or when the user dismisses it.
         let textMismatch = text.count != textView.string.count || textView.string != text
-        if !context.coordinator.isUpdating && context.coordinator.pendingBindingUpdates == 0 && textMismatch {
+        if !context.coordinator.isUpdating
+            && context.coordinator.pendingBindingUpdates == 0
+            && !textView.hasMarkedText()
+            && textMismatch {
             DiagnosticLog.log("updateNSView #\(count): external text change (\(text.count) chars)")
             context.coordinator.isUpdating = true
             let selectedRanges = textView.selectedRanges
