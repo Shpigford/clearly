@@ -39,6 +39,7 @@ struct DocumentDetailBody: View {
         .onChange(of: document.text) { _, newText in
             outlineState.parseHeadings(from: newText)
         }
+        .watchExternalChanges(fileURL: fileURL, text: $document.text)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Button {

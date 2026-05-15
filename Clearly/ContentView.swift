@@ -127,6 +127,20 @@ struct ContentView: View {
             // file's scroll position doesn't inherit the old fraction.
             positionSyncID = UUID().uuidString
         }
+        .watchExternalChanges(fileURL: fileURL, text: $document.text) { url in
+            // Sync SwiftUI's underlying NSDocument's fileModificationDate to
+            // the new on-disk mtime — without this, the next autosave detects
+            // a conflict and shows "could not be autosaved" dialog. We
+            // deliberately do NOT try to suppress the title's "Edited"
+            // decoration: SwiftUI tracks its own FileDocument-vs-disk diff
+            // for that, and the indicator is a useful "doc changed under you"
+            // signal anyway.
+            let target = url.standardizedFileURL
+            guard let doc = NSDocumentController.shared.documents.first(where: { $0.fileURL?.standardizedFileURL == target }) else { return }
+            if let mtime = (try? FileManager.default.attributesOfItem(atPath: url.path))?[.modificationDate] as? Date {
+                doc.fileModificationDate = mtime
+            }
+        }
     }
 
     @ViewBuilder
