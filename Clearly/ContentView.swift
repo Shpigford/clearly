@@ -161,14 +161,6 @@ struct ContentView: View {
                 onTaskToggle: { line, checked in
                     toggleTask(line: line, checked: checked)
                 },
-                onJumpToSource: { line in
-                    NotificationCenter.default.post(
-                        name: .scrollEditorToLine,
-                        object: nil,
-                        userInfo: ["line": line]
-                    )
-                    viewMode = .edit
-                },
                 contentWidthEm: contentWidthEm
             )
             .opacity(viewMode == .preview ? 1 : 0)

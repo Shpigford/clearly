@@ -30,7 +30,6 @@ struct PreviewView: NSViewRepresentable {
     var findState: FindState?
     var outlineState: OutlineState?
     var onTaskToggle: ((Int, Bool) -> Void)?
-    var onJumpToSource: ((Int) -> Void)?
     var contentWidthEm: CGFloat? = nil
     var extraTopInset: CGFloat = 0
     @AppStorage("hideFrontmatterInPreview") private var hideFrontmatterInPreview = false
@@ -59,7 +58,6 @@ struct PreviewView: NSViewRepresentable {
         config.userContentController.add(context.coordinator, name: "taskToggle")
         config.userContentController.add(context.coordinator, name: "foldToggle")
         config.userContentController.add(context.coordinator, name: "selectionCapture")
-        config.userContentController.add(context.coordinator, name: "jumpToSource")
         config.userContentController.addUserScript(PreviewUserScripts.codeBlockChromeScript())
         let webView = DraggableWKWebView(frame: .zero, configuration: config)
         webView.navigationDelegate = context.coordinator
@@ -70,7 +68,6 @@ struct PreviewView: NSViewRepresentable {
         context.coordinator.findState = findState
         context.coordinator.outlineState = outlineState
         context.coordinator.onTaskToggle = onTaskToggle
-        context.coordinator.onJumpToSource = onJumpToSource
         let coordinator = context.coordinator
         findState?.previewNavigateToNext = { [weak coordinator] in
             coordinator?.navigateToNextMatch()
@@ -144,7 +141,6 @@ struct PreviewView: NSViewRepresentable {
         webView.configuration.userContentController.removeScriptMessageHandler(forName: "taskToggle")
         webView.configuration.userContentController.removeScriptMessageHandler(forName: "foldToggle")
         webView.configuration.userContentController.removeScriptMessageHandler(forName: "selectionCapture")
-        webView.configuration.userContentController.removeScriptMessageHandler(forName: "jumpToSource")
     }
 
     private func loadHTML(in webView: WKWebView, context: Context) {
@@ -314,20 +310,6 @@ struct PreviewView: NSViewRepresentable {
                 if (popover) { popover.remove(); popover = null; }
             });
         });
-        // Double-click any element to jump to its source line in the editor.
-        document.addEventListener('dblclick', function(e) {
-            var t = e.target;
-            if (!t || t.nodeType !== 1) return;
-            // Skip elements that own a different dblclick interaction or that
-            // belong to popovers/lightboxes appended to <body>.
-            if (t.closest('.mermaid-wrapper, .lightbox-overlay, .mermaid-lightbox-overlay, .footnote-popover, summary, input, button, .copy-button, .code-copy, .table-sort-button')) return;
-            var node = t.closest('[data-sourcepos]');
-            if (!node) return;
-            var sp = node.getAttribute('data-sourcepos') || '';
-            var m = /^(\\d+):/.exec(sp);
-            if (!m) return;
-            window.webkit.messageHandlers.jumpToSource.postMessage({ line: parseInt(m[1], 10) });
-        });
         </script>
         \(MathSupport.scriptHTML(for: htmlBody))
         \(TableSupport.scriptHTML(for: htmlBody))
@@ -349,7 +331,6 @@ struct PreviewView: NSViewRepresentable {
         var findState: FindState?
         var outlineState: OutlineState?
         var onTaskToggle: ((Int, Bool) -> Void)?
-        var onJumpToSource: ((Int) -> Void)?
         var skipNextReload = false
         var isLoadingContent = false
         var pendingScrollLine: Int?
@@ -791,15 +772,6 @@ struct PreviewView: NSViewRepresentable {
                let body = message.body as? [String: Any],
                let text = body["text"] as? String {
                 SelectionBridge.setSelection(text, for: self.positionSyncID)
-                return
-            }
-
-            if message.name == "jumpToSource",
-               let body = message.body as? [String: Any],
-               let line = (body["line"] as? NSNumber)?.intValue {
-                DispatchQueue.main.async { [weak self] in
-                    self?.onJumpToSource?(line)
-                }
                 return
             }
 
