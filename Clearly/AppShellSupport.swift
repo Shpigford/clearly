@@ -5,7 +5,6 @@ import ClearlyCore
 /// for cross-pane jumps (click a heading / find-result in one pane and
 /// scroll the other to the same line).
 extension Notification.Name {
-    static let scrollEditorToLine = Notification.Name("ClearlyScrollEditorToLine")
     static let scrollPreviewToLine = Notification.Name("ClearlyScrollPreviewToLine")
     static let flushEditorBuffer = Notification.Name("ClearlyFlushEditorBuffer")
     static let highlightTextInEditor = Notification.Name("ClearlyHighlightTextInEditor")
