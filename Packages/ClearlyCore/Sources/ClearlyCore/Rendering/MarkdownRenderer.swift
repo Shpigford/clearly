@@ -13,7 +13,8 @@ public enum MarkdownRenderer {
 
         let rawBody = frontmatter?.body ?? markdown
         let (body, codeFilenames) = extractCodeFilenames(rawBody)
-        let protectedBody = protectEscapedMathDelimiters(in: body)
+        let mathProtected = protectEscapedMathDelimiters(in: body)
+        let protectedBody = protectWikilinkPipes(in: mathProtected)
         let len = protectedBody.utf8.count
         let options = Int32(CMARK_OPT_UNSAFE | CMARK_OPT_FOOTNOTES | CMARK_OPT_STRIKETHROUGH_DOUBLE_TILDE | CMARK_OPT_SOURCEPOS | CMARK_OPT_TABLE_PREFER_STYLE_ATTRIBUTES)
         var html: String
@@ -30,6 +31,7 @@ public enum MarkdownRenderer {
         }
         html = processMath(html)
         html = restoreEscapedMathDelimiters(in: html)
+        html = processWikilinks(html)
         html = processHighlightMarks(html)
         html = processSuperSub(html)
         html = processEmoji(html)
@@ -289,6 +291,159 @@ public enum MarkdownRenderer {
         }
         result += ns.substring(from: lastEnd)
         return result
+    }
+
+    // MARK: - Wikilinks [[Target|Alias]]
+
+    /// Pre-cmark: swap pipes inside `[[...]]` for a private-use token so
+    /// cmark-gfm's table parser doesn't split rows on them. Skips lines
+    /// inside fenced code blocks and matches inside inline code spans.
+    private static func protectWikilinkPipes(in markdown: String) -> String {
+        guard markdown.contains("[[") else { return markdown }
+        let lines = markdown.components(separatedBy: "\n")
+        var out: [String] = []
+        out.reserveCapacity(lines.count)
+
+        var inFence = false
+        var fenceMarker: Character = "`"
+        var fenceLen = 0
+
+        for line in lines {
+            if let fence = fenceBoundary(in: line) {
+                if inFence {
+                    if fence.marker == fenceMarker, fence.length >= fenceLen {
+                        inFence = false
+                    }
+                } else {
+                    inFence = true
+                    fenceMarker = fence.marker
+                    fenceLen = fence.length
+                }
+                out.append(line)
+                continue
+            }
+            if inFence {
+                out.append(line)
+                continue
+            }
+            out.append(protectWikilinkPipesOnLine(line))
+        }
+        return out.joined(separator: "\n")
+    }
+
+    private static func fenceBoundary(in line: String) -> (marker: Character, length: Int)? {
+        let leading = line.prefix(while: { $0 == " " })
+        if leading.count > 3 { return nil }
+        let rest = line.dropFirst(leading.count)
+        guard let first = rest.first, first == "`" || first == "~" else { return nil }
+        var count = 0
+        for ch in rest {
+            if ch == first { count += 1 } else { break }
+        }
+        if count < 3 { return nil }
+        return (first, count)
+    }
+
+    private static let wikilinkRawPattern = #"\[\[([^\]\n]+)\]\]"#
+
+    private static func protectWikilinkPipesOnLine(_ line: String) -> String {
+        guard line.contains("[[") else { return line }
+        guard let regex = try? NSRegularExpression(pattern: wikilinkRawPattern) else { return line }
+        let ns = line as NSString
+        let matches = regex.matches(in: line, range: NSRange(location: 0, length: ns.length))
+        if matches.isEmpty { return line }
+
+        var result = ""
+        var cursor = 0
+        for match in matches {
+            let prefix = ns.substring(with: NSRange(location: cursor, length: match.range.location - cursor))
+            result += prefix
+            let inCode = hasOddUnescapedBackticks(in: ns.substring(with: NSRange(location: 0, length: match.range.location)))
+            let matched = ns.substring(with: match.range)
+            if inCode {
+                result += matched
+            } else {
+                var swapped = matched.replacingOccurrences(of: "\\|", with: WikilinkSupport.pipeToken)
+                swapped = swapped.replacingOccurrences(of: "|", with: WikilinkSupport.pipeToken)
+                result += swapped
+            }
+            cursor = match.range.location + match.range.length
+        }
+        result += ns.substring(from: cursor)
+        return result
+    }
+
+    private static func hasOddUnescapedBackticks(in s: String) -> Bool {
+        var count = 0
+        var prev: Character? = nil
+        for ch in s {
+            if ch == "`", prev != "\\" {
+                count += 1
+            }
+            prev = ch
+        }
+        return count % 2 != 0
+    }
+
+    /// Post-cmark: rewrite `[[Target(#Heading)?(<token>Alias)?]]` into
+    /// `<a class="wiki-link" ...>display</a>`. Then restore any remaining
+    /// `pipeToken` characters (defensive: should not occur for well-formed
+    /// wikilinks the pre-pass identified).
+    private static func processWikilinks(_ html: String) -> String {
+        let hasToken = html.contains(WikilinkSupport.pipeToken)
+        if !html.contains("[[") && !hasToken {
+            return html
+        }
+        let (protectedHTML, segments) = protectCodeRegions(in: html)
+        guard let regex = try? NSRegularExpression(pattern: WikilinkSupport.renderPattern) else {
+            let restored = protectedHTML.replacingOccurrences(of: WikilinkSupport.pipeToken, with: "|")
+            return restoreProtectedSegments(in: restored, segments: segments)
+        }
+        let ns = protectedHTML as NSString
+        var result = ""
+        var cursor = 0
+        for match in regex.matches(in: protectedHTML, range: NSRange(location: 0, length: ns.length)) {
+            result += ns.substring(with: NSRange(location: cursor, length: match.range.location - cursor))
+            let target = ns.substring(with: match.range(at: 1))
+            let heading: String? = {
+                let r = match.range(at: 2)
+                return r.location == NSNotFound ? nil : ns.substring(with: r)
+            }()
+            let alias: String? = {
+                let r = match.range(at: 3)
+                return r.location == NSNotFound ? nil : ns.substring(with: r)
+            }()
+            let display: String
+            if let alias {
+                display = alias
+            } else if let heading {
+                display = "\(target)#\(heading)"
+            } else {
+                display = target
+            }
+            var attrs = "class=\"wiki-link\" href=\"#\" data-wiki-target=\"\(wikilinkAttrEscape(target))\""
+            if let heading {
+                attrs += " data-wiki-heading=\"\(wikilinkAttrEscape(heading))\""
+            }
+            if let alias {
+                attrs += " data-wiki-alias=\"\(wikilinkAttrEscape(alias))\""
+            }
+            result += "<a \(attrs)>\(display)</a>"
+            cursor = match.range.location + match.range.length
+        }
+        result += ns.substring(from: cursor)
+        // Restore code regions first so the defensive token cleanup catches any
+        // pipe-tokens that leaked into protected segments (e.g. multi-backtick
+        // inline code that the line-scanner's naive backtick toggle missed).
+        let restored = restoreProtectedSegments(in: result, segments: segments)
+        return restored.replacingOccurrences(of: WikilinkSupport.pipeToken, with: "|")
+    }
+
+    private static func wikilinkAttrEscape(_ s: String) -> String {
+        // The input text is already HTML-escaped by cmark for text content
+        // (& → &amp;, < → &lt;, > → &gt;). Only " needs additional escaping
+        // for use inside an attribute value.
+        s.replacingOccurrences(of: "\"", with: "&quot;")
     }
 
     // MARK: - Highlight/Mark ==text==
