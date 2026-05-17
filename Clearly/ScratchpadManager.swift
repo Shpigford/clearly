@@ -161,8 +161,7 @@ final class ScratchpadManager {
             .environment(store)
             .environment(deleteUndo)
         let controller = NSHostingController(rootView: rootView)
-        controller.view.translatesAutoresizingMaskIntoConstraints = false
-        controller.preferredContentSize = Self.defaultScratchpadContentSize
+        controller.sizingOptions = .minSize
 
         let win = ScratchpadPanel(
             contentRect: NSRect(x: 0, y: 0, width: 480, height: 560),
@@ -178,7 +177,8 @@ final class ScratchpadManager {
         win.becomesKeyOnlyIfNeeded = false
         win.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         win.isReleasedWhenClosed = false
-        win.minSize = NSSize(width: 360, height: 280)
+        win.minSize = NSSize(width: 420, height: 320)
+        win.contentMinSize = NSSize(width: 420, height: 320)
         win.titleVisibility = .hidden
         win.titlebarSeparatorStyle = .none
         win.titlebarAppearsTransparent = true
@@ -190,14 +190,14 @@ final class ScratchpadManager {
 
         window = win
 
-        win.setFrameAutosaveName("ClearlyScratchpadWindow")
+        win.setFrameAutosaveName("ClearlyScratchpadWindow_v2")
         positionTopRightIfUnsaved(win)
     }
 
     private static let defaultScratchpadContentSize = NSSize(width: 480, height: 560)
 
     private func positionTopRightIfUnsaved(_ win: NSPanel) {
-        if win.setFrameUsingName("ClearlyScratchpadWindow") { return }
+        if win.setFrameUsingName("ClearlyScratchpadWindow_v2") { return }
         win.setContentSize(Self.defaultScratchpadContentSize)
         guard let screen = NSScreen.main else { return }
         let visible = screen.visibleFrame

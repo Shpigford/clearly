@@ -47,7 +47,7 @@ struct ScratchpadShellView: View {
             .accessibilityHidden(true)
         }
         .ignoresSafeArea(.container, edges: .top)
-        .frame(minWidth: 360, minHeight: 280)
+        .frame(minWidth: 420, minHeight: 320)
         .onAppear(perform: syncText)
         .onChange(of: manager.currentNoteID) { _, _ in syncText() }
     }
