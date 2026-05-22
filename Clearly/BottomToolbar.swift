@@ -37,7 +37,7 @@ struct BottomToolbar: View {
                     .allowsHitTesting(false)
 
                 countText
-                    .accessibilityLabel("\(statusBarState.counts.totalWords) words, \(statusBarState.counts.totalChars) characters")
+                    .accessibilityLabel(Text(LF("%d words, %d characters", statusBarState.counts.totalWords, statusBarState.counts.totalChars)))
                     .accessibilityAddTraits(.isStaticText)
 
                 Spacer(minLength: 12)
@@ -62,7 +62,7 @@ struct BottomToolbar: View {
                 .allowsHitTesting(false)
 
             countText
-                .accessibilityLabel("\(statusBarState.counts.totalWords) words, \(statusBarState.counts.totalChars) characters")
+                .accessibilityLabel(Text(LF("%d words, %d characters", statusBarState.counts.totalWords, statusBarState.counts.totalChars)))
                 .accessibilityAddTraits(.isStaticText)
 
             Spacer(minLength: 12)
@@ -81,7 +81,7 @@ struct BottomToolbar: View {
         let counts = statusBarState.counts
         let words = counts.hasSelection ? counts.selectionWords : counts.totalWords
         let chars = counts.hasSelection ? counts.selectionChars : counts.totalChars
-        return Text("\(words.formatted()) words \u{00B7} \(chars.formatted()) characters")
+        return Text(LF("%@ words · %@ characters", words.formatted(), chars.formatted()))
             .font(.system(size: 11))
             .tracking(0.3)
             .foregroundStyle(.tertiary)
@@ -100,8 +100,8 @@ struct BottomToolbar: View {
         .menuIndicator(.hidden)
         .buttonStyle(BottomToolbarIconStyle(isActive: false))
         .frame(width: 28, height: 28)
-        .help("Copy document")
-        .accessibilityLabel("Copy document")
+        .help(L("Copy document"))
+        .accessibilityLabel(Text(L("Copy document")))
     }
 
     private var outlineToggle: some View {
@@ -113,8 +113,8 @@ struct BottomToolbar: View {
         }
         .buttonStyle(BottomToolbarIconStyle(isActive: outlineState.isVisible))
         .frame(width: 28, height: 28)
-        .help("Toggle outline")
-        .accessibilityLabel("Toggle outline")
+        .help(L("Toggle outline"))
+        .accessibilityLabel(Text(L("Toggle outline")))
         .accessibilityAddTraits(outlineState.isVisible ? .isSelected : [])
     }
 
@@ -132,8 +132,8 @@ struct BottomToolbar: View {
         .buttonStyle(.plain)
         .menuIndicator(.hidden)
         .glassEffect(.regular.interactive(), in: .circle)
-        .help("Copy document")
-        .accessibilityLabel("Copy document")
+        .help(L("Copy document"))
+        .accessibilityLabel(Text(L("Copy document")))
     }
 
     @available(macOS 26.0, *)
@@ -153,8 +153,8 @@ struct BottomToolbar: View {
                 : .regular.interactive(),
             in: .circle
         )
-        .help("Toggle outline")
-        .accessibilityLabel("Toggle outline")
+        .help(L("Toggle outline"))
+        .accessibilityLabel(Text(L("Toggle outline")))
         .accessibilityAddTraits(outlineState.isVisible ? .isSelected : [])
     }
 
@@ -221,7 +221,7 @@ private struct ModePill: View {
             HStack(spacing: 5) {
                 Image(systemName: systemImage)
                     .font(.system(size: 11, weight: .medium))
-                Text(title)
+                Text(L(title))
                     .font(.system(size: 12, weight: .medium))
             }
             .padding(.horizontal, 10)
@@ -239,7 +239,7 @@ private struct ModePill: View {
             .contentShape(Capsule(style: .continuous))
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("\(title) mode")
+        .accessibilityLabel(Text(LF("%@ mode", L(title))))
         .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 }

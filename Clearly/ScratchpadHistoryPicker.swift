@@ -130,7 +130,7 @@ struct ScratchpadHistoryPicker: View {
             Image(systemName: "magnifyingglass")
                 .font(.system(size: 22, weight: .regular))
                 .foregroundStyle(.tertiary)
-            Text(query.isEmpty ? "No scratchpads yet" : "No matches for “\(query)”")
+            Text(query.isEmpty ? L("No scratchpads yet") : LF("No matches for “%@”", query))
                 .font(.system(size: 12))
                 .foregroundStyle(.secondary)
         }
@@ -157,7 +157,7 @@ struct ScratchpadHistoryPicker: View {
 
             Spacer()
 
-            Text("\(notes.count) note\(notes.count == 1 ? "" : "s")")
+            Text(notes.count == 1 ? L("1 note") : LF("%d notes", notes.count))
                 .font(.system(size: 11))
                 .foregroundStyle(.tertiary)
                 .monospacedDigit()

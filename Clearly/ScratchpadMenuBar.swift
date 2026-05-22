@@ -21,7 +21,7 @@ struct ScratchpadMenuBar: View {
 
             Menu("Recent Scratchpads") {
                 ForEach(store.notes.prefix(8)) { note in
-                    Button(note.title.isEmpty ? ScratchpadNote.titlePlaceholder : note.title) {
+                    Button(note.title.isEmpty ? L(ScratchpadNote.titlePlaceholder) : note.title) {
                         manager.select(note: note)
                         manager.showOrFocus()
                     }

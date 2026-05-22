@@ -31,7 +31,7 @@ struct JumpToLineBar: View {
                     }
 
                 if state.totalLines > 0 {
-                    Text("of \(state.totalLines)")
+                    Text(LF("of %d", state.totalLines))
                         .font(.system(size: 11, weight: .medium))
                         .foregroundStyle(.secondary)
                         .monospacedDigit()

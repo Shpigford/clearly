@@ -16,7 +16,7 @@ final class PDFExporter: NSObject, WKNavigationDelegate {
     func exportPDF(markdown: String, fontSize: CGFloat, fontFamily: String = "sanFrancisco", fileURL: URL? = nil) {
         let panel = NSSavePanel()
         panel.allowedContentTypes = [.pdf]
-        panel.nameFieldStringValue = "Untitled.pdf"
+        panel.nameFieldStringValue = L("Untitled.pdf")
         guard panel.runModal() == .OK, let url = panel.url else { return }
 
         PDFExporter.current = self
@@ -206,7 +206,7 @@ private enum ExportError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .exportFailed:
-            return "Could not export the PDF file."
+            return L("Could not export the PDF file.")
         }
     }
 }

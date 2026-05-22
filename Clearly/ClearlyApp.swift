@@ -299,24 +299,24 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate {
     /// Spelling / grammar submenu under Edit. SwiftUI's default Edit menu
     /// doesn't include this — but `NSTextView` selectors expect it.
     private func injectSpellingMenu() {
-        guard let editMenu = NSApp.mainMenu?.item(withTitle: "Edit")?.submenu else { return }
-        guard !editMenu.items.contains(where: { $0.title == "Spelling and Grammar" }) else { return }
+        guard let editMenu = NSApp.mainMenu?.item(withTitle: L("Edit"))?.submenu else { return }
+        guard !editMenu.items.contains(where: { $0.title == L("Spelling and Grammar") }) else { return }
 
-        let spellingItem = NSMenuItem(title: "Spelling and Grammar", action: nil, keyEquivalent: "")
-        let spellingMenu = NSMenu(title: "Spelling and Grammar")
-        let showItem = NSMenuItem(title: "Show Spelling and Grammar", action: #selector(NSText.showGuessPanel(_:)), keyEquivalent: ":")
+        let spellingItem = NSMenuItem(title: L("Spelling and Grammar"), action: nil, keyEquivalent: "")
+        let spellingMenu = NSMenu(title: L("Spelling and Grammar"))
+        let showItem = NSMenuItem(title: L("Show Spelling and Grammar"), action: #selector(NSText.showGuessPanel(_:)), keyEquivalent: ":")
         showItem.keyEquivalentModifierMask = [.command]
         spellingMenu.addItem(showItem)
-        let checkItem = NSMenuItem(title: "Check Document Now", action: #selector(NSText.checkSpelling(_:)), keyEquivalent: ";")
+        let checkItem = NSMenuItem(title: L("Check Document Now"), action: #selector(NSText.checkSpelling(_:)), keyEquivalent: ";")
         checkItem.keyEquivalentModifierMask = [.command]
         spellingMenu.addItem(checkItem)
         spellingMenu.addItem(.separator())
-        spellingMenu.addItem(NSMenuItem(title: "Check Spelling While Typing", action: #selector(NSTextView.toggleContinuousSpellChecking(_:)), keyEquivalent: ""))
-        spellingMenu.addItem(NSMenuItem(title: "Check Grammar With Spelling", action: #selector(NSTextView.toggleGrammarChecking(_:)), keyEquivalent: ""))
-        spellingMenu.addItem(NSMenuItem(title: "Correct Spelling Automatically", action: #selector(NSTextView.toggleAutomaticSpellingCorrection(_:)), keyEquivalent: ""))
+        spellingMenu.addItem(NSMenuItem(title: L("Check Spelling While Typing"), action: #selector(NSTextView.toggleContinuousSpellChecking(_:)), keyEquivalent: ""))
+        spellingMenu.addItem(NSMenuItem(title: L("Check Grammar With Spelling"), action: #selector(NSTextView.toggleGrammarChecking(_:)), keyEquivalent: ""))
+        spellingMenu.addItem(NSMenuItem(title: L("Correct Spelling Automatically"), action: #selector(NSTextView.toggleAutomaticSpellingCorrection(_:)), keyEquivalent: ""))
         spellingItem.submenu = spellingMenu
 
-        if let writingToolsIndex = editMenu.items.firstIndex(where: { $0.title == "Writing Tools" }) {
+        if let writingToolsIndex = editMenu.items.firstIndex(where: { $0.title == L("Writing Tools") }) {
             let insertIndex = (writingToolsIndex > 0 && editMenu.items[writingToolsIndex - 1].isSeparatorItem)
                 ? writingToolsIndex - 1
                 : writingToolsIndex
@@ -330,17 +330,17 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate {
 
     /// Preview Font submenu under View.
     private func injectFontSubmenu() {
-        guard let viewMenu = NSApp.mainMenu?.item(withTitle: "View")?.submenu else { return }
-        guard !viewMenu.items.contains(where: { $0.title == "Preview Font" }) else { return }
+        guard let viewMenu = NSApp.mainMenu?.item(withTitle: L("View"))?.submenu else { return }
+        guard !viewMenu.items.contains(where: { $0.title == L("Preview Font") }) else { return }
 
-        let fontSubmenu = NSMenu(title: "Preview Font")
+        let fontSubmenu = NSMenu(title: L("Preview Font"))
         for (title, value) in [("San Francisco", "sanFrancisco"), ("New York", "newYork"), ("SF Mono", "sfMono")] {
             let item = NSMenuItem(title: title, action: #selector(setPreviewFontAction(_:)), keyEquivalent: "")
             item.target = self
             item.representedObject = value
             fontSubmenu.addItem(item)
         }
-        let fontMenuItem = NSMenuItem(title: "Preview Font", action: nil, keyEquivalent: "")
+        let fontMenuItem = NSMenuItem(title: L("Preview Font"), action: nil, keyEquivalent: "")
         fontMenuItem.submenu = fontSubmenu
         viewMenu.addItem(.separator())
         viewMenu.addItem(fontMenuItem)
@@ -478,7 +478,7 @@ struct ClearlyApp: App {
                         let logText = try DiagnosticLog.exportRecentLogs()
                         let panel = NSSavePanel()
                         panel.allowedContentTypes = [.plainText]
-                        panel.nameFieldStringValue = "Clearly-Diagnostic-Log.txt"
+                        panel.nameFieldStringValue = L("Clearly-Diagnostic-Log.txt")
                         guard panel.runModal() == .OK, let url = panel.url else { return }
                         try logText.write(to: url, atomically: true, encoding: .utf8)
                     } catch {
@@ -499,7 +499,7 @@ struct ClearlyApp: App {
             #endif
         }
 
-        MenuBarExtra("Scratchpads", image: "ScratchpadMenuBarIcon") {
+        MenuBarExtra(L("Scratchpads"), image: "ScratchpadMenuBarIcon") {
             ScratchpadMenuBar(manager: scratchpadManager, store: scratchpadStore)
         }
     }
@@ -509,7 +509,7 @@ struct ClearlyApp: App {
     private func openSampleDocument() {
         guard let url = Bundle.main.url(forResource: "demo", withExtension: "md") else { return }
         let tempURL = FileManager.default.temporaryDirectory
-            .appendingPathComponent("Sample Document.md")
+            .appendingPathComponent(L("Sample Document.md"))
         try? FileManager.default.removeItem(at: tempURL)
         try? FileManager.default.copyItem(at: url, to: tempURL)
         NSDocumentController.shared.openDocument(withContentsOf: tempURL, display: true) { _, _, _ in }
@@ -648,10 +648,7 @@ struct BottomToolbarVisibilityCommand: View {
         Button {
             alwaysShowBottomToolbar.toggle()
         } label: {
-            Label(
-                alwaysShowBottomToolbar ? "Hide Toolbar" : "Show Toolbar",
-                systemImage: "rectangle.bottomthird.inset.filled"
-            )
+            Label(alwaysShowBottomToolbar ? L("Hide Toolbar") : L("Show Toolbar"), systemImage: "rectangle.bottomthird.inset.filled")
         }
         .keyboardShortcut("b", modifiers: [.command, .shift])
     }
@@ -664,10 +661,7 @@ struct LineNumbersToggleCommand: View {
         Button {
             showLineNumbers.toggle()
         } label: {
-            Label(
-                showLineNumbers ? "Hide Line Numbers" : "Show Line Numbers",
-                systemImage: "number"
-            )
+            Label(showLineNumbers ? L("Hide Line Numbers") : L("Show Line Numbers"), systemImage: "number")
         }
     }
 }

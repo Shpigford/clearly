@@ -52,7 +52,7 @@ struct ScratchpadDeleteUndoToast: View {
             HStack(spacing: 10) {
                 Image(systemName: "trash")
                     .foregroundStyle(.secondary)
-                Text("Deleted \(displayTitle)")
+                Text(LF("Deleted %@", displayTitle))
                     .font(.callout)
                     .lineLimit(1)
                     .truncationMode(.tail)
@@ -75,7 +75,7 @@ struct ScratchpadDeleteUndoToast: View {
 
     private var displayTitle: String {
         let title = controller.pendingTitle
-        if title.isEmpty || title == ScratchpadNote.titlePlaceholder { return "scratchpad" }
+        if title.isEmpty || title == ScratchpadNote.titlePlaceholder { return L("scratchpad") }
         return "“\(String(title.prefix(40)))”"
     }
 }

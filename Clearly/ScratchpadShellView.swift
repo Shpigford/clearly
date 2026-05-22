@@ -89,7 +89,7 @@ struct ScratchpadTitleMenuButton: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .help("Browse scratchpads (⌘P)")
+        .help(L("Browse scratchpads (⌘P)"))
         .popover(isPresented: $bindable.historyPopoverShown, arrowEdge: .bottom) {
             ScratchpadHistoryPicker {
                 bindable.historyPopoverShown = false
@@ -100,7 +100,7 @@ struct ScratchpadTitleMenuButton: View {
     }
 
     private var displayTitle: String {
-        manager.currentNote?.title ?? "Scratchpad"
+        manager.currentNote?.title ?? L("Scratchpad")
     }
 }
 
@@ -117,7 +117,7 @@ struct ScratchpadNewNoteButton: View {
                 .contentShape(Rectangle())
         }
         .buttonStyle(.borderless)
-        .help("New Scratchpad (⌘N)")
+        .help(L("New Scratchpad (⌘N)"))
     }
 }
 
@@ -137,4 +137,3 @@ struct ScratchpadTitlebarBar: View {
         }
     }
 }
-

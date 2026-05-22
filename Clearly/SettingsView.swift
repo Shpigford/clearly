@@ -123,7 +123,7 @@ struct SettingsView: View {
     private var scratchpadSettings: some View {
         Form {
             Section {
-                KeyboardShortcuts.Recorder("New Scratchpad:", name: .newScratchpad)
+                KeyboardShortcuts.Recorder(L("New Scratchpad:"), name: .newScratchpad)
             } footer: {
                 Text("Press this shortcut anywhere to bring the Scratchpad window to the front.")
                     .font(.caption)
@@ -139,13 +139,13 @@ struct SettingsView: View {
 
                 if scratchpadRetentionMode == "age" {
                     Stepper(value: $scratchpadRetentionDays, in: 7...365) {
-                        Text("Delete after \(scratchpadRetentionDays) day\(scratchpadRetentionDays == 1 ? "" : "s")")
+                        Text(scratchpadRetentionDays == 1 ? L("Delete after 1 day") : LF("Delete after %d days", scratchpadRetentionDays))
                     }
                 }
 
                 if scratchpadRetentionMode == "count" {
                     Stepper(value: $scratchpadRetentionCount, in: 10...1000, step: 10) {
-                        Text("Keep newest \(scratchpadRetentionCount) scratchpads")
+                        Text(LF("Keep newest %d scratchpads", scratchpadRetentionCount))
                     }
                 }
             } footer: {
@@ -179,7 +179,7 @@ private struct AboutView: View {
             }
             Text("Clearly")
                 .font(.title2.weight(.semibold))
-            Text("Version \(version) (\(build))")
+            Text(LF("Version %@ (%@)", version, build))
                 .font(.callout)
                 .foregroundStyle(.secondary)
             Divider()

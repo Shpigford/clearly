@@ -149,7 +149,7 @@ struct FindBarView: View {
     @ViewBuilder
     private var statusText: some View {
         if let count = findState.lastReplaceCount {
-            Text(count == 1 ? "Replaced 1 occurrence" : "Replaced \(count) occurrences")
+            Text(count == 1 ? L("Replaced 1 occurrence") : LF("Replaced %d occurrences", count))
                 .font(.system(size: 11, weight: .medium))
                 .foregroundStyle(.secondary)
                 .monospacedDigit()
@@ -160,12 +160,12 @@ struct FindBarView: View {
                 .lineLimit(1)
         } else if !findState.query.isEmpty && !findState.resultsAreStale {
             if findState.matchCount > 0 {
-                Text("\(findState.currentIndex) of \(findState.matchCount)")
+                Text(LF("%d of %d", findState.currentIndex, findState.matchCount))
                     .font(.system(size: 11, weight: .medium))
                     .foregroundStyle(.secondary)
                     .monospacedDigit()
             } else {
-                Text("No results")
+                Text(L("No results"))
                     .font(.system(size: 11, weight: .medium))
                     .foregroundStyle(.secondary)
             }
@@ -204,7 +204,7 @@ private struct DisclosureChevron: View {
         .onHover { hovering in
             withAnimation(Theme.Motion.hover) { isHovering = hovering }
         }
-        .help(isExpanded ? "Hide replace" : "Show replace")
+        .help(isExpanded ? L("Hide replace") : L("Show replace"))
     }
 }
 
@@ -292,7 +292,7 @@ private struct FindQueryField: NSViewRepresentable {
         textField.drawsBackground = false
         textField.focusRingType = .none
         textField.font = .systemFont(ofSize: 13)
-        textField.placeholderString = "Find"
+        textField.placeholderString = L("Find")
         textField.lineBreakMode = .byClipping
         textField.delegate = context.coordinator
         context.coordinator.attach(textField)
@@ -426,7 +426,7 @@ private struct ReplaceField: NSViewRepresentable {
         textField.drawsBackground = false
         textField.focusRingType = .none
         textField.font = .systemFont(ofSize: 13)
-        textField.placeholderString = "Replace"
+        textField.placeholderString = L("Replace")
         textField.lineBreakMode = .byClipping
         textField.delegate = context.coordinator
         context.coordinator.attach(textField)
