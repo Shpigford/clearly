@@ -187,6 +187,18 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate {
             NSApp.setActivationPolicy(.accessory)
             return .terminateCancel
         }
+        // Launcher-dismiss fires both terminate methods. By this point
+        // NSDocumentController has added the user-picked doc to `.documents`,
+        // but its SwiftUI scene is still constructing. Falling through to
+        // `closeAllDocuments` would tear that brand-new doc down mid-build
+        // and crash the app (#377). Bail without touching it; the natural
+        // `didBecomeMain` → `updateActivationPolicy` flow clears the flag
+        // once the doc registers, so the next Cmd+Q hits the normal path.
+        if isDocumentPanelPresented {
+            DiagnosticLog.log("appShouldTerminate: panel-in-flight with new doc, cancel without closing")
+            NSApp.setActivationPolicy(.accessory)
+            return .terminateCancel
+        }
         NSDocumentController.shared.closeAllDocuments(
             withDelegate: self,
             didCloseAllSelector: #selector(menubarOnlyDidCloseAllDocuments(_:didCloseAll:contextInfo:)),
