@@ -148,6 +148,7 @@ struct PreviewView: NSViewRepresentable {
         context.coordinator.isLoadingContent = true
         let rawBody = MarkdownRenderer.renderHTML(markdown, includeFrontmatter: !hideFrontmatterInPreview)
         let htmlBody = LocalImageSupport.resolveImageSources(in: rawBody, relativeTo: fileURL)
+        let softWrapIndent = MarkdownSyntaxHighlighter.indentValues(from: markdown)
         let scrollJS = """
         // Track scroll fraction for position sync between editor and preview.
         var _scrollTicking = false;
@@ -178,7 +179,7 @@ struct PreviewView: NSViewRepresentable {
         <head>
         <meta charset="utf-8">
         <meta name="viewport" content="width=device-width, initial-scale=1">
-        <style>\(PreviewCSS.css(fontSize: fontSize, fontFamily: fontFamily, bodyMaxWidth: bodyMaxWidthCSS))
+        <style>\(PreviewCSS.css(fontSize: fontSize, fontFamily: fontFamily, bodyMaxWidth: bodyMaxWidthCSS, softWrapIndent: softWrapIndent))
         mark.clearly-find { background-color: rgba(255, 230, 0, 0.4); border-radius: 2px; padding: 0 1px; }
         mark.clearly-mode-highlight { background: rgba(255, 210, 50, 0.5); border-radius: 3px; padding: 0 1px; transition: background 1.5s ease; }
         mark.clearly-mode-highlight.fade { background: transparent; }

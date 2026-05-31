@@ -18,6 +18,7 @@ final class PreviewViewController: UIViewController, QLPreviewingController {
             let markdownText = try String(contentsOf: url, encoding: .utf8)
             let rawBody = MarkdownRenderer.renderHTML(markdownText)
             let htmlBody = LocalImageSupport.resolveImageSources(in: rawBody, relativeTo: url)
+            let softWrapIndent = MarkdownSyntaxHighlighter.indentValues(from: markdownText)
 
             let html = """
             <!DOCTYPE html>
@@ -25,7 +26,7 @@ final class PreviewViewController: UIViewController, QLPreviewingController {
             <head>
             <meta charset="utf-8">
             <meta name="viewport" content="width=device-width, initial-scale=1">
-            <style>\(PreviewCSS.css())</style>
+            <style>\(PreviewCSS.css(softWrapIndent: softWrapIndent))</style>
             <style>
             @media (max-width: 400px) {
                 body { font-size: 14px; padding: 10px 20px 20px; }

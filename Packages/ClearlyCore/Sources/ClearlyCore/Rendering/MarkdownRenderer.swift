@@ -58,16 +58,26 @@ public enum MarkdownRenderer {
     private static func frontmatterHTML(from block: FrontmatterSupport.Block) -> String {
         let sourcepos = "1:1-\(block.lineCount):1"
 
-        if block.fields.isEmpty {
-            if block.rawText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                return "<div class=\"frontmatter-anchor\" data-sourcepos=\"\(sourcepos)\"></div>\n"
+        // Layout-directive keys (wrapIndent/firstLineIndent) drive rendering and
+        // are not content metadata, so omit them from the preview's block.
+        let visibleFields = block.fields.filter {
+            !MarkdownSyntaxHighlighter.layoutFrontmatterKeys.contains($0.key)
+        }
+
+        if visibleFields.isEmpty {
+            // Fall back to the raw <pre> only when nothing parsed as fields at all.
+            // A block whose only keys were layout directives renders as a silent
+            // anchor (no visible box, but the sourcepos mapping is preserved).
+            if block.fields.isEmpty,
+               !block.rawText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                let escapedRaw = escapeHTML(block.rawText)
+                return "<div class=\"frontmatter\" data-sourcepos=\"\(sourcepos)\"><pre>\(escapedRaw)</pre></div>\n"
             }
-            let escapedRaw = escapeHTML(block.rawText)
-            return "<div class=\"frontmatter\" data-sourcepos=\"\(sourcepos)\"><pre>\(escapedRaw)</pre></div>\n"
+            return "<div class=\"frontmatter-anchor\" data-sourcepos=\"\(sourcepos)\"></div>\n"
         }
 
         var rows = ""
-        for field in block.fields {
+        for field in visibleFields {
             rows += "<div class=\"frontmatter-row\"><dt>\(escapeHTML(field.key))</dt><dd>\(escapeHTML(field.value))</dd></div>"
         }
         return "<div class=\"frontmatter\" data-sourcepos=\"\(sourcepos)\"><dl>\(rows)</dl></div>\n"

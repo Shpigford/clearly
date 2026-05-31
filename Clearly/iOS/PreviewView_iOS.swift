@@ -96,6 +96,7 @@ struct PreviewView_iOS: UIViewRepresentable {
         context.coordinator.lastContentKey = contentKey
         let rawBody = MarkdownRenderer.renderHTML(markdown, includeFrontmatter: !hideFrontmatter)
         let htmlBody = LocalImageSupport.resolveImageSources(in: rawBody, relativeTo: fileURL)
+        let softWrapIndent = MarkdownSyntaxHighlighter.indentValues(from: markdown)
 
         let html = """
         <!DOCTYPE html>
@@ -103,7 +104,7 @@ struct PreviewView_iOS: UIViewRepresentable {
         <head>
         <meta charset="utf-8">
         <meta name="viewport" content="width=device-width, initial-scale=1">
-        <style>\(PreviewCSS.css(fontSize: fontSize, fontFamily: fontFamily, bodyMaxWidth: "100%"))
+        <style>\(PreviewCSS.css(fontSize: fontSize, fontFamily: fontFamily, bodyMaxWidth: "100%", softWrapIndent: softWrapIndent))
         body {
             padding-top: max(16px, env(safe-area-inset-top));
             padding-right: max(20px, env(safe-area-inset-right));

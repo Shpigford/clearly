@@ -1,8 +1,61 @@
+import CoreText
 import Foundation
 import os
 import QuartzCore
 
 private typealias Attr = PlatformTextAttributes
+
+/// A soft-wrap indent length parsed from frontmatter (`wrapIndent` / `firstLineIndent`).
+/// Carries an explicit CSS-style unit so the editor and the preview stay in sync:
+/// the editor resolves it to points, the preview emits it verbatim as CSS.
+public struct IndentLength: Equatable, Sendable {
+    public enum Unit: String, Sendable {
+        case em, ch, px, pt
+    }
+
+    public let value: CGFloat
+    public let unit: Unit
+
+    public init(value: CGFloat, unit: Unit) {
+        self.value = value
+        self.unit = unit
+    }
+
+    /// Parse a frontmatter value like `2em`, `2ch`, `20px`, `20pt`, or a bare
+    /// number (defaults to `em`). Returns `nil` for empty, negative, or
+    /// unparseable input.
+    public static func parse(_ raw: String) -> IndentLength? {
+        let trimmed = raw.trimmingCharacters(in: .whitespaces).lowercased()
+        guard !trimmed.isEmpty else { return nil }
+        var unit: Unit = .em
+        var numberPart = trimmed
+        for candidate in [Unit.em, .ch, .px, .pt] where trimmed.hasSuffix(candidate.rawValue) {
+            unit = candidate
+            numberPart = String(trimmed.dropLast(candidate.rawValue.count))
+            break
+        }
+        guard let value = Double(numberPart.trimmingCharacters(in: .whitespaces)), value >= 0 else {
+            return nil
+        }
+        return IndentLength(value: CGFloat(value), unit: unit)
+    }
+
+    /// Resolve to points for the editor's `NSParagraphStyle`. `em` scales with the
+    /// editor font size, `ch` with the monospaced character advance; `px`/`pt` are
+    /// already absolute.
+    public func points(fontSize: CGFloat, characterWidth: CGFloat) -> CGFloat {
+        switch unit {
+        case .em: return value * fontSize
+        case .ch: return value * characterWidth
+        case .px, .pt: return value
+        }
+    }
+
+    /// The CSS length string, e.g. `2em`, `-4px`. Whole numbers drop the `.0`.
+    public var css: String {
+        "\(String(format: "%g", Double(value)))\(unit.rawValue)"
+    }
+}
 
 public final class MarkdownSyntaxHighlighter: NSObject {
 
@@ -16,6 +69,153 @@ public final class MarkdownSyntaxHighlighter: NSObject {
     /// Set by `highlightAround` when a block delimiter is detected.
     /// The caller should schedule a deferred `highlightAll` instead of running it synchronously.
     public var needsFullHighlight = false
+
+    // MARK: - Soft-wrap indent (frontmatter `wrapIndent` / `firstLineIndent`)
+
+    /// Frontmatter key for the soft-wrapped continuation-line indent.
+    public static let wrapIndentKey = "wrapIndent"
+    /// Frontmatter key for the first-line indent.
+    public static let firstLineIndentKey = "firstLineIndent"
+    /// Layout-directive frontmatter keys: consumed for rendering, not content
+    /// metadata. The preview hides these from its frontmatter block.
+    public static let layoutFrontmatterKeys: Set<String> = [wrapIndentKey, firstLineIndentKey]
+
+    /// Resolved indent for the current document, or `nil` when the feature is off.
+    /// `head` maps to `headIndent` (soft-wrapped continuation lines); `firstLine`
+    /// maps to `firstLineHeadIndent` (first line of each hard-break-bounded paragraph).
+    private var cachedIndent: (head: IndentLength, firstLine: IndentLength)?
+    /// Last-recorded UTF-16 length of the frontmatter region (may be stale after an
+    /// edit, until the next refresh), used to decide whether an incremental edit
+    /// could have changed the indent config.
+    private var cachedFrontmatterLength: Int = 0
+
+    /// Whether a non-zero indent is active for the current document.
+    private var isIndentActive: Bool {
+        guard let indent = cachedIndent else { return false }
+        return indent.head.value > 0 || indent.firstLine.value > 0
+    }
+
+    /// Parse soft-wrap indent settings from a document's YAML frontmatter.
+    /// Returns `nil` (feature off) when there is no frontmatter, neither
+    /// `wrapIndent` nor `firstLineIndent` is present, or both keys are
+    /// unparseable. Each value may carry an explicit unit (`em`, `ch`, `px`,
+    /// `pt`); a bare number defaults to `em`.
+    public static func indentValues(from text: String) -> (head: IndentLength, firstLine: IndentLength)? {
+        guard let block = FrontmatterSupport.extract(from: text) else { return nil }
+        return indentValues(fromFields: block.fields)
+    }
+
+    private static func indentValues(fromFields fields: [FrontmatterSupport.Field]) -> (head: IndentLength, firstLine: IndentLength)? {
+        var head: IndentLength?
+        var firstLine: IndentLength?
+        for field in fields {
+            switch field.key {
+            case Self.wrapIndentKey:
+                if let parsed = IndentLength.parse(field.value) { head = parsed }
+            case Self.firstLineIndentKey:
+                if let parsed = IndentLength.parse(field.value) { firstLine = parsed }
+            default:
+                break
+            }
+        }
+        if head == nil && firstLine == nil { return nil }
+        let zero = IndentLength(value: 0, unit: .em)
+        return (head ?? zero, firstLine ?? zero)
+    }
+
+    /// Re-read the indent config from `text`. When `markNeedsFullHighlight` is true
+    /// and the resolved values changed, request a deferred full re-highlight so the
+    /// whole document picks up the new indent (an incremental pass only restyles the
+    /// edited paragraph).
+    private func refreshIndentCache(from text: String, markNeedsFullHighlight: Bool) {
+        let old = cachedIndent
+        if let block = FrontmatterSupport.extract(from: text) {
+            // Always record the frontmatter span — even when no indent keys are
+            // present yet — so that adding the keys later counts as an in-region
+            // edit and triggers a re-highlight without needing to reopen the file.
+            cachedFrontmatterLength = Self.frontmatterRegionLength(of: text, block: block)
+            cachedIndent = Self.indentValues(fromFields: block.fields)
+        } else if case let structuralLength = Self.structuralFrontmatterRegionLength(of: text), structuralLength > 0 {
+            // A leading `--- ... ---` block still exists but a line doesn't parse as
+            // a field yet (e.g. a key that's been typed but has no colon yet). Keep
+            // the last-known indent and the region length so a transient unparseable
+            // state doesn't drop the body indent, and so edits stay in-region long
+            // enough to refresh once the line becomes valid again.
+            cachedFrontmatterLength = structuralLength
+        } else {
+            cachedIndent = nil
+            cachedFrontmatterLength = 0
+        }
+        if markNeedsFullHighlight && Self.indentChanged(old, cachedIndent) {
+            needsFullHighlight = true
+        }
+    }
+
+    /// Tuples can't be `Equatable`, so compare the optional indent pair by hand.
+    private static func indentChanged(
+        _ lhs: (head: IndentLength, firstLine: IndentLength)?,
+        _ rhs: (head: IndentLength, firstLine: IndentLength)?
+    ) -> Bool {
+        switch (lhs, rhs) {
+        case (nil, nil): return false
+        case let (a?, b?): return a.head != b.head || a.firstLine != b.firstLine
+        default: return true
+        }
+    }
+
+    /// UTF-16 length of the leading frontmatter region (including delimiters),
+    /// or 0 when there is no frontmatter. Used to decide whether an incremental
+    /// edit could have changed the indent config. Computed independently of which
+    /// keys are present, so adding indent keys to existing frontmatter still
+    /// registers as an in-region edit.
+    static func frontmatterRegionLength(of text: String) -> Int {
+        guard let block = FrontmatterSupport.extract(from: text) else { return 0 }
+        return frontmatterRegionLength(of: text, block: block)
+    }
+
+    private static func frontmatterRegionLength(of text: String, block: FrontmatterSupport.Block) -> Int {
+        max(0, (text as NSString).length - (block.body as NSString).length)
+    }
+
+    /// UTF-16 length of the leading `--- ... ---` block detected by delimiters alone,
+    /// ignoring whether the body parses as fields. 0 when there's no such block.
+    /// Used to keep the indent cache alive while a frontmatter line is mid-edit and
+    /// `FrontmatterSupport.extract` transiently fails.
+    static func structuralFrontmatterRegionLength(of text: String) -> Int {
+        guard let regex = frontmatterBlockRegex else { return 0 }
+        let ns = text as NSString
+        return regex.firstMatch(in: text, range: NSRange(location: 0, length: ns.length))?.range.length ?? 0
+    }
+
+    /// The editor paragraph style: line height (always) plus soft-wrap indent when active.
+    /// `headIndent` indents soft-wrapped continuation lines; `firstLineHeadIndent`
+    /// indents the first line of each (hard-break-bounded) paragraph.
+    private func indentParagraphStyle() -> PlatformParagraphStyle {
+        let paragraph = PlatformParagraphStyle()
+        paragraph.minimumLineHeight = Theme.editorLineHeight
+        paragraph.maximumLineHeight = Theme.editorLineHeight
+        if let indent = cachedIndent, isIndentActive {
+            let fontSize = Theme.editorFontSize
+            let charWidth = Self.characterWidth(of: Theme.editorFont)
+            paragraph.headIndent = indent.head.points(fontSize: fontSize, characterWidth: charWidth)
+            paragraph.firstLineHeadIndent = indent.firstLine.points(fontSize: fontSize, characterWidth: charWidth)
+        }
+        return paragraph
+    }
+
+    /// Advance width of one character in `font`. The editor font is monospaced,
+    /// so a single space measures the column width used for indent math.
+    private static func characterWidth(of font: PlatformFont) -> CGFloat {
+        let ctFont = font as CTFont
+        var character: UniChar = 0x20 // space
+        var glyph = CGGlyph(0)
+        guard CTFontGetGlyphsForCharacters(ctFont, &character, &glyph, 1) else {
+            return font.pointSize * 0.6
+        }
+        var advance = CGSize.zero
+        CTFontGetAdvancesForGlyphs(ctFont, .horizontal, &glyph, &advance, 1)
+        return advance.width > 0 ? advance.width : font.pointSize * 0.6
+    }
 
     // MARK: - Regex Patterns
 
@@ -174,10 +374,11 @@ public final class MarkdownSyntaxHighlighter: NSObject {
         let fullRange = NSRange(location: 0, length: textStorage.length)
         let text = textStorage.string
 
+        // Refresh soft-wrap indent config from frontmatter before styling the document.
+        refreshIndentCache(from: text, markNeedsFullHighlight: false)
+
         // Reset to default style
-        let paragraph = PlatformParagraphStyle()
-        paragraph.minimumLineHeight = Theme.editorLineHeight
-        paragraph.maximumLineHeight = Theme.editorLineHeight
+        let paragraph = indentParagraphStyle()
 
         textStorage.addAttributes([
             Attr.font: Theme.editorFont,
@@ -360,8 +561,12 @@ public final class MarkdownSyntaxHighlighter: NSObject {
                     textStorage.addAttribute(Attr.foregroundColor, value: Theme.htmlTagColor, range: match.range)
 
                 case .frontmatter:
-                    let matchedText = (text as NSString).substring(with: match.range)
-                    guard FrontmatterSupport.extract(from: matchedText) != nil else { return }
+                    // The block regex is anchored at the document start and requires
+                    // `--- ... ---`, so a match is structurally frontmatter even when a
+                    // line is mid-edit and doesn't yet parse as a field. Color the region
+                    // regardless; the field-level key coloring below is best-effort.
+                    // (Gating this on a full parse made the whole block lose its
+                    // highlight while a new field line was being typed.)
                     protectedRanges.append(ProtectedRange(range: match.range, kind: .frontmatter))
                     let nsText = text as NSString
                     // Base color for the whole block
@@ -422,8 +627,9 @@ public final class MarkdownSyntaxHighlighter: NSObject {
 
         Self.frontmatterBlockRegex?.enumerateMatches(in: text, range: fullRange) { match, _, _ in
             guard let match else { return }
-            let matchedText = nsText.substring(with: match.range)
-            guard FrontmatterSupport.extract(from: matchedText) != nil else { return }
+            // Treat any document-leading `--- ... ---` block as frontmatter for
+            // protection, without requiring a full field parse — otherwise a
+            // half-typed field line would drop the block's protected status.
             protectedRanges.append(ProtectedRange(range: match.range, kind: .frontmatter))
         }
 
@@ -466,6 +672,15 @@ public final class MarkdownSyntaxHighlighter: NSObject {
         let postEditRange = NSRange(location: safeLocation, length: safeLength)
         let paragraphRange = nsText.paragraphRange(for: postEditRange)
 
+        // If the edit could lie inside the frontmatter region, re-read the indent
+        // config. A changed value flips `needsFullHighlight` so the whole document
+        // restyles; edits in the body reuse the cached values for free.
+        // `cachedFrontmatterLength` reflects the pre-edit text, so allow a little
+        // slack past it to catch edits that land right at the old boundary.
+        if editedRange.location <= cachedFrontmatterLength + 8 {
+            refreshIndentCache(from: text, markNeedsFullHighlight: true)
+        }
+
         // A "paragraph" here is a `\n`-bounded run. A file with no newlines (binary blob,
         // pasted log dump) is one paragraph the size of the whole file — running the regex
         // pipeline over multi-MB input is the catastrophic case. Bail; the file-size cap on
@@ -507,14 +722,16 @@ public final class MarkdownSyntaxHighlighter: NSObject {
         }
 
         if needsFontReset {
-            let paragraph = PlatformParagraphStyle()
-            paragraph.minimumLineHeight = Theme.editorLineHeight
-            paragraph.maximumLineHeight = Theme.editorLineHeight
             textStorage.addAttributes([
                 Attr.font: Theme.editorFont,
-                Attr.paragraphStyle: paragraph,
+                Attr.paragraphStyle: indentParagraphStyle(),
                 Attr.baselineOffset: Theme.editorBaselineOffset
             ], range: paragraphRange)
+        } else if isIndentActive {
+            // Soft-wrap indent is active. Typing only stamps the line-height typing
+            // attributes onto new characters, so re-apply the indent paragraph style
+            // here to keep plain paragraphs aligned.
+            textStorage.addAttribute(Attr.paragraphStyle, value: indentParagraphStyle(), range: paragraphRange)
         }
         textStorage.addAttribute(Attr.foregroundColor, value: Theme.textColor, range: paragraphRange)
         textStorage.removeAttribute(Attr.backgroundColor, range: paragraphRange)
