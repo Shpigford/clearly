@@ -1,4 +1,5 @@
-/// Recognizes the marker and separator at the start of an ATX heading.
+/// Recognizes the editable marker and separator at the start of an ATX
+/// heading. The heading content may still be empty while the user is typing.
 public enum ATXHeadingPrefix {
     public static func parse(in line: String) -> Substring? {
         var index = line.startIndex
@@ -19,11 +20,6 @@ public enum ATXHeadingPrefix {
             index = line.index(after: index)
         } while index < line.endIndex
             && (line[index] == " " || line[index] == "\t")
-
-        guard index < line.endIndex,
-              line[index] != "\n", line[index] != "\r" else {
-            return nil
-        }
 
         return line[..<index]
     }

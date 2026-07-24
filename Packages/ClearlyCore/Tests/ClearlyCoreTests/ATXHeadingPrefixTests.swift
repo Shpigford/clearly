@@ -15,10 +15,13 @@ struct ATXHeadingPrefixTests {
         #expect(ATXHeadingPrefix.parse(in: "# \t Heading") == "# \t ")
     }
 
+    @Test func recognizesAHeadingBeforeContentIsTyped() {
+        #expect(ATXHeadingPrefix.parse(in: "# ") == "# ")
+        #expect(ATXHeadingPrefix.parse(in: "###\t") == "###\t")
+    }
+
     @Test func rejectsNonHeadingPrefixes() {
         #expect(ATXHeadingPrefix.parse(in: "#") == nil)
-        #expect(ATXHeadingPrefix.parse(in: "# ") == nil)
-        #expect(ATXHeadingPrefix.parse(in: "###\t") == nil)
         #expect(ATXHeadingPrefix.parse(in: "####### Heading") == nil)
         #expect(ATXHeadingPrefix.parse(in: " # Heading") == nil)
         #expect(ATXHeadingPrefix.parse(in: "#not-a-heading") == nil)
