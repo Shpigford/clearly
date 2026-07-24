@@ -25,10 +25,18 @@ struct EditorView: NSViewRepresentable {
         scrollViewWidth: CGFloat, contentWidthEm: CGFloat?,
         fontSize: CGFloat, needsTrafficLightClearance: Bool
     ) -> CGFloat {
-        let minInset = Theme.editorInsetX + (needsTrafficLightClearance ? 20 : 0)
-        guard let emValue = contentWidthEm else { return minInset }
+        let markerGutter = MarkdownHeadingLayout.markerGutterWidth
+        let minContentInset = max(Theme.editorInsetX, markerGutter + 8)
+            + (needsTrafficLightClearance ? 20 : 0)
+        guard let emValue = contentWidthEm else {
+            return max(0, minContentInset - markerGutter)
+        }
         let maxWidthPoints = emValue * fontSize
-        return max(minInset, (scrollViewWidth - maxWidthPoints) / 2.0)
+        let contentInset = max(
+            minContentInset,
+            (scrollViewWidth - maxWidthPoints) / 2.0
+        )
+        return max(0, contentInset - markerGutter)
     }
 
     func makeCoordinator() -> Coordinator {
@@ -46,7 +54,7 @@ struct EditorView: NSViewRepresentable {
         scrollView.contentInsets = NSEdgeInsets(top: 0, left: 0, bottom: extraBottomInset, right: 0)
         scrollView.scrollerInsets = NSEdgeInsets(top: 0, left: 0, bottom: -extraBottomInset, right: 0)
 
-        let textView = ClearlyTextView()
+        let textView = ClearlyTextView(markdownFrame: .zero)
         textView.isRichText = false
         textView.allowsUndo = true
         textView.usesFindPanel = false
@@ -63,9 +71,7 @@ struct EditorView: NSViewRepresentable {
 
         // Paragraph style with line height — use min/max line height + baselineOffset
         // so text is vertically centered in each line (not top-aligned like lineSpacing)
-        let paragraph = NSMutableParagraphStyle()
-        paragraph.minimumLineHeight = Theme.editorLineHeight
-        paragraph.maximumLineHeight = Theme.editorLineHeight
+        let paragraph = MarkdownHeadingLayout.paragraphStyle()
         textView.defaultParagraphStyle = paragraph
         textView.typingAttributes = [
             .font: Theme.editorFont,
@@ -98,7 +104,7 @@ struct EditorView: NSViewRepresentable {
         // the first updateNSView call handles initial highlighting via the color-scheme check.
         // Note: we do NOT set textStorage.delegate — highlighting is driven explicitly
         // from textDidChange and updateNSView to avoid re-entrant layout manager access.
-        let highlighter = MarkdownSyntaxHighlighter()
+        let highlighter = MarkdownEditorHighlighter()
         context.coordinator.highlighter = highlighter
         textView.string = text
         textView.delegate = context.coordinator
@@ -287,9 +293,7 @@ struct EditorView: NSViewRepresentable {
             context.coordinator.lastFontSize = currentFontSize
             textView.font = Theme.editorFont
 
-            let paragraph = NSMutableParagraphStyle()
-            paragraph.minimumLineHeight = Theme.editorLineHeight
-            paragraph.maximumLineHeight = Theme.editorLineHeight
+            let paragraph = MarkdownHeadingLayout.paragraphStyle()
             textView.typingAttributes = [
                 .font: Theme.editorFont,
                 .foregroundColor: Theme.textColor,
@@ -361,7 +365,7 @@ struct EditorView: NSViewRepresentable {
         var parent: EditorView
         var isUpdating = false
         var isHighlightingInProgress = false
-        var highlighter: MarkdownSyntaxHighlighter?
+        var highlighter: MarkdownEditorHighlighter?
         var lastEditedRange: NSRange?
         var lastReplacementLength: Int = 0
         weak var textView: ClearlyTextView?

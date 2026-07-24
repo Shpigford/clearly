@@ -20,6 +20,14 @@ enum TextCheckingPreferences {
 }
 
 class PersistentTextCheckingTextView: NSTextView {
+    private var markdownTextSystem: MarkdownTextSystem?
+
+    convenience init(markdownFrame frame: NSRect = .zero) {
+        let textSystem = MarkdownTextSystem()
+        self.init(frame: frame, textContainer: textSystem.textContainer)
+        markdownTextSystem = textSystem
+    }
+
     @objc override func toggleContinuousSpellChecking(_ sender: Any?) {
         super.toggleContinuousSpellChecking(sender)
         TextCheckingPreferences.persist(from: self)
