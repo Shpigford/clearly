@@ -39,6 +39,19 @@ struct EditorView: NSViewRepresentable {
         return max(0, contentInset - markerGutter)
     }
 
+    private static func maxScrollOffsetY(for scrollView: NSScrollView) -> CGFloat {
+        let documentHeight = scrollView.documentView?.frame.height ?? 1
+        let viewportHeight = scrollView.contentView.bounds.height
+
+        // NSScrollView's bottom content inset extends the real scroll range so
+        // the final line can move above the floating toolbar. Include that
+        // reserved space in our fraction bridge as well.
+        return max(
+            1,
+            documentHeight - viewportHeight + scrollView.contentInsets.bottom
+        )
+    }
+
     func makeCoordinator() -> Coordinator {
         Coordinator(self)
     }
@@ -256,9 +269,7 @@ struct EditorView: NSViewRepresentable {
         if mode == .edit && (context.coordinator.lastMode != .edit || didChangeDocument) {
             findState?.activeMode = .edit
             let fraction = ScrollBridge.fraction(for: positionSyncID)
-            let docHeight = scrollView.documentView?.frame.height ?? 1
-            let viewportHeight = scrollView.contentView.bounds.height
-            let maxScroll = max(1, docHeight - viewportHeight)
+            let maxScroll = Self.maxScrollOffsetY(for: scrollView)
             scrollView.contentView.setBoundsOrigin(NSPoint(x: 0, y: fraction * maxScroll))
             scrollView.reflectScrolledClipView(scrollView.contentView)
             DispatchQueue.main.async {
@@ -713,9 +724,7 @@ struct EditorView: NSViewRepresentable {
             guard now - lastScrollTime >= 0.016 else { return }
             lastScrollTime = now
 
-            let docHeight = scrollView.documentView?.frame.height ?? 1
-            let viewportHeight = clipView.bounds.height
-            let maxScroll = max(1, docHeight - viewportHeight)
+            let maxScroll = EditorView.maxScrollOffsetY(for: scrollView)
             let fraction = min(max(clipView.bounds.origin.y / maxScroll, 0), 1)
             ScrollBridge.setFraction(fraction, for: parent.positionSyncID)
 
