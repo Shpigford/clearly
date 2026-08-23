@@ -85,6 +85,33 @@ final class MarkdownMathTests: XCTestCase {
         XCTAssertTrue(html.contains(#"<div class="math-block">"#), html)
     }
 
+    // MARK: - Math source must survive later post-processors (issue #389)
+
+    func testCaretsInInlineMathAreNotSuperscripted() {
+        let html = MarkdownRenderer.renderHTML(#"$\int\frac{x^2}{x^2 + 1} dx$"#)
+        XCTAssertTrue(html.contains(#"<span class="math-inline">"#), html)
+        XCTAssertFalse(html.contains("<sup>"), html)
+        XCTAssertTrue(html.contains(#"\frac{x^2}{x^2 + 1}"#), html)
+    }
+
+    func testCaretsInDisplayMathAreNotSuperscripted() {
+        let html = MarkdownRenderer.renderHTML(
+            """
+            $$
+            \\frac{1 + x^3}{x^3}
+            $$
+            """
+        )
+        XCTAssertTrue(html.contains(#"<div class="math-block">"#), html)
+        XCTAssertFalse(html.contains("<sup>"), html)
+    }
+
+    func testSuperscriptOutsideMathStillWorks() {
+        let html = MarkdownRenderer.renderHTML("E = mc^2^ and $x^2$")
+        XCTAssertTrue(html.contains("<sup>2</sup>"), html)
+        XCTAssertTrue(html.contains(#"<span class="math-inline">x^2</span>"#), html)
+    }
+
     func testDollarsInsideInlineCodeStayLiteral() {
         let html = MarkdownRenderer.renderHTML("`I paid $5 and $10.`")
         XCTAssertFalse(html.contains("math-inline"), html)
