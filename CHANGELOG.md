@@ -2,6 +2,21 @@
 
 ## [Unreleased]
 
+## [3.3.0] - 2026-08-23
+- Dropping markdown files on a document now opens them as window tabs instead of pasting the file path
+- Opening several files at once from Finder or the Dock lands them as tabs on the front window
+- New windows open at the size you last used
+- Heading # markers now hang in the left gutter, so heading text lines up with your paragraphs
+- Mermaid diagrams now render in PDF export and print instead of showing the raw code block
+- Undo now steps back a word at a time while typing, not one character
+- Links in Preview open in your browser instead of taking over the preview pane
+- Math no longer breaks when it contains ^ or _
+- Updated the bundled Mermaid to 11.17.0
+- The pointer no longer flickers when it passes over links in Preview
+- Documents no longer show as edited after reloading changes made by another app
+- The app no longer quits behind the Open dialog when "Keep running in menu bar" is off
+- Documents opened from the launcher stay open when "Keep running in menu bar" is off
+
 ## [3.2.0] - 2026-05-17
 - Open documents auto-reload when they're changed by another app
 - Wikilinks now render properly and no longer break Markdown tables
