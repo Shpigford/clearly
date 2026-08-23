@@ -18,6 +18,33 @@ private final class DraggableWKWebView: WKWebView {
         }
         super.mouseDown(with: event)
     }
+
+    // MARK: - File drops
+
+    /// Dropping markdown files on the preview opens them in tabs instead of
+    /// letting WKWebView attempt a navigation to the dropped file.
+    override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
+        if DroppedFileOpener.markdownFileURLs(from: sender.draggingPasteboard) != nil { return .copy }
+        return super.draggingEntered(sender)
+    }
+
+    override func draggingUpdated(_ sender: NSDraggingInfo) -> NSDragOperation {
+        if DroppedFileOpener.markdownFileURLs(from: sender.draggingPasteboard) != nil { return .copy }
+        return super.draggingUpdated(sender)
+    }
+
+    override func prepareForDragOperation(_ sender: NSDraggingInfo) -> Bool {
+        if DroppedFileOpener.markdownFileURLs(from: sender.draggingPasteboard) != nil { return true }
+        return super.prepareForDragOperation(sender)
+    }
+
+    override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
+        if let urls = DroppedFileOpener.markdownFileURLs(from: sender.draggingPasteboard), let window {
+            DroppedFileOpener.open(urls, droppedOn: window)
+            return true
+        }
+        return super.performDragOperation(sender)
+    }
 }
 
 struct PreviewView: NSViewRepresentable {
