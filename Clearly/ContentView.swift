@@ -109,6 +109,7 @@ struct ContentView: View {
             }
         }
         .frame(minWidth: 600, minHeight: 360)
+        .background(DocumentWindowSizer())
         .focusedSceneValue(\.findState, findState)
         .focusedSceneValue(\.outlineState, outlineState)
         .focusedSceneValue(\.viewMode, $viewMode)
@@ -240,3 +241,87 @@ struct ContentView: View {
     }
 }
 
+
+// MARK: - Document window size memory
+
+/// New `DocumentGroup` windows always open at the scene's `defaultSize`;
+/// SwiftUI never adopts the user's last-used size. This remembers the size
+/// after each manual resize and applies it to subsequently opened windows.
+private struct DocumentWindowSizer: NSViewRepresentable {
+    static let sizeKey = "lastDocumentWindowSize"
+
+    final class Coordinator {
+        weak var window: NSWindow?
+        private var observer: NSObjectProtocol?
+
+        func attach(to window: NSWindow) {
+            guard self.window !== window else { return }
+            self.window = window
+            if let observer { NotificationCenter.default.removeObserver(observer) }
+            // A ContentView is also created when adding a tab to an existing
+            // window. Leave that host window's size alone.
+            if (window.tabbedWindows?.count ?? 1) == 1 {
+                applySavedSize(to: window)
+            }
+            // Registered after applying so the apply itself isn't re-saved.
+            // didResize (not didEndLiveResize) so zoom and scripted resizes
+            // are remembered too.
+            observer = NotificationCenter.default.addObserver(
+                forName: NSWindow.didResizeNotification, object: window, queue: .main
+            ) { note in
+                guard let window = note.object as? NSWindow,
+                      !window.styleMask.contains(.fullScreen) else { return }
+                UserDefaults.standard.set(
+                    NSStringFromSize(window.frame.size),
+                    forKey: DocumentWindowSizer.sizeKey
+                )
+            }
+        }
+
+        private func applySavedSize(to window: NSWindow) {
+            guard let string = UserDefaults.standard.string(forKey: DocumentWindowSizer.sizeKey) else { return }
+            var size = NSSizeFromString(string)
+            guard size.width >= 600, size.height >= 360 else { return }
+            if let screen = window.screen ?? NSScreen.main {
+                size.width = min(size.width, screen.visibleFrame.width)
+                size.height = min(size.height, screen.visibleFrame.height)
+            }
+            var frame = window.frame
+            guard frame.size != size else { return }
+            frame.origin.y += frame.height - size.height  // keep the top-left corner put
+            frame.size = size
+            window.setFrame(frame, display: true)
+        }
+
+        deinit {
+            if let observer { NotificationCenter.default.removeObserver(observer) }
+        }
+    }
+
+    final class TrackingView: NSView {
+        var onWindow: ((NSWindow) -> Void)?
+
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            guard let window else { return }
+            onWindow?(window)
+        }
+    }
+
+    func makeCoordinator() -> Coordinator { Coordinator() }
+
+    func makeNSView(context: Context) -> NSView {
+        let view = TrackingView()
+        view.onWindow = { [coordinator = context.coordinator] window in
+            // Deferred a tick so SwiftUI finishes its own defaultSize frame
+            // setup before we apply the remembered size over it.
+            DispatchQueue.main.async { [weak window] in
+                guard let window else { return }
+                coordinator.attach(to: window)
+            }
+        }
+        return view
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {}
+}
