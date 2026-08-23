@@ -35,8 +35,8 @@ enum DroppedFileOpener {
                   targetDoc.fileURL == nil, !targetDoc.isDocumentEdited else { return nil }
             return targetDoc
         }()
-        openSerially(urls, tabbingOnto: window) {
-            replaceableDoc?.close()
+        openSerially(urls, tabbingOnto: window) { openedDocument in
+            if openedDocument { replaceableDoc?.close() }
         }
     }
 
@@ -44,15 +44,31 @@ enum DroppedFileOpener {
     /// tabbed onto the frontmost document window when one exists, otherwise
     /// grouped together as tabs of the first file's window.
     static func openBatch(_ urls: [URL]) {
+        guard !urls.isEmpty else { return }
         if let front = NSApp.orderedWindows.first(where: { document(for: $0) != nil }) {
-            openSerially(urls, tabbingOnto: front) {}
+            openSerially(urls, tabbingOnto: front) { _ in }
             return
         }
-        NSDocumentController.shared.openDocument(withContentsOf: urls[0], display: true) { doc, _, error in
-            if let error { DiagnosticLog.log("openBatch first open failed: \(error.localizedDescription)") }
-            guard let doc else { return }
+        openBatchWithoutAnchor(urls)
+    }
+
+    /// Find the first URL that opens successfully, then use its window as the
+    /// anchor for the rest of the batch.
+    private static func openBatchWithoutAnchor(_ urls: [URL]) {
+        guard let url = urls.first else { return }
+        let rest = Array(urls.dropFirst())
+        NSDocumentController.shared.openDocument(withContentsOf: url, display: true) { doc, _, error in
+            if let error { DiagnosticLog.log("openBatch failed for \(url.lastPathComponent): \(error.localizedDescription)") }
+            guard let doc else {
+                openBatchWithoutAnchor(rest)
+                return
+            }
             windowWhenReady(for: doc) { anchor in
-                if let anchor { openSerially(Array(urls.dropFirst()), tabbingOnto: anchor) {} }
+                guard let anchor else {
+                    openBatchWithoutAnchor(rest)
+                    return
+                }
+                openSerially(rest, tabbingOnto: anchor) { _ in }
             }
         }
     }
@@ -69,23 +85,33 @@ enum DroppedFileOpener {
     private static func openSerially(
         _ urls: [URL],
         tabbingOnto anchor: NSWindow,
-        completion: @escaping () -> Void
+        openedDocument: Bool = false,
+        completion: @escaping (Bool) -> Void
     ) {
-        guard let url = urls.first else { completion(); return }
+        guard let url = urls.first else { completion(openedDocument); return }
         let rest = Array(urls.dropFirst())
         NSDocumentController.shared.openDocument(withContentsOf: url, display: true) { doc, alreadyOpen, error in
             if let error { DiagnosticLog.log("drop open failed for \(url.lastPathComponent): \(error.localizedDescription)") }
-            guard let doc, !alreadyOpen else {
-                openSerially(rest, tabbingOnto: anchor, completion: completion)
+            guard let doc else {
+                openSerially(rest, tabbingOnto: anchor, openedDocument: openedDocument, completion: completion)
+                return
+            }
+            guard !alreadyOpen else {
+                openSerially(rest, tabbingOnto: anchor, openedDocument: true, completion: completion)
                 return
             }
             windowWhenReady(for: doc) { newWindow in
                 if let newWindow, newWindow !== anchor {
                     anchor.addTabbedWindow(newWindow, ordered: .above)
                     newWindow.makeKeyAndOrderFront(nil)
-                    openSerially(rest, tabbingOnto: newWindow, completion: completion)
+                    openSerially(rest, tabbingOnto: newWindow, openedDocument: true, completion: completion)
                 } else {
-                    openSerially(rest, tabbingOnto: anchor, completion: completion)
+                    openSerially(
+                        rest,
+                        tabbingOnto: anchor,
+                        openedDocument: openedDocument || newWindow != nil,
+                        completion: completion
+                    )
                 }
             }
         }
