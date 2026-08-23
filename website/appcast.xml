@@ -3,6 +3,20 @@
   <channel>
     <title>Clearly</title>
     <item>
+      <title>Version 3.3.0</title>
+      <sparkle:version>3.3.0</sparkle:version>
+      <sparkle:shortVersionString>3.3.0</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+      <pubDate>Sun, 23 Aug 2026 20:56:51 +0000</pubDate>
+      <description><![CDATA[<ul><li>Dropping markdown files on a document now opens them as window tabs instead of pasting the file path</li><li>Opening several files at once from Finder or the Dock lands them as tabs on the front window</li><li>New windows open at the size you last used</li><li>Heading # markers now hang in the left gutter, so heading text lines up with your paragraphs</li><li>Mermaid diagrams now render in PDF export and print instead of showing the raw code block</li><li>Undo now steps back a word at a time while typing, not one character</li><li>Links in Preview open in your browser instead of taking over the preview pane</li><li>Math no longer breaks when it contains ^ or _</li><li>Updated the bundled Mermaid to 11.17.0</li><li>The pointer no longer flickers when it passes over links in Preview</li><li>Documents no longer show as edited after reloading changes made by another app</li><li>The app no longer quits behind the Open dialog when "Keep running in menu bar" is off</li><li>Documents opened from the launcher stay open when "Keep running in menu bar" is off</li></ul>]]></description>
+      <enclosure
+        url="https://github.com/Shpigford/clearly/releases/download/v3.3.0/Clearly.dmg"
+        sparkle:edSignature="SJifnAl3sgOlDE4ByLQtLs5oZPwY9NF+NdjKZJhHVEEf5IE2Y6bIplTzqn3Lm5qldtzkwJl+ZD004FAylzn7Ag=="
+        length="9130734"
+        type="application/octet-stream"
+      />
+    </item>
+    <item>
       <title>Version 3.2.0</title>
       <sparkle:version>3.2.0</sparkle:version>
       <sparkle:shortVersionString>3.2.0</sparkle:shortVersionString>
