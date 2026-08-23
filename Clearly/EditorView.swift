@@ -25,10 +25,31 @@ struct EditorView: NSViewRepresentable {
         scrollViewWidth: CGFloat, contentWidthEm: CGFloat?,
         fontSize: CGFloat, needsTrafficLightClearance: Bool
     ) -> CGFloat {
-        let minInset = Theme.editorInsetX + (needsTrafficLightClearance ? 20 : 0)
-        guard let emValue = contentWidthEm else { return minInset }
+        let markerGutter = MarkdownHeadingLayout.markerGutterWidth
+        let minContentInset = max(Theme.editorInsetX, markerGutter + 8)
+            + (needsTrafficLightClearance ? 20 : 0)
+        guard let emValue = contentWidthEm else {
+            return max(0, minContentInset - markerGutter)
+        }
         let maxWidthPoints = emValue * fontSize
-        return max(minInset, (scrollViewWidth - maxWidthPoints) / 2.0)
+        let contentInset = max(
+            minContentInset,
+            (scrollViewWidth - maxWidthPoints) / 2.0
+        )
+        return max(0, contentInset - markerGutter)
+    }
+
+    private static func maxScrollOffsetY(for scrollView: NSScrollView) -> CGFloat {
+        let documentHeight = scrollView.documentView?.frame.height ?? 1
+        let viewportHeight = scrollView.contentView.bounds.height
+
+        // NSScrollView's bottom content inset extends the real scroll range so
+        // the final line can move above the floating toolbar. Include that
+        // reserved space in our fraction bridge as well.
+        return max(
+            1,
+            documentHeight - viewportHeight + scrollView.contentInsets.bottom
+        )
     }
 
     func makeCoordinator() -> Coordinator {
@@ -46,7 +67,7 @@ struct EditorView: NSViewRepresentable {
         scrollView.contentInsets = NSEdgeInsets(top: 0, left: 0, bottom: extraBottomInset, right: 0)
         scrollView.scrollerInsets = NSEdgeInsets(top: 0, left: 0, bottom: -extraBottomInset, right: 0)
 
-        let textView = ClearlyTextView()
+        let textView = ClearlyTextView(markdownFrame: .zero)
         textView.isRichText = false
         textView.allowsUndo = true
         textView.usesFindPanel = false
@@ -63,9 +84,7 @@ struct EditorView: NSViewRepresentable {
 
         // Paragraph style with line height — use min/max line height + baselineOffset
         // so text is vertically centered in each line (not top-aligned like lineSpacing)
-        let paragraph = NSMutableParagraphStyle()
-        paragraph.minimumLineHeight = Theme.editorLineHeight
-        paragraph.maximumLineHeight = Theme.editorLineHeight
+        let paragraph = MarkdownHeadingLayout.paragraphStyle()
         textView.defaultParagraphStyle = paragraph
         textView.typingAttributes = [
             .font: Theme.editorFont,
@@ -98,7 +117,7 @@ struct EditorView: NSViewRepresentable {
         // the first updateNSView call handles initial highlighting via the color-scheme check.
         // Note: we do NOT set textStorage.delegate — highlighting is driven explicitly
         // from textDidChange and updateNSView to avoid re-entrant layout manager access.
-        let highlighter = MarkdownSyntaxHighlighter()
+        let highlighter = MarkdownEditorHighlighter()
         context.coordinator.highlighter = highlighter
         textView.string = text
         textView.delegate = context.coordinator
@@ -250,9 +269,7 @@ struct EditorView: NSViewRepresentable {
         if mode == .edit && (context.coordinator.lastMode != .edit || didChangeDocument) {
             findState?.activeMode = .edit
             let fraction = ScrollBridge.fraction(for: positionSyncID)
-            let docHeight = scrollView.documentView?.frame.height ?? 1
-            let viewportHeight = scrollView.contentView.bounds.height
-            let maxScroll = max(1, docHeight - viewportHeight)
+            let maxScroll = Self.maxScrollOffsetY(for: scrollView)
             scrollView.contentView.setBoundsOrigin(NSPoint(x: 0, y: fraction * maxScroll))
             scrollView.reflectScrolledClipView(scrollView.contentView)
             DispatchQueue.main.async {
@@ -287,9 +304,7 @@ struct EditorView: NSViewRepresentable {
             context.coordinator.lastFontSize = currentFontSize
             textView.font = Theme.editorFont
 
-            let paragraph = NSMutableParagraphStyle()
-            paragraph.minimumLineHeight = Theme.editorLineHeight
-            paragraph.maximumLineHeight = Theme.editorLineHeight
+            let paragraph = MarkdownHeadingLayout.paragraphStyle()
             textView.typingAttributes = [
                 .font: Theme.editorFont,
                 .foregroundColor: Theme.textColor,
@@ -361,7 +376,7 @@ struct EditorView: NSViewRepresentable {
         var parent: EditorView
         var isUpdating = false
         var isHighlightingInProgress = false
-        var highlighter: MarkdownSyntaxHighlighter?
+        var highlighter: MarkdownEditorHighlighter?
         var lastEditedRange: NSRange?
         var lastReplacementLength: Int = 0
         weak var textView: ClearlyTextView?
@@ -709,9 +724,7 @@ struct EditorView: NSViewRepresentable {
             guard now - lastScrollTime >= 0.016 else { return }
             lastScrollTime = now
 
-            let docHeight = scrollView.documentView?.frame.height ?? 1
-            let viewportHeight = clipView.bounds.height
-            let maxScroll = max(1, docHeight - viewportHeight)
+            let maxScroll = EditorView.maxScrollOffsetY(for: scrollView)
             let fraction = min(max(clipView.bounds.origin.y / maxScroll, 0), 1)
             ScrollBridge.setFraction(fraction, for: parent.positionSyncID)
 

@@ -35,7 +35,7 @@ struct ScratchpadEditorView: NSViewRepresentable {
         scrollView.drawsBackground = false
         scrollView.autohidesScrollers = true
 
-        let textView = ScratchpadTextView()
+        let textView = ScratchpadTextView(markdownFrame: .zero)
         textView.isRichText = false
         textView.allowsUndo = true
         textView.usesFindPanel = true
@@ -49,9 +49,7 @@ struct ScratchpadEditorView: NSViewRepresentable {
         textView.backgroundColor = .clear
         textView.drawsBackground = false
 
-        let paragraph = NSMutableParagraphStyle()
-        paragraph.minimumLineHeight = Theme.editorLineHeight
-        paragraph.maximumLineHeight = Theme.editorLineHeight
+        let paragraph = MarkdownHeadingLayout.paragraphStyle()
         textView.defaultParagraphStyle = paragraph
         textView.typingAttributes = [
             .font: Theme.editorFont,
@@ -60,7 +58,10 @@ struct ScratchpadEditorView: NSViewRepresentable {
             .baselineOffset: Theme.editorBaselineOffset
         ]
 
-        textView.textContainerInset = NSSize(width: 20, height: 8)
+        textView.textContainerInset = NSSize(
+            width: MarkdownHeadingLayout.containerInset(forContentInset: 20),
+            height: 8
+        )
         textView.textContainer?.lineFragmentPadding = 0
 
         textView.isVerticallyResizable = true
@@ -71,7 +72,7 @@ struct ScratchpadEditorView: NSViewRepresentable {
 
         textView.insertionPointColor = Theme.textColor
 
-        let highlighter = MarkdownSyntaxHighlighter()
+        let highlighter = MarkdownEditorHighlighter()
         context.coordinator.highlighter = highlighter
         textView.string = text
         textView.delegate = context.coordinator
@@ -104,9 +105,7 @@ struct ScratchpadEditorView: NSViewRepresentable {
             context.coordinator.lastFontSize = currentFontSize
             textView.font = Theme.editorFont
 
-            let paragraph = NSMutableParagraphStyle()
-            paragraph.minimumLineHeight = Theme.editorLineHeight
-            paragraph.maximumLineHeight = Theme.editorLineHeight
+            let paragraph = MarkdownHeadingLayout.paragraphStyle()
             textView.typingAttributes = [
                 .font: Theme.editorFont,
                 .foregroundColor: Theme.textColor,
@@ -137,7 +136,7 @@ struct ScratchpadEditorView: NSViewRepresentable {
         var parent: ScratchpadEditorView
         var isUpdating = false
         var isHighlighting = false
-        var highlighter: MarkdownSyntaxHighlighter?
+        var highlighter: MarkdownEditorHighlighter?
         weak var textView: NSTextView?
         var lastColorScheme: ColorScheme?
         var lastFontSize: CGFloat?

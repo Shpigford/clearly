@@ -20,6 +20,23 @@ enum TextCheckingPreferences {
 }
 
 class PersistentTextCheckingTextView: NSTextView {
+    private var markdownTextSystem: MarkdownTextSystem?
+
+    convenience init(markdownFrame frame: NSRect = .zero) {
+        let textSystem = MarkdownTextSystem()
+        self.init(frame: frame, textContainer: textSystem.textContainer)
+        markdownTextSystem = textSystem
+
+        // `NSTextView()` normally starts with a virtually unbounded maximum
+        // height. Supplying our own TextKit stack skips that default and leaves
+        // maxSize equal to the initial frame, which pins a zero-frame editor to
+        // the scroll viewport once it is installed as the document view.
+        maxSize = NSSize(
+            width: frame.width,
+            height: textSystem.textContainer.size.height
+        )
+    }
+
     @objc override func toggleContinuousSpellChecking(_ sender: Any?) {
         super.toggleContinuousSpellChecking(sender)
         TextCheckingPreferences.persist(from: self)
