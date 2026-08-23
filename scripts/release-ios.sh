@@ -79,7 +79,7 @@ source "$SCRIPT_DIR/lib/changelog-html.sh"
 generate_changelog_html
 if ! git diff --quiet website/changelog.html; then
   git add website/changelog.html
-  git commit -m "chore: update changelog for ios-v$VERSION"
+  git commit -m "[chore] update changelog for ios-v$VERSION"
   git push
 fi
 
