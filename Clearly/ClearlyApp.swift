@@ -143,7 +143,20 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate {
             return false
         }
         if scheduleDeferredQuitIfPanelInFlight() { return false }
+        // A launcher/last-window close can fire this while the open panel or
+        // About window is still on screen (#379) — don't quit under them.
+        if hasVisibleUserWindow() { return false }
         return true
+    }
+
+    /// True when any window the user is actually looking at is on screen —
+    /// the open panel, About, the SwiftUI launcher, Settings. The always-on
+    /// Scratchpads status-bar item and menu windows sit above `.modalPanel`
+    /// level and don't count.
+    private func hasVisibleUserWindow() -> Bool {
+        NSApp.modalWindow != nil || NSApp.windows.contains {
+            $0.isVisible && $0.level.rawValue <= NSWindow.Level.modalPanel.rawValue
+        }
     }
 
     /// If a launcher / open panel is currently in flight, defer a quit by
@@ -159,8 +172,13 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate {
             // re-arm another defer.
             self.isDocumentPanelPresented = false
             let docCount = NSDocumentController.shared.documents.count
-            DiagnosticLog.log("scheduleDeferredQuit: fired, docs=\(docCount)")
-            if docCount == 0 {
+            let userWindowUp = self.hasVisibleUserWindow()
+            DiagnosticLog.log("scheduleDeferredQuit: fired, docs=\(docCount), userWindowUp=\(userWindowUp)")
+            // Quit only when nothing is left on screen. The open panel /
+            // About window keep the app alive here (#379); if the user later
+            // dismisses them without a doc, the normal last-window-closed
+            // path handles the quit.
+            if docCount == 0 && !userWindowUp {
                 NSApp.terminate(nil)
             }
         }
