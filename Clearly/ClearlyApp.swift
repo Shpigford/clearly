@@ -39,6 +39,14 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillFinishLaunching(_ notification: Notification) {
+        // Must be registered before AppKit finishes launching to win the
+        // 'odoc' handler slot from NSApplication's default routing.
+        NSAppleEventManager.shared().setEventHandler(
+            self,
+            andSelector: #selector(handleOpenDocumentsEvent(_:withReplyEvent:)),
+            forEventClass: AEEventClass(kCoreEventClass),
+            andEventID: AEEventID(kAEOpenDocuments)
+        )
         // Avoid Dock-icon flash when the user launches with the toggle on.
         // The `didBecomeMain` observer flips us back to `.regular` once a
         // document window appears (Finder-open, untitled-on-launch, etc.).
@@ -119,6 +127,35 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate {
             isDocumentPanelPresented = true
             return false
         }
+    }
+
+    /// Finder "Open with", Dock drops, `open -a`. SwiftUI's `DocumentGroup`
+    /// routes these straight to its document controller (the delegate's
+    /// `application(_:open:)` never fires), so intercept the 'odoc' Apple
+    /// Event itself — registered in `applicationWillFinishLaunching` — and
+    /// land multi-file opens as tabs on one window instead of a window per
+    /// file.
+    @objc private func handleOpenDocumentsEvent(
+        _ event: NSAppleEventDescriptor,
+        withReplyEvent reply: NSAppleEventDescriptor
+    ) {
+        guard let direct = event.paramDescriptor(forKeyword: keyDirectObject) else { return }
+        var urls: [URL] = []
+        if direct.numberOfItems > 0 {
+            for i in 1...direct.numberOfItems {
+                if let url = direct.atIndex(i)?.fileURLValue { urls.append(url) }
+            }
+        } else if let url = direct.fileURLValue {
+            urls.append(url)
+        }
+        DiagnosticLog.log("odoc event: \(urls.count) urls")
+        guard urls.count > 1 else {
+            for url in urls {
+                NSDocumentController.shared.openDocument(withContentsOf: url, display: true) { _, _, _ in }
+            }
+            return
+        }
+        DroppedFileOpener.openBatch(urls)
     }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {

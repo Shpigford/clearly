@@ -92,6 +92,33 @@ final class ClearlyTextView: PersistentTextCheckingTextView {
         )
     }
 
+    // MARK: - File drops
+
+    /// Dropping markdown files opens them in tabs (see `DroppedFileOpener`)
+    /// instead of NSTextView's default insert-the-file-path behavior.
+    override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
+        if DroppedFileOpener.markdownFileURLs(from: sender.draggingPasteboard) != nil { return .copy }
+        return super.draggingEntered(sender)
+    }
+
+    override func draggingUpdated(_ sender: NSDraggingInfo) -> NSDragOperation {
+        if DroppedFileOpener.markdownFileURLs(from: sender.draggingPasteboard) != nil { return .copy }
+        return super.draggingUpdated(sender)
+    }
+
+    override func prepareForDragOperation(_ sender: NSDraggingInfo) -> Bool {
+        if DroppedFileOpener.markdownFileURLs(from: sender.draggingPasteboard) != nil { return true }
+        return super.prepareForDragOperation(sender)
+    }
+
+    override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
+        if let urls = DroppedFileOpener.markdownFileURLs(from: sender.draggingPasteboard), let window {
+            DroppedFileOpener.open(urls, droppedOn: window)
+            return true
+        }
+        return super.performDragOperation(sender)
+    }
+
     // MARK: - Paste
 
     /// NSTextView's default validation rejects `paste:` when the clipboard
