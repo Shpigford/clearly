@@ -345,6 +345,9 @@ struct EditorView: NSViewRepresentable {
             let selectedRanges = textView.selectedRanges
             textView.string = text
             textView.selectedRanges = selectedRanges
+            // Old undo actions reference ranges in the replaced text; applying
+            // them against the new content would corrupt it.
+            context.coordinator.textUndoManager.removeAllActions()
             context.coordinator.isHighlightingInProgress = true
             context.coordinator.highlighter?.highlightAll(textView.textStorage!, caller: "externalText")
             context.coordinator.isHighlightingInProgress = false
@@ -391,6 +394,12 @@ struct EditorView: NSViewRepresentable {
         var cachedFontSize: CGFloat = 12
         var cachedNeedsTrafficLightClearance: Bool = false
         var updateCount = 0
+        /// Dedicated undo manager for the text view. SwiftUI's DocumentGroup
+        /// registers an undo action on the window's undo manager for every
+        /// binding write (i.e. every keystroke), which breaks NSTextView's
+        /// typing coalescing when the text view shares that manager — undo
+        /// then steps back one character at a time (#390).
+        let textUndoManager = UndoManager()
         private var lastScrollTime: TimeInterval = 0
         /// Tracks how many async binding updates are in-flight. While > 0,
         /// updateNSView must not replace the text view's content — the text
@@ -589,6 +598,10 @@ struct EditorView: NSViewRepresentable {
                     }
                 }
                 .store(in: &findCancellables)
+        }
+
+        func undoManager(for view: NSTextView) -> UndoManager? {
+            textUndoManager
         }
 
         func textView(_ textView: NSTextView, shouldChangeTextIn affectedCharRange: NSRange, replacementString: String?) -> Bool {
