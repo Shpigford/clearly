@@ -40,6 +40,9 @@ final class PDFExporter: NSObject, WKNavigationDelegate {
         let config = WKWebViewConfiguration()
         config.setURLSchemeHandler(LocalImageSchemeHandler(), forURLScheme: LocalImageSupport.scheme)
         let wv = WKWebView(frame: NSRect(x: 0, y: 0, width: renderWidth, height: Self.pageSize.height), configuration: config)
+        // PDF/print output is always light — force light appearance so
+        // prefers-color-scheme JS (mermaid theme selection) matches.
+        wv.appearance = NSAppearance(named: .aqua)
         wv.navigationDelegate = self
         self.webView = wv
 
@@ -67,6 +70,7 @@ final class PDFExporter: NSObject, WKNavigationDelegate {
         \(MathSupport.scriptHTML(for: htmlBody))
         \(TableSupport.scriptHTML(for: htmlBody))
         \(SyntaxHighlightSupport.scriptHTML(for: htmlBody))
+        \(htmlBody.contains("language-mermaid") ? MermaidSupport.scriptHTML : "")
         </html>
         """
         wv.loadHTMLString(html, baseURL: documentURL?.deletingLastPathComponent() ?? MermaidSupport.resourceBaseURL)
@@ -81,8 +85,9 @@ final class PDFExporter: NSObject, WKNavigationDelegate {
         Task { @MainActor in
             do {
                 try await waitForImages(in: webView)
+                try await waitForMermaid(in: webView)
             } catch {
-                // If image waiting JS fails, continue instead of blocking.
+                // If readiness-waiting JS fails, continue instead of blocking.
             }
 
             let isExport = !isPrint
@@ -186,6 +191,30 @@ final class PDFExporter: NSObject, WKNavigationDelegate {
                 );
             }
             await new Promise(resolve => setTimeout(resolve, 50));
+            return true;
+            """,
+            arguments: [:],
+            in: nil,
+            contentWorld: .page
+        )
+    }
+
+    private func waitForMermaid(in webView: WKWebView) async throws {
+        _ = try await webView.callAsyncJavaScript(
+            """
+            if (window.mermaid && !window.__mermaidReady) {
+                await new Promise(resolve => {
+                    const timeout = setTimeout(resolve, 5000);
+                    window.addEventListener('mermaid-ready', () => {
+                        clearTimeout(timeout);
+                        resolve();
+                    }, { once: true });
+                    if (window.__mermaidReady) {
+                        clearTimeout(timeout);
+                        resolve();
+                    }
+                });
+            }
             return true;
             """,
             arguments: [:],
