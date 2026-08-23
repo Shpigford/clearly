@@ -189,8 +189,10 @@ public enum MarkdownRenderer {
     }
 
     private static func protectCodeRegions(in html: String) -> (html: String, segments: [String]) {
+        // Also protects math spans/blocks produced by processMath so later
+        // post-processors (super/sub, marks, emoji) don't mangle LaTeX source.
         guard let codeRegex = try? NSRegularExpression(
-            pattern: #"<(pre|code)\b[^>]*>[\s\S]*?<\/\1>"#,
+            pattern: #"<(pre|code)\b[^>]*>[\s\S]*?<\/\1>|<span class="math-inline">[\s\S]*?<\/span>|<div class="math-block">[\s\S]*?<\/div>"#,
             options: [.caseInsensitive]
         ) else {
             return (html, [])
