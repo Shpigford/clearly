@@ -237,7 +237,11 @@ private struct DocumentWindowSizer: NSViewRepresentable {
             guard self.window !== window else { return }
             self.window = window
             if let observer { NotificationCenter.default.removeObserver(observer) }
-            applySavedSize(to: window)
+            // A ContentView is also created when adding a tab to an existing
+            // window. Leave that host window's size alone.
+            if (window.tabbedWindows?.count ?? 1) == 1 {
+                applySavedSize(to: window)
+            }
             // Registered after applying so the apply itself isn't re-saved.
             // didResize (not didEndLiveResize) so zoom and scripted resizes
             // are remembered too.
