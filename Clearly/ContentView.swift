@@ -151,6 +151,9 @@ struct ContentView: View {
                 }
             }
             DispatchQueue.main.async(execute: clearIfUnchanged)
+            // A frontmost app has no activation pending, so keeping this
+            // observer would retain the document until a later app switch.
+            guard !NSApplication.shared.isActive else { return }
             var token: NSObjectProtocol?
             token = NotificationCenter.default.addObserver(
                 forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main
