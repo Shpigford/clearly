@@ -672,6 +672,32 @@ struct PreviewView: NSViewRepresentable {
             }
         }
 
+        func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction, decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
+            guard navigationAction.targetFrame?.isMainFrame ?? true else {
+                decisionHandler(.allow)
+                return
+            }
+            let url = navigationAction.request.url
+            // loadHTMLString arrives as .other with our file: base URL.
+            if navigationAction.navigationType == .other,
+               url == nil || url?.isFileURL == true || url?.scheme == "about" {
+                decisionHandler(.allow)
+                return
+            }
+            // In-page anchor navigation: same document, only the fragment changes.
+            if let url, let current = webView.url,
+               url.scheme == current.scheme, url.host == current.host, url.path == current.path {
+                decisionHandler(.allow)
+                return
+            }
+            // Backstop for link clicks the JS interceptor missed: never let the
+            // preview navigate away from the rendered document.
+            decisionHandler(.cancel)
+            if let url {
+                NSWorkspace.shared.open(url)
+            }
+        }
+
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
             isLoadingContent = false
             if !didInitialLoad {
