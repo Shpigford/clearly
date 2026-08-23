@@ -220,6 +220,10 @@ struct EditorView: NSViewRepresentable {
               let textView = scrollView.documentView as? ClearlyTextView else { return }
         let gutter = container.subviews.first(where: { $0 is LineNumberGutterView }) as? LineNumberGutterView
 
+        // SwiftUI .opacity(0) leaves the AppKit view live, so the text view's
+        // i-beam cursor rects would fight the preview's cursor (#388).
+        container.isHidden = mode != .edit
+
         // Keep coordinator's parent fresh so the binding never goes stale
         context.coordinator.parent = self
 
