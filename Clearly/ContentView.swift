@@ -130,15 +130,33 @@ struct ContentView: View {
         .watchExternalChanges(fileURL: fileURL, text: $document.text) { url in
             // Sync SwiftUI's underlying NSDocument's fileModificationDate to
             // the new on-disk mtime — without this, the next autosave detects
-            // a conflict and shows "could not be autosaved" dialog. We
-            // deliberately do NOT try to suppress the title's "Edited"
-            // decoration: SwiftUI tracks its own FileDocument-vs-disk diff
-            // for that, and the indicator is a useful "doc changed under you"
-            // signal anyway.
+            // a conflict and shows "could not be autosaved" dialog.
             let target = url.standardizedFileURL
             guard let doc = NSDocumentController.shared.documents.first(where: { $0.fileURL?.standardizedFileURL == target }) else { return }
             if let mtime = (try? FileManager.default.attributesOfItem(atPath: url.path))?[.modificationDate] as? Date {
                 doc.fileModificationDate = mtime
+            }
+            // The reload isn't a user edit: the new content is already on
+            // disk, so the window must not show the edited dot or prompt to
+            // save on close (#387). SwiftUI registers the binding write as a
+            // change during a later view update — next runloop turn when the
+            // app is frontmost, but deferred until activation when the change
+            // arrived while backgrounded (the common Terminal-then-switch-back
+            // case). Clear after both, guarded on the text still matching the
+            // reloaded disk content so real user edits are never wiped.
+            let appliedText = document.text
+            let clearIfUnchanged = {
+                if document.text == appliedText {
+                    doc.updateChangeCount(.changeCleared)
+                }
+            }
+            DispatchQueue.main.async(execute: clearIfUnchanged)
+            var token: NSObjectProtocol?
+            token = NotificationCenter.default.addObserver(
+                forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main
+            ) { _ in
+                if let token { NotificationCenter.default.removeObserver(token) }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3, execute: clearIfUnchanged)
             }
         }
     }
