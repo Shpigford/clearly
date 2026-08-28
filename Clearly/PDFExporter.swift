@@ -73,7 +73,9 @@ final class PDFExporter: NSObject, WKNavigationDelegate {
         \(htmlBody.contains("language-mermaid") ? MermaidSupport.scriptHTML : "")
         </html>
         """
-        wv.loadHTMLString(html, baseURL: documentURL?.deletingLastPathComponent() ?? MermaidSupport.resourceBaseURL)
+        // Bundle resource dir, not the document dir: a baseURL on another volume
+        // blocks the bundled file: JS/CSS subresources (see PreviewView).
+        wv.loadHTMLString(html, baseURL: MermaidSupport.resourceBaseURL)
     }
 
     // MARK: - WKNavigationDelegate
