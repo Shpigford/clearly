@@ -368,6 +368,10 @@ final class ClearlyTextView: PersistentTextCheckingTextView {
         wrapSelection(prefix: "~~", suffix: "~~", placeholder: "strikethrough text")
     }
 
+    @objc func toggleHighlight(_ sender: Any?) {
+        wrapSelection(prefix: "==", suffix: "==", placeholder: "highlighted text")
+    }
+
     @objc func insertImage(_ sender: Any?) {
         let range = selectedRange()
         let selected = (string as NSString).substring(with: range)
@@ -502,6 +506,7 @@ final class ClearlyTextView: PersistentTextCheckingTextView {
         italicItem.keyEquivalentModifierMask = .command
         let strikeItem = formatMenu.addItem(withTitle: "Strikethrough", action: #selector(toggleStrikethrough(_:)), keyEquivalent: "x")
         strikeItem.keyEquivalentModifierMask = [.command, .shift]
+        formatMenu.addItem(withTitle: "Highlight", action: #selector(toggleHighlight(_:)), keyEquivalent: "")
         formatMenu.addItem(.separator())
 
         formatMenu.addItem(withTitle: "Insert Link", action: #selector(insertLink(_:)), keyEquivalent: "")
