@@ -494,6 +494,7 @@ struct ClearlyApp: App {
                     .keyboardShortcut("i", modifiers: .command)
                 Button("Strikethrough") { performFormattingCommand(selector: #selector(ClearlyTextView.toggleStrikethrough(_:))) }
                     .keyboardShortcut("x", modifiers: [.command, .shift])
+                Button("Highlight") { performFormattingCommand(selector: #selector(ClearlyTextView.toggleHighlight(_:))) }
                 Button("Heading") { performFormattingCommand(selector: #selector(ClearlyTextView.insertHeading(_:))) }
                     .keyboardShortcut("h", modifiers: [.command, .shift])
                 Divider()
