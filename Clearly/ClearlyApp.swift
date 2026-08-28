@@ -634,6 +634,10 @@ private struct ExportPDFActionKey: FocusedValueKey {
     typealias Value = () -> Void
 }
 
+private struct ExportRichTextActionKey: FocusedValueKey {
+    typealias Value = () -> Void
+}
+
 private struct PrintDocumentActionKey: FocusedValueKey {
     typealias Value = () -> Void
 }
@@ -655,6 +659,10 @@ extension FocusedValues {
         get { self[ExportPDFActionKey.self] }
         set { self[ExportPDFActionKey.self] = newValue }
     }
+    var exportRichTextAction: (() -> Void)? {
+        get { self[ExportRichTextActionKey.self] }
+        set { self[ExportRichTextActionKey.self] = newValue }
+    }
     var printDocumentAction: (() -> Void)? {
         get { self[PrintDocumentActionKey.self] }
         set { self[PrintDocumentActionKey.self] = newValue }
@@ -665,6 +673,7 @@ extension FocusedValues {
 
 struct ExportPrintCommands: View {
     @FocusedValue(\.exportPDFAction) var exportPDFAction
+    @FocusedValue(\.exportRichTextAction) var exportRichTextAction
     @FocusedValue(\.printDocumentAction) var printDocumentAction
 
     var body: some View {
@@ -673,6 +682,13 @@ struct ExportPrintCommands: View {
         }
         .keyboardShortcut("e", modifiers: [.command, .shift])
         .disabled(exportPDFAction == nil)
+
+        Button("Export as Rich Text…") {
+            exportRichTextAction?()
+        }
+        .disabled(exportRichTextAction == nil)
+
+        Divider()
 
         Button("Print…") {
             printDocumentAction?()

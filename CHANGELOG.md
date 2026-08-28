@@ -1,6 +1,7 @@
 # Changelog
 
 ## [Unreleased]
+- Export documents as Rich Text from the File menu
 
 ## [3.3.0] - 2026-08-23
 - Dropping markdown files on a document now opens them as window tabs instead of pasting the file path

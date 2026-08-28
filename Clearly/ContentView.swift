@@ -114,6 +114,7 @@ struct ContentView: View {
         .focusedSceneValue(\.outlineState, outlineState)
         .focusedSceneValue(\.viewMode, $viewMode)
         .focusedSceneValue(\.exportPDFAction) { exportPDF() }
+        .focusedSceneValue(\.exportRichTextAction) { exportRichText() }
         .focusedSceneValue(\.printDocumentAction) { printDocument() }
         .onAppear {
             outlineState.parseHeadings(from: document.text)
@@ -229,6 +230,10 @@ struct ContentView: View {
             fontFamily: previewFontFamily,
             fileURL: fileURL
         )
+    }
+
+    private func exportRichText() {
+        DocumentExporter.exportRichText(markdown: document.text, sourceURL: fileURL)
     }
 
     private func printDocument() {
