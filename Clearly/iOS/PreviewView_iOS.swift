@@ -200,7 +200,11 @@ struct PreviewView_iOS: UIViewRepresentable {
         \(SyntaxHighlightSupport.scriptHTML(for: htmlBody))
         </html>
         """
-        webView.loadHTMLString(html, baseURL: fileURL?.deletingLastPathComponent() ?? MermaidSupport.resourceBaseURL)
+        // Bundle resource dir, not the document dir: a baseURL on another volume
+        // (external drive / file provider) blocks the bundled file: JS/CSS
+        // subresources (mermaid, katex, highlight). Images use
+        // LocalImageSchemeHandler; relative links resolve in Swift.
+        webView.loadHTMLString(html, baseURL: MermaidSupport.resourceBaseURL)
     }
 
     final class Coordinator: NSObject, WKNavigationDelegate, WKScriptMessageHandler {

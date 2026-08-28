@@ -40,7 +40,9 @@ final class PreviewViewController: UIViewController, QLPreviewingController {
             </html>
             """
 
-            webView.loadHTMLString(html, baseURL: url.deletingLastPathComponent())
+            // Bundle resource dir, not the document dir: a baseURL on another
+            // volume blocks the bundled file: JS/CSS subresources.
+            webView.loadHTMLString(html, baseURL: MermaidSupport.resourceBaseURL)
             handler(nil)
         } catch {
             handler(error)
