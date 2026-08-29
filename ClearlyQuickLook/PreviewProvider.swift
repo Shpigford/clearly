@@ -15,6 +15,7 @@ class PreviewViewController: NSViewController, QLPreviewingController {
         do {
             let markdownText = try String(contentsOf: url, encoding: .utf8)
             let htmlBody = MarkdownRenderer.renderHTML(markdownText)
+            let softWrapIndent = MarkdownSyntaxHighlighter.indentValues(from: markdownText)
 
             let html = """
             <!DOCTYPE html>
@@ -22,7 +23,7 @@ class PreviewViewController: NSViewController, QLPreviewingController {
             <head>
             <meta charset="utf-8">
             <meta name="viewport" content="width=device-width, initial-scale=1">
-            <style>\(PreviewCSS.css())</style>
+            <style>\(PreviewCSS.css(softWrapIndent: softWrapIndent))</style>
             <style>
             @media (max-width: 400px) {
                 body { font-size: 14px; padding: 10px 20px 20px; }

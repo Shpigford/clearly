@@ -306,7 +306,8 @@ public enum PreviewCSS {
         bodyMaxWidth: String = "61em",
         light: PreviewPalette = .light,
         dark: PreviewPalette = .dark,
-        print: PreviewPalette = .print
+        print: PreviewPalette = .print,
+        softWrapIndent: (head: IndentLength, firstLine: IndentLength)? = nil
     ) -> String {
         let bodyFontFamily: String
         let headingFontFamily: String
@@ -377,6 +378,31 @@ public enum PreviewCSS {
             display: block;
         }
         """ : ""
+
+        // Soft-wrap hanging indent (frontmatter wrapIndent / firstLineIndent).
+        // Only top-level paragraphs: lists, blockquotes, code, tables, and the
+        // frontmatter table have their own layout and must not be reflowed.
+        // `body > p` out-specifies the base `p` rule and is emitted after the
+        // `@media print` block, so it also wins inside the print/export contexts;
+        // keep it last if you move it. Empty string when the document opts out.
+        let softWrapIndentBlock: String
+        if let softWrapIndent {
+            let head = softWrapIndent.head
+            let firstLine = softWrapIndent.firstLine
+            // text-indent = firstLine - head (a negative offset pulls the first line flush).
+            // Same unit → fold to a single value; mixed units → defer to CSS calc().
+            let textIndent = head.unit == firstLine.unit
+                ? IndentLength(value: firstLine.value - head.value, unit: head.unit).css
+                : "calc(\(firstLine.css) - \(head.css))"
+            softWrapIndentBlock = """
+            body > p {
+                padding-left: \(head.css);
+                text-indent: \(textIndent);
+            }
+            """
+        } else {
+            softWrapIndentBlock = ""
+        }
 
         return """
         \(baseRoot)
@@ -1269,6 +1295,7 @@ public enum PreviewCSS {
             }
         }
         \(exportStructural)
+        \(softWrapIndentBlock)
         """
     }
 

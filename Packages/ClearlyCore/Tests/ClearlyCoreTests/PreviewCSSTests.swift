@@ -146,4 +146,49 @@ final class PreviewCSSTests: XCTestCase {
     // Asset-catalog resolution is exercised at runtime by the app + QuickLook targets; `swift test`
     // from the CLI can't load Bundle.module xcassets, so we verify asset-driven hex resolution via
     // Xcode test bundles rather than SPM.
+
+    // MARK: - Soft-wrap hanging indent
+
+    func testSoftWrapIndentOmittedByDefault() {
+        let sheet = PreviewCSS.css()
+        XCTAssertFalse(sheet.contains("body > p {"))
+    }
+
+    func testSoftWrapIndentEmitsHangingIndentRule() {
+        let sheet = PreviewCSS.css(softWrapIndent: (head: IndentLength(value: 4, unit: .em),
+                                                    firstLine: IndentLength(value: 0, unit: .em)))
+        XCTAssertTrue(sheet.contains("body > p {"))
+        XCTAssertTrue(sheet.contains("padding-left: 4em;"))
+        // firstLine - head = 0 - 4 = -4 → first line pulled flush, wrapped lines indented.
+        XCTAssertTrue(sheet.contains("text-indent: -4em;"))
+    }
+
+    func testSoftWrapIndentHonorsFirstLineIndent() {
+        let sheet = PreviewCSS.css(softWrapIndent: (head: IndentLength(value: 4, unit: .em),
+                                                    firstLine: IndentLength(value: 2, unit: .em)))
+        XCTAssertTrue(sheet.contains("padding-left: 4em;"))
+        // firstLine - head = 2 - 4 = -2
+        XCTAssertTrue(sheet.contains("text-indent: -2em;"))
+    }
+
+    func testSoftWrapIndentEmitsAbsoluteUnit() {
+        let sheet = PreviewCSS.css(softWrapIndent: (head: IndentLength(value: 24, unit: .px),
+                                                    firstLine: IndentLength(value: 0, unit: .px)))
+        XCTAssertTrue(sheet.contains("padding-left: 24px;"))
+        XCTAssertTrue(sheet.contains("text-indent: -24px;"))
+    }
+
+    func testSoftWrapIndentMixedUnitsUseCalc() {
+        let sheet = PreviewCSS.css(softWrapIndent: (head: IndentLength(value: 4, unit: .em),
+                                                    firstLine: IndentLength(value: 2, unit: .ch)))
+        XCTAssertTrue(sheet.contains("padding-left: 4em;"))
+        XCTAssertTrue(sheet.contains("text-indent: calc(2ch - 4em);"))
+    }
+
+    func testSoftWrapIndentDropsTrailingZeroForWholeNumbers() {
+        let sheet = PreviewCSS.css(softWrapIndent: (head: IndentLength(value: 2.5, unit: .em),
+                                                    firstLine: IndentLength(value: 0, unit: .em)))
+        XCTAssertTrue(sheet.contains("padding-left: 2.5em;"))
+        XCTAssertFalse(sheet.contains("padding-left: 2.50000")) // no float noise
+    }
 }

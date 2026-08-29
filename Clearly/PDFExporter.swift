@@ -58,13 +58,14 @@ final class PDFExporter: NSObject, WKNavigationDelegate {
 
         let rawBody = MarkdownRenderer.renderHTML(markdown)
         let htmlBody = LocalImageSupport.resolveImageSources(in: rawBody, relativeTo: documentURL)
+        let softWrapIndent = MarkdownSyntaxHighlighter.indentValues(from: markdown)
         // Both paths use forExport: false so @media print rules (including page-break) apply
         let html = """
         <!DOCTYPE html>
         <html>
         <head>
         <meta charset="utf-8">
-        <style>\(PreviewCSS.css(fontSize: fontSize, fontFamily: fontFamily, forExport: false))</style>
+        <style>\(PreviewCSS.css(fontSize: fontSize, fontFamily: fontFamily, forExport: false, softWrapIndent: softWrapIndent))</style>
         </head>
         <body>\(htmlBody)</body>
         \(MathSupport.scriptHTML(for: htmlBody))
