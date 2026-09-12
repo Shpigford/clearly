@@ -134,10 +134,9 @@ struct PreviewView: NSViewRepresentable {
         // Detect mode change: restore scroll position when becoming visible
         if mode == .preview && context.coordinator.lastMode != .preview {
             findState?.activeMode = .preview
-            let fraction = ScrollBridge.fraction(for: positionSyncID)
-            context.coordinator.scrollFraction = fraction
-            let js = "var ms=Math.max(1,document.body.scrollHeight-window.innerHeight);window.scrollTo(0,\(fraction)*ms);"
-            webView.evaluateJavaScript(js)
+            let anchor = ScrollBridge.anchor(for: positionSyncID)
+            context.coordinator.scrollAnchor = anchor
+            context.coordinator.restoreScrollPosition(in: webView)
             if findState?.isVisible == true {
                 context.coordinator.performFind(query: findState?.query ?? "")
             }
@@ -176,15 +175,150 @@ struct PreviewView: NSViewRepresentable {
         let rawBody = MarkdownRenderer.renderHTML(markdown, includeFrontmatter: !hideFrontmatterInPreview)
         let htmlBody = LocalImageSupport.resolveImageSources(in: rawBody, relativeTo: fileURL)
         let scrollJS = """
-        // Track scroll fraction for position sync between editor and preview.
+        // Track reading position for editor <-> preview sync.
+        //
+        // Editor and preview have unrelated pixel heights, so a shared scroll
+        // percentage lands on different content in each mode. cmark stamps every
+        // block with data-sourcepos, which gives a stable anchor: report the
+        // source line at the top of the viewport and let the editor resolve it.
         var _scrollTicking = false;
+        var _anchors = null;
+        var _anchorsBuiltAtHeight = -1;
+
+        function _buildAnchors() {
+            var nodes = document.querySelectorAll('[data-sourcepos]');
+            var out = [];
+            for (var i = 0; i < nodes.length; i++) {
+                var m = /^(\\d+):\\d+-(\\d+):/.exec(nodes[i].getAttribute('data-sourcepos') || '');
+                if (!m) continue;
+                var rect = nodes[i].getBoundingClientRect();
+                if (rect.height <= 0) continue; // collapsed or folded away
+                out.push({
+                    top: rect.top + window.scrollY,
+                    height: rect.height,
+                    sl: parseInt(m[1], 10),
+                    el: parseInt(m[2], 10)
+                });
+            }
+            out.sort(function(a, b) { return a.top - b.top; });
+            _anchors = out;
+            _anchorsBuiltAtHeight = document.body.scrollHeight;
+            return out;
+        }
+
+        function _anchorTable() {
+            // Images, mermaid diagrams and fold toggles all move content after
+            // load; the document height changing is a cheap proxy for that.
+            if (_anchors === null || _anchorsBuiltAtHeight !== document.body.scrollHeight) {
+                return _buildAnchors();
+            }
+            return _anchors;
+        }
+
+        // Fractional source line at the top of the viewport; 0 when unknown.
+        function _sourceLineAtTop() {
+            var a = _anchorTable();
+            if (!a.length) return 0;
+            var y = window.scrollY;
+            var lo = 0, hi = a.length - 1, best = -1;
+            while (lo <= hi) {
+                var mid = (lo + hi) >> 1;
+                if (a[mid].top <= y) { best = mid; lo = mid + 1; } else { hi = mid - 1; }
+            }
+            if (best < 0) return a[0].sl;
+            var b = a[best];
+            if (b.height <= 0) return b.sl;
+            // Line COUNT, not the difference: lines 100..104 are five lines.
+            // Using the difference put a hard-wrapped paragraph's interior
+            // consistently one line ahead of where the reader actually was.
+            var span = Math.max(1, b.el - b.sl + 1);
+            var progress = Math.min(Math.max((y - b.top) / b.height, 0), 0.999);
+            return b.sl + span * progress;
+        }
+
+        // Put `line` (fractional, 1-based) at the top of the viewport.
+        function _scrollToSourceLine(line) {
+            var a = _anchorTable();
+            if (!a.length) return false;
+            var whole = Math.floor(line);
+            var containing = null, preceding = null;
+            for (var i = 0; i < a.length; i++) {
+                var b = a[i];
+                if (b.sl > whole) continue;
+                preceding = b;
+                if (whole <= b.el) {
+                    // Innermost match wins: a list item beats the list holding it.
+                    if (!containing || (b.el - b.sl) <= (containing.el - containing.sl)) {
+                        containing = b;
+                    }
+                }
+            }
+            var t = containing || preceding || a[0];
+            var span = Math.max(1, t.el - t.sl + 1);
+            var progress = Math.min(Math.max((line - t.sl) / span, 0), 1);
+            window.scrollTo(0, Math.max(0, t.top + progress * t.height));
+            return true;
+        }
+
+        // Restoring once is not enough. Images without intrinsic size, mermaid
+        // diagrams, KaTeX and webfonts all resize content *after* we scroll, and
+        // everything below the insertion point slides. Keep re-applying until the
+        // layout settles or the reader takes over.
+        var _restoreTarget = null;
+        var _restoreLastY = -1;
+        var _restoreLastH = -1;
+
+        function _applyRestore() {
+            var t = _restoreTarget;
+            if (!t) return;
+            var h = document.body.scrollHeight;
+            // Re-applying is only worth it when something actually moved. On a
+            // long document the anchor table costs a full layout pass to build,
+            // and rebuilding it seven times would be visible as jank.
+            if (h === _restoreLastH && Math.abs(window.scrollY - _restoreLastY) < 1) return;
+            if (h !== _restoreLastH) _anchors = null;
+            if (!(t.line > 0 && _scrollToSourceLine(t.line))) {
+                var ms = Math.max(1, h - window.innerHeight);
+                window.scrollTo(0, t.fraction * ms);
+            }
+            _restoreLastH = h;
+            _restoreLastY = window.scrollY;
+        }
+
+        function _cancelRestore() { _restoreTarget = null; }
+
+        ['wheel', 'mousedown', 'touchstart'].forEach(function(evt) {
+            window.addEventListener(evt, _cancelRestore, { passive: true });
+        });
+
+        function _restorePosition(line, fraction) {
+            _restoreTarget = { line: line, fraction: fraction };
+            _restoreLastY = -1;
+            _restoreLastH = -1;
+            _applyRestore();
+            requestAnimationFrame(function() {
+                _applyRestore();
+                requestAnimationFrame(_applyRestore);
+            });
+            [80, 250, 600, 1200].forEach(function(ms) { setTimeout(_applyRestore, ms); });
+            document.querySelectorAll('img').forEach(function(img) {
+                if (!img.complete) img.addEventListener('load', _applyRestore, { once: true });
+            });
+            setTimeout(_cancelRestore, 2000);
+        }
+
+        window.addEventListener('resize', function() { _anchors = null; });
+
         window.addEventListener('scroll', function() {
             if (_scrollTicking) return;
             _scrollTicking = true;
             requestAnimationFrame(function() {
                 var maxScroll = Math.max(1, document.body.scrollHeight - window.innerHeight);
                 var fraction = window.scrollY / maxScroll;
-                window.webkit.messageHandlers.scrollSync.postMessage({ fraction: fraction });
+                window.webkit.messageHandlers.scrollSync.postMessage({
+                    fraction: fraction,
+                    line: _sourceLineAtTop()
+                });
                 _scrollTicking = false;
             });
         });
@@ -356,7 +490,7 @@ struct PreviewView: NSViewRepresentable {
     final class Coordinator: NSObject, WKNavigationDelegate, WKScriptMessageHandler {
         var lastContentKey: String?
         var lastMode: ViewMode?
-        var scrollFraction: Double = 0
+        var scrollAnchor = ScrollAnchor(line: 0, fraction: 0)
         var didInitialLoad = false
         var fileURL: URL?
         var positionSyncID = ""
@@ -551,6 +685,24 @@ struct PreviewView: NSViewRepresentable {
             webView.evaluateJavaScript(js)
         }
 
+        /// Puts the reader back where they were, by source line when we have
+        /// one. The fraction is only a fallback: it maps the same percentage
+        /// onto two documents of different heights, which is how the position
+        /// used to drift on every mode switch.
+        func restoreScrollPosition(in webView: WKWebView) {
+            let anchor = scrollAnchor
+            let line = anchor.line.isFinite ? anchor.line : 0
+            let fraction = anchor.fraction.isFinite ? anchor.fraction : 0
+            // The page script is gone until the reload lands; didFinish calls
+            // this again once it is there.
+            let js = """
+            if (typeof _restorePosition === 'function') {
+                _restorePosition(\(line), \(fraction));
+            }
+            """
+            webView.evaluateJavaScript(js)
+        }
+
         private func scrollToPendingLine() {
             guard let line = pendingScrollLine else { return }
             let js = """
@@ -737,10 +889,9 @@ struct PreviewView: NSViewRepresentable {
             }
             webView.alphaValue = 1
             applyPersistedFolds(in: webView)
-            // Restore scroll position after HTML reload
-            if scrollFraction > 0.01 {
-                let js = "var ms=Math.max(1,document.body.scrollHeight-window.innerHeight);window.scrollTo(0,\(scrollFraction)*ms);"
-                webView.evaluateJavaScript(js)
+            // Restore reading position after HTML reload
+            if scrollAnchor.hasLine || scrollAnchor.fraction > 0.01 {
+                restoreScrollPosition(in: webView)
             }
             // Re-apply find highlights after page reload
             if let query = findState?.query,
@@ -837,8 +988,10 @@ struct PreviewView: NSViewRepresentable {
                   let body = message.body as? [String: Any],
                   let fraction = (body["fraction"] as? NSNumber)?.doubleValue else { return }
 
-            scrollFraction = fraction
-            ScrollBridge.setFraction(fraction, for: self.positionSyncID)
+            let line = (body["line"] as? NSNumber)?.doubleValue ?? 0
+            let anchor = ScrollAnchor(line: line, fraction: fraction)
+            scrollAnchor = anchor
+            ScrollBridge.setAnchor(anchor, for: self.positionSyncID)
         }
     }
 
