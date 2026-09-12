@@ -272,12 +272,33 @@ struct EditorView: NSViewRepresentable {
 
         if mode == .edit && (context.coordinator.lastMode != .edit || didChangeDocument) {
             findState?.activeMode = .edit
-            let fraction = ScrollBridge.fraction(for: positionSyncID)
+            let anchor = ScrollBridge.anchor(for: positionSyncID)
+            // Prefer the source line the reader was on. Editor and preview have
+            // unrelated heights, so the fraction only lands in the right place
+            // by luck — it stays as the fallback for anchors with no line yet.
+            //
+            // Resolve BEFORE measuring: TextKit lays out lazily, so the document
+            // view is only as tall as the layout done so far. Resolving forces
+            // layout down to the target and grows it. Measuring first yielded a
+            // stale, too-small maxScroll that clamped deep targets short.
+            let resolved = context.coordinator.scrollOffset(forSourceLine: anchor.line)
             let maxScroll = Self.maxScrollOffsetY(for: scrollView)
-            scrollView.contentView.setBoundsOrigin(NSPoint(x: 0, y: fraction * maxScroll))
+            // A resolved offset comes from real laid-out geometry, so it needs no
+            // ceiling; only the fraction guess does.
+            let targetY = resolved.map { max($0, 0) }
+                ?? min(max(anchor.fraction * maxScroll, 0), maxScroll)
+            scrollView.contentView.setBoundsOrigin(NSPoint(x: 0, y: targetY))
             scrollView.reflectScrolledClipView(scrollView.contentView)
-            DispatchQueue.main.async {
+            DispatchQueue.main.async { [weak scrollView, weak textView] in
+                guard let scrollView, let textView else { return }
                 textView.window?.makeFirstResponder(textView)
+                // Re-highlighting and font changes further down updateNSView
+                // resize headings and code, which moves every line below them.
+                // Land again once that has settled.
+                if let y = context.coordinator.scrollOffset(forSourceLine: anchor.line) {
+                    scrollView.contentView.setBoundsOrigin(NSPoint(x: 0, y: max(y, 0)))
+                    scrollView.reflectScrolledClipView(scrollView.contentView)
+                }
             }
             if findState?.isVisible == true {
                 context.coordinator.performFind()
@@ -405,6 +426,11 @@ struct EditorView: NSViewRepresentable {
         /// then steps back one character at a time (#390).
         let textUndoManager = UndoManager()
         private var lastScrollTime: TimeInterval = 0
+        /// Line index for the current text revision. Scroll anchoring needs
+        /// offset→line on every frame; rebuilding it per frame would walk the
+        /// whole document, so it is cached and dropped on edit.
+        private var cachedLineIndex: LineIndex?
+        private var cachedLineIndexLength = -1
         /// Tracks how many async binding updates are in-flight. While > 0,
         /// updateNSView must not replace the text view's content — the text
         /// view is authoritative and the binding will catch up.
@@ -625,6 +651,8 @@ struct EditorView: NSViewRepresentable {
 
             DiagnosticLog.log("textDidChange (\(textView.textStorage?.length ?? 0) chars)")
 
+            invalidateLineIndex()
+
             // Block updateNSView from replacing text while binding update is pending.
             // Without this, SwiftUI can call updateNSView (e.g., from a layout pass
             // triggered by the text view growing) BEFORE the async binding update fires,
@@ -743,9 +771,108 @@ struct EditorView: NSViewRepresentable {
 
             let maxScroll = EditorView.maxScrollOffsetY(for: scrollView)
             let fraction = min(max(clipView.bounds.origin.y / maxScroll, 0), 1)
-            ScrollBridge.setFraction(fraction, for: parent.positionSyncID)
+            let line = topVisibleSourceLine(atContentOffset: clipView.bounds.origin.y)
+            ScrollBridge.setAnchor(
+                ScrollAnchor(line: line, fraction: fraction),
+                for: parent.positionSyncID
+            )
 
             gutterView?.scrollOrFrameDidChange()
+        }
+
+        // MARK: - Source-line scroll anchoring
+
+        func invalidateLineIndex() {
+            cachedLineIndex = nil
+            cachedLineIndexLength = -1
+        }
+
+        private func lineIndex(for text: String) -> LineIndex {
+            if let cached = cachedLineIndex, cachedLineIndexLength == text.utf16.count {
+                return cached
+            }
+            let index = LineIndex(text)
+            cachedLineIndex = index
+            cachedLineIndexLength = index.length
+            return index
+        }
+
+        /// Fractional 1-based source line sitting at the top of the viewport,
+        /// or `0` when it can't be resolved. The fraction is progress toward the
+        /// next line, so a soft-wrapped paragraph doesn't collapse to one anchor.
+        private func topVisibleSourceLine(atContentOffset offsetY: CGFloat) -> Double {
+            guard let textView,
+                  let layoutManager = textView.layoutManager,
+                  let container = textView.textContainer
+            else { return 0 }
+
+            let containerY = max(0, offsetY - textView.textContainerInset.height)
+            let glyph = layoutManager.glyphIndex(
+                for: CGPoint(x: 0, y: containerY), in: container
+            )
+            let charIndex = layoutManager.characterIndexForGlyph(at: glyph)
+
+            let index = lineIndex(for: textView.string)
+            let line = index.line(forCharacterAt: charIndex)
+
+            guard let rect = lineRect(line, index: index, layoutManager: layoutManager,
+                                      container: container, ensuringLayout: false),
+                  rect.height > 0.5
+            else { return Double(line) }
+
+            let progress = min(max((containerY - rect.minY) / rect.height, 0), 0.999)
+            return Double(line) + Double(progress)
+        }
+
+        /// Content offset that puts `line` (fractional, 1-based) at the top of
+        /// the viewport. `nil` when the layout can't answer.
+        func scrollOffset(forSourceLine line: Double) -> CGFloat? {
+            guard line > 0,
+                  let textView,
+                  let layoutManager = textView.layoutManager,
+                  let container = textView.textContainer
+            else { return nil }
+
+            let index = lineIndex(for: textView.string)
+            let whole = max(1, Int(line.rounded(.down)))
+            guard let rect = lineRect(whole, index: index, layoutManager: layoutManager,
+                                      container: container, ensuringLayout: true)
+            else { return nil }
+
+            var y = rect.minY
+            let progress = line - Double(whole)
+            if progress > 0.001 {
+                let nextTop = lineRect(whole + 1, index: index, layoutManager: layoutManager,
+                                       container: container, ensuringLayout: true)?.minY
+                    ?? (rect.minY + rect.height)
+                y += CGFloat(progress) * (nextTop - rect.minY)
+            }
+            return y + textView.textContainerInset.height
+        }
+
+        private func lineRect(
+            _ line: Int,
+            index: LineIndex,
+            layoutManager: NSLayoutManager,
+            container: NSTextContainer,
+            ensuringLayout: Bool
+        ) -> CGRect? {
+            guard line >= 1, line <= index.lineCount else { return nil }
+            let start = index.characterOffset(forLine: line)
+            let end = line < index.lineCount
+                ? index.characterOffset(forLine: line + 1)
+                : index.length
+            let range = NSRange(location: start, length: max(0, end - start))
+            guard NSMaxRange(range) <= (textView?.textStorage?.length ?? 0) else { return nil }
+
+            // Positions depend on everything above being laid out. Worth forcing
+            // when restoring; wasteful per scroll tick, where the visible region
+            // is already laid out for display.
+            if ensuringLayout {
+                layoutManager.ensureLayout(forCharacterRange: NSRange(location: 0, length: NSMaxRange(range)))
+            }
+            let glyphRange = layoutManager.glyphRange(forCharacterRange: range, actualCharacterRange: nil)
+            return layoutManager.boundingRect(forGlyphRange: glyphRange, in: container)
         }
 
         private func invalidateVisibleRegion(of textView: NSTextView) {
