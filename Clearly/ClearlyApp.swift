@@ -788,7 +788,7 @@ struct FontSizeCommands: View {
         .keyboardShortcut("+", modifiers: .command)
 
         Button("Decrease Font Size") {
-            fontSize = max(fontSize - 1, 12)
+            fontSize = max(fontSize - 1, 8)
         }
         .keyboardShortcut("-", modifiers: .command)
     }

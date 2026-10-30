@@ -77,7 +77,7 @@ struct SettingsView: View {
 
             HStack {
                 Text("Font Size")
-                Slider(value: $fontSize, in: 12...24, step: 1)
+                Slider(value: $fontSize, in: 8...24, step: 1)
                 Text("\(Int(fontSize))")
                     .font(.system(size: 13, weight: .medium))
                     .monospacedDigit()
