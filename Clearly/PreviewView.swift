@@ -121,7 +121,14 @@ struct PreviewView: NSViewRepresentable {
             object: nil
         )
 
-        loadHTML(in: webView, context: context)
+        // Only render up front when the window opens in Preview. When it opens
+        // in Edit, lastContentKey stays nil and updateNSView renders on the first
+        // switch to Preview. Rendering a hidden preview here made documents that
+        // are slow to render block window creation even in Edit mode.
+        webView.isHidden = mode != .preview
+        if mode == .preview {
+            loadHTML(in: webView, context: context)
+        }
         return webView
     }
 
