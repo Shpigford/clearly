@@ -198,29 +198,52 @@ public enum MarkdownRenderer {
             return (html, [])
         }
 
-        var protectedHTML = html
+        // Build the output in one forward pass. Mutating the string in place
+        // (replaceSubrange per match) copies the whole document for every
+        // match, which hangs on large files with many code/math regions.
+        let nsHTML = html as NSString
+        let matches = codeRegex.matches(in: html, range: NSRange(location: 0, length: nsHTML.length))
+        guard !matches.isEmpty else { return (html, []) }
+
+        var protectedHTML = ""
         var segments: [String] = []
-        let matches = codeRegex.matches(in: html, range: NSRange(html.startIndex..., in: html)).reversed()
+        segments.reserveCapacity(matches.count)
+        var cursor = 0
 
         for match in matches {
-            guard let range = Range(match.range, in: protectedHTML) else { continue }
-            let segment = String(protectedHTML[range])
-            let token = "__CLEARLY_PROTECTED_CODE_\(segments.count)__"
-            segments.append(segment)
-            protectedHTML.replaceSubrange(range, with: token)
+            protectedHTML += nsHTML.substring(with: NSRange(location: cursor, length: match.range.location - cursor))
+            protectedHTML += "__CLEARLY_PROTECTED_CODE_\(segments.count)__"
+            segments.append(nsHTML.substring(with: match.range))
+            cursor = NSMaxRange(match.range)
         }
+        protectedHTML += nsHTML.substring(from: cursor)
 
         return (protectedHTML, segments)
     }
 
+    private static let protectedSegmentTokenRegex = try? NSRegularExpression(
+        pattern: #"__CLEARLY_PROTECTED_CODE_(\d+)__"#
+    )
+
     private static func restoreProtectedSegments(in html: String, segments: [String]) -> String {
-        var restored = html
-        for (index, segment) in segments.enumerated() {
-            restored = restored.replacingOccurrences(
-                of: "__CLEARLY_PROTECTED_CODE_\(index)__",
-                with: segment
-            )
+        // Single pass over the document. Calling replacingOccurrences once per
+        // segment rescans the entire document for each one (O(segments × length)).
+        guard !segments.isEmpty, let tokenRegex = protectedSegmentTokenRegex else { return html }
+
+        let nsHTML = html as NSString
+        var restored = ""
+        var cursor = 0
+
+        for match in tokenRegex.matches(in: html, range: NSRange(location: 0, length: nsHTML.length)) {
+            guard let index = Int(nsHTML.substring(with: match.range(at: 1))),
+                  segments.indices.contains(index) else { continue }
+            restored += nsHTML.substring(with: NSRange(location: cursor, length: match.range.location - cursor))
+            restored += segments[index]
+            cursor = NSMaxRange(match.range)
         }
+
+        guard cursor > 0 else { return html }
+        restored += nsHTML.substring(from: cursor)
         return restored
     }
 
