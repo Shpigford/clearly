@@ -58,6 +58,7 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValid
 
     private let toolbarMenuItemTag = 7287
     private let statusBarMenuItemTag = 7288
+    private let insertTemplateMenuItemTag = 7289
 
     private var isToolbarHidden: Bool {
         get { UserDefaults.standard.bool(forKey: "toolbarHidden") }
@@ -360,6 +361,7 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValid
     /// The guard on `contains(where:)` makes this a no-op in the common case.
     func applicationWillUpdate(_ notification: Notification) {
         injectSpellingMenuIfNeeded()
+        injectInsertTemplateIfNeeded()
         injectSidebarToggleIfNeeded()
         injectHideToolbarIfNeeded()
         injectViewCommandsIfNeeded()
@@ -718,6 +720,54 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValid
         }
     }
 
+    private func injectInsertTemplateIfNeeded() {
+        guard let editMenu = NSApp.mainMenu?.item(withTitle: "Edit")?.submenu else { return }
+        let workspace = WorkspaceManager.shared
+        let templates = workspace.currentFileURL.map { workspace.templates(forFile: $0) } ?? []
+
+        let item: NSMenuItem
+        if let existing = editMenu.items.first(where: { $0.tag == insertTemplateMenuItemTag }) {
+            item = existing
+        } else {
+            item = NSMenuItem(title: "Insert Template", action: nil, keyEquivalent: "i")
+            item.keyEquivalentModifierMask = [.command, .option]
+            item.tag = insertTemplateMenuItemTag
+            item.submenu = NSMenu(title: "Insert Template")
+            if let spellingIndex = editMenu.items.firstIndex(where: { $0.title == "Spelling and Grammar" }) {
+                editMenu.insertItem(item, at: spellingIndex)
+                editMenu.insertItem(.separator(), at: spellingIndex)
+            } else {
+                editMenu.addItem(.separator())
+                editMenu.addItem(item)
+            }
+        }
+
+        item.isEnabled = workspace.currentFileURL != nil && !templates.isEmpty
+        let submenu = item.submenu ?? NSMenu(title: "Insert Template")
+        submenu.removeAllItems()
+        for template in templates {
+            let child = NSMenuItem(
+                title: template.name,
+                action: #selector(insertTemplateMenuAction(_:)),
+                keyEquivalent: ""
+            )
+            child.target = self
+            child.representedObject = template.url as NSURL
+            submenu.addItem(child)
+        }
+        item.submenu = submenu
+    }
+
+    @objc private func insertTemplateMenuAction(_ sender: NSMenuItem) {
+        guard let templateURL = sender.representedObject as? URL,
+              let fileURL = WorkspaceManager.shared.currentFileURL else { return }
+        let template = NoteTemplate(
+            url: templateURL,
+            name: templateURL.deletingPathExtension().lastPathComponent
+        )
+        WorkspaceManager.shared.insertTemplate(template, into: fileURL)
+    }
+
     // MARK: - Export / Print menu injection
 
     private func injectExportPrintIfNeeded() {
@@ -776,6 +826,9 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValid
             let current = UserDefaults.standard.string(forKey: "previewFontFamily") ?? "sanFrancisco"
             menuItem.state = (menuItem.representedObject as? String) == current ? .on : .off
             return true
+        }
+        if menuItem.action == #selector(insertTemplateMenuAction(_:)) {
+            return WorkspaceManager.shared.currentFileURL != nil
         }
         return true
     }

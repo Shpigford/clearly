@@ -164,6 +164,13 @@ struct EditorView: NSViewRepresentable {
             object: nil
         )
 
+        NotificationCenter.default.addObserver(
+            context.coordinator,
+            selector: #selector(Coordinator.handlePrependTemplate(_:)),
+            name: .prependTemplate,
+            object: nil
+        )
+
         // Frame changes (window resize causing rewrap) — trigger gutter redraw
         textView.postsFrameChangedNotifications = true
         NotificationCenter.default.addObserver(
@@ -452,6 +459,14 @@ struct EditorView: NSViewRepresentable {
                 let highlightRange = NSRange(location: min(charOffset, nsText.length), length: min(lineLen, nsText.length - charOffset))
                 textView.showFindIndicator(for: highlightRange)
             }
+        }
+
+        @objc func handlePrependTemplate(_ notification: Notification) {
+            guard let prefix = notification.userInfo?["text"] as? String,
+                  !prefix.isEmpty,
+                  let textView,
+                  textView.window != nil else { return }
+            textView.insertText(prefix, replacementRange: NSRange(location: 0, length: 0))
         }
 
         @objc func handleHighlightText(_ notification: Notification) {

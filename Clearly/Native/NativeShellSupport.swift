@@ -13,6 +13,7 @@ extension Notification.Name {
     static let navigateWikiLink = Notification.Name("navigateWikiLink")
     static let highlightTextInEditor = Notification.Name("highlightTextInEditor")
     static let highlightTextInPreview = Notification.Name("highlightTextInPreview")
+    static let prependTemplate = Notification.Name("Clearly.prependTemplate")
 
     // Chat command — published by the Chat menu/toolbar button and
     // observed by VaultChatCoordinator.

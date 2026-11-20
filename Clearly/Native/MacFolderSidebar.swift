@@ -512,6 +512,15 @@ struct MacFolderSidebar: View {
         Button("Open in New Tab", systemImage: "plus.rectangle.on.rectangle") {
             workspace.openFileInNewTab(at: url)
         }
+        let templates = workspace.templates(forFile: url)
+        Menu("Insert Template") {
+            ForEach(templates) { template in
+                Button(template.name) {
+                    workspace.insertTemplate(template, into: url)
+                }
+            }
+        }
+        .disabled(templates.isEmpty)
         Divider()
         Button("Rename", systemImage: "pencil") {
             beginInlineRename(url: url, isDirectory: false)

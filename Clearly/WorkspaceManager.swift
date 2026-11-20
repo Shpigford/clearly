@@ -407,6 +407,81 @@ final class WorkspaceManager {
         return folderURL
     }
 
+    func templates(forFile url: URL) -> [NoteTemplate] {
+        containingVaultRoot(for: url).map { NoteTemplateEngine.list(in: $0) } ?? []
+    }
+
+    /// Prepends `template` at the start of `fileURL`. Open documents are
+    /// updated in-memory (dirty until save). Closed files are rewritten on disk.
+    @discardableResult
+    func insertTemplate(_ template: NoteTemplate, into fileURL: URL) -> Bool {
+        let templateData: Data
+        do {
+            templateData = try CoordinatedFileIO.read(at: template.url)
+        } catch {
+            DiagnosticLog.log("Failed to read template \(template.name): \(error.localizedDescription)")
+            return false
+        }
+        guard let templateText = String(data: templateData, encoding: .utf8) else {
+            DiagnosticLog.log("Template \(template.name) is not UTF-8")
+            return false
+        }
+
+        let title = fileURL.deletingPathExtension().lastPathComponent
+        let target = fileURL.standardizedFileURL
+        let openIndex = openDocuments.firstIndex { $0.fileURL?.standardizedFileURL == target }
+
+        let existingText: String
+        if let openIndex {
+            existingText = openDocuments[openIndex].text
+        } else {
+            do {
+                let data = try CoordinatedFileIO.read(at: fileURL)
+                guard let text = String(data: data, encoding: .utf8) else {
+                    DiagnosticLog.log("Failed to decode \(fileURL.lastPathComponent) as UTF-8")
+                    return false
+                }
+                existingText = text
+            } catch {
+                DiagnosticLog.log("Failed to read \(fileURL.lastPathComponent): \(error.localizedDescription)")
+                return false
+            }
+        }
+
+        let render = NoteTemplateEngine.render(
+            template: templateText,
+            title: title,
+            now: Date(),
+            existingText: existingText
+        )
+
+        if let openIndex {
+            openDocuments[openIndex].text = render.combined
+            if openDocuments[openIndex].id == activeDocumentID {
+                if currentViewMode == .edit {
+                    NotificationCenter.default.post(
+                        name: .prependTemplate,
+                        object: nil,
+                        userInfo: ["text": render.prefix]
+                    )
+                } else {
+                    currentFileText = render.combined
+                    documentEpoch += 1
+                    WYSIWYGSession.update(documentID: activeDocumentID, epoch: documentEpoch)
+                }
+            }
+            return true
+        }
+
+        do {
+            try CoordinatedFileIO.write(Data(render.combined.utf8), to: fileURL)
+            return true
+        } catch {
+            DiagnosticLog.log("Failed to write template into \(fileURL.lastPathComponent): \(error.localizedDescription)")
+            return false
+        }
+    }
+
     /// Makes sure `folder` is visible in the sidebar: un-collapses its owning
     /// location if `folder` is the vault root, expands the disclosure group
     /// otherwise, and kicks a debounced tree refresh so the new child shows.
