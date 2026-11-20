@@ -41,7 +41,7 @@ final class WindowRouter {
 // MARK: - App Delegate (dock icon management + file open handling)
 
 @MainActor
-final class ClearlyAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
+final class ClearlyAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, NSMenuDelegate {
     static private(set) weak var shared: ClearlyAppDelegate?
 
     private var observers: [Any] = []
@@ -246,6 +246,10 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValid
             }
             if chars == "f" && mods == [.command, .shift] {
                 QuickSwitcherManager.shared.toggle()
+                return nil
+            }
+            if chars == "i" && mods == [.command, .option] {
+                self.presentInsertTemplateMenu(nil)
                 return nil
             }
             return event
@@ -723,16 +727,17 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValid
     private func injectInsertTemplateIfNeeded() {
         guard let editMenu = NSApp.mainMenu?.item(withTitle: "Edit")?.submenu else { return }
         let workspace = WorkspaceManager.shared
-        let templates = workspace.currentFileURL.map { workspace.templates(forFile: $0) } ?? []
 
         let item: NSMenuItem
         if let existing = editMenu.items.first(where: { $0.tag == insertTemplateMenuItemTag }) {
             item = existing
         } else {
-            item = NSMenuItem(title: "Insert Template", action: nil, keyEquivalent: "i")
-            item.keyEquivalentModifierMask = [.command, .option]
+            item = NSMenuItem(title: "Insert Template", action: nil, keyEquivalent: "")
             item.tag = insertTemplateMenuItemTag
-            item.submenu = NSMenu(title: "Insert Template")
+            let submenu = NSMenu(title: "Insert Template")
+            submenu.delegate = self
+            item.submenu = submenu
+            insertTemplateSubmenu = submenu
             if let spellingIndex = editMenu.items.firstIndex(where: { $0.title == "Spelling and Grammar" }) {
                 editMenu.insertItem(item, at: spellingIndex)
                 editMenu.insertItem(.separator(), at: spellingIndex)
@@ -742,20 +747,51 @@ final class ClearlyAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValid
             }
         }
 
-        item.isEnabled = workspace.currentFileURL != nil && !templates.isEmpty
-        let submenu = item.submenu ?? NSMenu(title: "Insert Template")
-        submenu.removeAllItems()
-        for template in templates {
+        item.isEnabled = workspace.currentFileURL != nil && currentFileHasTemplatesFolder()
+    }
+
+    private var insertTemplateSubmenu: NSMenu?
+
+    func menuNeedsUpdate(_ menu: NSMenu) {
+        guard menu === insertTemplateSubmenu else { return }
+        rebuildInsertTemplateSubmenu(menu)
+    }
+
+    private func currentFileHasTemplatesFolder() -> Bool {
+        let workspace = WorkspaceManager.shared
+        guard let fileURL = workspace.currentFileURL,
+              let root = workspace.containingVaultRoot(for: fileURL) else { return false }
+        let folder = root.appendingPathComponent(NoteTemplateEngine.folderName, isDirectory: true)
+        var isDir: ObjCBool = false
+        return FileManager.default.fileExists(atPath: folder.path, isDirectory: &isDir) && isDir.boolValue
+    }
+
+    private func rebuildInsertTemplateSubmenu(_ menu: NSMenu) {
+        menu.removeAllItems()
+        let workspace = WorkspaceManager.shared
+        guard let fileURL = workspace.currentFileURL else { return }
+        for template in workspace.templates(forFile: fileURL) {
             let child = NSMenuItem(
                 title: template.name,
                 action: #selector(insertTemplateMenuAction(_:)),
                 keyEquivalent: ""
             )
             child.target = self
-            child.representedObject = template.url as NSURL
-            submenu.addItem(child)
+            child.representedObject = template.url
+            menu.addItem(child)
         }
-        item.submenu = submenu
+    }
+
+    @objc private func presentInsertTemplateMenu(_ sender: Any?) {
+        let menu = NSMenu(title: "Insert Template")
+        rebuildInsertTemplateSubmenu(menu)
+        guard menu.numberOfItems > 0 else { return }
+        guard let window = documentMainWindow, let view = window.contentView else {
+            menu.popUp(positioning: nil, at: NSEvent.mouseLocation, in: nil)
+            return
+        }
+        let windowPoint = window.convertPoint(fromScreen: NSEvent.mouseLocation)
+        menu.popUp(positioning: nil, at: view.convert(windowPoint, from: nil), in: view)
     }
 
     @objc private func insertTemplateMenuAction(_ sender: NSMenuItem) {

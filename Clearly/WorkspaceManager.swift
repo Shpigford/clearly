@@ -430,9 +430,16 @@ final class WorkspaceManager {
         let title = fileURL.deletingPathExtension().lastPathComponent
         let target = fileURL.standardizedFileURL
         let openIndex = openDocuments.firstIndex { $0.fileURL?.standardizedFileURL == target }
+        let isActiveOpen = openIndex.map { openDocuments[$0].id == activeDocumentID } ?? false
+
+        if isActiveOpen, currentViewMode == .edit || currentViewMode == .wysiwyg {
+            snapshotActiveDocument()
+        }
 
         let existingText: String
-        if let openIndex {
+        if isActiveOpen, currentViewMode == .preview {
+            existingText = currentFileText
+        } else if let openIndex {
             existingText = openDocuments[openIndex].text
         } else {
             do {
@@ -457,7 +464,7 @@ final class WorkspaceManager {
 
         if let openIndex {
             openDocuments[openIndex].text = render.combined
-            if openDocuments[openIndex].id == activeDocumentID {
+            if isActiveOpen {
                 if currentViewMode == .edit {
                     NotificationCenter.default.post(
                         name: .prependTemplate,
@@ -468,6 +475,7 @@ final class WorkspaceManager {
                     currentFileText = render.combined
                     documentEpoch += 1
                     WYSIWYGSession.update(documentID: activeDocumentID, epoch: documentEpoch)
+                    contentDidChange()
                 }
             }
             return true
